@@ -1,4 +1,4 @@
-[![Built on Moonlight](https://img.shields.io/badge/built%20on-Moonlight-blue?style=flat-square&logo=github)](https://github.com/moonlight-stream/moonlight-qt)
+[![Built on Moonlight](https://img.shields.io/badge/built%20on-Moonlight-blue?logo=github)](https://github.com/moonlight-stream/moonlight-qt)
 # 🎮 StreamLight
 
 **A Moonlight fork with StreamTweak integration to manage host NIC speed before streaming**
