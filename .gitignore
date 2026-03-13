@@ -8,3 +8,5 @@ config.tests/*/.qmake.stash
 config.tests/*/Makefile
 .qtcreator/
 scripts/build/
+instructions.png
+instructions.txt

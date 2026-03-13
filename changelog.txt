@@ -1,0 +1,23 @@
+==========================================
+StreamLight - ChangeLog - Developed by FoggyBytes
+==========================================
+
+https://github.com/FoggyBytes/StreamLight
+
+Version 1.0.0 - The "First Light Update" (13/03/2026)
+------------------------------------------
+Initial release based on Moonlight 6.1.0.
+
+✨ NEW FEATURES:
+• StreamTweak integration: right-clicking a paired host PC now exposes two additional context menu actions — requires StreamTweak installed and running on the host PC
+• Show host NIC speed: queries StreamTweak on the host via TCP and displays the current Ethernet adapter speed in real time
+• Set host to 1 Gbps: sends a speed-change command to StreamTweak before connecting; a 10-second countdown is displayed before the connection becomes available; if no connection is made within 30 seconds, the host automatically reverts to its original speed
+• Visual theme aligned with StreamTweak's color palette for a consistent look across both apps
+
+🔧 CHANGES FROM UPSTREAM MOONLIGHT:
+• Window title changed to "StreamLight (a Moonlight fork)"
+• Discord link removed — as a fork, the upstream Moonlight Discord is not the appropriate support channel
+• Auto-update checker removed — to prevent prompts to update to upstream Moonlight releases
+
+------------------------------------------
+Built on Moonlight 6.1.0 — https://github.com/moonlight-stream/moonlight-qt
