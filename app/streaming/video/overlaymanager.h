@@ -39,6 +39,11 @@ public:
 
     void setOverlayRenderer(IOverlayRenderer* renderer);
 
+    // Position (used for drag support); coordinates are in pixels from top-left of the window
+    void setOverlayPosition(OverlayType type, float x, float y);
+    float getOverlayX(OverlayType type) const;
+    float getOverlayY(OverlayType type) const;
+
 private:
     void notifyOverlayUpdated(OverlayType type);
 
@@ -50,6 +55,9 @@ private:
 
         TTF_Font* font;
         SDL_Surface* surface;
+
+        float x;
+        float y;
     } m_Overlays[OverlayMax];
     IOverlayRenderer* m_Renderer;
     QByteArray m_FontData;

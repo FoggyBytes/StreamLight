@@ -5,15 +5,19 @@ using namespace Overlay;
 
 OverlayManager::OverlayManager() :
     m_Renderer(nullptr),
-    m_FontData(Path::readDataFile("ModeSeven.ttf"))
+    m_FontData(Path::readDataFile("RobotoMono.ttf"))
 {
     memset(m_Overlays, 0, sizeof(m_Overlays));
 
-    m_Overlays[OverlayType::OverlayDebug].color = {0xD0, 0xD0, 0x00, 0xFF};
+    m_Overlays[OverlayType::OverlayDebug].color = {0xFF, 0xFF, 0xFF, 0xFF};
     m_Overlays[OverlayType::OverlayDebug].fontSize = 20;
+    m_Overlays[OverlayType::OverlayDebug].x = 0;
+    m_Overlays[OverlayType::OverlayDebug].y = 0;
 
-    m_Overlays[OverlayType::OverlayStatusUpdate].color = {0xCC, 0x00, 0x00, 0xFF};
+    m_Overlays[OverlayType::OverlayStatusUpdate].color = {0xFF, 0xFF, 0xFF, 0xFF};
     m_Overlays[OverlayType::OverlayStatusUpdate].fontSize = 36;
+    m_Overlays[OverlayType::OverlayStatusUpdate].x = 0;
+    m_Overlays[OverlayType::OverlayStatusUpdate].y = 0;
 
     // While TTF will usually not be initialized here, it is valid for that not to
     // be the case, since Session destruction is deferred and could overlap with
@@ -118,6 +122,22 @@ void OverlayManager::setOverlayRenderer(IOverlayRenderer* renderer)
     m_Renderer = renderer;
 }
 
+void OverlayManager::setOverlayPosition(OverlayType type, float x, float y)
+{
+    m_Overlays[type].x = x;
+    m_Overlays[type].y = y;
+}
+
+float OverlayManager::getOverlayX(OverlayType type) const
+{
+    return m_Overlays[type].x;
+}
+
+float OverlayManager::getOverlayY(OverlayType type) const
+{
+    return m_Overlays[type].y;
+}
+
 void OverlayManager::notifyOverlayUpdated(OverlayType type)
 {
     if (m_Renderer == nullptr) {
@@ -146,16 +166,45 @@ void OverlayManager::notifyOverlayUpdated(OverlayType type)
         }
     }
 
+    // Build the new surface: text rendered on a dark semi-transparent background
+    SDL_Surface* newSurface = nullptr;
+    if (m_Overlays[type].enabled) {
+        // Render text (white, alpha-blended)
+        SDL_Surface* textSurface = TTF_RenderText_Blended_Wrapped(
+            m_Overlays[type].font,
+            m_Overlays[type].text,
+            m_Overlays[type].color,
+            850);
+
+        if (textSurface != nullptr) {
+            // Create a padded background surface in ARGB8888
+            const int kPad = 6;
+            SDL_Surface* bgSurface = SDL_CreateRGBSurfaceWithFormat(
+                0,
+                textSurface->w + kPad * 2,
+                textSurface->h + kPad * 2,
+                32,
+                SDL_PIXELFORMAT_ARGB8888);
+
+            if (bgSurface != nullptr) {
+                // Dark grey, ~85% opaque (#202020 D9)
+                SDL_FillRect(bgSurface, nullptr, SDL_MapRGBA(bgSurface->format, 0x20, 0x20, 0x20, 0xD9));
+
+                // Blit text centred on the padding
+                SDL_Rect dstRect = { kPad, kPad, textSurface->w, textSurface->h };
+                SDL_BlitSurface(textSurface, nullptr, bgSurface, &dstRect);
+
+                newSurface = bgSurface;
+            }
+
+            SDL_FreeSurface(textSurface);
+        }
+    }
+
     // Exchange the old surface with the new one
     SDL_Surface* oldSurface = (SDL_Surface*)SDL_AtomicSetPtr(
         (void**)&m_Overlays[type].surface,
-        m_Overlays[type].enabled ?
-            // The _Wrapped variant is required for line breaks to work
-            TTF_RenderText_Blended_Wrapped(m_Overlays[type].font,
-                                           m_Overlays[type].text,
-                                           m_Overlays[type].color,
-                                           1024)
-            : nullptr);
+        newSurface);
 
     // Notify the renderer
     m_Renderer->notifyOverlayUpdated(type);

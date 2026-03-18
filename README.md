@@ -14,15 +14,39 @@ StreamLight is a fork of [Moonlight](https://github.com/moonlight-stream/moonlig
 
 StreamLight is currently available for **Windows only**.
 
-## ✨ Changes from upstream Moonlight
+## ✨ What's New in Version 1.1.0 - "The Overlay Update" (18/03/2026)
 
-- **StreamTweak integration** — right-clicking a paired host PC now exposes two additional actions:
-  - **Show host NIC speed** — queries [StreamTweak](https://github.com/FoggyBytes/StreamTweak) on the host via TCP and displays the current Ethernet adapter speed
-  - **Set host to 1 Gbps** — sends a command to [StreamTweak](https://github.com/FoggyBytes/StreamTweak) to switch the host NIC to 1 Gbps before connecting; a 10-second countdown is shown before the connection is available. If no connection is made within 30 seconds, the host reverts to its original speed automatically
-- **Visual theme** aligned with [StreamTweak](https://github.com/FoggyBytes/StreamTweak)'s color palette for a consistent look across both apps
-- **Window title** changed to `StreamLight (a Moonlight fork)`
-- **Discord link removed** — as a fork, the upstream Moonlight Discord is not the appropriate support channel
-- **Auto-update checker removed** — to prevent prompts to update to upstream Moonlight releases
+### 🚀 New Features
+* **Performance Overlay Redesign**: Restyled to match the *StreamTweak* aesthetic.
+    * Dark semi-transparent grey background with white text using the **RobotoMono** font.
+    * **Auto-Width**: The overlay box now fits content precisely (no more excess empty space).
+* **Toggle Hotkeys**: Toggle the performance overlay at any time during streaming:
+    * ⌨️ **Keyboard**: `Ctrl` + `Alt` + `O`
+    * 🎮 **Gamepad**: `Select` + `L1` + `R1` + `X`
+    * *Added a hotkey hint in Settings next to the toggle for quick reference.*
+* **Latency Monitoring**: The **"Host processing latency"** row is now always visible. It displays `N/A` if the host does not report a value, ensuring a consistent layout.
+
+### 🔧 General Changes
+* **Codebase Optimization**: Removed all non-English localizations (translation files, Language enum, and selector). The app is now **English-only**, resulting in a lighter and faster-loading binary. 
+    * *Note: Localization support may be reintroduced in the future once the planned feature set reaches full stability.*
+
+## 🛠️ Differences from Upstream Moonlight
+
+This version of **StreamLight** includes specific integrations not found in the original Moonlight:
+
+### 🔗 StreamTweak Integration
+Right-clicking a paired host PC now exposes two additional actions:
+* **Show host NIC speed**: Queries [StreamTweak](https://github.com/FoggyBytes/StreamTweak) on the host via TCP to display the current Ethernet adapter speed.
+* **Set host to 1 Gbps**: Commands the host NIC to switch to 1 Gbps before connecting.
+    * Includes a **10-second countdown** before the connection starts.
+    * **Safety Fallback**: If no connection is made within 30 seconds, the host reverts to its original speed automatically.
+
+### 🎨 Visual & Identity
+* **Branding**: Window title changed to `StreamLight (a Moonlight fork)`.
+* **Theme**: Color palette aligned with *StreamTweak* for a seamless user experience.
+* **Cleanup**:
+    * Removed Discord links (to avoid redirecting users to the upstream Moonlight support channels).
+    * Disabled the **Auto-update checker** to prevent accidental overwrites by upstream releases.
 
 ## 🖥️ Requirements
 

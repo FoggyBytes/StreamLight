@@ -441,37 +441,6 @@ RESOURCES += \
     resources.qrc \
     qml.qrc
 
-TRANSLATIONS += \
-    languages/qml_zh_CN.ts \
-    languages/qml_de.ts \
-    languages/qml_fr.ts \
-    languages/qml_nb_NO.ts \
-    languages/qml_ru.ts \
-    languages/qml_es.ts \
-    languages/qml_ja.ts \
-    languages/qml_vi.ts \
-    languages/qml_th.ts \
-    languages/qml_ko.ts \
-    languages/qml_hu.ts \
-    languages/qml_nl.ts \
-    languages/qml_sv.ts \
-    languages/qml_tr.ts \
-    languages/qml_uk.ts \
-    languages/qml_zh_TW.ts \
-    languages/qml_el.ts \
-    languages/qml_hi.ts \
-    languages/qml_it.ts \
-    languages/qml_pt.ts \
-    languages/qml_pt_BR.ts \
-    languages/qml_pl.ts \
-    languages/qml_cs.ts \
-    languages/qml_he.ts \
-    languages/qml_ckb.ts \
-    languages/qml_lt.ts \
-    languages/qml_et.ts \
-    languages/qml_bg.ts \
-    languages/qml_eo.ts \
-    languages/qml_ta.ts
 
 # Additional import path used to resolve QML modules in Qt Creator's code model
 QML_IMPORT_PATH =

@@ -796,9 +796,6 @@ int main(int argc, char *argv[])
                 "Running with SDL %d.%d.%d",
                 runtimeVersion.major, runtimeVersion.minor, runtimeVersion.patch);
 
-    // Apply the initial translation based on user preference
-    StreamingPreferences::get()->retranslate();
-
     // Trickily declare the translation for dialog buttons
     QCoreApplication::translate("QPlatformTheme", "&Yes");
     QCoreApplication::translate("QPlatformTheme", "&No");

@@ -4,6 +4,21 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+Version 1.1.0 - The "Overlay Update" (18/03/2026)
+------------------------------------------
+
+✨ NEW FEATURES:
+• Performance overlay restyled to match StreamTweak's aesthetic: dark semi-transparent grey background, white text, RobotoMono font
+• Ctrl+Alt+O hotkey to toggle the performance overlay at any time during streaming (gamepad: Select+L1+R1+X)
+• Hotkey hint shown in Settings next to the performance overlay toggle
+• "Host processing latency" row now always visible in the overlay — shows N/A when the host does not report the value
+
+🔧 CHANGES:
+• Removed all non-English localizations: translation files, Language enum, language selector in Settings — the app is English-only; codebase is lighter
+• Overlay box width calibrated to fit content precisely (no excess empty space on the right)
+
+------------------------------------------
+
 Version 1.0.0 - The "First Light Update" (13/03/2026)
 ------------------------------------------
 Initial release based on Moonlight 6.1.0.

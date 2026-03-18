@@ -60,46 +60,6 @@ public:
     };
     Q_ENUM(UIDisplayMode)
 
-    // New entries must go at the end of the enum
-    // to avoid renumbering existing entries (which
-    // would affect existing user preferences).
-    enum Language
-    {
-        LANG_AUTO,
-        LANG_EN,
-        LANG_FR,
-        LANG_ZH_CN,
-        LANG_DE,
-        LANG_NB_NO,
-        LANG_RU,
-        LANG_ES,
-        LANG_JA,
-        LANG_VI,
-        LANG_TH,
-        LANG_KO,
-        LANG_HU,
-        LANG_NL,
-        LANG_SV,
-        LANG_TR,
-        LANG_UK,
-        LANG_ZH_TW,
-        LANG_PT,
-        LANG_PT_BR,
-        LANG_EL,
-        LANG_IT,
-        LANG_HI,
-        LANG_PL,
-        LANG_CS,
-        LANG_HE,
-        LANG_CKB,
-        LANG_LT,
-        LANG_ET,
-        LANG_BG,
-        LANG_EO,
-        LANG_TA,
-    };
-    Q_ENUM(Language);
-
     enum CaptureSysKeysMode
     {
         CSK_OFF,
@@ -144,10 +104,6 @@ public:
     Q_PROPERTY(bool swapFaceButtons MEMBER swapFaceButtons NOTIFY swapFaceButtonsChanged)
     Q_PROPERTY(bool keepAwake MEMBER keepAwake NOTIFY keepAwakeChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
-    Q_PROPERTY(Language language MEMBER language NOTIFY languageChanged);
-
-    Q_INVOKABLE bool retranslate();
-
     // Directly accessible members for preferences
     int width;
     int height;
@@ -185,7 +141,6 @@ public:
     WindowMode windowMode;
     WindowMode recommendedFullScreenMode;
     UIDisplayMode uiDisplayMode;
-    Language language;
     CaptureSysKeysMode captureSysKeysMode;
 
 signals:
@@ -223,12 +178,8 @@ signals:
     void swapFaceButtonsChanged();
     void captureSysKeysModeChanged();
     void keepAwakeChanged();
-    void languageChanged();
-
 private:
     explicit StreamingPreferences(QQmlEngine *qmlEngine);
-
-    QString getSuffixFromLanguage(Language lang);
 
     QQmlEngine* m_QmlEngine;
 };

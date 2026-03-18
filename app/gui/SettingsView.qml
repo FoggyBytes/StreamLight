@@ -12,8 +12,6 @@ Flickable {
     id: settingsPage
     objectName: qsTr("Settings")
 
-    signal languageChanged()
-
     boundsBehavior: Flickable.OvershootBounds
 
     contentWidth: settingsColumn1.width > settingsColumn2.width ? settingsColumn1.width : settingsColumn2.width
@@ -633,7 +631,6 @@ Flickable {
                         // ignore setting the index at first, and actually set it when the component is loaded
                         Component.onCompleted: {
                             reinitialize()
-                            languageChanged.connect(reinitialize)
                         }
 
                         model: ListModel {
@@ -708,8 +705,6 @@ Flickable {
                         }
 
                         Component.onCompleted: {
-                            // Refresh the text after translations change
-                            languageChanged.connect(valueChanged)
                         }
                     }
 
@@ -794,7 +789,6 @@ Flickable {
 
                     Component.onCompleted: {
                         reinitialize()
-                        languageChanged.connect(reinitialize)
                     }
 
                     id: windowModeComboBox
@@ -992,184 +986,6 @@ Flickable {
             Column {
                 anchors.fill: parent
                 spacing: 5
-
-                Label {
-                    width: parent.width
-                    id: languageTitle
-                    text: qsTr("Language")
-                    font.pointSize: 12
-                    wrapMode: Text.Wrap
-                }
-
-                AutoResizingComboBox {
-                    // ignore setting the index at first, and actually set it when the component is loaded
-                    Component.onCompleted: {
-                        var saved_language = StreamingPreferences.language
-                        currentIndex = 0
-                        for (var i = 0; i < languageListModel.count; i++) {
-                            var el_language = languageListModel.get(i).val;
-                            if (saved_language === el_language) {
-                                currentIndex = i
-                                break
-                            }
-                        }
-
-                        activated(currentIndex)
-                    }
-
-                    id: languageComboBox
-                    textRole: "text"
-                    model: ListModel {
-                        id: languageListModel
-                        ListElement {
-                            text: qsTr("Automatic")
-                            val: StreamingPreferences.LANG_AUTO
-                        }
-                        ListElement {
-                            text: "Deutsch" // German
-                            val: StreamingPreferences.LANG_DE
-                        }
-                        ListElement {
-                            text: "English"
-                            val: StreamingPreferences.LANG_EN
-                        }
-                        ListElement {
-                            text: "Français" // French
-                            val: StreamingPreferences.LANG_FR
-                        }
-                        ListElement {
-                            text: "简体中文" // Simplified Chinese
-                            val: StreamingPreferences.LANG_ZH_CN
-                        }
-                        ListElement {
-                            text: "Norwegian Bokmål"
-                            val: StreamingPreferences.LANG_NB_NO
-                        }
-                        ListElement {
-                            text: "русский" // Russian
-                            val: StreamingPreferences.LANG_RU
-                        }
-                        ListElement {
-                            text: "Español" // Spanish
-                            val: StreamingPreferences.LANG_ES
-                        }
-                        ListElement {
-                            text: "日本語" // Japanese
-                            val: StreamingPreferences.LANG_JA
-                        }
-                        ListElement {
-                            text: "Tiếng Việt" // Vietnamese
-                            val: StreamingPreferences.LANG_VI
-                        }
-                        ListElement {
-                            text: "ภาษาไทย" // Thai
-                            val: StreamingPreferences.LANG_TH
-                        }
-                        ListElement {
-                            text: "한국어" // Korean
-                            val: StreamingPreferences.LANG_KO
-                        }
-                        ListElement {
-                            text: "Magyar" // Hungarian
-                            val: StreamingPreferences.LANG_HU
-                        }
-                        ListElement {
-                            text: "Nederlands" // Dutch
-                            val: StreamingPreferences.LANG_NL
-                        }
-                        ListElement {
-                            text: "Svenska" // Swedish
-                            val: StreamingPreferences.LANG_SV
-                        }
-                        ListElement {
-                            text: "Türkçe" // Turkish
-                            val: StreamingPreferences.LANG_TR
-                        }
-                        /* ListElement {
-                            text: "Українська" // Ukrainian
-                            val: StreamingPreferences.LANG_UK
-                        } */
-                        ListElement {
-                            text: "繁體中文" // Traditional Chinese
-                            val: StreamingPreferences.LANG_ZH_TW
-                        }
-                        ListElement {
-                            text: "Português" // Portuguese
-                            val: StreamingPreferences.LANG_PT
-                        }
-                        /* ListElement {
-                            text: "Português do Brasil" // Brazilian Portuguese
-                            val: StreamingPreferences.LANG_PT_BR
-                        } */
-                        ListElement {
-                            text: "Ελληνικά" // Greek
-                            val: StreamingPreferences.LANG_EL
-                        }
-                        ListElement {
-                            text: "Italiano" // Italian
-                            val: StreamingPreferences.LANG_IT
-                        }
-                        /* ListElement {
-                            text: "हिन्दी, हिंदी" // Hindi
-                            val: StreamingPreferences.LANG_HI
-                        } */
-                        ListElement {
-                            text: "Język polski" // Polish
-                            val: StreamingPreferences.LANG_PL
-                        }
-                        ListElement {
-                            text: "Čeština" // Czech
-                            val: StreamingPreferences.LANG_CS
-                        }
-                        /* ListElement {
-                            text: "עִבְרִית" // Hebrew
-                            val: StreamingPreferences.LANG_HE
-                        } */
-                        /* ListElement {
-                            text: "کرمانجیی خواروو" // Central Kurdish
-                            val: StreamingPreferences.LANG_CKB
-                        } */
-                        /* ListElement {
-                            text: "Lietuvių kalba" // Lithuanian
-                            val: StreamingPreferences.LANG_LT
-                        } */
-                        /* ListElement {
-                            text: "Eesti" // Estonian
-                            val: StreamingPreferences.LANG_ET
-                        } */
-                        ListElement {
-                            text: "Български" // Bulgarian
-                            val: StreamingPreferences.LANG_BG
-                        }
-                        /* ListElement {
-                            text: "Esperanto"
-                            val: StreamingPreferences.LANG_EO
-                        } */
-                        ListElement {
-                            text: "தமிழ்" // Tamil
-                            val: StreamingPreferences.LANG_TA
-                        }
-                    }
-                    // ::onActivated must be used, as it only listens for when the index is changed by a human
-                    onActivated : {
-                        // Retranslating is expensive, so only do it if the language actually changed
-                        var new_language = languageListModel.get(currentIndex).val
-                        if (StreamingPreferences.language !== new_language) {
-                            StreamingPreferences.language = languageListModel.get(currentIndex).val
-                            if (!StreamingPreferences.retranslate()) {
-                                ToolTip.show(qsTr("You must restart Moonlight for this change to take effect"), 5000)
-                            }
-                            else {
-                                // Force the back operation to pop any AppView pages that exist.
-                                // The AppView stops working after retranslate() for some reason.
-                                window.clearOnBack = true
-
-                                // Signal other controls to adjust their text
-                                languageChanged()
-                            }
-                        }
-                    }
-                }
 
                 Label {
                     width: parent.width
@@ -1748,7 +1564,7 @@ Flickable {
                     ToolTip.timeout: 5000
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Display real-time stream performance information while streaming.") + "\n\n" +
-                                  qsTr("You can toggle it at any time while streaming using Ctrl+Alt+Shift+S or Select+L1+R1+X.") + "\n\n" +
+                                  qsTr("You can toggle it at any time while streaming using Ctrl+Alt+O or Select+L1+R1+X.") + "\n\n" +
                                   qsTr("The performance overlay is not supported on Steam Link or Raspberry Pi.")
                 }
             }

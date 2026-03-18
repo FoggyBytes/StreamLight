@@ -170,7 +170,7 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
         return;
     }
 
-    // Check for our special key combos
+    // Check for our special key combos (Ctrl+Alt+Shift+<key>)
     if ((event->state == SDL_PRESSED) &&
             (event->keysym.mod & KMOD_CTRL) &&
             (event->keysym.mod & KMOD_ALT) &&
@@ -199,6 +199,16 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
                 return;
             }
         }
+    }
+
+    // Additional combo: Ctrl+Alt+O (without Shift) toggles the stats overlay
+    if ((event->state == SDL_PRESSED) &&
+            (event->keysym.mod & KMOD_CTRL) &&
+            (event->keysym.mod & KMOD_ALT) &&
+            !(event->keysym.mod & KMOD_SHIFT) &&
+            (event->keysym.sym == SDLK_o || event->keysym.scancode == SDL_SCANCODE_O)) {
+        performSpecialKeyCombo(KeyComboToggleStatsOverlay);
+        return;
     }
 
     // Set modifier flags

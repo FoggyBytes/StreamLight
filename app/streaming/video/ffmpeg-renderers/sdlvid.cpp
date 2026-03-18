@@ -242,9 +242,9 @@ void SdlRenderer::renderOverlay(Overlay::OverlayType type)
                 m_OverlayRects[type].y = viewportRect.h - newSurface->h;
             }
             else if (type == Overlay::OverlayDebug) {
-                // Top left
-                m_OverlayRects[type].x = 0;
-                m_OverlayRects[type].y = 0;
+                // Position from OverlayManager (supports drag)
+                m_OverlayRects[type].x = (int)Session::get()->getOverlayManager().getOverlayX(type);
+                m_OverlayRects[type].y = (int)Session::get()->getOverlayManager().getOverlayY(type);
             }
 
             m_OverlayRects[type].w = newSurface->w;
@@ -259,8 +259,13 @@ void SdlRenderer::renderOverlay(Overlay::OverlayType type)
             }
         }
 
-        // If we have an overlay texture, render it too
+        // If we have an overlay texture, render it too.
+        // For the debug overlay, always sync the rect position (supports live drag).
         if (m_OverlayTextures[type] != nullptr) {
+            if (type == Overlay::OverlayDebug) {
+                m_OverlayRects[type].x = (int)Session::get()->getOverlayManager().getOverlayX(type);
+                m_OverlayRects[type].y = (int)Session::get()->getOverlayManager().getOverlayY(type);
+            }
             SDL_RenderCopy(m_Renderer, m_OverlayTextures[type], nullptr, &m_OverlayRects[type]);
         }
     }

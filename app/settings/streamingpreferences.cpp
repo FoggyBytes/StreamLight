@@ -2,9 +2,6 @@
 #include "utils.h"
 
 #include <QSettings>
-#include <QTranslator>
-#include <QCoreApplication>
-#include <QLocale>
 #include <QReadWriteLock>
 #include <QtMath>
 
@@ -50,8 +47,6 @@
 #define SER_SWAPFACEBUTTONS "swapfacebuttons"
 #define SER_CAPTURESYSKEYS "capturesyskeys"
 #define SER_KEEPAWAKE "keepawake"
-#define SER_LANGUAGE "language"
-
 #define CURRENT_DEFAULT_VER 2
 
 static StreamingPreferences* s_GlobalPrefs;
@@ -166,10 +161,6 @@ void StreamingPreferences::reload()
     uiDisplayMode = static_cast<UIDisplayMode>(settings.value(SER_UIDISPLAYMODE,
                                                static_cast<int>(settings.value(SER_STARTWINDOWED, true).toBool() ? UIDisplayMode::UI_WINDOWED
                                                                                                                  : UIDisplayMode::UI_MAXIMIZED)).toInt());
-    language = static_cast<Language>(settings.value(SER_LANGUAGE,
-                                                    static_cast<int>(Language::LANG_AUTO)).toInt());
-
-
     // Perform default settings updates as required based on last default version
     if (defaultVer < 1) {
 #ifdef Q_OS_DARWIN
@@ -189,130 +180,6 @@ void StreamingPreferences::reload()
     if (videoCodecConfig == VCC_FORCE_HEVC_HDR_DEPRECATED) {
         videoCodecConfig = VCC_AUTO;
         enableHdr = true;
-    }
-}
-
-bool StreamingPreferences::retranslate()
-{
-    static QTranslator* translator = nullptr;
-
-#if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)
-    if (m_QmlEngine != nullptr) {
-        // Dynamic retranslation is not supported until Qt 5.10
-        return false;
-    }
-#endif
-
-    QTranslator* newTranslator = new QTranslator();
-    QString languageSuffix = getSuffixFromLanguage(language);
-
-    // Remove the old translator, even if we can't load a new one.
-    // Otherwise we'll be stuck with the old translated values instead
-    // of defaulting to English.
-    if (translator != nullptr) {
-        QCoreApplication::removeTranslator(translator);
-        delete translator;
-        translator = nullptr;
-    }
-
-    if (newTranslator->load(QString(":/languages/qml_") + languageSuffix)) {
-        qInfo() << "Successfully loaded translation for" << languageSuffix;
-
-        translator = newTranslator;
-        QCoreApplication::installTranslator(translator);
-    }
-    else {
-        qInfo() << "No translation available for" << languageSuffix;
-        delete newTranslator;
-    }
-
-    if (m_QmlEngine != nullptr) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
-        // This is a dynamic retranslation from the settings page.
-        // We have to kick the QML engine into reloading our text.
-        m_QmlEngine->retranslate();
-#else
-        // Unreachable below Qt 5.10 due to the check above
-        Q_ASSERT(false);
-#endif
-    }
-    else {
-        // This is a translation from a non-QML context, which means
-        // it is probably app startup. There's nothing to refresh.
-    }
-
-    return true;
-}
-
-QString StreamingPreferences::getSuffixFromLanguage(StreamingPreferences::Language lang)
-{
-    switch (lang)
-    {
-    case LANG_DE:
-        return "de";
-    case LANG_EN:
-        return "en";
-    case LANG_FR:
-        return "fr";
-    case LANG_ZH_CN:
-        return "zh_CN";
-    case LANG_NB_NO:
-        return "nb_NO";
-    case LANG_RU:
-        return "ru";
-    case LANG_ES:
-        return "es";
-    case LANG_JA:
-        return "ja";
-    case LANG_VI:
-        return "vi";
-    case LANG_TH:
-        return "th";
-    case LANG_KO:
-        return "ko";
-    case LANG_HU:
-        return "hu";
-    case LANG_NL:
-        return "nl";
-    case LANG_SV:
-        return "sv";
-    case LANG_TR:
-        return "tr";
-    case LANG_UK:
-        return "uk";
-    case LANG_ZH_TW:
-        return "zh_TW";
-    case LANG_PT:
-        return "pt";
-    case LANG_PT_BR:
-        return "pt_BR";
-    case LANG_EL:
-        return "el";
-    case LANG_IT:
-        return "it";
-    case LANG_HI:
-        return "hi";
-    case LANG_PL:
-        return "pl";
-    case LANG_CS:
-        return "cs";
-    case LANG_HE:
-        return "he";
-    case LANG_CKB:
-        return "ckb";
-    case LANG_LT:
-        return "lt";
-    case LANG_ET:
-        return "et";
-    case LANG_BG:
-        return "bg";
-    case LANG_EO:
-        return "eo";
-    case LANG_TA:
-        return "ta";
-    case LANG_AUTO:
-    default:
-        return QLocale::system().name();
     }
 }
 
@@ -349,7 +216,6 @@ void StreamingPreferences::save()
     settings.setValue(SER_VIDEODEC, static_cast<int>(videoDecoderSelection));
     settings.setValue(SER_WINDOWMODE, static_cast<int>(windowMode));
     settings.setValue(SER_UIDISPLAYMODE, static_cast<int>(uiDisplayMode));
-    settings.setValue(SER_LANGUAGE, static_cast<int>(language));
     settings.setValue(SER_DEFAULTVER, CURRENT_DEFAULT_VER);
     settings.setValue(SER_SWAPMOUSEBUTTONS, swapMouseButtons);
     settings.setValue(SER_MUTEONFOCUSLOSS, muteOnFocusLoss);

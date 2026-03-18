@@ -1148,14 +1148,14 @@ bool D3D11VARenderer::createOverlayVertexBuffer(Overlay::OverlayType type, int w
     SDL_FRect renderRect = {};
 
     if (type == Overlay::OverlayStatusUpdate) {
-        // Bottom Left
+        // Bottom-left: in this coord system y=0 is the bottom edge
         renderRect.x = 0;
         renderRect.y = 0;
     }
     else if (type == Overlay::OverlayDebug) {
-        // Top left
+        // Top-left: y=0 is bottom, so shift up by the overlay height to reach the top edge
         renderRect.x = 0;
-        renderRect.y = m_DisplayHeight - height;
+        renderRect.y = (float)(m_DisplayHeight - height);
     }
 
     renderRect.w = width;
