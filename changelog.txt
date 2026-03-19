@@ -4,6 +4,16 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+Version 1.2.0 - The "Host Metrics Update" (20/03/2026)
+------------------------------------------
+
+✨ NEW FEATURES:
+• Host metrics in overlay: the performance overlay now includes a "Host Metrics (StreamTweak)" section showing real-time data from the host PC — GPU %, GPU encoder %, GPU temperature (°C), VRAM used / total (MB), CPU %, and network TX (Mbps); the section is automatically hidden when StreamTweak is not reachable
+• HostMetricsPoller: a background Qt component that polls StreamTweak on the host every second via the TCP bridge STATS command and keeps the latest metrics available for the overlay with no impact on streaming latency
+• Graceful degradation: individual metrics that StreamTweak cannot determine (e.g. GPU temperature and total VRAM on non-NVIDIA systems) are shown as N/A; if StreamTweak is not running the entire host metrics section is omitted from the overlay
+
+⚠️ REQUIRES: StreamTweak 4.4.0 or later on the host PC for host metrics to appear in the overlay.
+
 Version 1.1.0 - The "Overlay Update" (18/03/2026)
 ------------------------------------------
 

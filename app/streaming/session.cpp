@@ -569,6 +569,12 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_AudioSampleCount(0),
       m_DropAudioEndTime(0)
 {
+    // Start polling StreamTweak for host metrics immediately.
+    // The poller is owned by this Session (parent = this) so it is automatically
+    // destroyed when the Session is destroyed. Polling fails gracefully if
+    // StreamTweak is not reachable — all metrics stay at -1.
+    m_HostMetricsPoller = new HostMetricsPoller(computer->activeAddress.address(), this);
+    m_HostMetricsPoller->start();
 }
 
 Session::~Session()

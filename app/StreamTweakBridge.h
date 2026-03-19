@@ -18,9 +18,13 @@
  *              edge cases where the log event is delayed or missed.
  *   STATUS   — queries the current NIC speed from StreamTweak.
  *              StreamTweak replies with the link speed in Mbps (e.g. "1000").
+ *   STATS    — requests real-time host metrics (GPU %, encoder %, temperature,
+ *              VRAM used, CPU %, network TX). StreamTweak replies with a JSON
+ *              object, e.g. {"gpu":45,"gpu_enc":80,"gpu_temp":72,"vram_used":4200,
+ *              "cpu":30,"net_tx":18}, or "STATS_UNAVAILABLE".
  *
- * PREPARE/RESTORE are fire-and-forget. STATUS emits statusReceived() with the
- * response string, or an empty string on error/timeout.
+ * PREPARE/RESTORE are fire-and-forget. STATUS emits statusReceived() and STATS
+ * emits statsReceived() with the response string, or an empty string on error.
  */
 class StreamTweakBridge : public QObject
 {
@@ -39,10 +43,18 @@ public:
      */
     void requestStatus(const QString& hostAddress);
 
+    /**
+     * Asynchronously requests real-time host metrics from StreamTweak.
+     * Emits statsReceived(QString) with a JSON payload on success,
+     * or statsReceived("") on connection error.
+     */
+    void requestStats(const QString& hostAddress);
+
     static constexpr quint16 BridgePort = 47998;
 
 signals:
     void statusReceived(const QString& status);
+    void statsReceived(const QString& statsJson);
 
 private:
     void sendCommand(const QString& hostAddress, const QString& command);

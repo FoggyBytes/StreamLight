@@ -69,3 +69,31 @@ void StreamTweakBridge::requestStatus(const QString& hostAddress)
 
     socket->connectToHost(hostAddress, BridgePort);
 }
+
+void StreamTweakBridge::requestStats(const QString& hostAddress)
+{
+    QTcpSocket* socket = new QTcpSocket();
+
+    QObject::connect(socket, &QTcpSocket::disconnected,
+                     socket, &QObject::deleteLater);
+
+    QObject::connect(socket, &QAbstractSocket::errorOccurred,
+                     [this, socket](QAbstractSocket::SocketError) {
+        emit statsReceived(QString());
+        socket->deleteLater();
+    });
+
+    QObject::connect(socket, &QTcpSocket::connected, [socket]() {
+        QTextStream stream(socket);
+        stream << "STATS\n";
+        stream.flush();
+    });
+
+    QObject::connect(socket, &QTcpSocket::readyRead, [this, socket]() {
+        QString response = QString::fromUtf8(socket->readAll()).trimmed();
+        emit statsReceived(response);
+        socket->disconnectFromHost();
+    });
+
+    socket->connectToHost(hostAddress, BridgePort);
+}

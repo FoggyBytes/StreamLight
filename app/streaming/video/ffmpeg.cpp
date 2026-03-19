@@ -984,6 +984,49 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
 
         offset += ret;
     }
+
+    // Append real-time host metrics from StreamTweak (via STATS TCP command).
+    // Only shown when at least one metric is available; hides itself entirely
+    // when StreamTweak is not running so the overlay doesn't show a ghost section.
+    Session* session = Session::get();
+    if (session != nullptr) {
+        HostMetrics hm = session->getHostMetrics();
+        bool anyAvailable = (hm.gpu >= 0 || hm.gpuEnc >= 0 || hm.gpuTemp >= 0 ||
+                             hm.vramUsed >= 0 || hm.cpu >= 0 || hm.netTx >= 0);
+
+        if (anyAvailable) {
+            // Format each field: numeric value when available, "N/A" otherwise.
+            char gpuStr[8], encStr[8], tempStr[8], cpuStr[8], netStr[8];
+#define FMT(buf, v) \
+    if ((v) >= 0) snprintf(buf, sizeof(buf), "%d", (v)); \
+    else          snprintf(buf, sizeof(buf), "N/A")
+
+            FMT(gpuStr,  hm.gpu);
+            FMT(encStr,  hm.gpuEnc);
+            FMT(tempStr, hm.gpuTemp);
+            FMT(cpuStr,  hm.cpu);
+            FMT(netStr,  hm.netTx);
+#undef FMT
+
+            // VRAM: "used / total MB" when total is known, "used MB" otherwise, "N/A" if unavailable.
+            char vramStr[24];
+            if (hm.vramUsed >= 0 && hm.vramTotal >= 0)
+                snprintf(vramStr, sizeof(vramStr), "%d / %d MB", hm.vramUsed, hm.vramTotal);
+            else if (hm.vramUsed >= 0)
+                snprintf(vramStr, sizeof(vramStr), "%d MB", hm.vramUsed);
+            else
+                snprintf(vramStr, sizeof(vramStr), "N/A");
+
+            ret = snprintf(&output[offset], length - offset,
+                           "--- Host Metrics (StreamTweak) ---\n"
+                           "GPU: %s%% | Enc: %s%% | Temp: %sC | VRAM: %s\n"
+                           "CPU: %s%% | Net TX: %s Mbps\n",
+                           gpuStr, encStr, tempStr, vramStr, cpuStr, netStr);
+
+            if (ret > 0 && ret < length - offset)
+                offset += ret;
+        }
+    }
 }
 
 void FFmpegVideoDecoder::logVideoStats(VIDEO_STATS& stats, const char* title)

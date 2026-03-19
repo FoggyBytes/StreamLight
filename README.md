@@ -14,21 +14,19 @@ StreamLight is a fork of [Moonlight](https://github.com/moonlight-stream/moonlig
 
 StreamLight is currently available for **Windows only**.
 
-## ✨ What's New in Version 1.1.0 - "The Overlay Update" (18/03/2026)
+## ✨ What's New in Version 1.2.0 - "The Host Metrics Update" (20/03/2026)
 
 ### 🚀 New Features
-* **Performance Overlay Redesign**: Restyled to match the *StreamTweak* aesthetic.
-    * Dark semi-transparent grey background with white text using the **RobotoMono** font.
-    * **Auto-Width**: The overlay box now fits content precisely (no more excess empty space).
-* **Toggle Hotkeys**: Toggle the performance overlay at any time during streaming:
-    * ⌨️ **Keyboard**: `Ctrl` + `Alt` + `O`
-    * 🎮 **Gamepad**: `Select` + `L1` + `R1` + `X`
-    * *Added a hotkey hint in Settings next to the toggle for quick reference.*
-* **Latency Monitoring**: The **"Host processing latency"** row is now always visible. It displays `N/A` if the host does not report a value, ensuring a consistent layout.
+* **Host metrics in overlay**: the performance overlay now includes a **"Host Metrics (StreamTweak)"** section with real-time data from the host PC:
+    * **GPU** usage % — cross-vendor (NVIDIA, AMD, Intel Arc) via PDH PerformanceCounters
+    * **GPU Enc** (encoder) usage %
+    * **GPU Temp** (°C) — NVIDIA only via NVML; shows N/A on non-NVIDIA systems
+    * **VRAM** used / total (MB) — total shown only on NVIDIA; AMD/Intel show used only
+    * **CPU** usage %
+    * **Net TX** (Mbps) — host outbound network throughput
+* **Graceful degradation**: the host metrics section is entirely hidden when StreamTweak is not reachable; individual metrics that are unavailable show N/A rather than a placeholder value
 
-### 🔧 General Changes
-* **Codebase Optimization**: Removed all non-English localizations (translation files, Language enum, and selector). The app is now **English-only**, resulting in a lighter and faster-loading binary. 
-    * *Note: Localization support may be reintroduced in the future once the planned feature set reaches full stability.*
+> StreamTweak 4.4.0 or later is required on the host PC for host metrics to appear in the overlay.
 
 ## 🛠️ Differences from Upstream Moonlight
 
@@ -50,7 +48,7 @@ Right-clicking a paired host PC now exposes two additional actions:
 
 ## 🖥️ Requirements
 
-- [StreamTweak](https://github.com/FoggyBytes/StreamTweak) must be installed and running on the **host PC**
+- [StreamTweak](https://github.com/FoggyBytes/StreamTweak) must be installed and running on the **host PC** (4.4.0+ required for host metrics in the overlay)
 - Windows 10 or later on the **client PC**
 - A Sunshine or Apollo-compatible host
 
