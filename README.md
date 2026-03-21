@@ -14,19 +14,20 @@ StreamLight is a fork of [Moonlight](https://github.com/moonlight-stream/moonlig
 
 StreamLight is currently available for **Windows only**.
 
-## ✨ What's New in Version 1.2.0 - "The Host Metrics Update" (20/03/2026)
+## ✨ What's New in Version 2.0.0 - "The Library Update" (21/03/2026)
 
 ### 🚀 New Features
-* **Host metrics in overlay**: the performance overlay now includes a **"Host Metrics (StreamTweak)"** section with real-time data from the host PC:
-    * **GPU** usage % — cross-vendor (NVIDIA, AMD, Intel Arc) via PDH PerformanceCounters
-    * **GPU Enc** (encoder) usage %
-    * **GPU Temp** (°C) — NVIDIA only via NVML; shows N/A on non-NVIDIA systems
-    * **VRAM** used / total (MB) — total shown only on NVIDIA; AMD/Intel show used only
-    * **CPU** usage %
-    * **Net TX** (Mbps) — host outbound network throughput
-* **Graceful degradation**: the host metrics section is entirely hidden when StreamTweak is not reachable; individual metrics that are unavailable show N/A rather than a placeholder value
+* **New FoggyBytes icon** — a new app icon visually unifies StreamLight and StreamTweak across the FoggyBytes suite
+* **Store badges on game covers**: each game synced by StreamTweak's Game Library displays a small badge in the bottom-right corner of its cover art, showing the store it belongs to — Steam, Epic Games, GOG, Ubisoft Connect, Xbox, or Battle.net; fetched live from the host via the new APPSTORES command on the TCP bridge
+* **Battle.net badge**: a dedicated Battle.net badge (white icon + label on semi-transparent dark background) joins the existing badge set
 
-> StreamTweak 4.4.0 or later is required on the host PC for host metrics to appear in the overlay.
+### 🎨 UI Redesign
+* **Unified visual identity**: the full StreamLight UI has been revised to match StreamTweak's design language — color palette, spacing, and component styling now align across both apps for a seamless paired-app experience
+
+### 🔧 Improvements
+* **App list sort order**: Desktop always appears first, Steam Big Picture second, then all other apps in alphabetical order
+
+> StreamTweak 5.0.0 or later is required on the host PC for store badges to appear.
 
 ## 🛠️ Differences from Upstream Moonlight
 
@@ -39,16 +40,26 @@ Right-clicking a paired host PC now exposes two additional actions:
     * Includes a **10-second countdown** before the connection starts.
     * **Safety Fallback**: If no connection is made within 30 seconds, the host reverts to its original speed automatically.
 
+### 🎮 Game Library — Store Badges
+Each game synced from StreamTweak's Game Library displays a store badge (icon + label) in the bottom-right corner of its cover art:
+* Badges are fetched from the host via the **APPSTORES** TCP command on connection
+* Supported stores: **Steam**, **Epic Games**, **GOG**, **Ubisoft Connect**, **Xbox**, **Battle.net**
+* Requires StreamTweak 5.0.0 or later on the host PC
+
 ### 🎨 Visual & Identity
+* **New FoggyBytes icon**: app icon updated to match StreamTweak's new unified FoggyBytes identity.
 * **Branding**: Window title changed to `StreamLight (a Moonlight fork)`.
-* **Theme**: Color palette aligned with *StreamTweak* for a seamless user experience.
+* **Theme**: Color palette and UI fully aligned with *StreamTweak* for a seamless paired-app experience.
 * **Cleanup**:
     * Removed Discord links (to avoid redirecting users to the upstream Moonlight support channels).
     * Disabled the **Auto-update checker** to prevent accidental overwrites by upstream releases.
 
+### 🔧 Improvements
+* **App list sort order**: Desktop always first, Steam Big Picture second, then all other apps alphabetically.
+
 ## 🖥️ Requirements
 
-- [StreamTweak](https://github.com/FoggyBytes/StreamTweak) must be installed and running on the **host PC** (4.4.0+ required for host metrics in the overlay)
+- [StreamTweak](https://github.com/FoggyBytes/StreamTweak) must be installed and running on the **host PC** (5.0.0+ required for store badges; 4.4.0+ for host metrics in the overlay)
 - Windows 10 or later on the **client PC**
 - A Sunshine or Apollo-compatible host
 

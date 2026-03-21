@@ -18,6 +18,12 @@
         <file>res/baseline-error_outline-24px.svg</file>
         <file>res/baseline-check_circle_outline-24px.svg</file>
         <file>res/discord.svg</file>
+        <file>res/store_steam.svg</file>
+        <file>res/store_epic.svg</file>
+        <file>res/store_gog.svg</file>
+        <file>res/store_ubisoft.svg</file>
+        <file>res/store_xbox.svg</file>
+        <file>res/store_battlenet.svg</file>
     </qresource>
     <qresource prefix="/data">
         <file alias="gamecontrollerdb.txt">SDL_GameControllerDB/gamecontrollerdb.txt</file>

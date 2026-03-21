@@ -4,6 +4,22 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+Version 2.0.0 - The "Library Update" (21/03/2026)
+------------------------------------------
+
+✨ NEW FEATURES:
+• New FoggyBytes icon: StreamLight now sports a new icon that visually unifies the FoggyBytes suite — the same icon is shared with StreamTweak for a consistent identity across both apps
+• Store badges on game covers: each game synced from StreamTweak displays a small badge in the bottom-right corner of its cover art, showing the store it belongs to (Steam, Epic Games, GOG, Ubisoft Connect, Xbox, Battle.net) — fetched live from the host via the new APPSTORES TCP command
+• Battle.net badge: a dedicated Battle.net badge (white icon + label on semi-transparent dark background) joins the existing store badge set
+
+🎨 UI REDESIGN:
+• Unified visual identity: the full StreamLight UI has been revised to align with StreamTweak's design language — color palette, spacing, and component styling now match across both apps for a seamless paired-app experience
+
+🔧 IMPROVEMENTS:
+• App list sort order: Desktop always appears first, Steam Big Picture second, then all other apps in alphabetical order regardless of the order returned by the host
+
+⚠️ REQUIRES: StreamTweak 5.0.0 or later on the host PC for store badges to appear.
+
 Version 1.2.0 - The "Host Metrics Update" (20/03/2026)
 ------------------------------------------
 

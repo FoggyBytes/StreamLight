@@ -13,6 +13,10 @@ CenteredGridView {
     property bool showHiddenGames
     property bool showGames
 
+    // StreamTweak store badge support
+    property var hostComputerModel: null
+    property var storeMap: ({})
+
     id: appGrid
     focus: true
     activeFocusOnTab: true
@@ -33,6 +37,22 @@ CenteredGridView {
         currentIndex = -1
     }
 
+    function storeIconSource(store) {
+        if (store === "Steam")          return "qrc:/res/store_steam.svg"
+        if (store === "Epic Games")     return "qrc:/res/store_epic.svg"
+        if (store === "GOG")            return "qrc:/res/store_gog.svg"
+        if (store === "Ubisoft Connect") return "qrc:/res/store_ubisoft.svg"
+        if (store === "Xbox")           return "qrc:/res/store_xbox.svg"
+        if (store === "Battle.net")     return "qrc:/res/store_battlenet.svg"
+        return ""
+    }
+
+    function handleAppStoresReceived(idx, stores) {
+        if (idx === computerIndex) {
+            storeMap = stores
+        }
+    }
+
     StackView.onActivated: {
         appModel.computerLost.connect(computerLost)
         activated = true
@@ -40,6 +60,13 @@ CenteredGridView {
         // Highlight the first item if a gamepad is connected
         if (currentIndex === -1 && SdlGamepadKeyNavigation.getConnectedGamepads() > 0) {
             currentIndex = 0
+        }
+
+        // Request store badges from StreamTweak
+        if (hostComputerModel) {
+            storeMap = hostComputerModel.getCachedAppStores(computerIndex)
+            hostComputerModel.appStoresReceived.connect(handleAppStoresReceived)
+            hostComputerModel.requestAppStores(computerIndex)
         }
 
         if (!showGames && !showHiddenGames) {
@@ -59,6 +86,10 @@ CenteredGridView {
     StackView.onDeactivating: {
         appModel.computerLost.disconnect(computerLost)
         activated = false
+
+        if (hostComputerModel) {
+            hostComputerModel.appStoresReceived.disconnect(handleAppStoresReceived)
+        }
     }
 
     function createModel()
@@ -114,6 +145,44 @@ CenteredGridView {
             ToolTip.delay: 1000
             ToolTip.timeout: 5000
             ToolTip.visible: (parent.hovered || parent.highlighted) && (!appNameText || appNameText.truncated)
+        }
+
+        // Store badge — bottom-right of cover art
+        Rectangle {
+            id: storeBadge
+
+            property string store: appGrid.storeMap[model.name] || ""
+
+            visible: store !== ""
+            anchors.right: appIcon.right
+            anchors.bottom: appIcon.bottom
+            anchors.rightMargin: 5
+            anchors.bottomMargin: 5
+            color: "#CC000000"
+            radius: 3
+            width: storeBadgeRow.implicitWidth + 8
+            height: storeBadgeRow.implicitHeight + 5
+
+            Row {
+                id: storeBadgeRow
+                anchors.centerIn: parent
+                spacing: 4
+
+                Image {
+                    source: appGrid.storeIconSource(storeBadge.store)
+                    width: 12
+                    height: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    fillMode: Image.PreserveAspectFit
+                }
+
+                Label {
+                    text: storeBadge.store
+                    font.pointSize: 7
+                    color: "white"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
         }
 
         Loader {

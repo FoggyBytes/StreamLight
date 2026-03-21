@@ -818,6 +818,15 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
     // Start with an empty string
     output[offset] = 0;
 
+    // Client metrics header — mirrors "--- Host Metrics (StreamTweak) ---" at the bottom
+    ret = snprintf(&output[offset], length - offset,
+                   "--- Client Metrics (StreamLight) ---\n");
+    if (ret < 0 || ret >= length - offset) {
+        SDL_assert(false);
+        return;
+    }
+    offset += ret;
+
     switch (m_VideoFormat)
     {
     case VIDEO_FORMAT_H264:
@@ -1032,7 +1041,7 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
 void FFmpegVideoDecoder::logVideoStats(VIDEO_STATS& stats, const char* title)
 {
     if (stats.renderedFps > 0 || stats.renderedFrames != 0) {
-        char videoStatsStr[512];
+        char videoStatsStr[768];
         stringifyVideoStats(stats, videoStatsStr, sizeof(videoStatsStr));
 
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,

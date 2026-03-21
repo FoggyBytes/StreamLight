@@ -1,5 +1,7 @@
 #include "computermodel.h"
 
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QThreadPool>
 
 ComputerModel::ComputerModel(QObject* object)
@@ -281,6 +283,49 @@ void ComputerModel::requestStreamTweakStatus(int computerIndex)
         });
 
     m_streamTweakBridge.requestStatus(address);
+}
+
+void ComputerModel::requestAppStores(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+
+    QString address = computer->activeAddress.address();
+    if (address.isEmpty()) {
+        emit appStoresReceived(computerIndex, QVariantMap());
+        return;
+    }
+
+    QMetaObject::Connection* conn = new QMetaObject::Connection();
+    *conn = connect(&m_streamTweakBridge, &StreamTweakBridge::appStoresReceived,
+        [this, computerIndex, conn](const QString& json) {
+            disconnect(*conn);
+            delete conn;
+
+            QVariantMap stores;
+            if (!json.isEmpty()) {
+                QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+                if (doc.isObject()) {
+                    QJsonObject obj = doc.object();
+                    for (auto it = obj.begin(); it != obj.end(); ++it) {
+                        stores[it.key()] = it.value().toString();
+                    }
+                }
+            }
+
+            m_appStoresCache[computerIndex] = stores;
+            emit appStoresReceived(computerIndex, stores);
+        });
+
+    m_streamTweakBridge.requestAppStores(address);
+}
+
+QVariantMap ComputerModel::getCachedAppStores(int computerIndex) const
+{
+    return m_appStoresCache.value(computerIndex, QVariantMap());
 }
 
 #include "computermodel.moc"

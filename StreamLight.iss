@@ -1,13 +1,13 @@
 ; =====================================================
-; StreamLight v1.2.0 - Installer
+; StreamLight v2.0.0 - Installer
 ; A Moonlight fork with StreamTweak integration
 ; =====================================================
 #define AppName "StreamLight"
-#define AppVersion "1.2.0"
+#define AppVersion "2.0.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
-#define SourceDir "build\build-x64-release\app\release"
+#define SourceDir "build\deploy-x64-release"
 
 [Setup]
 AppId={{B7A2C3D4-E5F6-7890-ABCD-EF1234567890}
@@ -48,7 +48,6 @@ WelcomeLabel2=
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "libs\windows\lib\x64\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "installer\resources\streamlight.bmp"; Flags: dontcopy
 Source: "changelog.txt"; DestDir: "{app}"; Flags: ignoreversion

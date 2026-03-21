@@ -50,11 +50,21 @@ public:
      */
     void requestStats(const QString& hostAddress);
 
+    /**
+     * Asynchronously requests the store map for all managed apps from StreamTweak.
+     * Emits appStoresReceived(QString) with a JSON object mapping app names to
+     * store names, e.g. {"Cyberpunk 2077":"Steam","Fortnite":"Epic Games"}.
+     * Emits appStoresReceived("") on connection error or if StreamTweak is
+     * unreachable.
+     */
+    void requestAppStores(const QString& hostAddress);
+
     static constexpr quint16 BridgePort = 47998;
 
 signals:
     void statusReceived(const QString& status);
     void statsReceived(const QString& statsJson);
+    void appStoresReceived(const QString& storesJson);
 
 private:
     void sendCommand(const QString& hostAddress, const QString& command);

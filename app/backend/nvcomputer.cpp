@@ -122,8 +122,16 @@ bool NvComputer::isEqualSerialized(const NvComputer &that) const
 
 void NvComputer::sortAppList()
 {
-    std::stable_sort(appList.begin(), appList.end(), [](const NvApp& app1, const NvApp& app2) {
-       return app1.name.toLower() < app2.name.toLower();
+    auto appOrder = [](const NvApp& app) -> int {
+        if (app.name.compare("Desktop", Qt::CaseInsensitive) == 0) return 0;
+        if (app.name.compare("Steam Big Picture", Qt::CaseInsensitive) == 0) return 1;
+        return 2;
+    };
+
+    std::stable_sort(appList.begin(), appList.end(), [&appOrder](const NvApp& a, const NvApp& b) {
+        int oa = appOrder(a), ob = appOrder(b);
+        if (oa != ob) return oa < ob;
+        return a.name.toLower() < b.name.toLower();
     });
 }
 

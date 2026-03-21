@@ -107,11 +107,31 @@ CenteredGridView {
     model: computerModel
 
     delegate: NavigableItemDelegate {
+        id: pcDelegate
         width: 300; height: 320;
         grid: pcGrid
 
         property alias pcContextMenu : pcContextMenuLoader.item
         property string streamTweakStatus: ""
+
+        background: Rectangle {
+            color: pcDelegate.hovered ? "#2E2E2E" : "#252525"
+            radius: 10
+            border.color: model.online && model.paired ? "#BE5438" : "#383838"
+            border.width: 1
+        }
+
+        // Online / offline status dot — consistent with StreamTweak's #4CAF50
+        Rectangle {
+            width: 10; height: 10
+            radius: 5
+            color: model.online ? "#4CAF50" : "#808080"
+            visible: !model.statusUnknown
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.rightMargin: 10
+            anchors.bottomMargin: 10
+        }
 
         function formatStreamTweakStatus(raw) {
             if (raw === "" || raw === null) return qsTr("N/A")
@@ -196,7 +216,7 @@ CenteredGridView {
                     text: qsTr("View All Apps")
                     onTriggered: {
                         var component = Qt.createComponent("AppView.qml")
-                        var appView = component.createObject(stackView, {"computerIndex": index, "objectName": model.name, "showHiddenGames": true})
+                        var appView = component.createObject(stackView, {"computerIndex": index, "objectName": model.name, "showHiddenGames": true, "hostComputerModel": computerModel})
                         stackView.push(appView)
                     }
                     visible: model.online && model.paired
@@ -266,7 +286,7 @@ CenteredGridView {
                 else if (model.paired) {
                     // go to game view
                     var component = Qt.createComponent("AppView.qml")
-                    var appView = component.createObject(stackView, {"computerIndex": index, "objectName": model.name})
+                    var appView = component.createObject(stackView, {"computerIndex": index, "objectName": model.name, "hostComputerModel": computerModel})
                     stackView.push(appView)
                 }
                 else {

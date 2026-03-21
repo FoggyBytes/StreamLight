@@ -3,6 +3,8 @@
 #include "../StreamTweakBridge.h"
 
 #include <QAbstractListModel>
+#include <QHash>
+#include <QVariantMap>
 
 class ComputerModel : public QAbstractListModel
 {
@@ -50,10 +52,25 @@ public:
 
     Q_INVOKABLE void requestStreamTweakStatus(int computerIndex);
 
+    /**
+     * Requests the store map for all StreamTweak-managed apps from the host.
+     * Emits appStoresReceived(computerIndex, storesMap) when the response arrives.
+     * If StreamTweak is unreachable the map will be empty.
+     * Returns the cached map immediately if already fetched for this host.
+     */
+    Q_INVOKABLE void requestAppStores(int computerIndex);
+
+    /**
+     * Returns the last successfully fetched store map for this computer,
+     * or an empty QVariantMap if no fetch has succeeded yet.
+     */
+    Q_INVOKABLE QVariantMap getCachedAppStores(int computerIndex) const;
+
 signals:
     void pairingCompleted(QVariant error);
     void connectionTestCompleted(int result, QString blockedPorts);
     void streamTweakStatusReceived(int computerIndex, QString status);
+    void appStoresReceived(int computerIndex, QVariantMap stores);
 
 private slots:
     void handleComputerStateChanged(NvComputer* computer);
@@ -64,4 +81,5 @@ private:
     QVector<NvComputer*> m_Computers;
     ComputerManager* m_ComputerManager;
     StreamTweakBridge m_streamTweakBridge;
+    QHash<int, QVariantMap> m_appStoresCache;
 };

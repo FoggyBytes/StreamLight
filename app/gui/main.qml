@@ -21,6 +21,7 @@ ApplicationWindow {
     width: 1280
     height: 600
     title: "StreamLight (a Moonlight fork)"
+    font.family: Qt.platform.os === "windows" ? "Segoe UI" : ""
 
     // This function runs prior to creation of the initial StackView item
     function doEarlyInit() {
@@ -28,7 +29,7 @@ ApplicationWindow {
         // in order to improve contrast between GFE's placeholder box art
         // and the background of the app grid.
         if (SystemProperties.usesMaterial3Theme) {
-            Material.background = "#303030"
+            Material.background = "#202020"
         }
 
         Material.theme = Material.Dark
