@@ -504,7 +504,7 @@ unix:!macx: {
     INSTALLS += target desktop icons appstream
 }
 win32 {
-    RC_ICONS = moonlight.ico
+    RC_ICONS = streamlight.ico
     QMAKE_TARGET_COMPANY = FoggyBytes
     QMAKE_TARGET_DESCRIPTION = StreamLight - A Moonlight Fork
     QMAKE_TARGET_PRODUCT = StreamLight

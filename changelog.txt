@@ -4,6 +4,12 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+Version 2.0.1 - The "Sort Fix" (21/03/2026)
+------------------------------------------
+
+🔧 IMPROVEMENTS:
+• App list sort order: fixed — Desktop now always appears first, Steam Big Picture second, and all other apps in alphabetical order; previously the order was being overridden by the app model's own insertion logic
+
 Version 2.0.0 - The "Library Update" (21/03/2026)
 ------------------------------------------
 

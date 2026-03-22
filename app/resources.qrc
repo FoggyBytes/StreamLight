@@ -12,7 +12,7 @@
         <file>res/settings.svg</file>
         <file>res/arrow_left.svg</file>
         <file>res/question_mark.svg</file>
-        <file>res/moonlight.svg</file>
+        <file>streamlight.ico</file>
         <file>res/update.svg</file>
         <file>res/baseline-help_outline-24px.svg</file>
         <file>res/baseline-error_outline-24px.svg</file>
@@ -24,6 +24,7 @@
         <file>res/store_ubisoft.svg</file>
         <file>res/store_xbox.svg</file>
         <file>res/store_battlenet.svg</file>
+        <file>res/store_ea.svg</file>
     </qresource>
     <qresource prefix="/data">
         <file alias="gamecontrollerdb.txt">SDL_GameControllerDB/gamecontrollerdb.txt</file>

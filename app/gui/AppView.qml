@@ -44,6 +44,7 @@ CenteredGridView {
         if (store === "Ubisoft Connect") return "qrc:/res/store_ubisoft.svg"
         if (store === "Xbox")           return "qrc:/res/store_xbox.svg"
         if (store === "Battle.net")     return "qrc:/res/store_battlenet.svg"
+        if (store === "EA App")         return "qrc:/res/store_ea.svg"
         return ""
     }
 

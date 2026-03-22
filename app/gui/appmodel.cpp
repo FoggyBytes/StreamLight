@@ -177,10 +177,17 @@ void AppModel::updateAppList(QVector<NvApp> newList)
         }
     }
 
+    auto appOrder = [](const QString& name) -> int {
+        if (name.compare("Desktop", Qt::CaseInsensitive) == 0) return 0;
+        if (name.compare("Steam Big Picture", Qt::CaseInsensitive) == 0) return 1;
+        return 2;
+    };
+
     // Process additions now
     for (const NvApp& newApp : std::as_const(newVisibleList)) {
         int insertionIndex = m_VisibleApps.size();
         bool found = false;
+        int ob = appOrder(newApp.name);
 
         for (int i = 0; i < m_VisibleApps.count(); i++) {
             const NvApp& existingApp = m_VisibleApps.at(i);
@@ -189,9 +196,12 @@ void AppModel::updateAppList(QVector<NvApp> newList)
                 found = true;
                 break;
             }
-            else if (existingApp.name.toLower() > newApp.name.toLower()) {
-                insertionIndex = i;
-                break;
+            else {
+                int oa = appOrder(existingApp.name);
+                if (oa != ob ? ob < oa : existingApp.name.toLower() > newApp.name.toLower()) {
+                    insertionIndex = i;
+                    break;
+                }
             }
         }
 

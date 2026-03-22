@@ -14,7 +14,12 @@ StreamLight is a fork of [Moonlight](https://github.com/moonlight-stream/moonlig
 
 StreamLight is currently available for **Windows only**.
 
-## ✨ What's New in Version 2.0.0 - "The Library Update" (21/03/2026)
+## ✨ What's New in Version 2.0.1 - "The Sort Fix" (21/03/2026)
+
+### 🔧 Improvements
+* **App list sort order fixed**: Desktop now always appears first, Steam Big Picture second, then all other apps in alphabetical order — the previous implementation was being overridden by the app model's insertion logic
+
+### Previously in 2.0.0 - "The Library Update"
 
 ### 🚀 New Features
 * **New FoggyBytes icon** — a new app icon visually unifies StreamLight and StreamTweak across the FoggyBytes suite
@@ -23,9 +28,6 @@ StreamLight is currently available for **Windows only**.
 
 ### 🎨 UI Redesign
 * **Unified visual identity**: the full StreamLight UI has been revised to match StreamTweak's design language — color palette, spacing, and component styling now align across both apps for a seamless paired-app experience
-
-### 🔧 Improvements
-* **App list sort order**: Desktop always appears first, Steam Big Picture second, then all other apps in alphabetical order
 
 > StreamTweak 5.0.0 or later is required on the host PC for store badges to appear.
 
