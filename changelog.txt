@@ -4,6 +4,12 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+Version 2.1.1 - The "Jitter Update" (28/03/2026)
+------------------------------------------
+
+🔧 IMPROVEMENTS:
+• Session telemetry — jitter reporting: RTT variance (jitter) is now collected from LiGetEstimatedRttInfo and included in every SESSIONDATA batch alongside RTT; StreamTweak stores jitter_avg and jitter_max per sample and can use them in future quality analysis
+
 Version 2.1.0 - The "Telemetry Update" (27/03/2026)
 ------------------------------------------
 

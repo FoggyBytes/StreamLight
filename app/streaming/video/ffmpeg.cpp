@@ -2200,8 +2200,10 @@ TelemetryWindowStats FFmpegVideoDecoder::getLastWindowStats() const
     // only called on the dst of addVideoStats, never written into m_ActiveWndVideoStats
     // itself). Read it directly from Limelight at sample time instead.
     uint32_t rtt = 0, rttVariance = 0;
-    if (LiGetEstimatedRttInfo(&rtt, &rttVariance))
-        out.rttAvgMs = (int)rtt;
+    if (LiGetEstimatedRttInfo(&rtt, &rttVariance)) {
+        out.rttAvgMs  = (int)rtt;
+        out.jitterMs  = (int)rttVariance;
+    }
 
     return out;
 }

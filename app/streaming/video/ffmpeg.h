@@ -17,6 +17,7 @@ struct TelemetryWindowStats {
     double  fpsAvg;
     int     drops;
     int     rttAvgMs;
+    int     jitterMs;    // RTT variance from LiGetEstimatedRttInfo
     float   decodeAvgMs;
     float   bitrateMbps;
 };

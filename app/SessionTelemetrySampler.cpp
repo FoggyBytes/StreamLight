@@ -58,12 +58,15 @@ void SessionTelemetrySampler::onSampleTimer()
     s.drops       = ws.drops;
     s.rttAvg      = (float)ws.rttAvgMs;
     s.rttMax      = s.rttAvg;       // will be refined across batch as running max
+    s.jitterAvg   = (float)ws.jitterMs;
+    s.jitterMax   = s.jitterAvg;    // will be refined across batch as running max
     s.decodeMs    = ws.decodeAvgMs;
     s.bitrateMbps = ws.bitrateMbps;
 
     // Track running min/max within the current batch
-    if (s.fpsAvg < m_BatchFpsMin) m_BatchFpsMin = s.fpsAvg;
-    if (s.rttAvg > m_BatchRttMax) m_BatchRttMax = s.rttAvg;
+    if (s.fpsAvg    < m_BatchFpsMin)    m_BatchFpsMin    = s.fpsAvg;
+    if (s.rttAvg    > m_BatchRttMax)    m_BatchRttMax    = s.rttAvg;
+    if (s.jitterAvg > m_BatchJitterMax) m_BatchJitterMax = s.jitterAvg;
 
     m_Samples.append(s);
 }
@@ -82,8 +85,9 @@ void SessionTelemetrySampler::flushAndStop()
 
     // Apply batch-level min/max before the final send
     for (auto& s : m_Samples) {
-        s.fpsMin = m_BatchFpsMin;
-        s.rttMax = m_BatchRttMax;
+        s.fpsMin    = m_BatchFpsMin;
+        s.rttMax    = m_BatchRttMax;
+        s.jitterMax = m_BatchJitterMax;
     }
 
     // Use synchronous send: exec() has returned and the Qt event loop is no
@@ -97,18 +101,20 @@ void SessionTelemetrySampler::sendBatch()
 {
     if (m_Samples.isEmpty()) return;
 
-    // Apply batch-level min/max to each sample's fpsMin and rttMax fields
+    // Apply batch-level min/max to each sample's fpsMin, rttMax, jitterMax fields
     for (auto& s : m_Samples) {
-        s.fpsMin = m_BatchFpsMin;
-        s.rttMax = m_BatchRttMax;
+        s.fpsMin    = m_BatchFpsMin;
+        s.rttMax    = m_BatchRttMax;
+        s.jitterMax = m_BatchJitterMax;
     }
 
     QString json = buildBatchJson();
     m_Bridge.sendSessionData(m_HostAddress, json);
 
     m_Samples.clear();
-    m_BatchFpsMin =  9999.0f;
-    m_BatchRttMax = -1.0f;
+    m_BatchFpsMin    =  9999.0f;
+    m_BatchRttMax    = -1.0f;
+    m_BatchJitterMax = -1.0f;
 }
 
 QString SessionTelemetrySampler::buildBatchJson() const
@@ -121,6 +127,8 @@ QString SessionTelemetrySampler::buildBatchJson() const
         obj[QStringLiteral("drops")]        = s.drops;
         obj[QStringLiteral("rtt_avg")]      = qRound(s.rttAvg * 10) / 10.0;
         obj[QStringLiteral("rtt_max")]      = qRound(s.rttMax * 10) / 10.0;
+        obj[QStringLiteral("jitter_avg")]   = qRound(s.jitterAvg * 10) / 10.0;
+        obj[QStringLiteral("jitter_max")]   = qRound(s.jitterMax * 10) / 10.0;
         obj[QStringLiteral("decode_ms")]    = qRound(s.decodeMs * 10) / 10.0;
         obj[QStringLiteral("bitrate_mbps")] = qRound(s.bitrateMbps * 10) / 10.0;
         samplesArray.append(obj);

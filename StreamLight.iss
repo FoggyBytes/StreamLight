@@ -1,9 +1,9 @@
 ; =====================================================
-; StreamLight v2.1.0 - Installer
+; StreamLight v2.1.1 - Installer
 ; A Moonlight fork with StreamTweak integration
 ; =====================================================
 #define AppName "StreamLight"
-#define AppVersion "2.1.0"
+#define AppVersion "2.1.1"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"

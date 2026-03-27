@@ -46,6 +46,8 @@ private:
         int   drops;
         float rttAvg;
         float rttMax;
+        float jitterAvg;
+        float jitterMax;
         float decodeMs;
         float bitrateMbps;
     };
@@ -63,6 +65,7 @@ private:
     QList<TelemetrySample> m_Samples;
 
     // Running min/max within the current batch (reset each flush)
-    float m_BatchFpsMin =  9999.0f;
-    float m_BatchRttMax = -1.0f;
+    float m_BatchFpsMin    =  9999.0f;
+    float m_BatchRttMax    = -1.0f;
+    float m_BatchJitterMax = -1.0f;
 };

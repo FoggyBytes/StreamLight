@@ -14,7 +14,12 @@ StreamLight is a fork of [Moonlight](https://github.com/moonlight-stream/moonlig
 
 StreamLight is currently available for **Windows only**.
 
-## ✨ What's New in Version 2.1.0 — "The Telemetry Update" (27/03/2026)
+## ✨ What's New in Version 2.1.1 — "The Jitter Update" (28/03/2026)
+
+### 🔧 Improvements
+* **Jitter in session telemetry** — RTT variance (jitter) is now sampled from `LiGetEstimatedRttInfo` and included in every SESSIONDATA batch; StreamTweak stores `jitter_avg` and `jitter_max` per sample alongside the existing RTT metrics
+
+### Previously in 2.1.0 — "The Telemetry Update"
 
 ### 🚀 New Features
 * **Session telemetry reporting** — StreamLight streams real-time client-side metrics to StreamTweak during active sessions: FPS, frame drops, RTT, decode latency, and bitrate are sampled every second and transmitted in periodic batches; StreamTweak uses this data to generate a session quality report visible in the Logs tab (requires StreamTweak 5.2.0 or later on the host PC)
