@@ -2089,7 +2089,10 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
         addVideoStats(m_ActiveWndVideoStats, m_GlobalVideoStats);
 
         // Move this window into the last window slot and clear it for next window
+        // Acquire spinlock so SessionTelemetrySampler can safely read from the Qt thread
+        SDL_AtomicLock(&m_LastWndLock);
         SDL_memcpy(&m_LastWndVideoStats, &m_ActiveWndVideoStats, sizeof(m_ActiveWndVideoStats));
+        SDL_AtomicUnlock(&m_LastWndLock);
         SDL_zero(m_ActiveWndVideoStats);
         m_ActiveWndVideoStats.measurementStartUs = LiGetMicroseconds();
     }
@@ -2172,5 +2175,34 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
 void FFmpegVideoDecoder::renderFrameOnMainThread()
 {
     m_Pacer->renderOnMainThread();
+}
+
+TelemetryWindowStats FFmpegVideoDecoder::getLastWindowStats() const
+{
+    TelemetryWindowStats out = {};
+
+    SDL_AtomicLock(&m_LastWndLock);
+    VIDEO_STATS snap = m_LastWndVideoStats;
+    SDL_AtomicUnlock(&m_LastWndLock);
+
+    double timeDiffSecs = snap.measurementStartUs > 0
+        ? (double)(LiGetMicroseconds() - snap.measurementStartUs) / 1000000.0
+        : 1.0;
+
+    out.fpsAvg     = snap.totalFrames > 0 ? (double)snap.totalFrames / timeDiffSecs : 0.0;
+    out.drops      = (int)(snap.networkDroppedFrames + snap.pacerDroppedFrames);
+    out.decodeAvgMs = snap.decodedFrames > 0
+        ? (float)(snap.totalDecodeTimeUs / 1000.0) / snap.decodedFrames
+        : 0.0f;
+    out.bitrateMbps = (float)m_BwTracker.GetAverageMbps();
+
+    // lastRtt in the stored window snapshot is always 0 (LiGetEstimatedRttInfo is
+    // only called on the dst of addVideoStats, never written into m_ActiveWndVideoStats
+    // itself). Read it directly from Limelight at sample time instead.
+    uint32_t rtt = 0, rttVariance = 0;
+    if (LiGetEstimatedRttInfo(&rtt, &rttVariance))
+        out.rttAvgMs = (int)rtt;
+
+    return out;
 }
 

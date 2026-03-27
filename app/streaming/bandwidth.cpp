@@ -22,7 +22,7 @@ void BandwidthTracker::AddBytes(size_t bytes) {
 
 // We don't want to average the entire window used for peak,
 // so average only the newest 25% of complete buckets
-double BandwidthTracker::GetAverageMbps() {
+double BandwidthTracker::GetAverageMbps() const {
     std::lock_guard<std::mutex> lock(mtx);
     auto now = steady_clock::now();
     auto ms = duration_cast<milliseconds>(now.time_since_epoch());

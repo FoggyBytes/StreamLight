@@ -4,6 +4,14 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+Version 2.1.0 - The "Telemetry Update" (27/03/2026)
+------------------------------------------
+
+✨ NEW FEATURES:
+• Session telemetry reporting: StreamLight now streams real-time client-side metrics to StreamTweak during active sessions — FPS, frame drops, RTT, decode latency, and bitrate are sampled every second and transmitted in periodic batches; StreamTweak uses this data to generate a session quality report visible in the Logs tab
+
+⚠️ REQUIRES: StreamTweak 5.2.0 or later on the host PC for session quality reports to appear.
+
 Version 2.0.1 - The "Sort Fix" (21/03/2026)
 ------------------------------------------
 

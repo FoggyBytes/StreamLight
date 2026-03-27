@@ -190,6 +190,7 @@ SOURCES += \
     gui/appmodel.cpp \
     StreamTweakBridge.cpp \
     HostMetricsPoller.cpp \
+    SessionTelemetrySampler.cpp \
     streaming/bandwidth.cpp \
     streaming/streamutils.cpp \
     path.cpp \
@@ -228,6 +229,7 @@ HEADERS += \
     gui/appmodel.h \
     StreamTweakBridge.h \
     HostMetricsPoller.h \
+    SessionTelemetrySampler.h \
     streaming/video/decoder.h \
     streaming/bandwidth.h \
     streaming/streamutils.h \

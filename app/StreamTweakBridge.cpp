@@ -98,6 +98,78 @@ void StreamTweakBridge::requestStats(const QString& hostAddress)
     socket->connectToHost(hostAddress, BridgePort);
 }
 
+void StreamTweakBridge::requestSessionId(const QString& hostAddress)
+{
+    QTcpSocket* socket = new QTcpSocket();
+
+    QObject::connect(socket, &QTcpSocket::disconnected,
+                     socket, &QObject::deleteLater);
+
+    QObject::connect(socket, &QAbstractSocket::errorOccurred,
+                     [this, socket](QAbstractSocket::SocketError) {
+        emit sessionIdReceived(QString());
+        socket->deleteLater();
+    });
+
+    QObject::connect(socket, &QTcpSocket::connected, [socket]() {
+        QTextStream stream(socket);
+        stream << "SESSIONID\n";
+        stream.flush();
+    });
+
+    QObject::connect(socket, &QTcpSocket::readyRead, [this, socket]() {
+        QString response = QString::fromUtf8(socket->readAll()).trimmed();
+        emit sessionIdReceived(response);
+        socket->disconnectFromHost();
+    });
+
+    socket->connectToHost(hostAddress, BridgePort);
+}
+
+void StreamTweakBridge::sendSessionData(const QString& hostAddress, const QString& jsonPayload)
+{
+    // Protocol: send "SESSIONDATA\n" then "<compact-json>\n" on the same connection.
+    // The server reads two lines: command then payload.
+    QTcpSocket* socket = new QTcpSocket();
+
+    QObject::connect(socket, &QTcpSocket::disconnected,
+                     socket, &QObject::deleteLater);
+    QObject::connect(socket, &QAbstractSocket::errorOccurred,
+                     socket, &QObject::deleteLater);
+
+    QObject::connect(socket, &QTcpSocket::connected, [socket, jsonPayload]() {
+        QTextStream stream(socket);
+        stream << "SESSIONDATA\n";
+        stream << jsonPayload << "\n";
+        stream.flush();
+    });
+
+    QObject::connect(socket, &QTcpSocket::readyRead, [socket]() {
+        socket->readAll(); // discard OK/ERR
+        socket->disconnectFromHost();
+    });
+
+    socket->connectToHost(hostAddress, BridgePort);
+}
+
+void StreamTweakBridge::sendSessionDataSync(const QString& hostAddress, const QString& jsonPayload)
+{
+    // Synchronous send: used only for the final flush in flushAndStop(), where
+    // exec() has already returned and the Qt event loop is not running, so an
+    // async socket would never complete its connected/readyRead cycle.
+    QTcpSocket socket;
+    socket.connectToHost(hostAddress, BridgePort);
+    if (!socket.waitForConnected(2000))
+        return;
+
+    QTextStream stream(&socket);
+    stream << "SESSIONDATA\n" << jsonPayload << "\n";
+    stream.flush();
+
+    socket.waitForBytesWritten(2000);
+    socket.disconnectFromHost();
+}
+
 void StreamTweakBridge::requestAppStores(const QString& hostAddress)
 {
     QTcpSocket* socket = new QTcpSocket();

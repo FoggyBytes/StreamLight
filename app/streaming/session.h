@@ -11,6 +11,7 @@
 #include "audio/renderers/renderer.h"
 #include "video/overlaymanager.h"
 #include "../HostMetricsPoller.h"
+#include "../SessionTelemetrySampler.h"
 
 class SupportedVideoFormatList : public QList<int>
 {
@@ -129,6 +130,10 @@ public:
             return m_HostMetricsPoller->latestMetrics();
         return HostMetrics{};
     }
+
+    /** Accessors used by SessionTelemetrySampler for thread-safe decoder stat reads. */
+    SDL_mutex*    decoderLock()  const { return m_DecoderLock;  }
+    IVideoDecoder* videoDecoder() const { return m_VideoDecoder; }
 
     void flushWindowEvents();
 
@@ -289,7 +294,8 @@ private:
     Uint32 m_DropAudioEndTime;
 
     Overlay::OverlayManager m_OverlayManager;
-    HostMetricsPoller* m_HostMetricsPoller = nullptr;
+    HostMetricsPoller*       m_HostMetricsPoller      = nullptr;
+    SessionTelemetrySampler* m_TelemetrySampler       = nullptr;
 
     static CONNECTION_LISTENER_CALLBACKS k_ConnCallbacks;
     static Session* s_ActiveSession;

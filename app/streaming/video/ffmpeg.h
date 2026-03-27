@@ -13,6 +13,14 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 }
 
+struct TelemetryWindowStats {
+    double  fpsAvg;
+    int     drops;
+    int     rttAvgMs;
+    float   decodeAvgMs;
+    float   bitrateMbps;
+};
+
 class FFmpegVideoDecoder : public IVideoDecoder {
 public:
     FFmpegVideoDecoder(bool testOnly);
@@ -31,6 +39,13 @@ public:
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info) override;
 
     virtual IFFmpegRenderer* getBackendRenderer();
+
+    /**
+     * Returns a snapshot of the last completed 1-second stats window.
+     * Thread-safe: protected by m_LastWndLock (SDL_SpinLock).
+     * Called from the Qt main thread by SessionTelemetrySampler.
+     */
+    TelemetryWindowStats getLastWindowStats() const;
 
 private:
     enum class TestMode {
@@ -117,6 +132,7 @@ private:
     VIDEO_STATS m_ActiveWndVideoStats;
     VIDEO_STATS m_LastWndVideoStats;
     VIDEO_STATS m_GlobalVideoStats;
+    mutable SDL_SpinLock m_LastWndLock = 0; // protects m_LastWndVideoStats for cross-thread reads
     std::set<IFFmpegRenderer::RendererType> m_FailedRenderers;
 
     int m_FramesIn;

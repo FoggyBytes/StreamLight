@@ -574,6 +574,10 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
     // StreamTweak is not reachable — all metrics stay at -1.
     m_HostMetricsPoller = new HostMetricsPoller(computer->activeAddress.address(), this);
     m_HostMetricsPoller->start();
+
+    // Session telemetry sampler: sends per-second client stats to StreamTweak every 10s.
+    // start() is called later in exec() once the stream is running (after LiStartConnection).
+    m_TelemetrySampler = new SessionTelemetrySampler(this);
 }
 
 Session::~Session()
@@ -1711,6 +1715,18 @@ bool Session::startConnectionAsync()
     }
 
     emit connectionStarted();
+
+    // Queue start() on the main Qt thread (where the sampler and its QTimers
+    // were created). Direct call here would be on AsyncConnectionStartThread,
+    // violating QTimer thread affinity and causing timers to never fire.
+    if (m_TelemetrySampler) {
+        QString hostAddr = m_Computer->activeAddress.address();
+        int fps = m_StreamConfig.fps;
+        QMetaObject::invokeMethod(m_TelemetrySampler, [this, hostAddr, fps]() {
+            m_TelemetrySampler->start(hostAddr, fps);
+        }, Qt::QueuedConnection);
+    }
+
     return true;
 }
 
@@ -2321,6 +2337,11 @@ DispatchDeferredCleanup:
     // interfere with SDLGamepadKeyNavigation.
     delete m_InputHandler;
     m_InputHandler = nullptr;
+
+    // Flush and stop telemetry sampler before destroying the decoder,
+    // so the final batch can still read stats from the live decoder.
+    if (m_TelemetrySampler)
+        m_TelemetrySampler->flushAndStop();
 
     // Destroy the decoder, since this must be done on the main thread
     // NB: This must happen before LiStopConnection() for pull-based

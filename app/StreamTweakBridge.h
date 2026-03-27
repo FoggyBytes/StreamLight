@@ -59,12 +59,33 @@ public:
      */
     void requestAppStores(const QString& hostAddress);
 
+    /**
+     * Asynchronously requests the active session ID from StreamTweak.
+     * Emits sessionIdReceived(QString) with the ID string, or "NONE" if no
+     * session is currently active, or "" on connection error.
+     */
+    void requestSessionId(const QString& hostAddress);
+
+    /**
+     * Sends a SESSIONDATA batch to StreamTweak. The payload must be a compact
+     * JSON string (no embedded newlines). Fire-and-forget; response is discarded.
+     */
+    void sendSessionData(const QString& hostAddress, const QString& jsonPayload);
+
+    /**
+     * Synchronous variant of sendSessionData. Blocks until the data is written
+     * or the timeout expires. Use only for the final flush at session end, where
+     * the Qt event loop is not running and async sockets would never fire.
+     */
+    void sendSessionDataSync(const QString& hostAddress, const QString& jsonPayload);
+
     static constexpr quint16 BridgePort = 47998;
 
 signals:
     void statusReceived(const QString& status);
     void statsReceived(const QString& statsJson);
     void appStoresReceived(const QString& storesJson);
+    void sessionIdReceived(const QString& sessionId);
 
 private:
     void sendCommand(const QString& hostAddress, const QString& command);

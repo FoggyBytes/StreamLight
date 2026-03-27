@@ -14,12 +14,16 @@ StreamLight is a fork of [Moonlight](https://github.com/moonlight-stream/moonlig
 
 StreamLight is currently available for **Windows only**.
 
-## ✨ What's New in Version 2.0.1 - "The Sort Fix" (21/03/2026)
+## ✨ What's New in Version 2.1.0 — "The Telemetry Update" (27/03/2026)
 
-### 🔧 Improvements
-* **App list sort order fixed**: Desktop now always appears first, Steam Big Picture second, then all other apps in alphabetical order — the previous implementation was being overridden by the app model's insertion logic
+### 🚀 New Features
+* **Session telemetry reporting** — StreamLight streams real-time client-side metrics to StreamTweak during active sessions: FPS, frame drops, RTT, decode latency, and bitrate are sampled every second and transmitted in periodic batches; StreamTweak uses this data to generate a session quality report visible in the Logs tab (requires StreamTweak 5.2.0 or later on the host PC)
 
-### Previously in 2.0.0 - "The Library Update"
+### Previously in 2.0.1 — "The Sort Fix"
+
+* **App list sort order fixed**: Desktop now always appears first, Steam Big Picture second, then all other apps in alphabetical order
+
+### Previously in 2.0.0 — "The Library Update"
 
 ### 🚀 New Features
 * **New FoggyBytes icon** — a new app icon visually unifies StreamLight and StreamTweak across the FoggyBytes suite
@@ -61,7 +65,7 @@ Each game synced from StreamTweak's Game Library displays a store badge (icon + 
 
 ## 🖥️ Requirements
 
-- [StreamTweak](https://github.com/FoggyBytes/StreamTweak) must be installed and running on the **host PC** (5.0.0+ required for store badges; 4.4.0+ for host metrics in the overlay)
+- [StreamTweak](https://github.com/FoggyBytes/StreamTweak) must be installed and running on the **host PC** (5.2.0+ for session quality reports; 5.0.0+ for store badges; 4.4.0+ for host metrics in the overlay)
 - Windows 10 or later on the **client PC**
 - A Sunshine or Apollo-compatible host
 

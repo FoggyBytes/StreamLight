@@ -60,7 +60,7 @@ public:
      *
      * @return The average bandwidth in megabits per second.
      */
-    double GetAverageMbps();
+    double GetAverageMbps() const;
 
     /**
      * @brief Returns the peak bandwidth in Mbps observed in any single bucket within the current window.
@@ -99,7 +99,7 @@ private:
     const int bucketIntervalMs;                        ///< The duration of each bucket (in milliseconds).
     std::uint32_t bucketCount;                         ///< The total number of buckets covering the window.
     std::vector<Bucket> buckets;                       ///< Fixed-size circular buffer of buckets.
-    std::mutex mtx;                                    ///< Mutex to ensure thread-safe access.
+    mutable std::mutex mtx;                            ///< Mutex to ensure thread-safe access.
 
     bool isValid(const Bucket &bucket, std::chrono::steady_clock::time_point now) const;
     void updateBucket(size_t bytes, std::chrono::steady_clock::time_point now);
