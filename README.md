@@ -1,85 +1,71 @@
 # 🎮 StreamLight [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue.svg)](https://github.com/FoggyBytes/StreamLight) [![Framework](https://img.shields.io/badge/Framework-Qt%206-green.svg)](https://www.qt.io/) [![Downloads](https://img.shields.io/github/downloads/FoggyBytes/StreamLight/total?label=Downloads&color=orange)](https://github.com/FoggyBytes/StreamLight/releases) [![Built on Moonlight](https://img.shields.io/badge/built%20on-Moonlight-blue?&logo=github)](https://github.com/moonlight-stream/moonlight-qt) [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-brightgreen.svg)](https://claude.ai/code)
 
-**A Moonlight fork with [StreamTweak](https://github.com/FoggyBytes/StreamTweak) integration to manage host NIC speed before streaming**
-
-> 🚨 This project is not affiliated with or endorsed by the Moonlight project.
-
-> ⚠️ StreamLight is designed to be used exclusively in combination with [StreamTweak](https://github.com/FoggyBytes/StreamTweak) — Auto-Switch Ethernet speed for a stutter-free Moonlight ↔ Sunshine/Apollo experience, and more. Without StreamTweak running on the host PC, the StreamTweak-specific features will not function.
-
-## 📖 What is StreamLight?
-
-StreamLight is a fork of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) — the open-source game streaming client — extended with native integration for [StreamTweak](https://github.com/FoggyBytes/StreamTweak), a companion tray app that automatically manages Ethernet speed on the host PC for a stutter-free streaming experience.
+**StreamLight** is the official FoggyBytes fork of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) with native [StreamTweak](https://github.com/FoggyBytes/StreamTweak) integration. It adds host NIC control, live host metrics in the overlay, store badges on game covers, and session quality reporting — all from the client side.
 
 ## ✅ Compatibility
 
-StreamLight is currently available for **Windows only**.
+Windows 10 and 11. Requires [StreamTweak](https://github.com/FoggyBytes/StreamTweak) running on the host PC for StreamTweak-specific features.
 
-## ✨ What's New in Version 2.1.1 — "The Jitter Update" (28/03/2026)
+> ⚠️ **Not affiliated with or endorsed by the Moonlight project.** StreamLight is an independent fork. For upstream Moonlight support, use the [official client](https://github.com/moonlight-stream/moonlight-qt).
 
-### 🔧 Improvements
-* **Jitter in session telemetry** — RTT variance (jitter) is now sampled from `LiGetEstimatedRttInfo` and included in every SESSIONDATA batch; StreamTweak stores `jitter_avg` and `jitter_max` per sample alongside the existing RTT metrics
+## 🔥 Features
 
-### Previously in 2.1.0 — "The Telemetry Update"
+**🔗 NIC Control from the Client**
+- Right-click any paired host to send the speed-change command before connecting, with a built-in 10-second countdown and auto-revert if no connection follows within 30 seconds
+- Show current host NIC speed without starting a stream
 
-### 🚀 New Features
-* **Session telemetry reporting** — StreamLight streams real-time client-side metrics to StreamTweak during active sessions: FPS, frame drops, RTT, decode latency, and bitrate are sampled every second and transmitted in periodic batches; StreamTweak uses this data to generate a session quality report visible in the Logs tab (requires StreamTweak 5.2.0 or later on the host PC)
+**🖥️ Host Metrics in Overlay** *(requires StreamTweak 4.4.0+)*
+- Live GPU %, encoder %, GPU temperature, VRAM used/total, CPU %, and network TX displayed in the performance overlay
+- Section hidden entirely when StreamTweak is unreachable — no visual clutter
 
-### Previously in 2.0.1 — "The Sort Fix"
+**🎮 Store Badges on Game Covers** *(requires StreamTweak 5.0.0+)*
+- Per-game store badge (icon + name) overlaid bottom-right on each cover: Steam, Epic Games, GOG, Ubisoft Connect, Xbox, Battle.net, EA App
+- Fetched live from the host via the APPSTORES command on the TCP bridge
 
-* **App list sort order fixed**: Desktop now always appears first, Steam Big Picture second, then all other apps in alphabetical order
+**📋 Session Quality Report** *(requires StreamTweak 5.2.0+)*
+- Client-side metrics (FPS, frame drops, RTT, jitter, decode latency, bitrate) streamed to StreamTweak every second during the session
+- StreamTweak uses this data to generate a quality grade (Excellent / Good / Poor) and sparkline charts visible in the Logs tab
 
-### Previously in 2.0.0 — "The Library Update"
+**🎨 Visual Identity**
+- UI fully aligned with StreamTweak — color palette, spacing, and component styling match across both apps
+- App list sort order: Desktop first, Steam Big Picture second, all others alphabetically
 
-### 🚀 New Features
-* **New FoggyBytes icon** — a new app icon visually unifies StreamLight and StreamTweak across the FoggyBytes suite
-* **Store badges on game covers**: each game synced by StreamTweak's Game Library displays a small badge in the bottom-right corner of its cover art, showing the store it belongs to — Steam, Epic Games, GOG, Ubisoft Connect, Xbox, or Battle.net; fetched live from the host via the new APPSTORES command on the TCP bridge
-* **Battle.net badge**: a dedicated Battle.net badge (white icon + label on semi-transparent dark background) joins the existing badge set
+## ✨ What's New in 2.1.1 — The "Jitter Update"
 
-### 🎨 UI Redesign
-* **Unified visual identity**: the full StreamLight UI has been revised to match StreamTweak's design language — color palette, spacing, and component styling now align across both apps for a seamless paired-app experience
+- **Jitter in session telemetry** — RTT variance (jitter) is now sampled and included in every SESSIONDATA batch; StreamTweak stores `jitter_avg` and `jitter_max` per session and displays them in the quality report
 
-> StreamTweak 5.0.0 or later is required on the host PC for store badges to appear.
+For full version history see [changelog.txt](changelog.txt).
 
-## 🛠️ Differences from Upstream Moonlight
+## 🏗️ Architecture
 
-This version of **StreamLight** includes specific integrations not found in the original Moonlight:
+StreamLight communicates with StreamTweak over a plain TCP bridge on **port 47998** (LAN). Commands: `PREPARE`, `RESTORE`, `STATUS`, `STATS`, `APPSTORES`. The same bridge is used to send NIC commands from the client side and to receive host metrics and store data.
 
-### 🔗 StreamTweak Integration
-Right-clicking a paired host PC now exposes two additional actions:
-* **Show host NIC speed**: Queries [StreamTweak](https://github.com/FoggyBytes/StreamTweak) on the host via TCP to display the current Ethernet adapter speed.
-* **Set host to 1 Gbps**: Commands the host NIC to switch to 1 Gbps before connecting.
-    * Includes a **10-second countdown** before the connection starts.
-    * **Safety Fallback**: If no connection is made within 30 seconds, the host reverts to its original speed automatically.
-
-### 🎮 Game Library — Store Badges
-Each game synced from StreamTweak's Game Library displays a store badge (icon + label) in the bottom-right corner of its cover art:
-* Badges are fetched from the host via the **APPSTORES** TCP command on connection
-* Supported stores: **Steam**, **Epic Games**, **GOG**, **Ubisoft Connect**, **Xbox**, **Battle.net**
-* Requires StreamTweak 5.0.0 or later on the host PC
-
-### 🎨 Visual & Identity
-* **New FoggyBytes icon**: app icon updated to match StreamTweak's new unified FoggyBytes identity.
-* **Branding**: Window title changed to `StreamLight (a Moonlight fork)`.
-* **Theme**: Color palette and UI fully aligned with *StreamTweak* for a seamless paired-app experience.
-* **Cleanup**:
-    * Removed Discord links (to avoid redirecting users to the upstream Moonlight support channels).
-    * Disabled the **Auto-update checker** to prevent accidental overwrites by upstream releases.
-
-### 🔧 Improvements
-* **App list sort order**: Desktop always first, Steam Big Picture second, then all other apps alphabetically.
-
-## 🖥️ Requirements
-
-- [StreamTweak](https://github.com/FoggyBytes/StreamTweak) must be installed and running on the **host PC** (5.2.0+ for session quality reports; 5.0.0+ for store badges; 4.4.0+ for host metrics in the overlay)
-- Windows 10 or later on the **client PC**
-- A Sunshine or Apollo-compatible host
+```
+StreamLight (Qt, client PC)
+    │  TCP port 47998
+    ▼
+StreamTweak (WPF, host PC)  →  Named Pipe  →  StreamTweakService (LocalSystem)
+                                                        │
+                                                        ▼
+                                             NIC speed via CIM/WMI
+```
 
 ## 📝 Installation
 
-Download the latest installer from the [Releases](../../releases) page and run it.
+1. Go to the **Releases** page of this repository.
+2. Download the latest installer and run it.
 
-## 🙏 Credits
+## 🙏 Support the Project
+[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://paypal.me/foggypunk)
 
-StreamLight is built on top of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) by the Moonlight contributors. Full credit to the original project — without their work, StreamLight would not exist.
+## 🤝 Acknowledgements
 
-StreamLight is released under the [GPL v3 License](LICENSE), in accordance with the upstream Moonlight license.
+- [**Moonlight**](https://github.com/moonlight-stream/moonlight-qt) — the open-source streaming client this fork is built on; full credit to the Moonlight contributors
+- [**Sunshine**](https://github.com/LizardByte/Sunshine) — the streaming host that started it all
+- [**Apollo**](https://github.com/ClassicOldSong/Apollo) — community-driven Sunshine fork
+- [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) — the host companion this client is designed to work with
+
+## License
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-green.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
+StreamLight is released under the GPL v3 License, in accordance with the upstream Moonlight license.
