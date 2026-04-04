@@ -32,9 +32,9 @@ Windows 10 and 11. Requires [StreamTweak](https://github.com/FoggyBytes/StreamTw
 - UI fully aligned with StreamTweak — color palette, spacing, and component styling match across both apps
 - App list sort order: Desktop first, Steam Big Picture second, all others alphabetically
 
-## ✨ What's New in 2.1.1 — The "Jitter Update"
+## ✨ What's New in 2.1.2 — The "Flash Fix"
 
-- **Jitter in session telemetry** — RTT variance (jitter) is now sampled and included in every SESSIONDATA batch; StreamTweak stores `jitter_avg` and `jitter_max` per session and displays them in the quality report
+- **Title bar flash fix** — the window now opens with the correct orange color immediately, eliminating the brief blue flash on startup
 
 For full version history see [changelog.txt](changelog.txt).
 

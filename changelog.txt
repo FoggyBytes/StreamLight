@@ -4,6 +4,12 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+Version 2.1.2 - The "Flash Fix" (04/04/2026)
+------------------------------------------
+
+🔧 IMPROVEMENTS:
+• Title bar color: eliminated the brief blue flash on startup — the window now opens with the correct orange color immediately, instead of briefly showing the default Material Indigo blue before the QML theme applied
+
 Version 2.1.1 - The "Jitter Update" (28/03/2026)
 ------------------------------------------
 
