@@ -28,13 +28,17 @@ Windows 10 and 11. Requires [StreamTweak](https://github.com/FoggyBytes/StreamTw
 - Client-side metrics (FPS, frame drops, RTT, jitter, decode latency, bitrate) streamed to StreamTweak every second during the session
 - StreamTweak uses this data to generate a quality grade (Excellent / Good / Poor) and sparkline charts visible in the Logs tab
 
+**💡 Philips Hue Sync Integration**
+- Optional toggle in Settings to automatically start Philips Hue Sync on the client PC when a streaming session begins and close it when the session ends
+- Launched silently in the background using HueSyncStarter.exe — no window appears; install path resolved via the Windows Uninstall registry, so custom install locations are supported
+
 **🎨 Visual Identity**
 - UI fully aligned with StreamTweak — color palette, spacing, and component styling match across both apps
 - App list sort order: Desktop first, Steam Big Picture second, all others alphabetically
 
-## ✨ What's New in 2.1.2 — The "Flash Fix"
+## ✨ What's New in 2.2.0 — The "Hue Sync Update"
 
-- **Title bar flash fix** — the window now opens with the correct orange color immediately, eliminating the brief blue flash on startup
+- **Philips Hue Sync integration** — new Settings toggle to automatically start Hue Sync silently when a stream begins and close it when the stream ends
 
 For full version history see [changelog.txt](changelog.txt).
 

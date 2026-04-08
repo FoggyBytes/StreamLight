@@ -1802,6 +1802,24 @@ void Session::exec()
         return;
     }
 
+    // Launch Hue Sync minimized on the client if the feature is enabled.
+    if (m_Preferences->hueSyncIntegration) {
+        QString huePath = HueSyncManager::discoverExecutable();
+        if (!huePath.isEmpty()) {
+            m_HueSyncManager = new HueSyncManager();
+            if (!m_HueSyncManager->launch(huePath)) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "HueSyncManager: launch failed for %s",
+                            huePath.toUtf8().constData());
+                delete m_HueSyncManager;
+                m_HueSyncManager = nullptr;
+            }
+        } else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "HueSyncManager: Hue Sync executable not found");
+        }
+    }
+
     // Pump the Qt event loop one last time before we create our SDL window
     // This is sometimes necessary for the QML code to process any signals
     // we've emitted from the async connection thread.
@@ -2385,6 +2403,13 @@ DispatchDeferredCleanup:
     }
 
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
+
+    // Terminate Hue Sync if it was launched for this session.
+    if (m_HueSyncManager) {
+        m_HueSyncManager->terminate();
+        delete m_HueSyncManager;
+        m_HueSyncManager = nullptr;
+    }
 
     // Cleanup can take a while, so dispatch it to a worker thread.
     // When it is complete, it will release our s_ActiveSessionSemaphore

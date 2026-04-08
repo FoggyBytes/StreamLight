@@ -360,7 +360,7 @@ ReadbackRetry:
             av_dict_set_int(&options, "dstw", m_RgbFrame->width, 0);
             av_dict_set_int(&options, "dsth", m_RgbFrame->height, 0);
             av_dict_set_int(&options, "dst_format", m_RgbFrame->format, 0);
-            av_dict_set_int(&options, "threads", std::min(SDL_GetCPUCount(), 4), 0); // Up to 4 threads
+            av_dict_set_int(&options, "threads", (std::min)(SDL_GetCPUCount(), 4), 0); // Up to 4 threads
 
             err = av_opt_set_dict(m_SwsContext, &options);
             av_dict_free(&options);

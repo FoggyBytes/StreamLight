@@ -12,6 +12,7 @@
 #include "video/overlaymanager.h"
 #include "../HostMetricsPoller.h"
 #include "../SessionTelemetrySampler.h"
+#include "../HueSyncManager.h"
 
 class SupportedVideoFormatList : public QList<int>
 {
@@ -296,6 +297,7 @@ private:
     Overlay::OverlayManager m_OverlayManager;
     HostMetricsPoller*       m_HostMetricsPoller      = nullptr;
     SessionTelemetrySampler* m_TelemetrySampler       = nullptr;
+    HueSyncManager*          m_HueSyncManager         = nullptr;
 
     static CONNECTION_LISTENER_CALLBACKS k_ConnCallbacks;
     static Session* s_ActiveSession;

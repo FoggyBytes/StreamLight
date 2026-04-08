@@ -103,6 +103,7 @@ public:
     Q_PROPERTY(bool reverseScrollDirection MEMBER reverseScrollDirection NOTIFY reverseScrollDirectionChanged)
     Q_PROPERTY(bool swapFaceButtons MEMBER swapFaceButtons NOTIFY swapFaceButtonsChanged)
     Q_PROPERTY(bool keepAwake MEMBER keepAwake NOTIFY keepAwakeChanged)
+    Q_PROPERTY(bool hueSyncIntegration MEMBER hueSyncIntegration NOTIFY hueSyncIntegrationChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
     // Directly accessible members for preferences
     int width;
@@ -132,6 +133,7 @@ public:
     bool reverseScrollDirection;
     bool swapFaceButtons;
     bool keepAwake;
+    bool hueSyncIntegration;
     int packetSize;
     AudioConfig audioConfig;
     VideoCodecConfig videoCodecConfig;
@@ -178,6 +180,7 @@ signals:
     void swapFaceButtonsChanged();
     void captureSysKeysModeChanged();
     void keepAwakeChanged();
+    void hueSyncIntegrationChanged();
 private:
     explicit StreamingPreferences(QQmlEngine *qmlEngine);
 

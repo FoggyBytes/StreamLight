@@ -4,6 +4,14 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+Version 2.2.0 - The "Hue Sync Update" (08/04/2026)
+------------------------------------------
+
+✨ NEW FEATURES:
+• Philips Hue Sync integration: a new toggle in Settings automatically starts Philips Hue Sync on the client PC when a streaming session begins and closes it when the session ends; the app is launched silently in the background with no window appearing
+• Smart discovery: Hue Sync is located by querying the Windows Uninstall registry (handles custom install paths and per-user Electron installations); falls back to well-known paths if the registry entry is absent
+• Silent launch: uses HueSyncStarter.exe — the dedicated background launcher shipped with Hue Sync — to start the app without any visible window
+
 Version 2.1.2 - The "Flash Fix" (04/04/2026)
 ------------------------------------------
 

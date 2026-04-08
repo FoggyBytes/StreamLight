@@ -1095,6 +1095,23 @@ Flickable {
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Prevents the screensaver from starting or the display from going to sleep while streaming.")
                 }
+
+                CheckBox {
+                    id: hueSyncIntegrationCheck
+                    width: parent.width
+                    visible: Qt.platform.os === "windows"
+                    text: qsTr("Launch Philips Hue Sync during streaming")
+                    font.pointSize: 12
+                    checked: StreamingPreferences.hueSyncIntegration
+                    onCheckedChanged: {
+                        StreamingPreferences.hueSyncIntegration = checked
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 5000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Automatically starts Philips Hue Sync minimized when a stream begins and closes it when the stream ends.")
+                }
             }
         }
     }
