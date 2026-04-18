@@ -28,6 +28,10 @@ Windows 10 and 11. Requires [StreamTweak](https://github.com/FoggyBytes/StreamTw
 - Client-side metrics (FPS, frame drops, RTT, jitter, decode latency, bitrate) streamed to StreamTweak every second during the session
 - StreamTweak uses this data to generate a quality grade (Excellent / Good / Poor) and sparkline charts visible in the Logs tab
 
+**⏸️ Remote Session Pause** *(requires StreamTweak 6.0.0+)*
+- StreamTweak's Home page shows a Pause button when a session is active; pressing it terminates the stream on the client side exactly as if the user had pressed Pause locally
+- Signal piggybacked on the existing per-second STATS channel — no new connection or protocol change required
+
 **💡 Philips Hue Sync Integration**
 - Optional toggle in Settings to automatically start Philips Hue Sync on the client PC when a streaming session begins and close it when the session ends
 - Launched silently in the background using HueSyncStarter.exe — no window appears; install path resolved via the Windows Uninstall registry, so custom install locations are supported
@@ -36,9 +40,9 @@ Windows 10 and 11. Requires [StreamTweak](https://github.com/FoggyBytes/StreamTw
 - UI fully aligned with StreamTweak — color palette, spacing, and component styling match across both apps
 - App list sort order: Desktop first, Steam Big Picture second, all others alphabetically
 
-## ✨ What's New in 2.2.0 — The "Hue Sync Update"
+## ✨ What's New in 2.3.0 — "The Remote Pause Update"
 
-- **Philips Hue Sync integration** — new Settings toggle to automatically start Hue Sync silently when a stream begins and close it when the stream ends
+- **Remote session pause** — StreamTweak's Home page now shows a Pause button when a session is active; pressing it stops the stream on the client side with no UI changes required in StreamLight *(requires StreamTweak 6.0.0+)*
 
 For full version history see [changelog.txt](changelog.txt).
 
@@ -50,10 +54,10 @@ StreamLight communicates with StreamTweak over a plain TCP bridge on **port 4799
 StreamLight (Qt, client PC)
     │  TCP port 47998
     ▼
-StreamTweak (WPF, host PC)  →  Named Pipe  →  StreamTweakService (LocalSystem)
-                                                        │
-                                                        ▼
-                                             NIC speed via CIM/WMI
+StreamTweak (WinUI3, host PC)  →  Named Pipe  →  StreamTweakService (LocalSystem)
+                                                          │
+                                                          ▼
+                                               NIC speed via CIM/WMI
 ```
 
 ## 📝 Installation
