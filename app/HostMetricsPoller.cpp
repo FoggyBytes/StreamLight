@@ -57,6 +57,11 @@ void HostMetricsPoller::onStatsReceived(const QString& statsJson)
 
     HostMetrics parsed = parseJson(statsJson);
 
+    // StreamTweak injects "stop":1 into the STATS response as a one-shot
+    // signal to terminate the active streaming session from the host side.
+    if (statsJson.contains(QLatin1String("\"stop\":1")))
+        emit stopRequested();
+
     QMutexLocker locker(&m_mutex);
     m_metrics = parsed;
 }

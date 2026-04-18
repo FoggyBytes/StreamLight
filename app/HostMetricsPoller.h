@@ -47,6 +47,14 @@ public:
     /** Thread-safe snapshot of the most recently received metrics. */
     HostMetrics latestMetrics() const;
 
+signals:
+    /**
+     * Emitted when StreamTweak includes "stop":1 in a STATS response,
+     * requesting that the active streaming session be terminated.
+     * Connect to Session::interrupt() to act on it.
+     */
+    void stopRequested();
+
 private slots:
     void poll();
     void onStatsReceived(const QString& statsJson);

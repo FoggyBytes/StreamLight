@@ -575,6 +575,11 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
     m_HostMetricsPoller = new HostMetricsPoller(computer->activeAddress.address(), this);
     m_HostMetricsPoller->start();
 
+    // If StreamTweak sends a stop signal via the STATS response, terminate the session
+    // exactly as if the user had pressed Stop in the UI.
+    connect(m_HostMetricsPoller, &HostMetricsPoller::stopRequested,
+            this,                &Session::interrupt);
+
     // Session telemetry sampler: sends per-second client stats to StreamTweak every 10s.
     // start() is called later in exec() once the stream is running (after LiStartConnection).
     m_TelemetrySampler = new SessionTelemetrySampler(this);

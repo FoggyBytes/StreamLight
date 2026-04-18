@@ -4,6 +4,15 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+Version 2.3.0 - The "Remote Pause Update" (17/04/2026)
+------------------------------------------
+
+✨ NEW FEATURES:
+• Remote session pause from host: StreamTweak's Home page now shows a Pause button when a streaming session is active; pressing it embeds a one-shot stop signal in the next STATS response; StreamLight detects the signal and terminates the session exactly as if the user had pressed Pause locally — no UI changes on the StreamLight side
+• Pause signal transport: the signal is piggybacked on the existing per-second STATS polling channel as an additional "stop":1 JSON field, requiring no new TCP connection or protocol change; the field is silently ignored by older StreamLight versions
+
+⚠️ REQUIRES: StreamTweak 6.0.0 or later on the host PC for the remote stop to work.
+
 Version 2.2.0 - The "Hue Sync Update" (08/04/2026)
 ------------------------------------------
 
