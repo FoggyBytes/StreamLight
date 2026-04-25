@@ -1087,16 +1087,18 @@ IFFmpegRenderer* FFmpegVideoDecoder::createHwAccelRenderer(const AVCodecHWConfig
             return new PlVkRenderer(true);
 #endif
         default:
-            switch (hwDecodeCfg->pix_fmt) {
 #ifdef HAVE_DRM
+            switch (hwDecodeCfg->pix_fmt) {
             case AV_PIX_FMT_DRM_PRIME:
                 // Support out-of-tree non-DRM hwaccels that output DRM_PRIME frames
                 // https://patchwork.ffmpeg.org/project/ffmpeg/list/?series=12604
                 return new DrmRenderer(hwDecodeCfg->device_type);
-#endif
             default:
                 return nullptr;
             }
+#else
+            return nullptr;
+#endif
         }
     }
     // Second pass for our second-tier hwaccel implementations

@@ -13,10 +13,6 @@ SessionTelemetrySampler::SessionTelemetrySampler(QObject* parent)
     m_SampleTimer.setInterval(1000);
     m_SampleTimer.setSingleShot(false);
     connect(&m_SampleTimer, &QTimer::timeout, this, &SessionTelemetrySampler::onSampleTimer);
-
-    m_BatchTimer.setInterval(10000);
-    m_BatchTimer.setSingleShot(false);
-    connect(&m_BatchTimer, &QTimer::timeout, this, &SessionTelemetrySampler::onBatchTimer);
 }
 
 void SessionTelemetrySampler::start(const QString& hostAddress, int targetFps)
@@ -28,7 +24,6 @@ void SessionTelemetrySampler::start(const QString& hostAddress, int targetFps)
     // StreamTweak accepts batches whenever a session is active, regardless
     // of NIC throttle mode. Telemetry is fully independent of streaming settings.
     m_SampleTimer.start();
-    m_BatchTimer.start();
 }
 
 void SessionTelemetrySampler::onSampleTimer()
@@ -69,17 +64,14 @@ void SessionTelemetrySampler::onSampleTimer()
     if (s.jitterAvg > m_BatchJitterMax) m_BatchJitterMax = s.jitterAvg;
 
     m_Samples.append(s);
-}
 
-void SessionTelemetrySampler::onBatchTimer()
-{
+    // Send immediately — one sample per connection, once per second.
     sendBatch();
 }
 
 void SessionTelemetrySampler::flushAndStop()
 {
     m_SampleTimer.stop();
-    m_BatchTimer.stop();
 
     if (m_Samples.isEmpty()) return;
 

@@ -515,6 +515,7 @@ win32 {
 
     CONFIG -= embed_manifest_exe
     QMAKE_LFLAGS += /MANIFEST:embed /MANIFESTINPUT:$${PWD}/Moonlight.exe.manifest
+    QMAKE_LFLAGS += /ignore:4291
 }
 macx {
     # Create Info.plist in object dir with the correct version string

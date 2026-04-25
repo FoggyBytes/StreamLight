@@ -10,8 +10,8 @@
 /**
  * SessionTelemetrySampler
  *
- * Collects per-second client-side streaming metrics and sends them to
- * StreamTweak every 10 seconds via the SESSIONDATA TCP command.
+ * Collects per-second client-side streaming metrics and sends each sample
+ * to StreamTweak every 1 second via the SESSIONDATA TCP command.
  *
  * Lifecycle: created as a Qt child of Session in the Session constructor.
  * Call start() after the stream is up, flushAndStop() before decoder teardown.
@@ -37,7 +37,6 @@ public:
 
 private slots:
     void onSampleTimer();
-    void onBatchTimer();
 
 private:
     struct TelemetrySample {
@@ -56,8 +55,7 @@ private:
     void    sendBatch();
 
     StreamTweakBridge m_Bridge;
-    QTimer            m_SampleTimer;   // fires every 1 s
-    QTimer            m_BatchTimer;    // fires every 10 s
+    QTimer            m_SampleTimer;   // fires every 1 s — samples and sends immediately
 
     QString  m_HostAddress;
     int      m_TargetFps = 0;

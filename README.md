@@ -40,9 +40,15 @@ Windows 10 and 11. Requires [StreamTweak](https://github.com/FoggyBytes/StreamTw
 - UI fully aligned with StreamTweak — color palette, spacing, and component styling match across both apps
 - App list sort order: Desktop first, Steam Big Picture second, all others alphabetically
 
-## ✨ What's New in 2.3.0 — "The Remote Pause Update"
+## ✨ What's New in 2.3.1 — "The Live Charts Update"
+
+- **Session telemetry send interval** — SESSIONDATA is now sent once per second instead of every 10 seconds; StreamTweak's live session charts on the Home page update every second as intended *(requires StreamTweak 6.1.0+)*
+
+<details>
+<summary>2.3.0 — "The Remote Pause Update"</summary>
 
 - **Remote session pause** — StreamTweak's Home page now shows a Pause button when a session is active; pressing it stops the stream on the client side with no UI changes required in StreamLight *(requires StreamTweak 6.0.0+)*
+</details>
 
 For full version history see [changelog.txt](changelog.txt).
 

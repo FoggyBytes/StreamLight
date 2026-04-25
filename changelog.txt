@@ -4,6 +4,14 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+Version 2.3.1 - The "Live Charts Update" (25/04/2026)
+------------------------------------------
+
+🔧 IMPROVEMENTS:
+• Session telemetry send interval: reduced from 10 seconds to 1 second — SESSIONDATA is now sent once per second (one sample per connection) instead of batching 10 samples every 10 seconds; StreamTweak's live session charts on the Home page now update every second as intended
+
+⚠️ REQUIRES: StreamTweak 6.1.0 or later on the host PC for the live session charts to display correctly.
+
 Version 2.3.0 - The "Remote Pause Update" (17/04/2026)
 ------------------------------------------
 
