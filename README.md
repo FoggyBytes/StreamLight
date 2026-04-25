@@ -4,6 +4,8 @@
 
 **StreamLight** is the official FoggyBytes fork of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) with native [StreamTweak](https://github.com/FoggyBytes/StreamTweak) integration. It adds host NIC control, live host metrics in the overlay, store badges on game covers, and session quality reporting — all from the client side.
 
+<img width="960" height="522" alt="Immagine 2026-04-25 140746" src="https://github.com/user-attachments/assets/a6299cee-e545-4f58-b6aa-312c49b793d9" />
+
 ## ✅ Compatibility
 
 Windows 10 and 11. Requires [StreamTweak](https://github.com/FoggyBytes/StreamTweak) running on the host PC for StreamTweak-specific features.
