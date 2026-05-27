@@ -12,6 +12,7 @@
 #include <QElapsedTimer>
 #include <QTemporaryFile>
 #include <QRegularExpression>
+#include <QWindow>
 
 #ifdef Q_OS_UNIX
 #include <sys/socket.h>
@@ -43,6 +44,7 @@
 #include "cli/startstream.h"
 #include "cli/pair.h"
 #include "cli/commandlineparser.h"
+#include "singleinstance.h"
 #include "path.h"
 #include "utils.h"
 #include "gui/computermodel.h"
@@ -52,6 +54,8 @@
 #include "streaming/session.h"
 #include "settings/streamingpreferences.h"
 #include "gui/sdlgamepadkeynavigation.h"
+#include "XboxTileArtwork.h"
+#include "TailscaleManager.h"
 
 #if defined(Q_OS_WIN32)
 #define IS_UNSPECIFIED_HANDLE(x) ((x) == INVALID_HANDLE_VALUE || (x) == NULL)
@@ -418,6 +422,21 @@ void configureSignalHandlers()
 
 int main(int argc, char *argv[])
 {
+    // Installer hook: the Inno Setup post-install [Run] step invokes
+    //   StreamLight.exe --register-xbox-tile
+    // when the user opts in (default ON) to seed the Xbox app "My Apps"
+    // entry with branded tile artwork. We handle this BEFORE constructing
+    // QGuiApplication / SDL so the call is fast (~50 ms), runs hidden, and
+    // doesn't initialise the full app pipeline.
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--register-xbox-tile") == 0) {
+            QCoreApplication coreApp(argc, argv);
+            QCoreApplication::setApplicationName("StreamLight");
+            XboxTileArtwork::registerEntry();
+            return 0;
+        }
+    }
+
     SDL_SetMainReady();
 
     // Set the app version for the QCommandLineParser's showVersion() command
@@ -784,6 +803,43 @@ int main(int argc, char *argv[])
         break;
     }
 
+    // Enforce a single GUI instance. CLI subcommands (stream / quit / pair /
+    // list) are one-shot and must remain re-entrant even while the GUI is up.
+    SingleInstance* singleInstance = nullptr;
+    if (commandLineParserResult == GlobalCommandLineParser::NormalStartRequested) {
+        singleInstance = new SingleInstance(QStringLiteral("StreamLight-SingleInstance"), &app);
+        if (!singleInstance->attach()) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Another StreamLight instance is already running; raising it and exiting.");
+            return 0;
+        }
+
+        // Auto-start Tailscale before the host discovery layer comes up, so the
+        // Tailscale VPN is available when StreamLight starts reaching out to
+        // paired hosts via their Tailscale IPs. The preference is set in
+        // Settings > Network. We launch unconditionally if not already running;
+        // we never terminate it (the OFF toggle only affects the next launch).
+        // Requires the official tailscale.com Windows installer.
+        StreamingPreferences* bootPrefs = StreamingPreferences::get();
+        if (bootPrefs->tailscaleAutoStart) {
+            if (TailscaleManager::isAlreadyRunning()) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "TailscaleManager: already running, skipping auto-start");
+            }
+            else {
+                const QString tsPath = TailscaleManager::discoverExecutable();
+                if (tsPath.isEmpty()) {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                "TailscaleManager: executable not found, auto-start skipped "
+                                "(install Tailscale from https://tailscale.com/download)");
+                }
+                else {
+                    TailscaleManager::launch(tsPath);
+                }
+            }
+        }
+    }
+
     SDL_version compileVersion;
     SDL_VERSION(&compileVersion);
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -862,6 +918,21 @@ int main(int argc, char *argv[])
     app.setWindowIcon(QIcon(":/streamlight.ico"));
 #endif
 
+    // Sync the Windows Xbox app "My Apps" tile artwork for this exe if the
+    // user has added StreamLight to their custom library. No-op when:
+    //  - not on Windows
+    //  - Xbox app is not installed
+    //  - this exe is not in the CustomLibraryManagement manifest
+    //  - the tile PNG is already up-to-date
+    // See XboxTileArtwork.h for the full mechanism description.
+    XboxTileArtwork::applyIfRegistered();
+
+    // Real-time watcher: if the user adds StreamLight to "Le mie app" while
+    // this process is already running, react to the manifest change within
+    // ~250 ms and re-patch the tile PNG. Singleton parented to qApp; lives
+    // for the whole session.
+    XboxTileArtwork::instance()->startWatching();
+
     // This is necessary to show our icon correctly on Wayland
     app.setDesktopFileName("com.moonlight_stream.Moonlight");
     qputenv("SDL_VIDEO_WAYLAND_WMCLASS", "com.moonlight_stream.Moonlight");
@@ -901,18 +972,16 @@ int main(int argc, char *argv[])
     // Our icons are styled for a dark theme, so we do not allow the user to override this
     qputenv("QT_QUICK_CONTROLS_MATERIAL_THEME", "Dark");
 
-    // These are defaults that we allow the user to override
+    // Defaults — overridable via env. Match the runtime Material.accent set
+    // by main.qml so no dark-green flash before its Component.onCompleted.
     if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_MATERIAL_ACCENT")) {
-        qputenv("QT_QUICK_CONTROLS_MATERIAL_ACCENT", "#BE5438");
+        qputenv("QT_QUICK_CONTROLS_MATERIAL_ACCENT", "#00E676");
     }
     if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_MATERIAL_VARIANT")) {
         qputenv("QT_QUICK_CONTROLS_MATERIAL_VARIANT", "Dense");
     }
     if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_MATERIAL_PRIMARY")) {
-        // Qt 6.9 began to use a different shade of Material.Indigo when we use a dark theme
-        // (which is all the time). The new color looks washed out, so manually specify the
-        // old primary color unless the user overrides it themselves.
-        qputenv("QT_QUICK_CONTROLS_MATERIAL_PRIMARY", "#BE5438");
+        qputenv("QT_QUICK_CONTROLS_MATERIAL_PRIMARY", "#00E676");
     }
 
     QQmlApplicationEngine engine;
@@ -921,7 +990,8 @@ int main(int argc, char *argv[])
 
     switch (commandLineParserResult) {
     case GlobalCommandLineParser::NormalStartRequested:
-        initialView = "qrc:/gui/PcView.qml";
+        // Empty = normal launch (AppShell only). CLI modes set a .qml URL.
+        initialView = QString();
         break;
     case GlobalCommandLineParser::StreamRequested:
         {
@@ -972,6 +1042,23 @@ int main(int argc, char *argv[])
         engine.load(QUrl(QStringLiteral("qrc:/gui/main.qml")));
         if (engine.rootObjects().isEmpty())
             return -1;
+
+        // Bring our window to the foreground when a second instance asks.
+        if (singleInstance != nullptr) {
+            QObject::connect(singleInstance, &SingleInstance::raiseRequested, &app, [&engine]() {
+                for (QObject* obj : engine.rootObjects()) {
+                    QWindow* win = qobject_cast<QWindow*>(obj);
+                    if (win == nullptr) {
+                        continue;
+                    }
+                    if (win->visibility() == QWindow::Minimized) {
+                        win->showNormal();
+                    }
+                    win->raise();
+                    win->requestActivate();
+                }
+            });
+        }
     }
 
     int err = app.exec();

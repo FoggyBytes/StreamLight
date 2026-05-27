@@ -22,6 +22,8 @@
 #define SER_SRVCERT "srvcert"
 #define SER_CUSTOMNAME "customname"
 #define SER_NVIDIASOFTWARE "nvidiasw"
+#define SER_ALIASSUFFIX "aliassuffix"
+#define SER_ADDRESSPINNED "addresspinned"
 
 NvComputer::NvComputer(QSettings& settings)
 {
@@ -39,6 +41,8 @@ NvComputer::NvComputer(QSettings& settings)
                                     settings.value(SER_MANUALPORT, QVariant(DEFAULT_HTTP_PORT)).toUInt());
     this->serverCert = QSslCertificate(settings.value(SER_SRVCERT).toByteArray());
     this->isNvidiaServerSoftware = settings.value(SER_NVIDIASOFTWARE).toBool();
+    this->aliasSuffix = settings.value(SER_ALIASSUFFIX).toString();
+    this->isAddressPinned = settings.value(SER_ADDRESSPINNED, false).toBool();
 
     int appCount = settings.beginReadArray(SER_APPLIST);
     this->appList.reserve(appCount);
@@ -92,6 +96,8 @@ void NvComputer::serialize(QSettings& settings, bool serializeApps) const
     settings.setValue(SER_MANUALPORT, manualAddress.port());
     settings.setValue(SER_SRVCERT, serverCert.toPem());
     settings.setValue(SER_NVIDIASOFTWARE, isNvidiaServerSoftware);
+    settings.setValue(SER_ALIASSUFFIX, aliasSuffix);
+    settings.setValue(SER_ADDRESSPINNED, isAddressPinned);
 
     // Avoid deleting an existing applist if we couldn't get one
     if (!appList.isEmpty() && serializeApps) {
@@ -117,6 +123,8 @@ bool NvComputer::isEqualSerialized(const NvComputer &that) const
            this->manualAddress == that.manualAddress &&
            this->serverCert == that.serverCert &&
            this->isNvidiaServerSoftware == that.isNvidiaServerSoftware &&
+           this->aliasSuffix == that.aliasSuffix &&
+           this->isAddressPinned == that.isAddressPinned &&
            this->appList == that.appList;
 }
 
@@ -490,10 +498,26 @@ bool NvComputer::updateAppList(QVector<NvApp> newAppList) {
     return true;
 }
 
+QString NvComputer::storageKey() const
+{
+    QReadLocker readLocker(&lock);
+    return aliasSuffix.isEmpty() ? uuid : (uuid + QStringLiteral("#") + aliasSuffix);
+}
+
 QVector<NvAddress> NvComputer::uniqueAddresses() const
 {
     QReadLocker readLocker(&lock);
     QVector<NvAddress> uniqueAddressList;
+
+    // Pinned hosts (e.g. Tailscale clones) reach the PC only through their
+    // manualAddress. Skipping the other endpoints prevents the poller from
+    // ever falling back to a LAN/remote address that belongs to the parent
+    // tile, which would silently merge the two.
+    if (isAddressPinned && !manualAddress.isNull()) {
+        uniqueAddressList.append(manualAddress);
+        Q_ASSERT(!uniqueAddressList.isEmpty());
+        return uniqueAddressList;
+    }
 
     // Start with addresses correctly ordered
     uniqueAddressList.append(activeAddress);
@@ -560,9 +584,15 @@ bool NvComputer::update(const NvComputer& that)
         ASSIGN_IF_CHANGED(name);
     }
     ASSIGN_IF_CHANGED_AND_NONEMPTY(macAddress);
-    ASSIGN_IF_CHANGED_AND_NONNULL(localAddress);
-    ASSIGN_IF_CHANGED_AND_NONNULL(remoteAddress);
-    ASSIGN_IF_CHANGED_AND_NONNULL(ipv6Address);
+    // Address-pinned hosts (e.g. Tailscale clones) must keep ONLY their
+    // manualAddress; ignore any local/remote/ipv6 that the poller may have
+    // resolved opportunistically, otherwise the clone collapses onto the
+    // parent's LAN endpoint.
+    if (!this->isAddressPinned) {
+        ASSIGN_IF_CHANGED_AND_NONNULL(localAddress);
+        ASSIGN_IF_CHANGED_AND_NONNULL(remoteAddress);
+        ASSIGN_IF_CHANGED_AND_NONNULL(ipv6Address);
+    }
     ASSIGN_IF_CHANGED_AND_NONNULL(manualAddress);
     ASSIGN_IF_CHANGED(activeHttpsPort);
     ASSIGN_IF_CHANGED(externalPort);

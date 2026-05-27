@@ -1,23 +1,13 @@
 <RCC>
     <qresource prefix="/">
-        <file>res/ic_videogame_asset_white_48px.svg</file>
         <file>res/desktop_windows-48px.svg</file>
-        <file>res/ic_add_to_queue_white_48px.svg</file>
-        <file>res/baseline-lock-24px.svg</file>
-        <file>res/play_arrow_FILL1_wght700_GRAD200_opsz48.svg</file>
         <file>res/baseline-warning-24px.svg</file>
-        <file>res/warning_FILL1_wght300_GRAD200_opsz24.svg</file>
-        <file>res/stop_FILL1_wght700_GRAD200_opsz48.svg</file>
         <file>res/no_app_image.png</file>
-        <file>res/settings.svg</file>
-        <file>res/arrow_left.svg</file>
-        <file>res/question_mark.svg</file>
         <file>streamlight.ico</file>
-        <file>res/update.svg</file>
+        <file>streamlightxbox.png</file>
         <file>res/baseline-help_outline-24px.svg</file>
         <file>res/baseline-error_outline-24px.svg</file>
         <file>res/baseline-check_circle_outline-24px.svg</file>
-        <file>res/discord.svg</file>
         <file>res/store_steam.svg</file>
         <file>res/store_epic.svg</file>
         <file>res/store_gog.svg</file>
@@ -25,6 +15,27 @@
         <file>res/store_xbox.svg</file>
         <file>res/store_battlenet.svg</file>
         <file>res/store_ea.svg</file>
+        <file>res/pad_xbox_a.svg</file>
+        <file>res/pad_xbox_b.svg</file>
+        <file>res/pad_xbox_x.svg</file>
+        <file>res/pad_xbox_y.svg</file>
+        <file>res/pad_xbox_lb.svg</file>
+        <file>res/pad_xbox_rb.svg</file>
+        <file>res/pad_ps_cross.svg</file>
+        <file>res/pad_ps_circle.svg</file>
+        <file>res/pad_ps_square.svg</file>
+        <file>res/pad_ps_triangle.svg</file>
+        <file>res/pad_ps_l1.svg</file>
+        <file>res/pad_ps_r1.svg</file>
+        <file>res/pad_xbox_start.svg</file>
+        <file>res/pad_xbox_view.svg</file>
+        <file>res/pad_ps_options.svg</file>
+        <file>res/pad_ps_create.svg</file>
+        <file>res/fonts/DMSans-Regular.ttf</file>
+        <file>res/fonts/DMSans-Medium.ttf</file>
+        <file>res/fonts/DMSans-SemiBold.ttf</file>
+        <file>res/fonts/JetBrainsMono-Regular.ttf</file>
+        <file>res/fonts/JetBrainsMono-Medium.ttf</file>
     </qresource>
     <qresource prefix="/data">
         <file alias="gamecontrollerdb.txt">SDL_GameControllerDB/gamecontrollerdb.txt</file>

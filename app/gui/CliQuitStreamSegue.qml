@@ -20,7 +20,7 @@ Item {
 
     StackView.onActivated: {
         if (!launcher.isExecuted()) {
-            toolBar.visible = false
+            // (toolbar removed in 3.0 redesign)
             launcher.searchingComputer.connect(onSearchingComputer)
             launcher.quittingApp.connect(onQuittingApp)
             launcher.failed.connect(onFailure)

@@ -2,6 +2,7 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSettings>
 #include <QThreadPool>
 
 ComputerModel::ComputerModel(QObject* object)
@@ -44,6 +45,25 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
         return computer->state == NvComputer::CS_UNKNOWN;
     case ServerSupportedRole:
         return computer->isSupportedServerVersion;
+    case AddressRole: {
+        // Prefer the currently active address (selected at runtime), then fall
+        // back through the known addresses. Return an empty string if nothing
+        // is known yet — QML displays "N/A" in that case.
+        QString addr = computer->activeAddress.address();
+        if (!addr.isEmpty()) return addr;
+        addr = computer->localAddress.address();
+        if (!addr.isEmpty()) return addr;
+        addr = computer->remoteAddress.address();
+        if (!addr.isEmpty()) return addr;
+        addr = computer->manualAddress.address();
+        if (!addr.isEmpty()) return addr;
+        addr = computer->ipv6Address.address();
+        return addr;
+    }
+    case GpuModelRole:
+        return computer->gpuModel;
+    case IsTailscaleCloneRole:
+        return computer->aliasSuffix == QStringLiteral("tailscale");
     case DetailsRole: {
         QString state, pairState;
 
@@ -112,6 +132,9 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
     names[StatusUnknownRole] = "statusUnknown";
     names[ServerSupportedRole] = "serverSupported";
     names[DetailsRole] = "details";
+    names[AddressRole] = "address";
+    names[GpuModelRole] = "gpuModel";
+    names[IsTailscaleCloneRole] = "isTailscaleClone";
 
     return names;
 }
@@ -222,9 +245,67 @@ void ComputerModel::pairComputer(int computerIndex, QString pin)
     m_ComputerManager->pairHost(m_Computers[computerIndex], pin);
 }
 
-void ComputerModel::handlePairingCompleted(NvComputer*, QString error)
+void ComputerModel::handlePairingCompleted(NvComputer* computer, QString error)
 {
     emit pairingCompleted(error.isEmpty() ? QVariant() : error);
+
+    if (!error.isEmpty() || computer == nullptr) {
+        return;
+    }
+
+    // Only probe for Tailscale on primary tiles (not on already-cloned ones).
+    QString parentUuid, parentName, probeAddress;
+    {
+        QReadLocker lock(&computer->lock);
+        if (!computer->aliasSuffix.isEmpty()) {
+            return;
+        }
+        parentUuid = computer->uuid;
+        parentName = computer->name;
+        probeAddress = computer->activeAddress.address();
+    }
+    if (probeAddress.isEmpty() || parentUuid.isEmpty()) {
+        return;
+    }
+
+    // Skip if user already dismissed this UUID, or a clone already exists.
+    QSettings settings;
+    if (settings.value(QStringLiteral("tailscaleDismissed/") + parentUuid, false).toBool()) {
+        return;
+    }
+    for (NvComputer* c : std::as_const(m_Computers)) {
+        QReadLocker cLock(&c->lock);
+        if (c->uuid == parentUuid && c->aliasSuffix == QStringLiteral("tailscale")) {
+            return;
+        }
+    }
+
+    // Single-shot connect: the next tailscaleReceived signal carries the answer.
+    QMetaObject::Connection* conn = new QMetaObject::Connection();
+    *conn = connect(&m_streamTweakBridge, &StreamTweakBridge::tailscaleReceived,
+        [this, conn, parentUuid, parentName](const QString& tailscaleIp) {
+            disconnect(*conn);
+            delete conn;
+            if (tailscaleIp.isEmpty() || tailscaleIp == QStringLiteral("NOT_DETECTED")) {
+                return;
+            }
+            emit tailscaleSuggestion(parentUuid, parentName, tailscaleIp);
+        });
+
+    m_streamTweakBridge.requestTailscale(probeAddress);
+}
+
+void ComputerModel::dismissTailscaleSuggestion(QString parentUuid)
+{
+    if (parentUuid.isEmpty()) return;
+    QSettings settings;
+    settings.setValue(QStringLiteral("tailscaleDismissed/") + parentUuid, true);
+}
+
+bool ComputerModel::addTailscaleClone(QString parentUuid, QString tailscaleIp)
+{
+    if (m_ComputerManager == nullptr) return false;
+    return m_ComputerManager->addTailscaleClone(parentUuid, tailscaleIp);
 }
 
 void ComputerModel::handleComputerStateChanged(NvComputer* computer)

@@ -19,7 +19,10 @@ class ComputerModel : public QAbstractListModel
         WakeableRole,
         StatusUnknownRole,
         ServerSupportedRole,
-        DetailsRole
+        DetailsRole,
+        AddressRole,
+        GpuModelRole,
+        IsTailscaleCloneRole
     };
 
 public:
@@ -66,11 +69,31 @@ public:
      */
     Q_INVOKABLE QVariantMap getCachedAppStores(int computerIndex) const;
 
+    /**
+     * Persists a "don't ask again" preference per host UUID so the Tailscale
+     * suggestion popup never reappears for that host. Stored in QSettings.
+     */
+    Q_INVOKABLE void dismissTailscaleSuggestion(QString parentUuid);
+
+    /**
+     * Creates a Tailscale-pinned clone tile for the host with the given UUID.
+     * Returns true if the operation was queued.
+     */
+    Q_INVOKABLE bool addTailscaleClone(QString parentUuid, QString tailscaleIp);
+
 signals:
     void pairingCompleted(QVariant error);
     void connectionTestCompleted(int result, QString blockedPorts);
     void streamTweakStatusReceived(int computerIndex, QString status);
     void appStoresReceived(int computerIndex, QVariantMap stores);
+
+    /**
+     * Fired after a successful pairing when the bridge confirms Tailscale is
+     * installed on the host. QML displays the TailscaleSuggestDialog.
+     * Suppressed if the user previously dismissed the suggestion for this UUID
+     * or if a Tailscale clone for this UUID already exists.
+     */
+    void tailscaleSuggestion(QString parentUuid, QString parentName, QString tailscaleIp);
 
 private slots:
     void handleComputerStateChanged(NvComputer* computer);

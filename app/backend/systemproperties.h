@@ -42,6 +42,11 @@ public:
     Q_INVOKABLE void waitForAsyncLoad();
     Q_INVOKABLE void refreshDisplays();
 
+    // Restarts StreamLight by spawning a detached copy of the running executable
+    // (with the same CLI arguments) and quitting the current process. Used by
+    // settings that require a fresh boot to take effect (e.g. Tailscale auto-start).
+    Q_INVOKABLE void restartApplication();
+
 signals:
     void unmappedGamepadsChanged();
     void hasHardwareAccelerationChanged();

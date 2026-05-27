@@ -43,7 +43,6 @@ Session* AppModel::createSessionForApp(int appIndex)
 {
     Q_ASSERT(appIndex < m_VisibleApps.count());
     NvApp app = m_VisibleApps.at(appIndex);
-
     return new Session(m_Computer, app);
 }
 

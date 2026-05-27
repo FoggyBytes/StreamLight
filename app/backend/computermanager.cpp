@@ -180,8 +180,9 @@ ComputerManager::ComputerManager(StreamingPreferences* prefs)
     for (int i = 0; i < hosts; i++) {
         settings.setArrayIndex(i);
         NvComputer* computer = new NvComputer(settings);
-        m_KnownHosts[computer->uuid] = computer;
-        m_LastSerializedHosts[computer->uuid] = *computer;
+        const QString key = computer->storageKey();
+        m_KnownHosts[key] = computer;
+        m_LastSerializedHosts[key] = *computer;
     }
     settings.endArray();
 
@@ -272,7 +273,7 @@ void DelayedFlushThread::run() {
                 // Copy the current state of the NvComputer to allow us to check later if we need
                 // to serialize it again when attribute updates occur.
                 QReadLocker computerLock(&computer->lock);
-                m_ComputerManager->m_LastSerializedHosts[computer->uuid] = *computer;
+                m_ComputerManager->m_LastSerializedHosts[computer->storageKey()] = *computer;
             }
         }
 
@@ -401,11 +402,12 @@ void ComputerManager::startPollingComputer(NvComputer* computer)
 
     ComputerPollingEntry* pollingEntry;
 
-    if (!m_PollEntries.contains(computer->uuid)) {
-        pollingEntry = m_PollEntries[computer->uuid] = new ComputerPollingEntry();
+    const QString pollKey = computer->storageKey();
+    if (!m_PollEntries.contains(pollKey)) {
+        pollingEntry = m_PollEntries[pollKey] = new ComputerPollingEntry();
     }
     else {
-        pollingEntry = m_PollEntries[computer->uuid];
+        pollingEntry = m_PollEntries[pollKey];
     }
 
     if (!pollingEntry->isActive()) {
@@ -513,9 +515,10 @@ public:
         {
             QWriteLocker lock(&m_ComputerManager->m_Lock);
 
-            pollingEntry = m_ComputerManager->m_PollEntries.take(m_Computer->uuid);
+            const QString delKey = m_Computer->storageKey();
+            pollingEntry = m_ComputerManager->m_PollEntries.take(delKey);
 
-            m_ComputerManager->m_KnownHosts.remove(m_Computer->uuid);
+            m_ComputerManager->m_KnownHosts.remove(delKey);
         }
 
         // Persist the new host list with this computer deleted
@@ -747,12 +750,13 @@ class PendingAddTask : public QObject, public QRunnable
     Q_OBJECT
 
 public:
-    PendingAddTask(ComputerManager* computerManager, QString name, NvAddress address, NvAddress mdnsIpv6Address, bool mdns)
+    PendingAddTask(ComputerManager* computerManager, QString name, NvAddress address, NvAddress mdnsIpv6Address, bool mdns, QString aliasSuffix = QString())
         : m_ComputerManager(computerManager),
           m_Name(name),
           m_Address(address),
           m_MdnsIpv6Address(mdnsIpv6Address),
           m_Mdns(mdns),
+          m_AliasSuffix(aliasSuffix),
           m_AboutToQuit(false)
     {
         connect(this, &PendingAddTask::computerAddCompleted,
@@ -854,13 +858,44 @@ private:
         // Create initial newComputer using HTTP serverinfo with no pinned cert
         NvComputer* newComputer = new NvComputer(http, serverInfo);
 
-        // Check if we have a record of this host UUID to pull the pinned cert
+        // Tag this entry as a local clone (e.g. Tailscale dual-tile) if requested.
+        // The uuid stays the real one (Moonlight protocol identity); aliasSuffix is
+        // purely a StreamLight-local namespacing tag used in m_KnownHosts.
+        if (!m_AliasSuffix.isEmpty()) {
+            newComputer->aliasSuffix = m_AliasSuffix;
+            newComputer->isAddressPinned = true;
+            // Pin only the manualAddress; clear any address inferred from serverInfo
+            // so the poller cannot reach the host via the parent tile's LAN endpoint.
+            newComputer->localAddress = NvAddress();
+            newComputer->remoteAddress = NvAddress();
+            newComputer->ipv6Address = NvAddress();
+            newComputer->manualAddress = m_Address;
+            newComputer->activeAddress = m_Address;
+            newComputer->hasCustomName = true; // preserve "<name> (Tailscale)" suffix
+        }
+
+        // Check if we have a record of this host UUID to pull the pinned cert.
+        // Cert lookup intentionally uses the raw uuid (NOT storageKey) so a clone
+        // can inherit the parent's server certificate without a second pairing.
         NvComputer* existingComputer;
         {
             QReadLocker lock(&m_ComputerManager->m_Lock);
             existingComputer = m_ComputerManager->m_KnownHosts.value(newComputer->uuid);
+            if (existingComputer == nullptr && !m_AliasSuffix.isEmpty()) {
+                // Clones are looked up by their alias-qualified key; for cert
+                // sharing, walk the map to find any sibling with the same uuid.
+                for (NvComputer* candidate : std::as_const(m_ComputerManager->m_KnownHosts)) {
+                    if (candidate->uuid == newComputer->uuid) {
+                        existingComputer = candidate;
+                        break;
+                    }
+                }
+            }
             if (existingComputer != nullptr) {
                 http.setServerCert(existingComputer->serverCert);
+                if (!m_AliasSuffix.isEmpty()) {
+                    newComputer->serverCert = existingComputer->serverCert;
+                }
             }
         }
 
@@ -914,9 +949,13 @@ private:
                 hostAddress.isInSubnet(QHostAddress("192.168.0.0"), 16);
 
         {
+            // Use the alias-qualified storage key so a Tailscale clone and its
+            // parent (same uuid, different aliasSuffix) bind to distinct entries.
+            const QString lookupKey = newComputer->storageKey();
+
             // Check if this PC already exists using opportunistic read lock
             m_ComputerManager->m_Lock.lockForRead();
-            NvComputer* existingComputer = m_ComputerManager->m_KnownHosts.value(newComputer->uuid);
+            NvComputer* existingComputer = m_ComputerManager->m_KnownHosts.value(lookupKey);
 
             // If it doesn't already exist, convert to a write lock in preparation for updating.
             //
@@ -929,7 +968,7 @@ private:
 
                 // Since we had to unlock to lock for write, someone could have raced and added
                 // this PC before us. We have to check again whether it already exists.
-                existingComputer = m_ComputerManager->m_KnownHosts.value(newComputer->uuid);
+                existingComputer = m_ComputerManager->m_KnownHosts.value(lookupKey);
             }
 
             if (existingComputer != nullptr) {
@@ -953,7 +992,7 @@ private:
             }
             else {
                 // Store this in our active sets
-                m_ComputerManager->m_KnownHosts[newComputer->uuid] = newComputer;
+                m_ComputerManager->m_KnownHosts[lookupKey] = newComputer;
 
                 // Start polling if enabled (write lock required)
                 m_ComputerManager->startPollingComputer(newComputer);
@@ -990,15 +1029,55 @@ private:
     NvAddress m_Address;
     NvAddress m_MdnsIpv6Address;
     bool m_Mdns;
+    QString m_AliasSuffix;
     bool m_AboutToQuit;
 };
 
-void ComputerManager::addNewHost(NvAddress address, bool mdns, QString name, NvAddress mdnsIpv6Address)
+void ComputerManager::addNewHost(NvAddress address, bool mdns, QString name, NvAddress mdnsIpv6Address, QString aliasSuffix)
 {
     // Punt to a worker thread to avoid stalling the
     // UI while waiting for serverinfo query to complete
-    PendingAddTask* addTask = new PendingAddTask(this, name, address, mdnsIpv6Address, mdns);
+    PendingAddTask* addTask = new PendingAddTask(this, name, address, mdnsIpv6Address, mdns, aliasSuffix);
     QThreadPool::globalInstance()->start(addTask);
+}
+
+bool ComputerManager::addTailscaleClone(QString parentUuid, QString tailscaleIp)
+{
+    if (parentUuid.isEmpty() || tailscaleIp.isEmpty()) {
+        return false;
+    }
+
+    QString parentName;
+    uint16_t parentPort = 0;
+    {
+        QReadLocker lock(&m_Lock);
+
+        // Abort if a Tailscale clone for this parent already exists.
+        const QString cloneKey = parentUuid + QStringLiteral("#tailscale");
+        if (m_KnownHosts.contains(cloneKey)) {
+            return false;
+        }
+
+        NvComputer* parent = m_KnownHosts.value(parentUuid);
+        if (parent == nullptr) {
+            return false;
+        }
+
+        QReadLocker parentLock(&parent->lock);
+        parentName = parent->name + QStringLiteral(" (Tailscale)");
+        // Reuse the parent's external port for the manual endpoint; defaults to
+        // DEFAULT_HTTP_PORT when no specific external port was negotiated.
+        parentPort = parent->localAddress.port() != 0
+                         ? parent->localAddress.port()
+                         : DEFAULT_HTTP_PORT;
+    }
+
+    addNewHost(NvAddress(tailscaleIp, parentPort),
+               /*mdns=*/false,
+               parentName,
+               NvAddress(),
+               QStringLiteral("tailscale"));
+    return true;
 }
 
 QString ComputerManager::generatePinString()

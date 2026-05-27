@@ -1,78 +1,69 @@
 import QtQuick 2.0
-import QtQuick.Controls 2.2
-import QtQuick.Layouts 1.2
+import QtQuick.Controls 2.5
+import QtQuick.Layouts 1.3
 
 NavigableDialog {
     id: dialog
 
-    property alias text: dialogLabel.dialogText
-    property alias showSpinner: dialogSpinner.visible
-    property alias imageSrc: dialogImage.source
-
+    // ── Public API (preserved from legacy version) ────────────────────────────
+    property string text: ""
+    property alias  showSpinner: spinner.visible
+    property string imageSrc: ""              // kept for backwards-compat — no longer rendered
     property string helpText
-    property string helpUrl : "https://github.com/moonlight-stream/moonlight-docs/wiki/Troubleshooting"
-    property string helpTextSeparator : " "
+    property string helpTextSeparator: " "
+
+    // Default Troubleshooting URL; ErrorMessageDialog override per-case via the
+    // helpUrl property inherited from NavigableDialog.
+    helpUrl: "https://github.com/moonlight-stream/moonlight-docs/wiki/Troubleshooting"
+
+    // ── New API ───────────────────────────────────────────────────────────────
+    // Eyebrow uppercase label above the body. Named `headerText` (not `header`)
+    // to avoid colliding with Dialog's built-in `header: Item` slot.
+    property string headerText: ""
 
     onOpened: {
-        // Force keyboard focus on the label so keyboard navigation works
-        if (dialogButtonBox.count > 0) {
-            dialogButtonBox.itemAt(dialogButtonBox.count - 1).forceActiveFocus(Qt.TabFocus)
+        // Move keyboard focus onto the last button so keyboard / gamepad
+        // navigation works as it used to with the legacy implementation.
+        if (dialog.footer && dialog.footer.count > 0) {
+            dialog.footer.itemAt(dialog.footer.count - 1).forceActiveFocus(Qt.TabFocus)
         }
     }
 
-    RowLayout {
-        spacing: 10
+    contentItem: ColumnLayout {
+        spacing: 22
 
-        BusyIndicator {
-            id: dialogSpinner
-            visible: false
-            running: visible
+        Label {
+            visible: dialog.headerText.length > 0
+            text: dialog.headerText
+            font.family: "DM Sans"
+            font.pixelSize: 13
+            font.bold: true
+            font.letterSpacing: 1.6
+            color: "#707070"
+            Layout.alignment: Qt.AlignHCenter
         }
 
-        Image {
-            id: dialogImage
-            source: (standardButtons & Dialog.Yes) ?
-                        "qrc:/res/baseline-help_outline-24px.svg" :
-                        "qrc:/res/baseline-error_outline-24px.svg"
-            sourceSize {
-                // The icon should be square so use the height as the width too
-                width: 50
-                height: 50
-            }
-            visible: !showSpinner
+        BusyIndicator {
+            id: spinner
+            visible: false
+            running: visible
+            implicitWidth: 56
+            implicitHeight: 56
+            Layout.alignment: Qt.AlignHCenter
         }
 
         Label {
-            property string dialogText
-
-            id: dialogLabel
-            text: dialogText + ((helpText && (standardButtons & Dialog.Help)) ? (helpTextSeparator + helpText) : "")
+            id: bodyLabel
+            text: dialog.text + ((dialog.helpText && (dialog.standardButtons & Dialog.Help))
+                                  ? (dialog.helpTextSeparator + dialog.helpText)
+                                  : "")
+            font.family: "DM Sans"
+            font.pixelSize: 18
+            color: "#f0f0f0"
             wrapMode: Text.Wrap
-            elide: Label.ElideRight
-
-            // Cap the width so the dialog doesn't grow horizontally forever. This
-            // will cause word wrap to kick in.
-            Layout.maximumWidth: 400
-            Layout.maximumHeight: 400
-        }
-    }
-
-    footer: DialogButtonBox {
-        id: dialogButtonBox
-        standardButtons: dialog.standardButtons
-
-        delegate: Button {
-            flat: true
-
-            Keys.onReturnPressed: clicked()
-            Keys.onEnterPressed: clicked()
-            Keys.onRightPressed: nextItemInFocusChain(true).forceActiveFocus(Qt.TabFocus)
-            Keys.onLeftPressed: nextItemInFocusChain(false).forceActiveFocus(Qt.TabFocus)
-        }
-
-        onHelpRequested: {
-            Qt.openUrlExternally(helpUrl)
-            close()
+            horizontalAlignment: Text.AlignHCenter
+            Layout.alignment: Qt.AlignHCenter
+            Layout.maximumWidth: 520
         }
     }
 }

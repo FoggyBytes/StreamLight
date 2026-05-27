@@ -107,6 +107,13 @@ public:
     Q_INVOKABLE bool initialize(QQuickWindow* qtWindow);
     Q_INVOKABLE void start();
     Q_INVOKABLE void interrupt();
+
+    // Request a clean shutdown of an established session. Unlike interrupt(),
+    // this does NOT call LiInterruptConnection() — it only pushes SDL_QUIT and
+    // lets the SDL event loop perform an orderly LiStopConnection() with a
+    // protocol-level BYE to the host. Use this for stop requests that arrive
+    // after the stream is fully running (e.g. StreamTweak "Return to client").
+    void requestGracefulStop();
     Q_PROPERTY(QStringList launchWarnings MEMBER m_LaunchWarnings NOTIFY launchWarningsChanged);
 
     static
@@ -164,6 +171,8 @@ private:
     bool startConnectionAsync();
 
     bool validateLaunch(SDL_Window* testWindow);
+
+    void refreshHostCapabilities();
 
     void emitLaunchWarning(QString text);
 

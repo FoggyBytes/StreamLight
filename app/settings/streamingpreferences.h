@@ -104,6 +104,7 @@ public:
     Q_PROPERTY(bool swapFaceButtons MEMBER swapFaceButtons NOTIFY swapFaceButtonsChanged)
     Q_PROPERTY(bool keepAwake MEMBER keepAwake NOTIFY keepAwakeChanged)
     Q_PROPERTY(bool hueSyncIntegration MEMBER hueSyncIntegration NOTIFY hueSyncIntegrationChanged)
+    Q_PROPERTY(bool tailscaleAutoStart MEMBER tailscaleAutoStart NOTIFY tailscaleAutoStartChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
     // Directly accessible members for preferences
     int width;
@@ -134,6 +135,7 @@ public:
     bool swapFaceButtons;
     bool keepAwake;
     bool hueSyncIntegration;
+    bool tailscaleAutoStart;
     int packetSize;
     AudioConfig audioConfig;
     VideoCodecConfig videoCodecConfig;
@@ -181,6 +183,7 @@ signals:
     void captureSysKeysModeChanged();
     void keepAwakeChanged();
     void hueSyncIntegrationChanged();
+    void tailscaleAutoStartChanged();
 private:
     explicit StreamingPreferences(QQmlEngine *qmlEngine);
 

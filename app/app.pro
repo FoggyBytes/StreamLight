@@ -190,8 +190,11 @@ SOURCES += \
     gui/appmodel.cpp \
     StreamTweakBridge.cpp \
     HostMetricsPoller.cpp \
+    singleinstance.cpp \
+    XboxTileArtwork.cpp \
     SessionTelemetrySampler.cpp \
     HueSyncManager.cpp \
+    TailscaleManager.cpp \
     streaming/bandwidth.cpp \
     streaming/streamutils.cpp \
     path.cpp \
@@ -230,8 +233,11 @@ HEADERS += \
     gui/appmodel.h \
     StreamTweakBridge.h \
     HostMetricsPoller.h \
+    singleinstance.h \
+    XboxTileArtwork.h \
     SessionTelemetrySampler.h \
     HueSyncManager.h \
+    TailscaleManager.h \
     streaming/video/decoder.h \
     streaming/bandwidth.h \
     streaming/streamutils.h \

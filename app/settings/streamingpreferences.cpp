@@ -48,6 +48,7 @@
 #define SER_CAPTURESYSKEYS "capturesyskeys"
 #define SER_KEEPAWAKE "keepawake"
 #define SER_HUESYNC "huesync"
+#define SER_TAILSCALE_AUTOSTART "tailscaleautostart"
 #define CURRENT_DEFAULT_VER 2
 
 static StreamingPreferences* s_GlobalPrefs;
@@ -147,6 +148,7 @@ void StreamingPreferences::reload()
     swapFaceButtons = settings.value(SER_SWAPFACEBUTTONS, false).toBool();
     keepAwake = settings.value(SER_KEEPAWAKE, true).toBool();
     hueSyncIntegration = settings.value(SER_HUESYNC, false).toBool();
+    tailscaleAutoStart = settings.value(SER_TAILSCALE_AUTOSTART, false).toBool();
     enableHdr = settings.value(SER_HDR, false).toBool();
     captureSysKeysMode = static_cast<CaptureSysKeysMode>(settings.value(SER_CAPTURESYSKEYS,
                                                          static_cast<int>(CaptureSysKeysMode::CSK_OFF)).toInt());
@@ -160,9 +162,12 @@ void StreamingPreferences::reload()
                                                         // Try to load from the old preference value too
                                                         static_cast<int>(settings.value(SER_FULLSCREEN, true).toBool() ?
                                                                              recommendedFullScreenMode : WindowMode::WM_WINDOWED)).toInt());
+    // StreamLight 3.0 default: maximised — so the gamepad status bar is
+    // visible at any screen resolution on first launch. Users can still
+    // pick a different mode in Settings > Session > GUI mode.
     uiDisplayMode = static_cast<UIDisplayMode>(settings.value(SER_UIDISPLAYMODE,
-                                               static_cast<int>(settings.value(SER_STARTWINDOWED, true).toBool() ? UIDisplayMode::UI_WINDOWED
-                                                                                                                 : UIDisplayMode::UI_MAXIMIZED)).toInt());
+                                               static_cast<int>(settings.value(SER_STARTWINDOWED, false).toBool() ? UIDisplayMode::UI_WINDOWED
+                                                                                                                  : UIDisplayMode::UI_MAXIMIZED)).toInt());
     // Perform default settings updates as required based on last default version
     if (defaultVer < 1) {
 #ifdef Q_OS_DARWIN
@@ -227,6 +232,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_CAPTURESYSKEYS, captureSysKeysMode);
     settings.setValue(SER_KEEPAWAKE, keepAwake);
     settings.setValue(SER_HUESYNC, hueSyncIntegration);
+    settings.setValue(SER_TAILSCALE_AUTOSTART, tailscaleAutoStart);
 }
 
 int StreamingPreferences::getDefaultBitrate(int width, int height, int fps, bool yuv444)

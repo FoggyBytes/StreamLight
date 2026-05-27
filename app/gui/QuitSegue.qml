@@ -34,8 +34,7 @@ Item {
     }
 
     StackView.onActivated: {
-        // Hide the toolbar before we start loading
-        toolBar.visible = false
+        // (toolbar removed in 3.0 redesign — nothing to hide here)
 
         // Connect the quit completion signal
         ComputerManager.quitAppCompleted.connect(quitAppCompleted)
@@ -47,8 +46,7 @@ Item {
     }
 
     StackView.onDeactivating: {
-        // Show the toolbar again
-        toolBar.visible = true
+        // (toolbar removed in 3.0 redesign — nothing to restore here)
 
         // Disconnect the signal
         ComputerManager.quitAppCompleted.disconnect(quitAppCompleted)

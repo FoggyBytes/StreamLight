@@ -67,6 +67,14 @@ public:
     void requestSessionId(const QString& hostAddress);
 
     /**
+     * Asynchronously asks the host whether Tailscale is installed and active.
+     * Emits tailscaleReceived(QString) with the host's Tailscale IPv4 address
+     * (e.g. "100.64.1.2"), or "NOT_DETECTED" if Tailscale is not present,
+     * or "" on connection error / StreamTweak unreachable.
+     */
+    void requestTailscale(const QString& hostAddress);
+
+    /**
      * Sends a SESSIONDATA batch to StreamTweak. The payload must be a compact
      * JSON string (no embedded newlines). Fire-and-forget; response is discarded.
      */
@@ -86,6 +94,7 @@ signals:
     void statsReceived(const QString& statsJson);
     void appStoresReceived(const QString& storesJson);
     void sessionIdReceived(const QString& sessionId);
+    void tailscaleReceived(const QString& tailscaleIp);
 
 private:
     void sendCommand(const QString& hostAddress, const QString& command);

@@ -227,7 +227,20 @@ public:
 
     Q_INVOKABLE void addNewHostManually(QString address);
 
-    void addNewHost(NvAddress address, bool mdns, QString name = QString(), NvAddress mdnsIpv6Address = NvAddress());
+    /**
+     * Adds a separate "Tailscale" tile for an already-paired host.
+     *
+     * Reuses the parent's UUID and server certificate (no second pairing needed)
+     * but lives under a distinct storageKey (uuid#tailscale) so both the LAN tile
+     * and the Tailscale tile coexist permanently. The clone is address-pinned:
+     * its manualAddress is the only endpoint the poller will ever try.
+     *
+     * @return true if the parent host was found and the clone task was queued,
+     *         false if no host with that UUID exists or a clone already exists.
+     */
+    Q_INVOKABLE bool addTailscaleClone(QString parentUuid, QString tailscaleIp);
+
+    void addNewHost(NvAddress address, bool mdns, QString name = QString(), NvAddress mdnsIpv6Address = NvAddress(), QString aliasSuffix = QString());
 
     QString generatePinString();
 

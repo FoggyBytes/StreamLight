@@ -36,7 +36,8 @@ Item {
         // see them briefly when we pop off the StackView
         stageSpinner.visible = false
         stageLabel.visible = false
-        hintText.visible = false
+        hintTextKb.visible = false
+        hintRow.visible    = false
 
         // Hide the window now that streaming has begun
         window.visible = false
@@ -67,6 +68,11 @@ Item {
 
         // Re-enable GUI gamepad usage now
         SdlGamepadKeyNavigation.enable()
+
+        // Suppress stale events + clear launch-guard flag so next launch is allowed.
+        if (Window.window && Window.window.markStreamJustEnded) {
+            Window.window.markStreamJustEnded()
+        }
 
         // Pop the StreamSegue off the stack if this is a GUI-based app launch
         if (!quitAfter) {
@@ -101,16 +107,14 @@ Item {
     }
 
     StackView.onDeactivating: {
-        // Show the toolbar again when popped off the stack
-        toolBar.visible = true
+        // (toolbar removed in 3.0 redesign — nothing to restore here)
 
         // Re-enable GUI gamepad usage now
         SdlGamepadKeyNavigation.enable()
     }
 
     StackView.onActivated: {
-        // Hide the toolbar before we start loading
-        toolBar.visible = false
+        // (toolbar removed in 3.0 redesign — nothing to hide here)
 
         // Hook up our signals
         session.stageStarting.connect(stageStarting)
@@ -161,12 +165,17 @@ Item {
         asynchronous: true
 
         onLoaded: {
-            // Set the hint text. We do this here rather than
-            // in the hintText control itself to synchronize
-            // with Session.exec() which requires no concurrent
-            // gamepad usage.
-            hintText.text = qsTr("Tip:") + " " + qsTr("Press %1 to disconnect your session").arg(SdlGamepadKeyNavigation.getConnectedGamepads() > 0 ?
-                                                  qsTr("Start+Select+L1+R1") : qsTr("Ctrl+Alt+Shift+Q"))
+            // Disconnect-combo hint: with a gamepad we show the four icons of
+            // the actual combination (Xbox or PlayStation glyphs picked from
+            // the detected controller); otherwise the keyboard shortcut.
+            if (SdlGamepadKeyNavigation.getConnectedGamepads() > 0) {
+                hintRow.visible = true
+                hintTextKb.visible = false
+            } else {
+                hintRow.visible = false
+                hintTextKb.visible = true
+                hintTextKb.text = qsTr("Tip:") + " " + qsTr("Press %1 to disconnect your session").arg(qsTr("Ctrl+Alt+Shift+Q"))
+            }
 
             // Stop GUI gamepad usage now
             SdlGamepadKeyNavigation.disable()
@@ -229,14 +238,91 @@ Item {
         }
     }
 
+    // Keyboard fallback: shown only when no gamepad is connected.
     Label {
-        id: hintText
+        id: hintTextKb
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 50
         anchors.horizontalCenter: parent.horizontalCenter
         font.pointSize: 18
         verticalAlignment: Text.AlignVCenter
-
         wrapMode: Text.Wrap
+        visible: false
+    }
+
+    // Gamepad combination hint: shown only when a controller is detected.
+    // Icons swap between Xbox and PlayStation based on the connected pad.
+    Row {
+        id: hintRow
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 50
+        anchors.horizontalCenter: parent.horizontalCenter
+        spacing: 8
+        visible: false
+
+        readonly property bool _padIsPs: SdlGamepadKeyNavigation.controllerType === "ps"
+        readonly property string _iconA: _padIsPs ? "qrc:/res/pad_ps_create.svg"  : "qrc:/res/pad_xbox_view.svg"
+        readonly property string _iconB: _padIsPs ? "qrc:/res/pad_ps_options.svg" : "qrc:/res/pad_xbox_start.svg"
+        readonly property string _iconL: _padIsPs ? "qrc:/res/pad_ps_l1.svg"      : "qrc:/res/pad_xbox_lb.svg"
+        readonly property string _iconR: _padIsPs ? "qrc:/res/pad_ps_r1.svg"      : "qrc:/res/pad_xbox_rb.svg"
+
+        Label {
+            anchors.verticalCenter: parent.verticalCenter
+            text: qsTr("Press")
+            font.pointSize: 16
+            color: "#f0f0f0"
+        }
+        Image {
+            anchors.verticalCenter: parent.verticalCenter
+            source: hintRow._iconA
+            width: 36; height: 24
+            sourceSize.width: 72; sourceSize.height: 48
+            smooth: true
+        }
+        Label {
+            anchors.verticalCenter: parent.verticalCenter
+            text: "+"
+            font.pointSize: 16
+            color: "#a0a0a0"
+        }
+        Image {
+            anchors.verticalCenter: parent.verticalCenter
+            source: hintRow._iconB
+            width: 36; height: 24
+            sourceSize.width: 72; sourceSize.height: 48
+            smooth: true
+        }
+        Label {
+            anchors.verticalCenter: parent.verticalCenter
+            text: "+"
+            font.pointSize: 16
+            color: "#a0a0a0"
+        }
+        Image {
+            anchors.verticalCenter: parent.verticalCenter
+            source: hintRow._iconL
+            width: 36; height: 24
+            sourceSize.width: 72; sourceSize.height: 48
+            smooth: true
+        }
+        Label {
+            anchors.verticalCenter: parent.verticalCenter
+            text: "+"
+            font.pointSize: 16
+            color: "#a0a0a0"
+        }
+        Image {
+            anchors.verticalCenter: parent.verticalCenter
+            source: hintRow._iconR
+            width: 36; height: 24
+            sourceSize.width: 72; sourceSize.height: 48
+            smooth: true
+        }
+        Label {
+            anchors.verticalCenter: parent.verticalCenter
+            text: qsTr("to disconnect")
+            font.pointSize: 16
+            color: "#f0f0f0"
+        }
     }
 }

@@ -1,10 +1,32 @@
 #include "sdlgamepadkeynavigation.h"
 
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QGuiApplication>
 #include <QWindow>
+#include <QFile>
+#include <QTextStream>
+#include <QDateTime>
+#include <QStandardPaths>
 
 #include "settings/mappingmanager.h"
+
+// Append a line to a debug log file next to the executable.
+// Lets us diagnose gamepad-nav issues without redirecting stderr
+// (which crashes the app under PowerShell `2>`).
+static void slDbg(const QString& line)
+{
+    static QFile* f = nullptr;
+    if (!f) {
+        f = new QFile(QCoreApplication::applicationDirPath() + "/streamlight_pad.log");
+        f->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+    }
+    if (f->isOpen()) {
+        QTextStream(f) << QDateTime::currentDateTime().toString("hh:mm:ss.zzz")
+                       << " " << line << "\n";
+        f->flush();
+    }
+}
 
 #define AXIS_NAVIGATION_REPEAT_DELAY 150
 
@@ -14,15 +36,114 @@ SdlGamepadKeyNavigation::SdlGamepadKeyNavigation(StreamingPreferences* prefs)
       m_UiNavMode(false),
       m_FirstPoll(false),
       m_HasFocus(false),
-      m_LastAxisNavigationEventTime(0)
+      m_LastAxisNavigationEventTime(0),
+      m_ControllerType(QStringLiteral("none")),
+      m_InputMode(QStringLiteral("pointer")),
+      m_HasLastMousePos(false)
 {
     m_PollingTimer = new QTimer(this);
     connect(m_PollingTimer, &QTimer::timeout, this, &SdlGamepadKeyNavigation::onPollingTimerFired);
+
+    if (qGuiApp != nullptr) {
+        qGuiApp->installEventFilter(this);
+    }
+}
+
+void SdlGamepadKeyNavigation::dbgLog(const QString& msg)
+{
+    slDbg("QML: " + msg);
+}
+
+void SdlGamepadKeyNavigation::simulateKey(int qtKey)
+{
+    Qt::Key key = static_cast<Qt::Key>(qtKey);
+    sendKey(QEvent::Type::KeyPress,   key);
+    sendKey(QEvent::Type::KeyRelease, key);
+}
+
+void SdlGamepadKeyNavigation::updateControllerType()
+{
+    QString newType = QStringLiteral("none");
+    if (!m_Gamepads.isEmpty()) {
+        SDL_GameController* gc = m_Gamepads.first();
+        SDL_GameControllerType t = SDL_GameControllerGetType(gc);
+        const char* name = SDL_GameControllerName(gc);
+        switch (t) {
+        case SDL_CONTROLLER_TYPE_PS3:
+        case SDL_CONTROLLER_TYPE_PS4:
+        case SDL_CONTROLLER_TYPE_PS5:
+            newType = QStringLiteral("ps");
+            break;
+        case SDL_CONTROLLER_TYPE_XBOX360:
+        case SDL_CONTROLLER_TYPE_XBOXONE:
+            newType = QStringLiteral("xbox");
+            break;
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+            newType = QStringLiteral("switch");
+            break;
+        default:
+            newType = QStringLiteral("generic");
+            break;
+        }
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Gamepad detected: %s (SDL type=%d, family=%s)",
+                    name ? name : "(null)", (int)t, qPrintable(newType));
+    }
+    if (newType != m_ControllerType) {
+        m_ControllerType = newType;
+        emit controllerTypeChanged();
+    }
 }
 
 SdlGamepadKeyNavigation::~SdlGamepadKeyNavigation()
 {
+    if (qGuiApp != nullptr) {
+        qGuiApp->removeEventFilter(this);
+    }
     disable();
+}
+
+void SdlGamepadKeyNavigation::setInputMode(const QString& mode)
+{
+    if (m_InputMode == mode) {
+        return;
+    }
+    m_InputMode = mode;
+    emit inputModeChanged();
+}
+
+bool SdlGamepadKeyNavigation::eventFilter(QObject* watched, QEvent* event)
+{
+    switch (event->type()) {
+    case QEvent::MouseMove: {
+        auto* me = static_cast<QMouseEvent*>(event);
+        const QPoint pos = me->globalPosition().toPoint();
+        if (!m_HasLastMousePos) {
+            m_LastMousePos = pos;
+            m_HasLastMousePos = true;
+        } else {
+            const int dx = qAbs(pos.x() - m_LastMousePos.x());
+            const int dy = qAbs(pos.y() - m_LastMousePos.y());
+            if (dx + dy >= 4) {
+                m_LastMousePos = pos;
+                setInputMode(QStringLiteral("pointer"));
+            }
+        }
+        break;
+    }
+    case QEvent::MouseButtonPress:
+        setInputMode(QStringLiteral("pointer"));
+        break;
+    case QEvent::KeyPress:
+        setInputMode(QStringLiteral("key"));
+        break;
+    default:
+        break;
+    }
+    return QObject::eventFilter(watched, event);
 }
 
 void SdlGamepadKeyNavigation::enable()
@@ -69,6 +190,8 @@ void SdlGamepadKeyNavigation::enable()
         }
     }
 
+    updateControllerType();
+
     m_Enabled = true;
 
     // Start the polling timer if the window is focused
@@ -95,6 +218,7 @@ void SdlGamepadKeyNavigation::disable()
 
 void SdlGamepadKeyNavigation::notifyWindowFocus(bool hasFocus)
 {
+    slDbg(QString("notifyWindowFocus(%1)  enabled=%2").arg(hasFocus).arg(m_Enabled));
     m_HasFocus = hasFocus;
     updateTimerState();
 }
@@ -193,6 +317,14 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
                 // by the control in focus.
                 sendKey(type, Qt::Key_Hangup);
                 break;
+            case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+                // Used by SettingsScreen to switch to the previous tab.
+                sendKey(type, Qt::Key_PageUp);
+                break;
+            case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+                // Used by SettingsScreen to switch to the next tab.
+                sendKey(type, Qt::Key_PageDown);
+                break;
             default:
                 break;
             }
@@ -207,6 +339,7 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
                 // before we've processed the add event.
                 if (!m_Gamepads.contains(gc)) {
                     m_Gamepads.append(gc);
+                    updateControllerType();
                 }
                 else {
                     // We already have this game controller open
@@ -266,6 +399,11 @@ void SdlGamepadKeyNavigation::sendKey(QEvent::Type type, Qt::Key key, Qt::Keyboa
 {
     QGuiApplication* app = static_cast<QGuiApplication*>(QGuiApplication::instance());
     QWindow* focusWindow = app->focusWindow();
+    slDbg(QString("sendKey: key=0x%1 type=%2 uiNav=%3 focusWindow=%4")
+              .arg(QString::number((int)key, 16))
+              .arg((int)type)
+              .arg(m_UiNavMode ? 1 : 0)
+              .arg(focusWindow ? "OK" : "NULL"));
     if (focusWindow != nullptr) {
         QKeyEvent keyPressEvent(type, key, modifiers);
         app->sendEvent(focusWindow, &keyPressEvent);
@@ -276,6 +414,7 @@ void SdlGamepadKeyNavigation::updateTimerState()
 {
     if (m_PollingTimer->isActive() && (!m_HasFocus || !m_Enabled)) {
         m_PollingTimer->stop();
+        slDbg("polling timer STOPPED");
     }
     else if (!m_PollingTimer->isActive() && m_HasFocus && m_Enabled) {
         // Flush events on the first poll
@@ -283,6 +422,7 @@ void SdlGamepadKeyNavigation::updateTimerState()
 
         // Poll every 50 ms for a new joystick event
         m_PollingTimer->start(50);
+        slDbg("polling timer STARTED (50ms)");
     }
 }
 

@@ -170,6 +170,34 @@ void StreamTweakBridge::sendSessionDataSync(const QString& hostAddress, const QS
     socket.disconnectFromHost();
 }
 
+void StreamTweakBridge::requestTailscale(const QString& hostAddress)
+{
+    QTcpSocket* socket = new QTcpSocket();
+
+    QObject::connect(socket, &QTcpSocket::disconnected,
+                     socket, &QObject::deleteLater);
+
+    QObject::connect(socket, &QAbstractSocket::errorOccurred,
+                     [this, socket](QAbstractSocket::SocketError) {
+        emit tailscaleReceived(QString());
+        socket->deleteLater();
+    });
+
+    QObject::connect(socket, &QTcpSocket::connected, [socket]() {
+        QTextStream stream(socket);
+        stream << "TAILSCALE\n";
+        stream.flush();
+    });
+
+    QObject::connect(socket, &QTcpSocket::readyRead, [this, socket]() {
+        QString response = QString::fromUtf8(socket->readAll()).trimmed();
+        emit tailscaleReceived(response);
+        socket->disconnectFromHost();
+    });
+
+    socket->connectToHost(hostAddress, BridgePort);
+}
+
 void StreamTweakBridge::requestAppStores(const QString& hostAddress)
 {
     QTcpSocket* socket = new QTcpSocket();

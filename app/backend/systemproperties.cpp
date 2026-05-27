@@ -1,8 +1,11 @@
 #include "systemproperties.h"
 #include "utils.h"
 
+#include <QCoreApplication>
 #include <QGuiApplication>
 #include <QLibraryInfo>
+#include <QProcess>
+#include <QStringList>
 
 #include "streaming/session.h"
 #include "streaming/streamutils.h"
@@ -270,4 +273,27 @@ void SystemProperties::refreshDisplays()
     }
 
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
+}
+
+void SystemProperties::restartApplication()
+{
+    // Build the new argv: same executable path, same CLI arguments minus argv[0].
+    QStringList args = QCoreApplication::arguments();
+    if (!args.isEmpty()) {
+        args.removeFirst();
+    }
+
+    const QString exePath = QCoreApplication::applicationFilePath();
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "SystemProperties: restarting (%s)", exePath.toUtf8().constData());
+
+    // QProcess::startDetached spawns a fully independent child process — it does
+    // not wait on the parent exiting, so calling quit() right after is safe.
+    if (!QProcess::startDetached(exePath, args)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "SystemProperties: restart failed to spawn detached process");
+        return;
+    }
+
+    QCoreApplication::quit();
 }

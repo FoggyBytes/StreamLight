@@ -1,6 +1,7 @@
 #include "session.h"
 #include "settings/streamingpreferences.h"
 #include "streaming/streamutils.h"
+#include "backend/nvhttp.h"
 #include "backend/richpresencemanager.h"
 
 #include <Limelight.h>
@@ -34,6 +35,7 @@
 #include <QtEndian>
 #include <QCoreApplication>
 #include <QThreadPool>
+#include <QNetworkAccessManager>
 #include <QPainter>
 #include <QImage>
 #include <QGuiApplication>
@@ -576,9 +578,14 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
     m_HostMetricsPoller->start();
 
     // If StreamTweak sends a stop signal via the STATS response, terminate the session
-    // exactly as if the user had pressed Stop in the UI.
+    // gracefully. We must NOT call interrupt() here because it forcibly aborts ENet via
+    // LiInterruptConnection() before SDL_QUIT, which on an established session leaves the
+    // host without a BYE and corrupts teardown (observed on ROG Ally / AMD: hard hang in
+    // the renderer / WASAPI release path requiring power-cycle). requestGracefulStop()
+    // skips LiInterruptConnection() and only pushes SDL_QUIT, letting the SDL event loop
+    // perform a clean LiStopConnection() — the same path used by the local stop hotkey.
     connect(m_HostMetricsPoller, &HostMetricsPoller::stopRequested,
-            this,                &Session::interrupt);
+            this,                &Session::requestGracefulStop);
 
     // Session telemetry sampler: sends per-second client stats to StreamTweak every 10s.
     // start() is called later in exec() once the stream is running (after LiStartConnection).
@@ -638,6 +645,13 @@ bool Session::initialize(QQuickWindow* qtWindow)
         SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, shouldUseFullScreenSpaces ? "1" : "0");
     }
 #endif
+
+    // Capability gate: refresh host capabilities right before codec/HDR
+    // negotiation reads them. Eliminates the first-launch fallback to
+    // H.264/SDR that happens when m_Computer->serverCodecModeSupport is
+    // stale from an earlier background poll (e.g. host HDR display was
+    // off, or the host had not yet finished encoder init).
+    refreshHostCapabilities();
 
     if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -976,6 +990,60 @@ void Session::emitLaunchWarning(QString text)
         m_LaunchWarnings.append(text);
         emit launchWarningsChanged();
     }
+}
+
+void Session::refreshHostCapabilities()
+{
+    // Skip when the user explicitly forces H.264 SDR without YUV 4:4:4 — none
+    // of the stale-prone bits (HDR, AV1, HEVC, YUV444) matter on that path,
+    // so the synchronous fetch would only add latency for no benefit.
+    bool wantsAdvanced = m_Preferences->enableHdr
+                      || m_Preferences->enableYUV444
+                      || m_Preferences->videoCodecConfig != StreamingPreferences::VCC_FORCE_H264;
+    if (!wantsAdvanced) {
+        return;
+    }
+
+    qInfo() << "Capability gate: refreshing host serverinfo before launch";
+
+    QNetworkAccessManager nam;
+    for (auto& address : m_Computer->uniqueAddresses()) {
+        if (address.isNull()) {
+            continue;
+        }
+
+        // Mirror PcMonitorThread::tryPollComputer: pass 0 for httpsPort so
+        // NvHTTP rediscovers it from the HTTP response. Using a cached value
+        // here would risk failing if the port has changed.
+        NvHTTP http(address, 0, m_Computer->serverCert, &nam);
+
+        QString serverInfo;
+        try {
+            // fastFail=true uses a 2s timeout — bounded latency for the user.
+            serverInfo = http.getServerInfo(NvHTTP::NvLogLevel::NVLL_NONE, true);
+        } catch (...) {
+            continue;
+        }
+
+        try {
+            NvComputer freshState(http, serverInfo);
+            if (freshState.uuid != m_Computer->uuid) {
+                qWarning() << "Capability gate: UUID mismatch from"
+                           << address.toString() << "— ignoring response";
+                continue;
+            }
+            int oldScm = m_Computer->serverCodecModeSupport;
+            m_Computer->update(freshState);
+            qInfo() << "Capability gate: SCM"
+                    << Qt::hex << oldScm << "->" << m_Computer->serverCodecModeSupport
+                    << Qt::dec;
+            return;
+        } catch (...) {
+            continue;
+        }
+    }
+
+    qWarning() << "Capability gate: refresh failed on all addresses — proceeding with cached state";
 }
 
 bool Session::validateLaunch(SDL_Window* testWindow)
@@ -1790,6 +1858,18 @@ void Session::interrupt()
     LiInterruptConnection();
 
     // Inject a quit event to our SDL event loop
+    SDL_Event event;
+    event.type = SDL_QUIT;
+    event.quit.timestamp = SDL_GetTicks();
+    SDL_PushEvent(&event);
+}
+
+void Session::requestGracefulStop()
+{
+    // Inject only SDL_QUIT — no LiInterruptConnection() here. This lets the SDL
+    // event loop drive an orderly LiStopConnection() with a protocol-level BYE
+    // to the host, identical to the local stop hotkey path. See the connect() in
+    // the Session ctor for the rationale.
     SDL_Event event;
     event.type = SDL_QUIT;
     event.quit.timestamp = SDL_GetTicks();

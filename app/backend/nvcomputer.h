@@ -66,6 +66,18 @@ public:
     QVector<NvAddress>
     uniqueAddresses() const;
 
+    /**
+     * Storage key used by ComputerManager::m_KnownHosts.
+     *
+     * Always returns the real uuid for normal hosts (aliasSuffix empty).
+     * For locally-cloned hosts (e.g. Tailscale dual-tile), returns
+     * "<uuid>#<aliasSuffix>" so multiple tiles for the same physical PC
+     * (same Moonlight uuid) can coexist in the map. The uuid field itself
+     * is never modified — Moonlight protocol identity stays intact.
+     */
+    QString
+    storageKey() const;
+
     void
     serialize(QSettings& settings, bool serializeApps) const;
 
@@ -113,6 +125,13 @@ public:
     QSslCertificate serverCert;
     QVector<NvApp> appList;
     bool isNvidiaServerSoftware;
+    // Local-only tag that disambiguates multiple tiles for the same uuid.
+    // Empty for the primary tile. "tailscale" for the Tailscale clone.
+    QString aliasSuffix;
+    // When true, NvComputer::update() will not overwrite local/remote/ipv6
+    // addresses (used by Tailscale clones so the poller cannot collapse them
+    // back onto the parent's LAN endpoint). Persisted to QSettings.
+    bool isAddressPinned = false;
     // Remember to update isEqualSerialized() when adding fields here!
 
     // Synchronization
