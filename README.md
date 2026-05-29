@@ -18,7 +18,7 @@
 
 ## ✅ Compatibility
 
-Windows 10 and 11. Works as a standalone Moonlight-compatible client against any Sunshine / Apollo / Vibeshine / Vibepollo host, **and** unlocks its full feature set when paired with [**StreamTweak 6.3.0**](https://github.com/FoggyBytes/StreamTweak) on the host PC (Tailscale dual-tile, live NIC speed transitions, host metrics overlay, store badges, session-quality reporting, remote pause).
+Windows 10 and 11. Works as a standalone Moonlight-compatible client against any Sunshine / Apollo / Vibeshine / Vibepollo host, **and** unlocks its full feature set when paired with [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) on the host PC (Tailscale dual-tile, live NIC speed transitions, host metrics overlay, store badges, session-quality reporting, remote pause).
 
 > ⚠️ **Not affiliated with or endorsed by the Moonlight project.** StreamLight is an independent fork. For upstream Moonlight support, use the [official client](https://github.com/moonlight-stream/moonlight-qt).
 
