@@ -196,11 +196,6 @@ FocusScope {
                     id: onlineRow
                     anchors.centerIn: parent
                     spacing: 6
-                    Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 7; height: 7
-                        color: appsRoot._greenLk
-                    }
                     Label {
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("ONLINE")
