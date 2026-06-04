@@ -4,69 +4,54 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+Version 3.1.0 - The "Secure Bridge Update" (04/06/2026)
+------------------------------------------
+
+✨ NEW FEATURES:
+• Authenticated StreamTweak bridge: StreamLight now signs every command it sends to StreamTweak (NIC control, host metrics, store map, session telemetry) with its existing Moonlight identity certificate — no password to type. The first time you open a paired host, StreamLight enrolls automatically and StreamTweak shows a one-time "Allow this client?" prompt displaying a 4-digit PIN to confirm against the one StreamLight shows. This closes the previously unauthenticated bridge, so a stranger on your network can no longer command your host or read its metrics
+• Per-host access badge: each host card shows its StreamTweak access state at a glance — AUTHORIZED (green), PENDING (amber, waiting for approval on the host) or DENIED (red). The badge is hidden for hosts without StreamTweak. A new "Request StreamTweak access" option in the host's menu re-sends the approval request
+
+🎨 UI:
+• Dialog buttons: the affirmative action (Yes / OK / Add) is now on the LEFT and the dismissive one on the right; the green accent is reserved for the focused button, so the keyboard/gamepad selection is always unambiguous (previously the affirmative button looked highlighted even when focus was elsewhere)
+• Rebranding: remaining user-facing "Moonlight" references replaced with "StreamLight" (Quit prompt, network-test, decoder and pairing messages, streaming window title), keeping "Moonlight" only where it refers to the upstream project/engine and the unchanged settings-storage location
+
+🔧 IMPROVEMENTS (the 3.0.1 "Bridge Fix" work, now part of 3.1.0):
+• Store badges sometimes missing: APPSTORES replies split across multiple TCP packets were truncated because the client read only the first packet; the bridge now buffers each reply until the protocol's newline terminator, so large game libraries always arrive complete
+• Wrong host's data on rapid actions: concurrent bridge requests shared a single response signal and could deliver one host's reply to another (e.g. store badges from the wrong PC); each request now owns its own socket and callback, so responses can no longer cross over
+• Store-badge cache mismatch: the cached store map was keyed by the host's position in the list, so adding or removing a host (or inserting a Tailscale tile) could attach it to the wrong PC; it is now keyed by host UUID
+• Host metrics overlay could freeze: if the host accepted the STATS connection but never replied, the per-second poller waited indefinitely and stopped updating; a 3-second per-request watchdog now guarantees every poll completes
+• Remote pause reliability: the host's stop signal was matched as a raw substring in the STATS response; it is now read from the parsed JSON field, so whitespace or field ordering can never miss — or falsely trigger — a session stop
+• Bridge sockets are now parented to the bridge object, preventing dangling sockets if a request is still in flight when its owner is destroyed
+
+ℹ️ Authorization never blocks streaming. If a host has not authorized this client, you can still stream from it normally — only the StreamTweak integration is unavailable: host metrics overlay, NIC speed & one-click Streaming Mode, store badges on covers, session quality reports & live charts, Tailscale dual-tile, and remote pause. The per-host badge shows PENDING/DENIED and a PIN popup guides approval; use "Request StreamTweak access" from the host's options to retry.
+
+⚠️ REQUIRES: StreamTweak 7.1.0 or later on the host PC for the integration features. StreamTweak 7.1.0 requires authenticated clients by default, so older StreamLight versions can no longer use the bridge with it — update both apps together. StreamLight 3.1.0 talking to an older StreamTweak will simply show no StreamTweak features until the host is updated.
+
 Version 3.0.0 - The "Big UI Update" (27/05/2026)
 ------------------------------------------
 
-🎨 COMPLETE UI REDESIGN — flat Xbox / Steam-inspired look from the ground up.
-
-NAVIGATION
-• Removed the old sidebar and toolbar; content area is now full-width on every screen
-• Bottom status bar shows contextual gamepad prompts (A / B / X / Y / LB / RB), all clickable with the mouse too — every action surfaces as both a pad shortcut and a visible button
-• Gamepad glyphs swap dynamically between Xbox and PlayStation icons based on the controller currently in use (DualSense / DualShock / Xbox / generic)
-• B from Settings now returns to the page that opened it (Home or the host's app grid), not always Home
+🎨 UI REDESIGN:
+• Complete flat redesign inspired by the Xbox and Steam Big Picture interfaces; the old sidebar and toolbar are gone and every screen is now full-width
+• Gamepad-first navigation: D-pad moves across host cards, app grid, settings tabs and dialogs; a clickable bottom status bar shows contextual prompts (A / B / X / Y / LB / RB), each also usable with the mouse
+• Gamepad glyphs swap automatically between Xbox and PlayStation icons based on the connected controller (DualSense / DualShock / Xbox / generic)
+• Home: portrait host cards with per-host coloured gradient headers, an inline "+ Add Hosts" tile and a square Refresh button; per-card Options dropdown (View All Apps, Test Network, Rename, Delete, View Details, StreamTweak Streaming Mode, Wake) with no background dim; NIC speed polled live every 2 seconds (e.g. 2.5 Gbps → 1 Gbps when Streaming Mode kicks in)
+• App grid: compact one-row header (hostname · ONLINE · IP · NIC speed · resolution · FPS), 200×267 covers with store badges and a tight bright-green focus border; the running app's cover gets a thicker, pulsing border; app-name tooltip appears instantly below the cover; in-cover Play / Stop replaced by A "Resume" / X "Stop" prompts in the status bar
+• Settings: 6 tabs (Video / Audio / Input / Decoder / Network / Session) with bold uppercase labels and LB/RB tab cycling; pill-style segmented selectors replace every dropdown (D-pad ◀ / ▶ pick the value, no popup); inline subtitles replace hover tooltips; bitrate slider with hold-to-accelerate and an X / □ "Default" prompt; auto-scroll keeps the focused row in view; initial focus lands on the first control of the active tab
+• Redesigned Pair dialog (hero-size bright-green PIN) and Add Host dialog (large IP field, D-pad navigation), both without background dim
+• Unified bright green #00E676 accent across the whole UI (focus cursor, TabBar underline, ONLINE badge, slider handle, accent borders, hyperlinks), ambient charcoal → deep green gradient background, DM Sans + JetBrains Mono fonts embedded
 • Min window size raised to 1280×720
 
-HOME
-• Host list with portrait-card tiles and a per-host coloured gradient header
-• Inline "+ Add Hosts" tile + small square Refresh button next to the last host card (replaces the top action buttons)
-• Per-card Options dropdown (View All Apps, Test Network, Rename, Delete, View Details, StreamTweak Streaming Mode, Wake) that does NOT dim the background
-• NIC speed polled every 2 seconds — see live transitions (e.g. 2.5 Gbps → 1 Gbps when StreamTweak Streaming Mode kicks in)
-• Tailscale dual-tile (requires StreamTweak 6.3.0+): after a successful pairing via LAN IP, StreamLight asks the host (via the new TAILSCALE bridge command) whether Tailscale is installed; if yes, a one-time popup offers to create a second host tile pinned to the 100.x.y.z Tailscale endpoint. The new tile coexists permanently with the LAN tile and is address-pinned (mDNS rediscovery on the LAN cannot collapse it back into the parent). Internally NvComputer gained two new persisted fields (aliasSuffix, isAddressPinned) and ComputerManager's m_KnownHosts is now keyed by storageKey() (uuid + optional #suffix) instead of plain uuid — the underlying Moonlight UUID and server certificate are shared with the parent so no second pairing is needed. The popup can be dismissed permanently per-host
-• Add Host dialog redesigned with large IP TextField + D-pad navigation (Add / Cancel buttons)
-• Pair dialog redesigned: huge bright-green PIN, no background dim, fully gamepad-friendly Cancel
+✨ NEW FEATURES:
+• Tailscale dual-tile: after pairing via LAN IP, StreamLight asks the host (new TAILSCALE bridge command) whether Tailscale is installed; if so, a one-time popup offers a second host tile pinned to the host's 100.x.y.z address. The LAN and Tailscale tiles coexist permanently and the Tailscale tile is address-pinned, so LAN mDNS rediscovery cannot collapse it back onto the parent; the Moonlight UUID and certificate are shared with the parent so no second pairing is needed; the popup is dismissible permanently per-host
+• Auto-start Tailscale on launch (Network tab): launches tailscale-ipn.exe in the background at every startup so remote hosts are reachable via their 100.x.y.z IP without keeping the Tailscale tray open; enabling shows a one-shot RESTART REQUIRED dialog, disabling leaves the running instance untouched, and it is skipped silently when Tailscale is already running. The official Windows installer from https://tailscale.com/download is required; the Microsoft Store package is not supported
+• Windows Xbox app integration: branded 1024×1024 tile artwork in the Xbox app's "My apps" section instead of the default grey square; an optional install task (default ON) pre-populates the tile so StreamLight appears on first open; a QFileSystemWatcher re-applies the artwork within ~250 ms whenever the Xbox app rewrites the tile, and a boot-time check refreshes it if needed; diagnostic log at %TEMP%\streamlight-xbox-tile.log
+• Single-instance guard: launching StreamLight while it is already running brings the existing window to the foreground and exits the second invocation; CLI subcommands (stream / quit / pair / list) remain re-entrant
 
-APP GRID (per host)
-• Compact one-row header: hostname · ONLINE · IP · NIC speed · resolution · FPS
-• 200×267 covers with store badges (Steam / Epic / GOG / Ubisoft / Xbox / Battle.net / EA)
-• Bright-green rounded border on focus / hover, tight around the cover
-• Name tooltip appears INSTANTLY below the cover (no delay), positioned outside the focus frame
-• Active streaming session: cover gets a thicker (5 px) PULSING green border so the running app is unmistakable
-• In-cover Play / Stop overlay removed — the same actions now live in the status bar (A "Resume" / X "Stop") when the cursor is on the running app
-
-SETTINGS
-• 6 tabs (Video / Audio / Input / Decoder / Network / Session), bold uppercase labels, LB/RB cycle between them
-• Pill-style segmented selectors replace the old dropdowns — D-pad Left/Right pick the value, no popup, no focus leak
-• Larger fonts throughout, every option title in bold with an optional description below
-• Tooltips moved inline as subtitles (instant, no hover delay); legacy tooltips reviewed, shortened, non-Windows references removed
-• Scrollbar now adapts dynamically to the active tab's content height
-• D-pad navigation auto-scrolls the viewport to keep the focused row visible
-• Bitrate slider: hold-to-accelerate (longer hold = faster delta), redundant prefix removed, unit fixed to "Mbps", X / □ "Default" status prompt restores the recommended bitrate
-• Initial focus lands on the first control of the active tab instead of requiring several D-pad presses
-• New Network option "Auto-start Tailscale on launch": when enabled, StreamLight launches Tailscale (tailscale-ipn.exe) in the background at every startup so remote hosts can be reached via their 100.x.y.z Tailscale IP without keeping the Tailscale tray manually open. The toggle persists across sessions and pairs naturally with the new Tailscale dual-tile workflow on Home. Switching it ON shows a one-shot RESTART REQUIRED dialog (Yes restarts immediately, No defers to the next launch). Switching it OFF intentionally does NOT terminate the running Tailscale instance — a brief notice informs the user that Tailscale will keep running and that auto-start is disabled for future launches. The official Windows installer from https://tailscale.com/download is required; the Microsoft Store package is not supported. Auto-start is skipped silently when Tailscale is already running (e.g. started manually or pinned to Windows startup)
-
-VISUAL IDENTITY
-• Unified bright green #00E676 across the whole UI (focus cursor, TabBar underline, ONLINE badge, slider handle, accent borders, hyperlinks)
-• Ambient vertical gradient background (charcoal → deep green) on every section
-• DM Sans + JetBrains Mono fonts embedded
-• Mouse and gamepad focus indicators are visually consistent
-
-WINDOWS XBOX APP INTEGRATION
-• Branded tile artwork in the Windows 11 Xbox app's "My apps" section: StreamLight no longer shows the default grey square when added to the user's custom library — a 1024×1024 dark-green gradient PNG with the swoosh glow is automatically placed in the tile, matching the visual quality of the curated launchers (Steam, Epic Games Store, GOG GALAXY, Ubisoft Connect, EA App, Battle.net)
-• Pre-population on install: a new optional task "Add an icon to the Xbox app's 'My apps' section" (default ON, shown next to "Create a desktop icon" during setup) seeds the CustomLibraryManagement manifest entry and tile PNG directly under %LocalAppData% — when the user opens the Xbox app for the first time after installing, StreamLight already appears in "My apps" with the proper tile, no manual "+" click required. The installer step runs as the original non-elevated user via Inno Setup's runasoriginaluser flag so the manifest lands in the correct user profile and is visible to the Xbox app
-• Runtime self-heal: a QFileSystemWatcher on the CustomLibraryManagement and Images folders re-applies the branded PNG within ~250 ms whenever the Xbox app rewrites the tile (e.g. user manually adds StreamLight via "+" while the app is running, or Xbox app refreshes its metadata)
-• Boot-time check: at every launch StreamLight verifies the tile PNG against the embedded artwork and refreshes it if needed — covers manual additions made while StreamLight was closed (one-shot, idempotent, ~50 ms)
-• Diagnostic log at %TEMP%\streamlight-xbox-tile.log records each step (registerEntry / applyIfRegistered / watcher events) for troubleshooting installer or permission issues
-
-FIXES
-• Capability gate before launch: fixes the long-standing first-launch fallback to H.264/SDR when HDR or AV1 is enabled. Previously, if the host's serverCodecModeSupport was stale in the client's cache (e.g. the host's HDR-capable display was powered off when the background poller last fetched serverinfo, or the host had just finished booting and the encoder wasn't fully initialised), the first launch attempt would silently downgrade to H.264 and SDR; only going back to the host's app grid and resuming the session restored AV1 + HDR. StreamLight now does a synchronous serverinfo refresh inside Session::initialize, right before codec/HDR negotiation reads the capability bits, so the negotiation always sees the current host state. Bounded latency: at most 2 s on cold first launch (the fast-fail timeout already used by the background poller); subsequent launches return in well under 100 ms when the host responds quickly. The gate is skipped when the user has explicitly forced H.264 SDR without YUV 4:4:4, since none of the stale-prone bits matter on that path. If the synchronous fetch fails on every reachable address (timeout, network blip), launch proceeds with the cached state — never blocks the user
-
-UNDER THE HOOD
-• Single-instance guard: launching StreamLight while it is already running no longer spawns a second process — the existing window is brought to the foreground (de-minimized, raised and activated) and the second invocation exits immediately. Uses a per-user QLocalServer named pipe ("StreamLight-SingleInstance"); CLI subcommands (stream / quit / pair / list) remain re-entrant
+🔧 IMPROVEMENTS:
+• Capability gate before launch: fixes the long-standing first-launch fallback to H.264 / SDR when HDR or AV1 was enabled but the host's cached codec/HDR capability bits were stale (e.g. display powered off during the last serverinfo poll, or the host just booted). Session::initialize now does a synchronous serverinfo refresh right before codec/HDR negotiation, so the first launch always sees the current host state; bounded to at most 2 s on cold launch, skipped when H.264 SDR is forced, and falls back to the cached state if every address times out
 • Streaming engine (FFmpeg / D3D11VA / DXVA2 / libplacebo / moonlight-common-c) untouched — same protocol and decoder pipeline as 2.3.1
-• ComputerModel exposes new "address" and "gpuModel" roles to QML
-• SdlGamepadKeyNavigation exposes controllerType (xbox / ps / switch / generic) and simulateKey() for click-to-pad bridging
-• 7 dead 2.3.1 UI files + 11 orphan SVG icons removed from the build
-• Settings storage unchanged from 2.x — Qt continues to use HKCU\Software\Moonlight Game Streaming Project\Moonlight; upgrades preserve paired hosts, preferences and certificates transparently with no migration step
+• Settings storage unchanged from 2.x (HKCU\Software\Moonlight Game Streaming Project\Moonlight) — upgrades preserve paired hosts, preferences and certificates with no migration step
+• 7 dead 2.3.1 UI files and 11 orphan SVG icons removed from the build
 
 ⚠️ REQUIRES: StreamTweak 6.3.0 or later on the host PC for the Tailscale dual-tile workflow. Earlier versions (6.1.0+) remain fully compatible but won't expose the Tailscale endpoint — StreamLight will only show the LAN tile in that case.
 

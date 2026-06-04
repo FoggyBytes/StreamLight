@@ -9,9 +9,6 @@ HostMetricsPoller::HostMetricsPoller(const QString& hostAddress, QObject* parent
     , m_hostAddress(hostAddress)
     , m_bridge(this)
 {
-    connect(&m_bridge, &StreamTweakBridge::statsReceived,
-            this,      &HostMetricsPoller::onStatsReceived);
-
     connect(&m_timer, &QTimer::timeout,
             this,     &HostMetricsPoller::poll);
 
@@ -42,7 +39,10 @@ void HostMetricsPoller::poll()
         return;
 
     m_pendingRequest = true;
-    m_bridge.requestStats(m_hostAddress);
+    // The bridge always invokes this callback exactly once (success, error, or
+    // timeout), so m_pendingRequest can never get stuck true and stall polling.
+    m_bridge.requestStats(m_hostAddress,
+                          [this](const QString& json) { onStatsReceived(json); });
 }
 
 void HostMetricsPoller::onStatsReceived(const QString& statsJson)
@@ -55,26 +55,28 @@ void HostMetricsPoller::onStatsReceived(const QString& statsJson)
     if (statsJson.isEmpty() || statsJson == QStringLiteral("STATS_UNAVAILABLE"))
         return;
 
-    HostMetrics parsed = parseJson(statsJson);
+    QJsonDocument doc = QJsonDocument::fromJson(statsJson.toUtf8());
+    if (!doc.isObject())
+        return;
 
-    // StreamTweak injects "stop":1 into the STATS response as a one-shot
-    // signal to terminate the active streaming session from the host side.
-    if (statsJson.contains(QLatin1String("\"stop\":1")))
+    QJsonObject obj = doc.object();
+
+    // StreamTweak sets "stop":1 in the STATS response as a one-shot signal to
+    // terminate the active streaming session from the host side. Read it from
+    // the parsed object (not a raw substring match), so whitespace or field
+    // ordering in the JSON can never make us miss — or falsely trigger — a stop.
+    if (obj.value(QStringLiteral("stop")).toInt() == 1)
         emit stopRequested();
+
+    HostMetrics parsed = parseObject(obj);
 
     QMutexLocker locker(&m_mutex);
     m_metrics = parsed;
 }
 
-HostMetrics HostMetricsPoller::parseJson(const QString& json)
+HostMetrics HostMetricsPoller::parseObject(const QJsonObject& obj)
 {
     HostMetrics m;
-
-    QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
-    if (!doc.isObject())
-        return m;
-
-    QJsonObject obj = doc.object();
 
     auto getInt = [&](const char* key) -> int {
         QJsonValue v = obj.value(QLatin1String(key));

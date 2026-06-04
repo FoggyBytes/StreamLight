@@ -106,15 +106,17 @@ Popup {
                     implicitWidth: 180
                     implicitHeight: 40
                     radius: 8
-                    color: addBtn.activeFocus || addBtn.hovered
-                           ? Qt.rgba(0, 0.9, 0.46, 0.18)
-                           : Qt.rgba(0, 0.9, 0.46, 0.10)
-                    border.color: "#00E676"
+                    color: addBtn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.20)
+                         : addBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
+                         :                      "#1f1f1f"
+                    border.color: addBtn.activeFocus ? "#00E676"
+                                : addBtn.hovered     ? "#3a3a3a"
+                                :                      "#2a2a2a"
                     border.width: addBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: addBtn.text
-                    color: "#f0f0f0"
+                    color: "#00E676"
                     font.family: "DM Sans"
                     font.pixelSize: 14
                     font.bold: true
@@ -132,9 +134,13 @@ Popup {
                     implicitWidth: 110
                     implicitHeight: 40
                     radius: 8
-                    color: notNowBtn.activeFocus || notNowBtn.hovered ? "#262626" : "#1f1f1f"
-                    border.color: notNowBtn.activeFocus || notNowBtn.hovered ? "#3a3a3a" : "#2a2a2a"
-                    border.width: 1
+                    color: notNowBtn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.20)
+                         : notNowBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
+                         :                         "#1f1f1f"
+                    border.color: notNowBtn.activeFocus ? "#00E676"
+                                : notNowBtn.hovered     ? "#3a3a3a"
+                                :                         "#2a2a2a"
+                    border.width: notNowBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: notNowBtn.text

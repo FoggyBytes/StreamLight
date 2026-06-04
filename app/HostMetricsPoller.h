@@ -7,6 +7,8 @@
 
 #include "StreamTweakBridge.h"
 
+class QJsonObject;
+
 /**
  * Snapshot of host metrics received via the STATS TCP command.
  * All fields are -1 when the metric is unavailable (StreamTweak not running,
@@ -60,7 +62,7 @@ private slots:
     void onStatsReceived(const QString& statsJson);
 
 private:
-    static HostMetrics parseJson(const QString& json);
+    static HostMetrics parseObject(const QJsonObject& obj);
 
     QString            m_hostAddress;
     QTimer             m_timer;

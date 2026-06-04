@@ -56,6 +56,16 @@ public:
     Q_INVOKABLE void requestStreamTweakStatus(int computerIndex);
 
     /**
+     * Enrolls this client with the host's StreamTweak and reports the access state.
+     * Emits streamTweakAuthReceived(computerIndex, state) where state is one of
+     * "authorized" / "pending" / "denied" / "none" ("none" = StreamTweak absent,
+     * legacy, or unreachable). Triggers the approval prompt on the host on first
+     * contact. Used to drive the per-host access badge and the "Request access"
+     * option.
+     */
+    Q_INVOKABLE void requestStreamTweakAuth(int computerIndex);
+
+    /**
      * Requests the store map for all StreamTweak-managed apps from the host.
      * Emits appStoresReceived(computerIndex, storesMap) when the response arrives.
      * If StreamTweak is unreachable the map will be empty.
@@ -85,6 +95,7 @@ signals:
     void pairingCompleted(QVariant error);
     void connectionTestCompleted(int result, QString blockedPorts);
     void streamTweakStatusReceived(int computerIndex, QString status);
+    void streamTweakAuthReceived(int computerIndex, QString state, QString pin);
     void appStoresReceived(int computerIndex, QVariantMap stores);
 
     /**
@@ -104,5 +115,12 @@ private:
     QVector<NvComputer*> m_Computers;
     ComputerManager* m_ComputerManager;
     StreamTweakBridge m_streamTweakBridge;
-    QHash<int, QVariantMap> m_appStoresCache;
+    // Keyed by host UUID, not list index: the index shifts whenever the model is
+    // reset (host added/removed, Tailscale clone inserted), which would otherwise
+    // associate a cached store map with the wrong host.
+    QHash<QString, QVariantMap> m_appStoresCache;
+    // Per-host (UUID) 4-digit confirmation PIN, generated on first enrollment and
+    // reused across re-polls while the host approval is pending; cleared once the
+    // host approves/denies so a fresh attempt gets a new PIN.
+    QHash<QString, QString> m_streamTweakPins;
 };

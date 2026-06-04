@@ -99,15 +99,17 @@ Popup {
                     implicitWidth: 140
                     implicitHeight: 42
                     radius: 8
-                    color: okBtn.activeFocus ? "#00E676"
-                         : okBtn.hovered     ? Qt.rgba(0, 0.9, 0.46, 0.20)
-                         :                     Qt.rgba(0, 0.9, 0.46, 0.12)
-                    border.color: "#00E676"
+                    color: okBtn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.20)
+                         : okBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
+                         :                     "#1f1f1f"
+                    border.color: okBtn.activeFocus ? "#00E676"
+                                : okBtn.hovered     ? "#3a3a3a"
+                                :                     "#2a2a2a"
                     border.width: okBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: okBtn.text
-                    color: okBtn.activeFocus ? "#0d1410" : "#00E676"
+                    color: "#00E676"
                     font.family: "DM Sans"
                     font.pixelSize: 15
                     font.bold: true
@@ -131,12 +133,12 @@ Popup {
                     implicitWidth: 140
                     implicitHeight: 42
                     radius: 8
-                    color: cancelBtn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.12)
-                         : cancelBtn.hovered     ? "#262626"
+                    color: cancelBtn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.20)
+                         : cancelBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
                          :                         "#1f1f1f"
-                    border.color: (cancelBtn.activeFocus || cancelBtn.hovered)
-                                  ? "#00E676"
-                                  : "#2a2a2a"
+                    border.color: cancelBtn.activeFocus ? "#00E676"
+                                : cancelBtn.hovered     ? "#3a3a3a"
+                                :                         "#2a2a2a"
                     border.width: cancelBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {

@@ -31,12 +31,40 @@ FocusScope {
     readonly property color _green:     "#00E676"
     readonly property color _greenLk:   "#00E676"
     readonly property color _amber:     "#f59e0b"
+    readonly property color _red:       "#ef4444"
     readonly property string _mono:     "JetBrains Mono"
 
     // Tracks the last-used input device so highlight (gamepad/keyboard focus)
     // and hover (mouse) never light up two different cards at the same time.
     readonly property bool _pointerMode: SdlGamepadKeyNavigation.inputMode === "pointer"
     readonly property bool _keyMode:     SdlGamepadKeyNavigation.inputMode === "key"
+
+    // ── StreamTweak access PIN popup ──────────────────────────────────────────
+    // Shown while a host's approval is pending; displays the 4-digit PIN the user
+    // must confirm matches the prompt on the host. Auto-closes once approved.
+    property string stPinValue: ""
+    property string stPinHostName: ""
+    property string stPinHostAddr: ""
+    property int    stPinHost: -1
+    property var    stPinDismissed: ({})   // idx -> true while the user has dismissed it
+    function stShowPin(idx, name, addr, pin) {
+        if (stPinDismissed[idx]) return     // don't re-nag after a manual dismiss
+        stPinValue = pin
+        stPinHostName = name
+        stPinHostAddr = addr
+        stPinHost = idx
+        stPinDialog.open()
+    }
+    function stHidePin(idx) {
+        if (stPinHost === idx) {
+            stPinHost = -1
+            stPinDialog.close()
+        }
+        delete stPinDismissed[idx]          // state changed → allow showing again later
+    }
+    function stForcePin(idx) {              // user explicitly re-requested access
+        delete stPinDismissed[idx]
+    }
 
     Component.onCompleted: {
         // Always start with a valid selection so the focus highlight is
@@ -69,7 +97,7 @@ FocusScope {
         if (!success) {
             errorDialog.text = qsTr("Unable to connect to the specified PC.")
             if (detectedPortBlocking) {
-                errorDialog.text += "\n\n" + qsTr("This PC's Internet connection is blocking Moonlight. Streaming over the Internet may not work while connected to this network.")
+                errorDialog.text += "\n\n" + qsTr("This PC's Internet connection is blocking StreamLight. Streaming over the Internet may not work while connected to this network.")
             } else {
                 errorDialog.helpText = qsTr("Click the Help button for possible solutions.")
             }
@@ -329,6 +357,9 @@ FocusScope {
                 items.push({ kind: "delete",             text: qsTr("Delete PC") })
                 items.push({ kind: "viewDetails",        text: qsTr("View Details") })
                 if (model.online && model.paired)        items.push({ kind: "prepareStreamTweak", text: qsTr("StreamTweak Streaming Mode") })
+                if (model.online && model.paired
+                    && (pcCard.streamTweakAuth === "pending" || pcCard.streamTweakAuth === "denied"))
+                                                         items.push({ kind: "requestStAuth", text: qsTr("Request StreamTweak access") })
                 return items
             }
 
@@ -366,6 +397,10 @@ FocusScope {
                     prepareCountdownDialog.open()
                     prepareCountdownTimer.restart()
                     break
+                case "requestStAuth":
+                    homeScreen.stForcePin(index)
+                    homeScreen.computerModel.requestStreamTweakAuth(index)
+                    break
                 }
                 hostOptsDropdown.close()
             }
@@ -383,12 +418,15 @@ FocusScope {
 
                 // (pcContextMenu alias removed — see hostOptsDropdown below)
                 property string streamTweakStatus: ""
+                // StreamTweak access state: "" (unknown) | "none" | "authorized" | "pending" | "denied"
+                property string streamTweakAuth: ""
                 property var _colors: homeScreen.hostColorPair(model.name)
 
                 // NIC speed: fetch on card show + poll every 2 s while online.
                 Component.onCompleted: {
                     if (model.online && model.paired) {
                         homeScreen.computerModel.requestStreamTweakStatus(index)
+                        homeScreen.computerModel.requestStreamTweakAuth(index)
                     }
                 }
                 Timer {
@@ -398,6 +436,21 @@ FocusScope {
                     running: model.online && model.paired
                     onTriggered: {
                         homeScreen.computerModel.requestStreamTweakStatus(index)
+                    }
+                }
+                // Re-poll the access state until the host user approves it, then stop.
+                // Poll the access state until it settles (authorized, or "open" when
+                // the host doesn't enforce auth). A later switch to enforced auth is
+                // still caught via the STATUS ERR_UNAUTHORIZED path.
+                Timer {
+                    id: authPollTimer
+                    interval: 2500
+                    repeat: true
+                    running: model.online && model.paired
+                             && pcCard.streamTweakAuth !== "authorized"
+                             && pcCard.streamTweakAuth !== "open"
+                    onTriggered: {
+                        homeScreen.computerModel.requestStreamTweakAuth(index)
                     }
                 }
 
@@ -418,7 +471,7 @@ FocusScope {
                     if (model.statusUnknown) return
                     if (model.online && model.paired) {
                         if (!model.serverSupported) {
-                            errorDialog.text = qsTr("The version of GeForce Experience on %1 is not supported by this build of Moonlight. You must update Moonlight to stream from %1.").arg(model.name)
+                            errorDialog.text = qsTr("The version of GeForce Experience on %1 is not supported by this build of StreamLight. You must update StreamLight to stream from %1.").arg(model.name)
                             errorDialog.helpText = ""
                             errorDialog.open()
                         } else {
@@ -470,6 +523,15 @@ FocusScope {
                     function onStreamTweakStatusReceived(idx, status) {
                         if (idx === index) {
                             pcCard.streamTweakStatus = pcCard.formatStreamTweakStatus(status)
+                        }
+                    }
+                    function onStreamTweakAuthReceived(idx, state, pin) {
+                        if (idx === index) {
+                            pcCard.streamTweakAuth = state
+                            if (state === "pending" && pin.length > 0)
+                                homeScreen.stShowPin(index, model.name, model.address, pin)
+                            else
+                                homeScreen.stHidePin(index)
                         }
                     }
                 }
@@ -556,17 +618,56 @@ FocusScope {
                             : model.online                 ? homeScreen._amber
                             :                                homeScreen._textMut
 
-                        // Small status square
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 8; height: 8
-                            color: badgeRow._stateColor
-                        }
-
                         Label {
                             anchors.verticalCenter: parent.verticalCenter
                             text: badgeRow._stateLabel
                             color: badgeRow._stateColor
+                            font.family: "DM Sans"
+                            font.pixelSize: 11
+                            font.bold: true
+                            font.letterSpacing: 1
+                        }
+                    }
+                }
+
+                // ── StreamTweak access badge — under the status badge ─────────
+                // Shows the host's authorization state for this client. Hidden when
+                // StreamTweak is absent / legacy / unreachable (state "none" or "").
+                Rectangle {
+                    id: authBadge
+                    visible: pcCard.streamTweakAuth === "authorized"
+                          || pcCard.streamTweakAuth === "pending"
+                          || pcCard.streamTweakAuth === "denied"
+                    anchors.top: statusBadge.bottom
+                    anchors.right: parent.right
+                    anchors.topMargin: 6
+                    anchors.rightMargin: 12
+                    height: 24
+                    width: authBadgeRow.implicitWidth + 16
+                    radius: 3
+                    color: Qt.rgba(0, 0, 0, 0.45)
+                    border.color: authBadgeRow._color
+                    border.width: 1
+
+                    Row {
+                        id: authBadgeRow
+                        anchors.centerIn: parent
+                        spacing: 6
+
+                        property color _color:
+                              pcCard.streamTweakAuth === "authorized" ? homeScreen._green
+                            : pcCard.streamTweakAuth === "pending"    ? homeScreen._amber
+                            :                                           homeScreen._red
+
+                        property string _label:
+                              pcCard.streamTweakAuth === "authorized" ? qsTr("AUTHORIZED")
+                            : pcCard.streamTweakAuth === "pending"    ? qsTr("PENDING")
+                            :                                           qsTr("DENIED")
+
+                        Label {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: authBadgeRow._label
+                            color: authBadgeRow._color
                             font.family: "DM Sans"
                             font.pixelSize: 11
                             font.bold: true
@@ -991,21 +1092,21 @@ FocusScope {
         standardButtons: Dialog.Ok
 
         onAboutToShow: {
-            text = qsTr("Moonlight is testing your network connection to determine if any required ports are blocked.") +
+            text = qsTr("StreamLight is testing your network connection to determine if any required ports are blocked.") +
                    "\n\n" + qsTr("This may take a few seconds…")
             showSpinner = true
         }
 
         function connectionTestComplete(result, blockedPorts) {
             if (result === -1) {
-                text = qsTr("The network test could not be performed because none of Moonlight's connection testing servers were reachable from this PC. Check your Internet connection or try again later.")
+                text = qsTr("The network test could not be performed because none of StreamLight's connection testing servers were reachable from this PC. Check your Internet connection or try again later.")
                 imageSrc = "qrc:/res/baseline-warning-24px.svg"
             } else if (result === 0) {
-                text = qsTr("This network does not appear to be blocking Moonlight. If you still have trouble connecting, check your PC's firewall settings.") + "\n\n" +
+                text = qsTr("This network does not appear to be blocking StreamLight. If you still have trouble connecting, check your PC's firewall settings.") + "\n\n" +
                        qsTr("If you are trying to stream over the Internet, install the Moonlight Internet Hosting Tool on your gaming PC and run the included Internet Streaming Tester to check your gaming PC's Internet connection.")
                 imageSrc = "qrc:/res/baseline-check_circle_outline-24px.svg"
             } else {
-                text = qsTr("Your PC's current network connection seems to be blocking Moonlight. Streaming over the Internet may not work while connected to this network.") + "\n\n" +
+                text = qsTr("Your PC's current network connection seems to be blocking StreamLight. Streaming over the Internet may not work while connected to this network.") + "\n\n" +
                        qsTr("The following network ports were blocked:") + "\n"
                 text += blockedPorts
                 imageSrc = "qrc:/res/baseline-error_outline-24px.svg"
@@ -1111,6 +1212,80 @@ FocusScope {
     AddHostDialog {
         id: addPcDialog
         onAccepted: function(ip) { ComputerManager.addNewHostManually(ip) }
+    }
+
+    // ── StreamTweak access PIN popup ──────────────────────────────────────────
+    Popup {
+        id: stPinDialog
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        width: 440
+        height: 300
+        x: (homeScreen.width - width) / 2
+        y: (homeScreen.height - height) / 2
+
+        background: Rectangle {
+            color: "#1a1a1a"
+            border.color: "#2a2a2a"
+            border.width: 1
+            radius: 12
+        }
+
+        contentItem: Column {
+            spacing: 18
+
+            Label {
+                text: qsTr("STREAMTWEAK ACCESS")
+                font.family: "DM Sans"
+                font.pixelSize: 13
+                font.bold: true
+                font.letterSpacing: 1.6
+                color: homeScreen._textMut
+            }
+            Label {
+                width: stPinDialog.availableWidth
+                wrapMode: Text.Wrap
+                text: qsTr("StreamTweak on %1 (%2) is asking to allow this device. Check that the PIN below matches the one shown on the host, then click Allow there.\n\nStreaming works without this — authorizing only enables host metrics, NIC speed, store badges and session reports.").arg(homeScreen.stPinHostName).arg(homeScreen.stPinHostAddr)
+                font.family: "DM Sans"
+                font.pixelSize: 14
+                color: homeScreen._text
+            }
+            Label {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: homeScreen.stPinValue
+                font.family: homeScreen._mono
+                font.pixelSize: 52
+                font.bold: true
+                font.letterSpacing: 10
+                color: homeScreen._green
+            }
+            Rectangle {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 130; height: 42; radius: 8
+                color: stPinClose.containsMouse ? homeScreen._bgHov : homeScreen._bg2
+                border.color: homeScreen._border
+                border.width: 1
+                Label {
+                    anchors.centerIn: parent
+                    text: qsTr("Dismiss")
+                    color: homeScreen._text
+                    font.family: "DM Sans"
+                    font.pixelSize: 13
+                    font.bold: true
+                }
+                MouseArea {
+                    id: stPinClose
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (homeScreen.stPinHost >= 0)
+                            homeScreen.stPinDismissed[homeScreen.stPinHost] = true
+                        stPinDialog.close()
+                    }
+                }
+            }
+        }
     }
 
     // Invoked from main.qml Ctrl+N shortcut.

@@ -2,6 +2,7 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRandomGenerator>
 #include <QSettings>
 #include <QThreadPool>
 
@@ -280,19 +281,15 @@ void ComputerModel::handlePairingCompleted(NvComputer* computer, QString error)
         }
     }
 
-    // Single-shot connect: the next tailscaleReceived signal carries the answer.
-    QMetaObject::Connection* conn = new QMetaObject::Connection();
-    *conn = connect(&m_streamTweakBridge, &StreamTweakBridge::tailscaleReceived,
-        [this, conn, parentUuid, parentName](const QString& tailscaleIp) {
-            disconnect(*conn);
-            delete conn;
+    // The callback is bound to this specific probe, so concurrent requests on
+    // the shared bridge can never deliver one host's answer to another.
+    m_streamTweakBridge.requestTailscale(probeAddress,
+        [this, parentUuid, parentName](const QString& tailscaleIp) {
             if (tailscaleIp.isEmpty() || tailscaleIp == QStringLiteral("NOT_DETECTED")) {
                 return;
             }
             emit tailscaleSuggestion(parentUuid, parentName, tailscaleIp);
         });
-
-    m_streamTweakBridge.requestTailscale(probeAddress);
 }
 
 void ComputerModel::dismissTailscaleSuggestion(QString parentUuid)
@@ -354,16 +351,76 @@ void ComputerModel::requestStreamTweakStatus(int computerIndex)
         return;
     }
 
-    // Single-shot connection: disconnect after first response
-    QMetaObject::Connection* conn = new QMetaObject::Connection();
-    *conn = connect(&m_streamTweakBridge, &StreamTweakBridge::statusReceived,
-        [this, computerIndex, conn](const QString& status) {
-            disconnect(*conn);
-            delete conn;
+    // Per-request callback: the response is delivered only to this caller.
+    m_streamTweakBridge.requestStatus(address,
+        [this, computerIndex](const QString& status) {
+            if (status == QLatin1String("ERR_UNAUTHORIZED")) {
+                // Authorization was lost (e.g. revoked on the host while we were
+                // authorized). Hide the NIC line and refresh the access state so the
+                // badge flips back and the PIN/approval flow resumes automatically —
+                // never surface the raw protocol error to the user.
+                emit streamTweakStatusReceived(computerIndex, QString());
+                requestStreamTweakAuth(computerIndex);
+                return;
+            }
             emit streamTweakStatusReceived(computerIndex, status);
         });
+}
 
-    m_streamTweakBridge.requestStatus(address);
+void ComputerModel::requestStreamTweakAuth(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+
+    QString address = computer->activeAddress.address();
+    QString uuid    = computer->uuid;
+    if (address.isEmpty()) {
+        emit streamTweakAuthReceived(computerIndex, QStringLiteral("none"), QString());
+        return;
+    }
+
+    // First ask whether the host enforces authentication. If it doesn't
+    // ("auth=optional", i.e. Require-auth off), the integration works without
+    // approval — report "open" and never enroll or prompt for a PIN. Legacy or
+    // non-StreamTweak hosts don't understand CAPS → "none" (badge hidden).
+    m_streamTweakBridge.requestCaps(address,
+        [this, computerIndex, uuid, address](const QString& caps) {
+            if (!caps.startsWith(QLatin1String("CAPS1"))) {
+                m_streamTweakPins.remove(uuid);
+                emit streamTweakAuthReceived(computerIndex, QStringLiteral("none"), QString());
+                return;
+            }
+            if (caps.contains(QLatin1String("auth=optional"))) {
+                m_streamTweakPins.remove(uuid);
+                emit streamTweakAuthReceived(computerIndex, QStringLiteral("open"), QString());
+                return;
+            }
+
+            // auth=required → enroll, reusing one stable 4-digit PIN per host while
+            // pending so the host keeps showing the same number to compare.
+            QString pin = m_streamTweakPins.value(uuid);
+            if (pin.isEmpty()) {
+                pin = QString::number(QRandomGenerator::global()->bounded(10000)).rightJustified(4, '0');
+                m_streamTweakPins.insert(uuid, pin);
+            }
+            m_streamTweakBridge.enroll(address, pin,
+                [this, computerIndex, uuid, pin](const QString& reply) {
+                    QString state;
+                    if (reply == QLatin1String("ENROLLED"))     state = QStringLiteral("authorized");
+                    else if (reply == QLatin1String("PENDING")) state = QStringLiteral("pending");
+                    else if (reply == QLatin1String("DENIED"))  state = QStringLiteral("denied");
+                    else                                         state = QStringLiteral("none");
+                    // The PIN matters only while pending; drop it otherwise so a later
+                    // re-request starts a fresh attempt with a new PIN.
+                    if (state != QLatin1String("pending"))
+                        m_streamTweakPins.remove(uuid);
+                    emit streamTweakAuthReceived(computerIndex, state,
+                                                 state == QLatin1String("pending") ? pin : QString());
+                });
+        });
 }
 
 void ComputerModel::requestAppStores(int computerIndex)
@@ -380,12 +437,11 @@ void ComputerModel::requestAppStores(int computerIndex)
         return;
     }
 
-    QMetaObject::Connection* conn = new QMetaObject::Connection();
-    *conn = connect(&m_streamTweakBridge, &StreamTweakBridge::appStoresReceived,
-        [this, computerIndex, conn](const QString& json) {
-            disconnect(*conn);
-            delete conn;
-
+    // Capture the UUID (stable across model resets) for cache keying, and bind
+    // the response to this caller so concurrent requests never cross-talk.
+    QString uuid = computer->uuid;
+    m_streamTweakBridge.requestAppStores(address,
+        [this, computerIndex, uuid](const QString& json) {
             QVariantMap stores;
             if (!json.isEmpty()) {
                 QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
@@ -397,16 +453,22 @@ void ComputerModel::requestAppStores(int computerIndex)
                 }
             }
 
-            m_appStoresCache[computerIndex] = stores;
+            if (!uuid.isEmpty()) {
+                m_appStoresCache[uuid] = stores;
+            }
             emit appStoresReceived(computerIndex, stores);
         });
-
-    m_streamTweakBridge.requestAppStores(address);
 }
 
 QVariantMap ComputerModel::getCachedAppStores(int computerIndex) const
 {
-    return m_appStoresCache.value(computerIndex, QVariantMap());
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) {
+        return QVariantMap();
+    }
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+    return m_appStoresCache.value(computer->uuid, QVariantMap());
 }
 
 #include "computermodel.moc"

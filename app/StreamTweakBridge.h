@@ -3,6 +3,9 @@
 #include <QObject>
 #include <QTcpSocket>
 #include <QString>
+#include <QStringList>
+
+#include <functional>
 
 /**
  * StreamTweakBridge
@@ -23,14 +26,24 @@
  *              object, e.g. {"gpu":45,"gpu_enc":80,"gpu_temp":72,"vram_used":4200,
  *              "cpu":30,"net_tx":18}, or "STATS_UNAVAILABLE".
  *
- * PREPARE/RESTORE are fire-and-forget. STATUS emits statusReceived() and STATS
- * emits statsReceived() with the response string, or an empty string on error.
+ * PREPARE/RESTORE are fire-and-forget. The query commands (STATUS, STATS,
+ * APPSTORES, SESSIONID, TAILSCALE) take a per-call completion callback that
+ * receives the trimmed response line, or an empty string on error/timeout.
+ *
+ * Each query owns its own socket and its own callback, so concurrent requests
+ * never cross-talk. Responses are buffered until the protocol's '\n' terminator
+ * arrives (or the peer closes), so replies split across multiple TCP segments
+ * (large APPSTORES payloads) are no longer truncated. A per-request watchdog
+ * guarantees the callback fires exactly once even if the host connects but never
+ * sends a newline-terminated reply.
  */
 class StreamTweakBridge : public QObject
 {
     Q_OBJECT
 
 public:
+    using ResponseCallback = std::function<void(const QString&)>;
+
     explicit StreamTweakBridge(QObject* parent = nullptr);
 
     void sendPrepare(const QString& hostAddress);
@@ -38,41 +51,53 @@ public:
 
     /**
      * Asynchronously queries the NIC speed from StreamTweak.
-     * Emits statusReceived(QString) when the response arrives,
-     * or statusReceived("") on error.
+     * Invokes onResult with the response (e.g. "1000"), or "" on error/timeout.
      */
-    void requestStatus(const QString& hostAddress);
+    void requestStatus(const QString& hostAddress, ResponseCallback onResult);
 
     /**
      * Asynchronously requests real-time host metrics from StreamTweak.
-     * Emits statsReceived(QString) with a JSON payload on success,
-     * or statsReceived("") on connection error.
+     * Invokes onResult with a JSON payload on success, or "" on error/timeout.
      */
-    void requestStats(const QString& hostAddress);
+    void requestStats(const QString& hostAddress, ResponseCallback onResult);
 
     /**
      * Asynchronously requests the store map for all managed apps from StreamTweak.
-     * Emits appStoresReceived(QString) with a JSON object mapping app names to
-     * store names, e.g. {"Cyberpunk 2077":"Steam","Fortnite":"Epic Games"}.
-     * Emits appStoresReceived("") on connection error or if StreamTweak is
-     * unreachable.
+     * Invokes onResult with a JSON object mapping app names to store names,
+     * e.g. {"Cyberpunk 2077":"Steam","Fortnite":"Epic Games"}, or "" on
+     * error/timeout / StreamTweak unreachable.
      */
-    void requestAppStores(const QString& hostAddress);
+    void requestAppStores(const QString& hostAddress, ResponseCallback onResult);
 
     /**
      * Asynchronously requests the active session ID from StreamTweak.
-     * Emits sessionIdReceived(QString) with the ID string, or "NONE" if no
-     * session is currently active, or "" on connection error.
+     * Invokes onResult with the ID string, "NONE" if no session is active,
+     * or "" on error/timeout.
      */
-    void requestSessionId(const QString& hostAddress);
+    void requestSessionId(const QString& hostAddress, ResponseCallback onResult);
 
     /**
      * Asynchronously asks the host whether Tailscale is installed and active.
-     * Emits tailscaleReceived(QString) with the host's Tailscale IPv4 address
-     * (e.g. "100.64.1.2"), or "NOT_DETECTED" if Tailscale is not present,
-     * or "" on connection error / StreamTweak unreachable.
+     * Invokes onResult with the host's Tailscale IPv4 address (e.g.
+     * "100.64.1.2"), "NOT_DETECTED" if Tailscale is not present, or "" on
+     * error/timeout / StreamTweak unreachable.
      */
-    void requestTailscale(const QString& hostAddress);
+    void requestTailscale(const QString& hostAddress, ResponseCallback onResult);
+
+    /**
+     * Queries the host's bridge capabilities (unauthenticated). Invokes onResult
+     * with e.g. "CAPS1 auth=required" / "CAPS1 auth=optional", or "" on legacy
+     * hosts (which don't understand CAPS) and on unreachable hosts.
+     */
+    void requestCaps(const QString& hostAddress, ResponseCallback onResult);
+
+    /**
+     * Enrolls this client's Moonlight identity certificate with StreamTweak so the
+     * host user can approve it (trust-on-first-use). Invokes onResult with
+     * "ENROLLED" / "PENDING" / "DENIED", or "" on error / unreachable / legacy host.
+     * Sent unauthenticated — it is the bootstrap step that establishes trust.
+     */
+    void enroll(const QString& hostAddress, const QString& pin, ResponseCallback onResult);
 
     /**
      * Sends a SESSIONDATA batch to StreamTweak. The payload must be a compact
@@ -89,13 +114,31 @@ public:
 
     static constexpr quint16 BridgePort = 47998;
 
-signals:
-    void statusReceived(const QString& status);
-    void statsReceived(const QString& statsJson);
-    void appStoresReceived(const QString& storesJson);
-    void sessionIdReceived(const QString& sessionId);
-    void tailscaleReceived(const QString& tailscaleIp);
+    // Per-request watchdog: how long to wait for a newline-terminated reply
+    // before giving up and invoking the callback with an empty string. Generous
+    // for a loopback/LAN request that normally completes in a few milliseconds.
+    static constexpr int ResponseTimeoutMs = 3000;
 
 private:
     void sendCommand(const QString& hostAddress, const QString& command);
+
+    // Sends an authenticated command (prepends the AUTH1 signature line) and
+    // delivers the host's reply to onResult exactly once (also on error/timeout).
+    void sendRequest(const QString& hostAddress,
+                     const QString& command,
+                     ResponseCallback onResult);
+
+    // General primitive: opens a dedicated socket, writes each entry in `lines`
+    // followed by '\n', buffers the reply until '\n' (or the peer closes), and
+    // invokes onResult exactly once. Used for authenticated commands and for the
+    // unauthenticated ENROLL bootstrap alike.
+    void sendRawRequest(const QString& hostAddress,
+                        const QStringList& lines,
+                        ResponseCallback onResult);
+
+    // Builds the "AUTH1 <uniqueId> <unixMillis> <base64 sig>" line authenticating
+    // `command`. Signs "<uniqueId>\n<unixMillis>\n<command>" with the Moonlight
+    // identity private key (RSA-SHA256, PKCS#1 v1.5). Empty string on failure.
+    static QString    buildAuthLine(const QString& command);
+    static QByteArray signPayload(const QByteArray& payload);
 };

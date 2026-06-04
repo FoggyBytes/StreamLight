@@ -58,7 +58,7 @@ ApplicationWindow {
     FontLoader { source: "qrc:/res/fonts/JetBrainsMono-Medium.ttf" }
 
     // ── Design system palette ─────────────────────────────────────────────────
-    readonly property string appDisplayVersion: "3.0.0"
+    readonly property string appDisplayVersion: "3.1.0"
 
     readonly property color clrBg:      "#0d0d0d"
     readonly property color clrBg1:     "#151515"
@@ -326,7 +326,7 @@ ApplicationWindow {
     ErrorMessageDialog {
         id: noHwDecoderDialog
         headerText: qsTr("HARDWARE ACCELERATION")
-        text: qsTr("No functioning hardware accelerated video decoder was detected by Moonlight. " +
+        text: qsTr("No functioning hardware accelerated video decoder was detected by StreamLight." +
                    "Your streaming performance may be severely degraded in this configuration.")
         helpText: qsTr("Click the Help button for more information on solving this problem.")
         helpUrl: "https://github.com/moonlight-stream/moonlight-docs/wiki/Fixing-Hardware-Decoding-Problems"
@@ -345,7 +345,7 @@ ApplicationWindow {
         id: wow64Dialog
         headerText: qsTr("WRONG ARCHITECTURE")
         standardButtons: Dialog.Ok | Dialog.Cancel
-        text: qsTr("This version of Moonlight isn't optimized for your PC. Please download the '%1' version of Moonlight for the best streaming performance.").arg(SystemProperties.friendlyNativeArchName)
+        text: qsTr("This version of StreamLight isn't optimized for your PC. Please download the '%1' version of StreamLight for the best streaming performance.").arg(SystemProperties.friendlyNativeArchName)
         onAccepted: {
             Qt.openUrlExternally("https://github.com/moonlight-stream/moonlight-qt/releases");
         }
@@ -355,7 +355,7 @@ ApplicationWindow {
         id: unmappedGamepadDialog
         headerText: qsTr("UNMAPPED GAMEPAD")
         property string unmappedGamepads : ""
-        text: qsTr("Moonlight detected gamepads without a mapping:") + "\n" + unmappedGamepads
+        text: qsTr("StreamLight detected gamepads without a mapping:") + "\n" + unmappedGamepads
         helpTextSeparator: "\n\n"
         helpText: qsTr("Click the Help button for information on how to map your gamepads.")
         helpUrl: "https://github.com/moonlight-stream/moonlight-docs/wiki/Gamepad-Mapping"
@@ -364,7 +364,7 @@ ApplicationWindow {
     // This dialog appears when quitting via keyboard or gamepad button
     NavigableMessageDialog {
         id: quitConfirmationDialog
-        headerText: qsTr("QUIT MOONLIGHT")
+        headerText: qsTr("QUIT STREAMLIGHT")
         standardButtons: Dialog.Yes | Dialog.No
         text: qsTr("Are you sure you want to quit?")
         // For keyboard/gamepad navigation

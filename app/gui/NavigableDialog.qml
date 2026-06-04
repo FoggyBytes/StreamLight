@@ -33,6 +33,9 @@ Dialog {
     footer: DialogButtonBox {
         id: dialogButtonBox
         standardButtons: navDialog.standardButtons
+        // Affirmative (Yes / OK) on the LEFT, dismissive (No / Cancel) on the RIGHT,
+        // to match StreamTweak's dialogs. The Qt default here is the opposite order.
+        buttonLayout: DialogButtonBox.WinLayout
         alignment: Qt.AlignHCenter
         spacing: 14
         topPadding: 8
@@ -57,23 +60,21 @@ Dialog {
                 implicitWidth: 140
                 implicitHeight: 42
                 radius: 8
-                color: btn.isAffirmative
-                       ? (btn.activeFocus ? btn.accentBase
-                          : btn.hovered   ? btn.accentHover
-                          :                 btn.accentIdle)
-                       : (btn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.12)
-                          : btn.hovered   ? "#262626"
-                          :                 "#1f1f1f")
-                border.color: btn.isAffirmative
-                              ? btn.accentBase
-                              : ((btn.activeFocus || btn.hovered) ? "#00E676" : "#2a2a2a")
+                // Option A: the accent (green, or red for a danger action) is reserved
+                // for FOCUS only — matching the app-wide "green border = focused" rule.
+                // Unfocused buttons are flat with a grey border; the affirmative role is
+                // shown via text colour, so it no longer looks focused at rest.
+                color: btn.activeFocus ? btn.accentHover
+                     : btn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
+                     :                   "#1f1f1f"
+                border.color: btn.activeFocus ? btn.accentBase
+                            : btn.hovered     ? "#3a3a3a"
+                            :                   "#2a2a2a"
                 border.width: btn.activeFocus ? 2 : 1
             }
             contentItem: Label {
                 text: btn.text
-                color: btn.isAffirmative
-                       ? (btn.activeFocus ? "#0d1410" : btn.accentBase)
-                       : "#f0f0f0"
+                color: btn.isAffirmative ? btn.accentBase : "#f0f0f0"
                 font.family: "DM Sans"
                 font.pixelSize: 15
                 font.bold: true
