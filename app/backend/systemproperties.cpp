@@ -13,6 +13,9 @@
 #ifdef Q_OS_WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+// Advapi32: OpenProcessToken / LookupPrivilegeValue / AdjustTokenPrivileges
+// (SeShutdownPrivilege handling in shutdownClient()).
+#pragma comment(lib, "Advapi32.lib")
 #endif
 
 class SystemPropertyQueryThread : public QThread
@@ -296,4 +299,37 @@ void SystemProperties::restartApplication()
     }
 
     QCoreApplication::quit();
+}
+
+void SystemProperties::shutdownClient()
+{
+#ifdef Q_OS_WIN32
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SystemProperties: powering off client PC");
+
+    // Enable SeShutdownPrivilege on our process token, then request a full power-off.
+    HANDLE token = nullptr;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) {
+        TOKEN_PRIVILEGES tp;
+        tp.PrivilegeCount = 1;
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+        if (LookupPrivilegeValue(nullptr, SE_SHUTDOWN_NAME, &tp.Privileges[0].Luid)) {
+            AdjustTokenPrivileges(token, FALSE, &tp, 0, nullptr, nullptr);
+        }
+        CloseHandle(token);
+    }
+
+    if (ExitWindowsEx(EWX_SHUTDOWN | EWX_POWEROFF, SHTDN_REASON_MAJOR_OTHER)) {
+        return;
+    }
+
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "SystemProperties: ExitWindowsEx failed (err %lu); falling back to shutdown.exe",
+                GetLastError());
+
+    // Fallback: the shutdown CLI does its own privilege handling.
+    QProcess::startDetached(QStringLiteral("shutdown"), { QStringLiteral("/s"), QStringLiteral("/t"), QStringLiteral("0") });
+#else
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "SystemProperties: shutdownClient is only supported on Windows");
+#endif
 }

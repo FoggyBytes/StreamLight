@@ -82,6 +82,11 @@ void StreamTweakBridge::sendRestore(const QString& hostAddress)
     sendCommand(hostAddress, QStringLiteral("RESTORE"));
 }
 
+void StreamTweakBridge::sendShutdown(const QString& hostAddress)
+{
+    sendCommand(hostAddress, QStringLiteral("SHUTDOWN"));
+}
+
 void StreamTweakBridge::sendCommand(const QString& hostAddress, const QString& command)
 {
     // Authenticated: AUTH1 line then the command. The reply ("OK") is discarded.

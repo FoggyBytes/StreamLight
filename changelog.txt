@@ -4,6 +4,20 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+Version 3.2.0 - The "Power Update" (05/06/2026)
+------------------------------------------
+
+✨ NEW FEATURES:
+• Power… menu: a paired, online host now has a "Power…" option that opens a chooser to shut down the host PC, this (client) PC, or both. "Host" sends a power-off command to StreamTweak over the authenticated bridge; "Both" shuts the host down and then powers off this PC a moment later. Fully gamepad- and keyboard-navigable, with Cancel focused by default for safety
+• Host shutdown requires approval: "Host" and "Both" are available only when the host has approved this device (AUTHORIZED badge); otherwise they are greyed out with a hint and only "Client" remains. The shutdown is sent signed, so an unapproved device can never power off your host
+
+🙏 THANKS:
+• Thanks to @SolemnDucc for suggesting this feature (https://github.com/FoggyBytes/StreamLight/issues/1)
+
+⚠️ COMPATIBILITY:
+• Requires StreamTweak 7.2.0 or later for the new power-off feature. From 7.2.0 the StreamTweak↔StreamLight authentication is mandatory (the host no longer has an option to turn it off) — update both apps together
+
+------------------------------------------
 Version 3.1.0 - The "Secure Bridge Update" (04/06/2026)
 ------------------------------------------
 

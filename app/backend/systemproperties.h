@@ -47,6 +47,10 @@ public:
     // settings that require a fresh boot to take effect (e.g. Tailscale auto-start).
     Q_INVOKABLE void restartApplication();
 
+    // Powers off THIS (client) PC. Used by the Power dialog's "Client" / "Both"
+    // targets. Windows-only; a no-op on other platforms.
+    Q_INVOKABLE void shutdownClient();
+
 signals:
     void unmappedGamepadsChanged();
     void hasHardwareAccelerationChanged();

@@ -19,6 +19,8 @@
  *   RESTORE  — sent after the session ends as an explicit fallback.
  *              StreamTweak's log monitor handles the normal case; this covers
  *              edge cases where the log event is delayed or missed.
+ *   SHUTDOWN — asks the host to power off. Destructive; StreamTweak only honours
+ *              it from an approved client (verified AUTH1 signature). Fire-and-forget.
  *   STATUS   — queries the current NIC speed from StreamTweak.
  *              StreamTweak replies with the link speed in Mbps (e.g. "1000").
  *   STATS    — requests real-time host metrics (GPU %, encoder %, temperature,
@@ -48,6 +50,7 @@ public:
 
     void sendPrepare(const QString& hostAddress);
     void sendRestore(const QString& hostAddress);
+    void sendShutdown(const QString& hostAddress);
 
     /**
      * Asynchronously queries the NIC speed from StreamTweak.

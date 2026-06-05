@@ -21,5 +21,6 @@
         <file>gui/AddHostDialog.qml</file>
         <file>gui/TailscaleSuggestDialog.qml</file>
         <file>gui/PrepareCountdownDialog.qml</file>
+        <file>gui/PowerDialog.qml</file>
     </qresource>
 </RCC>

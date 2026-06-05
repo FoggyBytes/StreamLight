@@ -337,6 +337,21 @@ void ComputerModel::prepareStreamTweak(int computerIndex)
     m_streamTweakBridge.sendPrepare(address);
 }
 
+void ComputerModel::shutdownHost(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+
+    QString address = computer->activeAddress.address();
+    if (address.isEmpty())
+        return;
+
+    m_streamTweakBridge.sendShutdown(address);
+}
+
 void ComputerModel::requestStreamTweakStatus(int computerIndex)
 {
     if (computerIndex < 0 || computerIndex >= m_Computers.count())

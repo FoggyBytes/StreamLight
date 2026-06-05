@@ -7,6 +7,7 @@ import ComputerModel 1.0
 import ComputerManager 1.0
 import StreamingPreferences 1.0
 import SdlGamepadKeyNavigation 1.0
+import SystemProperties 1.0
 
 // Root is FocusScope (not Item) — required for activeFocus propagation from
 // the Loader above us down into pcList. Plain Items do not propagate.
@@ -357,6 +358,7 @@ FocusScope {
                 items.push({ kind: "delete",             text: qsTr("Delete PC") })
                 items.push({ kind: "viewDetails",        text: qsTr("View Details") })
                 if (model.online && model.paired)        items.push({ kind: "prepareStreamTweak", text: qsTr("StreamTweak Streaming Mode") })
+                if (model.online && model.paired)        items.push({ kind: "power",              text: qsTr("Power…") })
                 if (model.online && model.paired
                     && (pcCard.streamTweakAuth === "pending" || pcCard.streamTweakAuth === "denied"))
                                                          items.push({ kind: "requestStAuth", text: qsTr("Request StreamTweak access") })
@@ -400,6 +402,12 @@ FocusScope {
                 case "requestStAuth":
                     homeScreen.stForcePin(index)
                     homeScreen.computerModel.requestStreamTweakAuth(index)
+                    break
+                case "power":
+                    powerDialog.pcIndex   = index
+                    powerDialog.hostName  = model.name
+                    powerDialog.authState = pcCard.streamTweakAuth
+                    powerDialog.open()
                     break
                 }
                 hostOptsDropdown.close()
@@ -1212,6 +1220,30 @@ FocusScope {
     AddHostDialog {
         id: addPcDialog
         onAccepted: function(ip) { ComputerManager.addNewHostManually(ip) }
+    }
+
+    // ── Power-off chooser (host / client / both) ──────────────────────────────
+    PowerDialog {
+        id: powerDialog
+        onConfirmed: function(target) {
+            if (target === "host") {
+                homeScreen.computerModel.shutdownHost(powerDialog.pcIndex)
+            } else if (target === "client") {
+                SystemProperties.shutdownClient()
+            } else if (target === "both") {
+                // Send the host shutdown first, then power off the client after a
+                // short delay so the bridge socket finishes writing the command.
+                homeScreen.computerModel.shutdownHost(powerDialog.pcIndex)
+                bothShutdownTimer.restart()
+            }
+        }
+    }
+
+    Timer {
+        id: bothShutdownTimer
+        interval: 1800
+        repeat: false
+        onTriggered: SystemProperties.shutdownClient()
     }
 
     // ── StreamTweak access PIN popup ──────────────────────────────────────────

@@ -18,9 +18,9 @@
 
 ## ✅ Compatibility
 
-Windows 10 and 11. Works as a standalone Moonlight-compatible client against any Sunshine / Apollo / Vibeshine / Vibepollo host, **and** unlocks its full feature set when paired with [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) on the host PC (Tailscale dual-tile, live NIC speed transitions, host metrics overlay, store badges, session-quality reporting, remote pause).
+Windows 10 and 11. Works as a standalone Moonlight-compatible client against any Sunshine / Apollo / Vibeshine / Vibepollo host, **and** unlocks its full feature set when paired with [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) on the host PC (Tailscale dual-tile, live NIC speed transitions, host metrics overlay, store badges, session-quality reporting, remote pause, remote host power-off).
 
-> 🔐 **Authenticated bridge (3.1.0+).** Every command StreamLight sends to StreamTweak is signed with its existing Moonlight identity certificate; the host approves each client once via a 4-digit PIN confirmation. **Authorization never affects streaming** — without it you can still stream normally, you only lose the StreamTweak integration: host metrics overlay, NIC speed & Streaming Mode, store badges on covers, session quality reports & live charts, Tailscale dual-tile, and remote pause. Each host card shows its access state (AUTHORIZED / PENDING / DENIED) as a badge. Requires **StreamTweak 7.1.0 or later** on the host; update both apps together.
+> 🔐 **Authenticated bridge (3.1.0+).** Every command StreamLight sends to StreamTweak is signed with its existing Moonlight identity certificate; the host approves each client once via a 4-digit PIN confirmation. **Authorization never affects streaming** — without it you can still stream normally, you only lose the StreamTweak integration: host metrics overlay, NIC speed & Streaming Mode, store badges on covers, session quality reports & live charts, Tailscale dual-tile, remote pause, and remote host power-off. Each host card shows its access state (AUTHORIZED / PENDING / DENIED) as a badge. As of StreamTweak 7.2.0 this authentication is mandatory (the host no longer has an option to disable it). Requires **StreamTweak 7.2.0 or later** on the host for the power-off feature and for the advanced integration in general; update both apps together.
 
 > ⚠️ **Not affiliated with or endorsed by the Moonlight project.** StreamLight is an independent fork. For upstream Moonlight support, use the [official client](https://github.com/moonlight-stream/moonlight-qt).
 
@@ -66,6 +66,15 @@ These features cross the bridge and require both apps. The version next to each 
 - **Session Quality Reporting** *(StreamTweak 5.2.0+)* — FPS, drops, RTT, jitter, decode latency, bitrate streamed every second; StreamTweak generates the quality grade and sparkline charts in its Logs tab
 - **Remote Session Pause** *(StreamTweak 6.0.0+)* — Pause button on StreamTweak's Home page terminates the stream on the client side; signal piggybacked on the existing per-second `STATS` channel
 - **Tailscale Dual-Tile** *(StreamTweak 6.3.0+, flagship of this release pair)* — after a successful pairing via LAN IP, StreamLight queries the new `TAILSCALE` bridge command. If StreamTweak detects a Tailscale `100.x.y.z` adapter on the host, a one-time popup offers to create a second tile pinned to that address. The LAN tile and the Tailscale tile coexist permanently; the Tailscale tile is **address-pinned**, so mDNS rediscovery on the LAN cannot collapse it back onto the parent. The underlying Moonlight UUID and server certificate are shared with the parent, so no second pairing is required. Combined with the new **Auto-start Tailscale on launch** Settings toggle on the client side, the full round-trip is automatic: open StreamLight → Tailscale comes up → the remote tile is live → one click streams from anywhere
+
+## ✨ What's New in 3.2.0 — "The Power Update"
+
+A new **Power…** option on each paired, online host lets you shut down the host PC, this (client) PC, or both — host shutdown rides the authenticated bridge and only works once the host has approved this device. **Requires StreamTweak 7.2.0 or later**; update both apps together.
+
+- **Power… menu** — Host / Client / Both chooser; "Both" shuts the host down and then powers off the client a moment later. Fully gamepad- and keyboard-navigable, with Cancel focused by default
+- **Host shutdown gated on approval** — Host and Both are available only on an AUTHORIZED host; Client always works
+
+> 🙏 Thanks to [**@SolemnDucc**](https://github.com/FoggyBytes/StreamLight/issues/1) for suggesting this feature ([#1](https://github.com/FoggyBytes/StreamLight/issues/1)).
 
 ## ✨ What's New in 3.1.0 — "The Secure Bridge Update"
 

@@ -53,6 +53,10 @@ public:
 
     Q_INVOKABLE void prepareStreamTweak(int computerIndex);
 
+    // Asks the host (via StreamTweak) to power off. Requires the host to have
+    // approved this client; fire-and-forget over the authenticated bridge.
+    Q_INVOKABLE void shutdownHost(int computerIndex);
+
     Q_INVOKABLE void requestStreamTweakStatus(int computerIndex);
 
     /**

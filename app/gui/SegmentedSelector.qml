@@ -10,6 +10,17 @@ FocusScope {
     property int currentIndex: 0
     signal activated(int index)
 
+    // Indices that are shown greyed-out and cannot be selected (skipped by ◀/▶
+    // navigation and by clicks). Empty by default.
+    property var disabledIndices: []
+
+    function isDisabled(i) {
+        for (var k = 0; k < disabledIndices.length; ++k)
+            if (disabledIndices[k] === i)
+                return true
+        return false
+    }
+
     readonly property color _accent:    "#00E676"
     readonly property color _bgPill:    "#1f2722"
     readonly property color _border:    "#2a2a2a"
@@ -43,24 +54,29 @@ FocusScope {
                 height: 30
 
                 readonly property bool _selected: selector.currentIndex === index
+                readonly property bool _disabled: selector.isDisabled(index)
 
                 Rectangle {
                     anchors.fill: parent
                     anchors.margins: 2
                     radius: 5
                     color: pill._selected ? selector._accent : "transparent"
+                    opacity: pill._disabled ? 0.4 : 1.0
                 }
                 Label {
                     id: pillLabel
                     anchors.centerIn: parent
                     text: modelData
-                    color: pill._selected ? selector._textOn : selector._textOff
+                    color: pill._disabled ? "#555555"
+                         : pill._selected ? selector._textOn
+                         :                  selector._textOff
                     font.family: "DM Sans"
                     font.pixelSize: 13
                     font.bold: pill._selected
                 }
                 MouseArea {
                     anchors.fill: parent
+                    enabled: !pill._disabled
                     cursorShape: Qt.PointingHandCursor
                     hoverEnabled: true
                     onClicked: {
@@ -76,16 +92,20 @@ FocusScope {
     }
 
     Keys.onLeftPressed: {
-        if (selector.currentIndex > 0) {
-            selector.currentIndex--
-            selector.activated(selector.currentIndex)
+        var i = selector.currentIndex - 1
+        while (i >= 0 && selector.isDisabled(i)) i--
+        if (i >= 0) {
+            selector.currentIndex = i
+            selector.activated(i)
         }
         event.accepted = true
     }
     Keys.onRightPressed: {
-        if (selector.currentIndex < selector.labels.length - 1) {
-            selector.currentIndex++
-            selector.activated(selector.currentIndex)
+        var i = selector.currentIndex + 1
+        while (i < selector.labels.length && selector.isDisabled(i)) i++
+        if (i < selector.labels.length) {
+            selector.currentIndex = i
+            selector.activated(i)
         }
         event.accepted = true
     }
