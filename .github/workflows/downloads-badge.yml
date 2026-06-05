@@ -1,0 +1,56 @@
+name: Update downloads badge
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours
+  release:
+    types: [published]       # refresh immediately on a new release
+  workflow_dispatch:         # allow manual run
+
+permissions:
+  contents: write
+
+concurrency:
+  group: downloads-badge
+  cancel-in-progress: false
+
+jobs:
+  badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute total downloads and render badge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          total=0
+          page=1
+          while :; do
+            resp=$(curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100&page=$page")
+            count=$(echo "$resp" | jq 'length')
+            [ "$count" -eq 0 ] && break
+            sum=$(echo "$resp" | jq '[.[].assets[]?.download_count] | add // 0')
+            total=$((total + sum))
+            [ "$count" -lt 100 ] && break
+            page=$((page + 1))
+          done
+          echo "Total downloads: $total"
+          mkdir -p .badges
+          curl -fsSL "https://img.shields.io/badge/Downloads-${total}-FA8142" -o .badges/downloads.svg
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .badges/downloads.svg
+          if git diff --staged --quiet; then
+            echo "Badge unchanged, nothing to commit."
+          else
+            git commit -m "chore: update downloads badge [skip ci]"
+            git push
+          fi
