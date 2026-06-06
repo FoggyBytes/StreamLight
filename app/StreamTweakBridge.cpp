@@ -82,9 +82,10 @@ void StreamTweakBridge::sendRestore(const QString& hostAddress)
     sendCommand(hostAddress, QStringLiteral("RESTORE"));
 }
 
-void StreamTweakBridge::sendShutdown(const QString& hostAddress)
+void StreamTweakBridge::sendShutdown(const QString& hostAddress, bool installUpdates)
 {
-    sendCommand(hostAddress, QStringLiteral("SHUTDOWN"));
+    sendCommand(hostAddress, installUpdates ? QStringLiteral("SHUTDOWN_UPDATE")
+                                            : QStringLiteral("SHUTDOWN"));
 }
 
 void StreamTweakBridge::sendCommand(const QString& hostAddress, const QString& command)
@@ -197,6 +198,27 @@ void StreamTweakBridge::requestTailscale(const QString& hostAddress, ResponseCal
 void StreamTweakBridge::requestAppStores(const QString& hostAddress, ResponseCallback onResult)
 {
     sendRequest(hostAddress, QStringLiteral("APPSTORES"), std::move(onResult));
+}
+
+void StreamTweakBridge::requestUpdateState(const QString& hostAddress, ResponseCallback onResult)
+{
+    sendRequest(hostAddress, QStringLiteral("UPDATESTATE"), std::move(onResult));
+}
+
+void StreamTweakBridge::sendUpdateCheck(const QString& hostAddress)
+{
+    sendCommand(hostAddress, QStringLiteral("UPDATECHECK"));
+}
+
+void StreamTweakBridge::sendUpdateNow(const QString& hostAddress, const QString& scope)
+{
+    // scope: "SEC" (security+critical+defender) or "ALL" (everything except upgrades).
+    sendCommand(hostAddress, QStringLiteral("UPDATE_NOW ") + scope);
+}
+
+void StreamTweakBridge::requestUpdateProgress(const QString& hostAddress, ResponseCallback onResult)
+{
+    sendRequest(hostAddress, QStringLiteral("UPDATEPROGRESS"), std::move(onResult));
 }
 
 // ── Capability negotiation / enrollment (unauthenticated bootstrap) ─────────

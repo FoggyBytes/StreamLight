@@ -24,6 +24,8 @@
 #define SER_NVIDIASOFTWARE "nvidiasw"
 #define SER_ALIASSUFFIX "aliassuffix"
 #define SER_ADDRESSPINNED "addresspinned"
+#define SER_TAILSCALEADDR "tailscaleaddress"
+#define SER_TAILSCALEPORT "tailscaleport"
 
 NvComputer::NvComputer(QSettings& settings)
 {
@@ -39,6 +41,8 @@ NvComputer::NvComputer(QSettings& settings)
                                   settings.value(SER_IPV6PORT, QVariant(DEFAULT_HTTP_PORT)).toUInt());
     this->manualAddress = NvAddress(settings.value(SER_MANUALADDR).toString(),
                                     settings.value(SER_MANUALPORT, QVariant(DEFAULT_HTTP_PORT)).toUInt());
+    this->tailscaleAddress = NvAddress(settings.value(SER_TAILSCALEADDR).toString(),
+                                       settings.value(SER_TAILSCALEPORT, QVariant(DEFAULT_HTTP_PORT)).toUInt());
     this->serverCert = QSslCertificate(settings.value(SER_SRVCERT).toByteArray());
     this->isNvidiaServerSoftware = settings.value(SER_NVIDIASOFTWARE).toBool();
     this->aliasSuffix = settings.value(SER_ALIASSUFFIX).toString();
@@ -94,6 +98,8 @@ void NvComputer::serialize(QSettings& settings, bool serializeApps) const
     settings.setValue(SER_IPV6PORT, ipv6Address.port());
     settings.setValue(SER_MANUALADDR, manualAddress.address());
     settings.setValue(SER_MANUALPORT, manualAddress.port());
+    settings.setValue(SER_TAILSCALEADDR, tailscaleAddress.address());
+    settings.setValue(SER_TAILSCALEPORT, tailscaleAddress.port());
     settings.setValue(SER_SRVCERT, serverCert.toPem());
     settings.setValue(SER_NVIDIASOFTWARE, isNvidiaServerSoftware);
     settings.setValue(SER_ALIASSUFFIX, aliasSuffix);
@@ -121,6 +127,7 @@ bool NvComputer::isEqualSerialized(const NvComputer &that) const
            this->remoteAddress == that.remoteAddress &&
            this->ipv6Address == that.ipv6Address &&
            this->manualAddress == that.manualAddress &&
+           this->tailscaleAddress == that.tailscaleAddress &&
            this->serverCert == that.serverCert &&
            this->isNvidiaServerSoftware == that.isNvidiaServerSoftware &&
            this->aliasSuffix == that.aliasSuffix &&
@@ -519,12 +526,21 @@ QVector<NvAddress> NvComputer::uniqueAddresses() const
         return uniqueAddressList;
     }
 
+    // When the host's "Tailscale" option is chosen, force the 100.x endpoint to the
+    // front so the poller pins the active connection to Tailscale even on the LAN.
+    if (preferTailscaleAddress && !tailscaleAddress.isNull()) {
+        uniqueAddressList.append(tailscaleAddress);
+    }
+
     // Start with addresses correctly ordered
     uniqueAddressList.append(activeAddress);
     uniqueAddressList.append(localAddress);
     uniqueAddressList.append(remoteAddress);
     uniqueAddressList.append(ipv6Address);
     uniqueAddressList.append(manualAddress);
+    // Tailscale endpoint as a fallback: when the LAN/remote paths are unreachable
+    // (remote connection) the active address naturally becomes Tailscale.
+    uniqueAddressList.append(tailscaleAddress);
 
     // Prune duplicates (always giving precedence to the first)
     for (int i = 0; i < uniqueAddressList.count(); i++) {
@@ -584,11 +600,14 @@ bool NvComputer::update(const NvComputer& that)
         ASSIGN_IF_CHANGED(name);
     }
     ASSIGN_IF_CHANGED_AND_NONEMPTY(macAddress);
-    // Address-pinned hosts (e.g. Tailscale clones) must keep ONLY their
-    // manualAddress; ignore any local/remote/ipv6 that the poller may have
-    // resolved opportunistically, otherwise the clone collapses onto the
-    // parent's LAN endpoint.
-    if (!this->isAddressPinned) {
+    // Don't let a Tailscale-routed poll overwrite the LAN endpoints: when reached
+    // over Tailscale the host reports its Tailscale-interface IP as LocalIP, which
+    // would collapse localAddress onto the 100.x address (both IP lines identical,
+    // and the active connection stuck on Tailscale even back on the LAN). Keep the
+    // LAN-discovered values in that case. (Same idea as the old isAddressPinned clone.)
+    bool viaTailscale = !this->tailscaleAddress.isNull()
+                        && that.activeAddress == this->tailscaleAddress;
+    if (!this->isAddressPinned && !viaTailscale) {
         ASSIGN_IF_CHANGED_AND_NONNULL(localAddress);
         ASSIGN_IF_CHANGED_AND_NONNULL(remoteAddress);
         ASSIGN_IF_CHANGED_AND_NONNULL(ipv6Address);

@@ -58,7 +58,7 @@ ApplicationWindow {
     FontLoader { source: "qrc:/res/fonts/JetBrainsMono-Medium.ttf" }
 
     // ── Design system palette ─────────────────────────────────────────────────
-    readonly property string appDisplayVersion: "3.2.0"
+    readonly property string appDisplayVersion: "3.3.0"
 
     readonly property color clrBg:      "#0d0d0d"
     readonly property color clrBg1:     "#151515"

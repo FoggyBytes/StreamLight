@@ -49,7 +49,15 @@ public:
 
     // Powers off THIS (client) PC. Used by the Power dialog's "Client" / "Both"
     // targets. Windows-only; a no-op on other platforms.
-    Q_INVOKABLE void shutdownClient();
+    // installUpdates: install pending Windows updates before powering off
+    // ("Update and shut down", via InitiateShutdown + SHUTDOWN_INSTALL_UPDATES).
+    Q_INVOKABLE void shutdownClient(bool installUpdates = false);
+
+    // True when this (client) PC has a Windows update installed and waiting for a
+    // reboot. Read-only registry probe; Windows-only (false elsewhere). Used to hint
+    // the user in the Power dialog. Like the host side, a false result does not
+    // guarantee there is nothing to install — see WindowsUpdateState on the host.
+    Q_INVOKABLE bool updatesPending();
 
 signals:
     void unmappedGamepadsChanged();

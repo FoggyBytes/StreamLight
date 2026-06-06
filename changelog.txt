@@ -4,8 +4,29 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+--------------------------------------------------------
+Version 3.3.0 - The "Patch Tuesday Update" (06/06/2026)
+--------------------------------------------------------
+
+✨ NEW FEATURES:
+• Update host: a new "Check Windows Update on host…" option (Options menu, approved hosts) checks the host for Windows updates, shows them classified (security & critical, Defender, optional — feature/version upgrades are listed separately and not installed remotely), and lets you choose "Security + Defender" or "All updates" before installing. The host installs and restarts itself if required — perfect for a headless PC
+• Runs in the background: the update keeps going on the host even if you close the dialog. A status chip appears in the bottom bar (host + phase + progress); press RB (or click it) to reopen the full view at any time. No cancel once installing has started, to avoid corrupting the update. Download shows a live percentage; install shows progress until the host restarts
+• Update and shut down: the Power… chooser can install pending Windows updates before powering off. It checks both the host and this PC and shows their update status (🟠 updates pending / ✓ up to date), and the "install updates first" option enables only when the selected device actually has updates waiting — otherwise it's greyed out, pointing you to the full "Windows Update" flow. Off by default; installing can make shutdown take noticeably longer
+• Quicker access: the My Hosts status bar now has an "X · Shutdown" shortcut that opens the Power… chooser for the highlighted host directly — no need to dig into Options (gamepad X / click)
+
+🎨 UI:
+• Options chooser redesigned: the per-host "Options" menu is now a wide popup with a grid of tiles (an emoji and a short label each) instead of a long text list — quicker to scan and to navigate with a controller
+• Tailscale unified into one tile: a host reachable both on your LAN and over Tailscale is now a single tile (no more duplicate "(Tailscale)" tile). When Tailscale is detected on the host the tile shows a "TAILSCALE — AVAILABLE" badge and lists both the local IP and the Tailscale IP; an "AVAILABLE" line means the LAN path is also up, while just "TAILSCALE" means it's currently reachable only over Tailscale. A new "Tailscale" option opens the host's apps over the 100.x address (greyed out if Tailscale isn't installed on this client); opening the host normally or "All Apps" uses the local connection. Existing Tailscale tiles are merged automatically on first launch
+
+🙏 THANKS:
+• Thanks again to @SolemnDucc for the follow-up suggestions (https://github.com/FoggyBytes/StreamLight/issues/1)
+
+⚠️ COMPATIBILITY:
+• Requires StreamTweak 7.3.0 or later on the host for the new update features. Update both apps together
+
+------------------------------------------------
 Version 3.2.0 - The "Power Update" (05/06/2026)
-------------------------------------------
+------------------------------------------------
 
 ✨ NEW FEATURES:
 • Power… menu: a paired, online host now has a "Power…" option that opens a chooser to shut down the host PC, this (client) PC, or both. "Host" sends a power-off command to StreamTweak over the authenticated bridge; "Both" shuts the host down and then powers off this PC a moment later. Fully gamepad- and keyboard-navigable, with Cancel focused by default for safety
@@ -17,9 +38,9 @@ Version 3.2.0 - The "Power Update" (05/06/2026)
 ⚠️ COMPATIBILITY:
 • Requires StreamTweak 7.2.0 or later for the new power-off feature. From 7.2.0 the StreamTweak↔StreamLight authentication is mandatory (the host no longer has an option to turn it off) — update both apps together
 
-------------------------------------------
+--------------------------------------------------------
 Version 3.1.0 - The "Secure Bridge Update" (04/06/2026)
-------------------------------------------
+--------------------------------------------------------
 
 ✨ NEW FEATURES:
 • Authenticated StreamTweak bridge: StreamLight now signs every command it sends to StreamTweak (NIC control, host metrics, store map, session telemetry) with its existing Moonlight identity certificate — no password to type. The first time you open a paired host, StreamLight enrolls automatically and StreamTweak shows a one-time "Allow this client?" prompt displaying a 4-digit PIN to confirm against the one StreamLight shows. This closes the previously unauthenticated bridge, so a stranger on your network can no longer command your host or read its metrics
@@ -41,8 +62,9 @@ Version 3.1.0 - The "Secure Bridge Update" (04/06/2026)
 
 ⚠️ REQUIRES: StreamTweak 7.1.0 or later on the host PC for the integration features. StreamTweak 7.1.0 requires authenticated clients by default, so older StreamLight versions can no longer use the bridge with it — update both apps together. StreamLight 3.1.0 talking to an older StreamTweak will simply show no StreamTweak features until the host is updated.
 
+-------------------------------------------------
 Version 3.0.0 - The "Big UI Update" (27/05/2026)
-------------------------------------------
+-------------------------------------------------
 
 🎨 UI REDESIGN:
 • Complete flat redesign inspired by the Xbox and Steam Big Picture interfaces; the old sidebar and toolbar are gone and every screen is now full-width
@@ -70,16 +92,18 @@ Version 3.0.0 - The "Big UI Update" (27/05/2026)
 ⚠️ REQUIRES: StreamTweak 6.3.0 or later on the host PC for the Tailscale dual-tile workflow. Earlier versions (6.1.0+) remain fully compatible but won't expose the Tailscale endpoint — StreamLight will only show the LAN tile in that case.
 
 
+------------------------------------------------------
 Version 2.3.1 - The "Live Charts Update" (25/04/2026)
-------------------------------------------
+------------------------------------------------------
 
 🔧 IMPROVEMENTS:
 • Session telemetry send interval: reduced from 10 seconds to 1 second — SESSIONDATA is now sent once per second (one sample per connection) instead of batching 10 samples every 10 seconds; StreamTweak's live session charts on the Home page now update every second as intended
 
 ⚠️ REQUIRES: StreamTweak 6.1.0 or later on the host PC for the live session charts to display correctly.
 
+-------------------------------------------------------
 Version 2.3.0 - The "Remote Pause Update" (17/04/2026)
-------------------------------------------
+-------------------------------------------------------
 
 ✨ NEW FEATURES:
 • Remote session pause from host: StreamTweak's Home page now shows a Pause button when a streaming session is active; pressing it embeds a one-shot stop signal in the next STATS response; StreamLight detects the signal and terminates the session exactly as if the user had pressed Pause locally — no UI changes on the StreamLight side
@@ -87,42 +111,48 @@ Version 2.3.0 - The "Remote Pause Update" (17/04/2026)
 
 ⚠️ REQUIRES: StreamTweak 6.0.0 or later on the host PC for the remote stop to work.
 
+---------------------------------------------------
 Version 2.2.0 - The "Hue Sync Update" (08/04/2026)
-------------------------------------------
+---------------------------------------------------
 
 ✨ NEW FEATURES:
 • Philips Hue Sync integration: a new toggle in Settings automatically starts Philips Hue Sync on the client PC when a streaming session begins and closes it when the session ends; the app is launched silently in the background with no window appearing
 • Smart discovery: Hue Sync is located by querying the Windows Uninstall registry (handles custom install paths and per-user Electron installations); falls back to well-known paths if the registry entry is absent
 • Silent launch: uses HueSyncStarter.exe — the dedicated background launcher shipped with Hue Sync — to start the app without any visible window
 
+---------------------------------------------
 Version 2.1.2 - The "Flash Fix" (04/04/2026)
-------------------------------------------
+---------------------------------------------
 
 🔧 IMPROVEMENTS:
 • Title bar color: eliminated the brief blue flash on startup — the window now opens with the correct orange color immediately, instead of briefly showing the default Material Indigo blue before the QML theme applied
 
+-------------------------------------------------
 Version 2.1.1 - The "Jitter Update" (28/03/2026)
-------------------------------------------
+-------------------------------------------------
 
 🔧 IMPROVEMENTS:
 • Session telemetry — jitter reporting: RTT variance (jitter) is now collected from LiGetEstimatedRttInfo and included in every SESSIONDATA batch alongside RTT; StreamTweak stores jitter_avg and jitter_max per sample and can use them in future quality analysis
 
+----------------------------------------------------
 Version 2.1.0 - The "Telemetry Update" (27/03/2026)
-------------------------------------------
+----------------------------------------------------
 
 ✨ NEW FEATURES:
 • Session telemetry reporting: StreamLight now streams real-time client-side metrics to StreamTweak during active sessions — FPS, frame drops, RTT, decode latency, and bitrate are sampled every second and transmitted in periodic batches; StreamTweak uses this data to generate a session quality report visible in the Logs tab
 
 ⚠️ REQUIRES: StreamTweak 5.2.0 or later on the host PC for session quality reports to appear.
 
+--------------------------------------------
 Version 2.0.1 - The "Sort Fix" (21/03/2026)
-------------------------------------------
+--------------------------------------------
 
 🔧 IMPROVEMENTS:
 • App list sort order: fixed — Desktop now always appears first, Steam Big Picture second, and all other apps in alphabetical order; previously the order was being overridden by the app model's own insertion logic
 
+--------------------------------------------------
 Version 2.0.0 - The "Library Update" (21/03/2026)
-------------------------------------------
+--------------------------------------------------
 
 ✨ NEW FEATURES:
 • New FoggyBytes icon: StreamLight now sports a new icon that visually unifies the FoggyBytes suite — the same icon is shared with StreamTweak for a consistent identity across both apps
@@ -137,8 +167,9 @@ Version 2.0.0 - The "Library Update" (21/03/2026)
 
 ⚠️ REQUIRES: StreamTweak 5.0.0 or later on the host PC for store badges to appear.
 
+-------------------------------------------------------
 Version 1.2.0 - The "Host Metrics Update" (20/03/2026)
-------------------------------------------
+-------------------------------------------------------
 
 ✨ NEW FEATURES:
 • Host metrics in overlay: the performance overlay now includes a "Host Metrics (StreamTweak)" section showing real-time data from the host PC — GPU %, GPU encoder %, GPU temperature (°C), VRAM used / total (MB), CPU %, and network TX (Mbps); the section is automatically hidden when StreamTweak is not reachable
@@ -147,8 +178,9 @@ Version 1.2.0 - The "Host Metrics Update" (20/03/2026)
 
 ⚠️ REQUIRES: StreamTweak 4.4.0 or later on the host PC for host metrics to appear in the overlay.
 
+--------------------------------------------------
 Version 1.1.0 - The "Overlay Update" (18/03/2026)
-------------------------------------------
+--------------------------------------------------
 
 ✨ NEW FEATURES:
 • Performance overlay restyled to match StreamTweak's aesthetic: dark semi-transparent grey background, white text, RobotoMono font
@@ -160,10 +192,10 @@ Version 1.1.0 - The "Overlay Update" (18/03/2026)
 • Removed all non-English localizations: translation files, Language enum, language selector in Settings — the app is English-only; codebase is lighter
 • Overlay box width calibrated to fit content precisely (no excess empty space on the right)
 
-------------------------------------------
 
+------------------------------------------------------
 Version 1.0.0 - The "First Light Update" (13/03/2026)
-------------------------------------------
+------------------------------------------------------
 Initial release based on Moonlight 6.1.0.
 
 ✨ NEW FEATURES:
@@ -177,5 +209,4 @@ Initial release based on Moonlight 6.1.0.
 • Discord link removed — as a fork, the upstream Moonlight Discord is not the appropriate support channel
 • Auto-update checker removed — to prevent prompts to update to upstream Moonlight releases
 
-------------------------------------------
 Built on Moonlight 6.1.0 — https://github.com/moonlight-stream/moonlight-qt

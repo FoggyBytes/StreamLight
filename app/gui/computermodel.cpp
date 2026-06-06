@@ -1,4 +1,5 @@
 #include "computermodel.h"
+#include "../TailscaleManager.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -65,6 +66,17 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
         return computer->gpuModel;
     case IsTailscaleCloneRole:
         return computer->aliasSuffix == QStringLiteral("tailscale");
+    case PhysicalAddressRole:
+        // The host's LAN endpoint (kept even when currently reached via Tailscale).
+        return computer->localAddress.address();
+    case TailscaleAddressRole:
+        return computer->tailscaleAddress.address();
+    case HasTailscaleRole:
+        return !computer->tailscaleAddress.isNull();
+    case TailscaleActiveRole:
+        // True when the host is currently reached only through Tailscale (LAN down).
+        return !computer->tailscaleAddress.isNull() &&
+               computer->activeAddress == computer->tailscaleAddress;
     case DetailsRole: {
         QString state, pairState;
 
@@ -136,6 +148,10 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
     names[AddressRole] = "address";
     names[GpuModelRole] = "gpuModel";
     names[IsTailscaleCloneRole] = "isTailscaleClone";
+    names[PhysicalAddressRole] = "physicalAddress";
+    names[TailscaleAddressRole] = "tailscaleAddress";
+    names[HasTailscaleRole] = "hasTailscale";
+    names[TailscaleActiveRole] = "tailscaleActive";
 
     return names;
 }
@@ -254,55 +270,81 @@ void ComputerModel::handlePairingCompleted(NvComputer* computer, QString error)
         return;
     }
 
-    // Only probe for Tailscale on primary tiles (not on already-cloned ones).
-    QString parentUuid, parentName, probeAddress;
+    // After pairing, learn the host's Tailscale endpoint (if StreamTweak reports one)
+    // and record it on the host itself — the unified tile, no separate clone.
+    refreshTailscale(m_Computers.indexOf(computer));
+}
+
+void ComputerModel::refreshTailscale(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString uuid, probeAddress;
     {
         QReadLocker lock(&computer->lock);
-        if (!computer->aliasSuffix.isEmpty()) {
-            return;
-        }
-        parentUuid = computer->uuid;
-        parentName = computer->name;
+        uuid = computer->uuid;
         probeAddress = computer->activeAddress.address();
     }
-    if (probeAddress.isEmpty() || parentUuid.isEmpty()) {
-        return;
-    }
+    if (uuid.isEmpty() || probeAddress.isEmpty()) return;
 
-    // Skip if user already dismissed this UUID, or a clone already exists.
-    QSettings settings;
-    if (settings.value(QStringLiteral("tailscaleDismissed/") + parentUuid, false).toBool()) {
-        return;
-    }
-    for (NvComputer* c : std::as_const(m_Computers)) {
-        QReadLocker cLock(&c->lock);
-        if (c->uuid == parentUuid && c->aliasSuffix == QStringLiteral("tailscale")) {
-            return;
-        }
-    }
-
-    // The callback is bound to this specific probe, so concurrent requests on
-    // the shared bridge can never deliver one host's answer to another.
+    // The callback is bound to this probe, so concurrent requests on the shared
+    // bridge can never deliver one host's answer to another.
     m_streamTweakBridge.requestTailscale(probeAddress,
-        [this, parentUuid, parentName](const QString& tailscaleIp) {
+        [this, uuid](const QString& tailscaleIp) {
             if (tailscaleIp.isEmpty() || tailscaleIp == QStringLiteral("NOT_DETECTED")) {
                 return;
             }
-            emit tailscaleSuggestion(parentUuid, parentName, tailscaleIp);
+            if (m_ComputerManager != nullptr) {
+                m_ComputerManager->setTailscaleAddress(uuid, tailscaleIp);
+            }
         });
 }
 
-void ComputerModel::dismissTailscaleSuggestion(QString parentUuid)
+bool ComputerModel::clientHasTailscale() const
 {
-    if (parentUuid.isEmpty()) return;
-    QSettings settings;
-    settings.setValue(QStringLiteral("tailscaleDismissed/") + parentUuid, true);
+    return !TailscaleManager::discoverExecutable().isEmpty();
 }
 
-bool ComputerModel::addTailscaleClone(QString parentUuid, QString tailscaleIp)
+bool ComputerModel::prepareTailscaleSession(int computerIndex)
 {
-    if (m_ComputerManager == nullptr) return false;
-    return m_ComputerManager->addTailscaleClone(parentUuid, tailscaleIp);
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return false;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QWriteLocker lock(&computer->lock);
+    if (computer->tailscaleAddress.isNull()) return false;
+
+    // Force the active connection onto Tailscale for this session. preferTailscaleAddress
+    // keeps the poller from collapsing back onto the LAN while browsing apps / streaming.
+    computer->preferTailscaleAddress = true;
+    computer->activeAddress = computer->tailscaleAddress;
+    return true;
+}
+
+void ComputerModel::clearTailscalePreferences()
+{
+    for (int i = 0; i < m_Computers.count(); i++) {
+        NvComputer* c = m_Computers[i];
+        bool changed = false;
+        {
+            QWriteLocker lock(&c->lock);
+            if (c->preferTailscaleAddress) {
+                c->preferTailscaleAddress = false;
+                changed = true;
+            }
+            // If the active connection was forced onto Tailscale, revert it to the LAN
+            // endpoint so the poller re-prefers LAN (and the badge flips back to
+            // "AVAILABLE"). If the LAN is actually down the poller falls back to
+            // Tailscale on its own.
+            if (!c->localAddress.isNull() && c->activeAddress == c->tailscaleAddress) {
+                c->activeAddress = c->localAddress;
+                changed = true;
+            }
+        }
+        if (changed) {
+            emit dataChanged(index(i, 0), index(i, 0));
+        }
+    }
 }
 
 void ComputerModel::handleComputerStateChanged(NvComputer* computer)
@@ -337,7 +379,7 @@ void ComputerModel::prepareStreamTweak(int computerIndex)
     m_streamTweakBridge.sendPrepare(address);
 }
 
-void ComputerModel::shutdownHost(int computerIndex)
+void ComputerModel::shutdownHost(int computerIndex, bool installUpdates)
 {
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
@@ -349,7 +391,85 @@ void ComputerModel::shutdownHost(int computerIndex)
     if (address.isEmpty())
         return;
 
-    m_streamTweakBridge.sendShutdown(address);
+    m_streamTweakBridge.sendShutdown(address, installUpdates);
+}
+
+void ComputerModel::requestUpdateState(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+
+    QString address = computer->activeAddress.address();
+    if (address.isEmpty()) {
+        emit updateStateReceived(computerIndex, false);
+        return;
+    }
+
+    m_streamTweakBridge.requestUpdateState(address,
+        [this, computerIndex](const QString& response) {
+            // {"pending":true} → true; anything else (incl. "ERR" from a legacy host,
+            // "" on timeout, or {"pending":false}) → false.
+            bool pending = response.contains(QLatin1String("\"pending\":true"));
+            emit updateStateReceived(computerIndex, pending);
+        });
+}
+
+// ── Remote "Update host" (Windows Update Agent on the host) ──────────────────
+
+void ComputerModel::startUpdateCheck(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return;
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+    QString address = computer->activeAddress.address();
+    if (address.isEmpty())
+        return;
+    m_streamTweakBridge.sendUpdateCheck(address);
+}
+
+void ComputerModel::startUpdateInstall(int computerIndex, const QString& scope)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return;
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+    QString address = computer->activeAddress.address();
+    if (address.isEmpty())
+        return;
+    m_streamTweakBridge.sendUpdateNow(address, scope);
+}
+
+void ComputerModel::requestUpdateProgress(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return;
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+    QString address = computer->activeAddress.address();
+    if (address.isEmpty()) {
+        emit updateProgressReceived(computerIndex, QVariantMap{{ "phase", "IDLE" }});
+        return;
+    }
+
+    m_streamTweakBridge.requestUpdateProgress(address,
+        [this, computerIndex](const QString& response) {
+            // Empty/"ERR" (host unreachable, e.g. rebooting, or legacy) → IDLE so the UI
+            // can resolve the job. Otherwise parse the JSON snapshot into a QVariantMap.
+            if (response.isEmpty() || response.startsWith(QLatin1String("ERR"))) {
+                emit updateProgressReceived(computerIndex, QVariantMap{{ "phase", "IDLE" }});
+                return;
+            }
+            QJsonDocument doc = QJsonDocument::fromJson(response.toUtf8());
+            if (!doc.isObject()) {
+                emit updateProgressReceived(computerIndex, QVariantMap{{ "phase", "IDLE" }});
+                return;
+            }
+            emit updateProgressReceived(computerIndex, doc.object().toVariantMap());
+        });
 }
 
 void ComputerModel::requestStreamTweakStatus(int computerIndex)

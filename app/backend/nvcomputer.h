@@ -112,12 +112,21 @@ public:
     int serverCodecModeSupport;
     QString gpuModel;
     bool isSupportedServerVersion;
+    // Transient: when true, uniqueAddresses() returns tailscaleAddress first so the
+    // poller pins the active connection to Tailscale even on the LAN (used by the
+    // host's "Tailscale" option to force the 100.x path). Never persisted.
+    bool preferTailscaleAddress = false;
 
     // Persisted traits
     NvAddress localAddress;
     NvAddress remoteAddress;
     NvAddress ipv6Address;
     NvAddress manualAddress;
+    // The host's Tailscale (100.x) endpoint, learned from StreamTweak's TAILSCALE
+    // bridge command and stored on the host itself (no separate clone tile). Probed
+    // by the poller as a fallback, so the active address becomes Tailscale when the
+    // LAN path is unreachable (remote). Persisted; not overwritten by update().
+    NvAddress tailscaleAddress;
     QByteArray macAddress;
     QString name;
     bool hasCustomName;

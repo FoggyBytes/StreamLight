@@ -22,7 +22,11 @@ class ComputerModel : public QAbstractListModel
         DetailsRole,
         AddressRole,
         GpuModelRole,
-        IsTailscaleCloneRole
+        IsTailscaleCloneRole,
+        PhysicalAddressRole,
+        TailscaleAddressRole,
+        HasTailscaleRole,
+        TailscaleActiveRole
     };
 
 public:
@@ -55,9 +59,28 @@ public:
 
     // Asks the host (via StreamTweak) to power off. Requires the host to have
     // approved this client; fire-and-forget over the authenticated bridge.
-    Q_INVOKABLE void shutdownHost(int computerIndex);
+    // installUpdates: install pending Windows updates before powering off.
+    Q_INVOKABLE void shutdownHost(int computerIndex, bool installUpdates = false);
 
     Q_INVOKABLE void requestStreamTweakStatus(int computerIndex);
+
+    /**
+     * Asks the host whether it has Windows updates waiting for a reboot.
+     * Emits updateStateReceived(computerIndex, pending) when the response arrives
+     * (pending=false on legacy/unreachable hosts). Drives the Power dialog hint.
+     */
+    Q_INVOKABLE void requestUpdateState(int computerIndex);
+
+    /**
+     * Remote "Update host" feature. startUpdateCheck kicks off an async scan;
+     * startUpdateInstall installs the scanned set for a scope ("SEC"/"ALL") and reboots
+     * if required; requestUpdateProgress polls the job state and emits
+     * updateProgressReceived(computerIndex, state) where state is the parsed JSON
+     * (phase/percent/message/updates/counts), or {"phase":"IDLE"} when unreachable.
+     */
+    Q_INVOKABLE void startUpdateCheck(int computerIndex);
+    Q_INVOKABLE void startUpdateInstall(int computerIndex, const QString& scope);
+    Q_INVOKABLE void requestUpdateProgress(int computerIndex);
 
     /**
      * Enrolls this client with the host's StreamTweak and reports the access state.
@@ -84,16 +107,25 @@ public:
     Q_INVOKABLE QVariantMap getCachedAppStores(int computerIndex) const;
 
     /**
-     * Persists a "don't ask again" preference per host UUID so the Tailscale
-     * suggestion popup never reappears for that host. Stored in QSettings.
+     * Probes the host's StreamTweak for its Tailscale (100.x) endpoint and, if found,
+     * records it on the host (unified tile). Safe to call repeatedly; no-op if the host
+     * is unreachable or has no Tailscale.
      */
-    Q_INVOKABLE void dismissTailscaleSuggestion(QString parentUuid);
+    Q_INVOKABLE void refreshTailscale(int computerIndex);
+
+    /** True if Tailscale is installed on THIS (client) PC (so the host's Tailscale
+     *  endpoint is actually usable from here). Drives the greyed "Tailscale" option. */
+    Q_INVOKABLE bool clientHasTailscale() const;
 
     /**
-     * Creates a Tailscale-pinned clone tile for the host with the given UUID.
-     * Returns true if the operation was queued.
+     * Pins the host's active connection to its Tailscale endpoint for the next session
+     * (used by the host's "Tailscale" option). Returns false if no Tailscale endpoint is
+     * known. Call clearTailscalePreferences() when returning to the host list.
      */
-    Q_INVOKABLE bool addTailscaleClone(QString parentUuid, QString tailscaleIp);
+    Q_INVOKABLE bool prepareTailscaleSession(int computerIndex);
+
+    /** Clears any Tailscale session pin on all hosts (poller reverts to LAN-first). */
+    Q_INVOKABLE void clearTailscalePreferences();
 
 signals:
     void pairingCompleted(QVariant error);
@@ -101,14 +133,8 @@ signals:
     void streamTweakStatusReceived(int computerIndex, QString status);
     void streamTweakAuthReceived(int computerIndex, QString state, QString pin);
     void appStoresReceived(int computerIndex, QVariantMap stores);
-
-    /**
-     * Fired after a successful pairing when the bridge confirms Tailscale is
-     * installed on the host. QML displays the TailscaleSuggestDialog.
-     * Suppressed if the user previously dismissed the suggestion for this UUID
-     * or if a Tailscale clone for this UUID already exists.
-     */
-    void tailscaleSuggestion(QString parentUuid, QString parentName, QString tailscaleIp);
+    void updateStateReceived(int computerIndex, bool pending);
+    void updateProgressReceived(int computerIndex, QVariantMap state);
 
 private slots:
     void handleComputerStateChanged(NvComputer* computer);

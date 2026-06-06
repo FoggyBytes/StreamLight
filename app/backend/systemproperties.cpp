@@ -13,9 +13,19 @@
 #ifdef Q_OS_WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-// Advapi32: OpenProcessToken / LookupPrivilegeValue / AdjustTokenPrivileges
-// (SeShutdownPrivilege handling in shutdownClient()).
+// Advapi32: OpenProcessToken / LookupPrivilegeValue / AdjustTokenPrivileges /
+// InitiateShutdownW (SeShutdownPrivilege handling in shutdownClient()).
 #pragma comment(lib, "Advapi32.lib")
+// InitiateShutdown flags are not always exposed by the SDK headers in scope here.
+#ifndef SHUTDOWN_FORCE_SELF
+#define SHUTDOWN_FORCE_SELF      0x00000002
+#endif
+#ifndef SHUTDOWN_POWEROFF
+#define SHUTDOWN_POWEROFF        0x00000008
+#endif
+#ifndef SHUTDOWN_INSTALL_UPDATES
+#define SHUTDOWN_INSTALL_UPDATES 0x00000040
+#endif
 #endif
 
 class SystemPropertyQueryThread : public QThread
@@ -301,10 +311,11 @@ void SystemProperties::restartApplication()
     QCoreApplication::quit();
 }
 
-void SystemProperties::shutdownClient()
+void SystemProperties::shutdownClient(bool installUpdates)
 {
 #ifdef Q_OS_WIN32
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SystemProperties: powering off client PC");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SystemProperties: powering off client PC%s",
+                installUpdates ? " (installing pending updates first)" : "");
 
     // Enable SeShutdownPrivilege on our process token, then request a full power-off.
     HANDLE token = nullptr;
@@ -318,6 +329,22 @@ void SystemProperties::shutdownClient()
         CloseHandle(token);
     }
 
+    // "Update and shut down": InitiateShutdown is the only documented way to install
+    // pending updates before power-off (ExitWindowsEx does not). SHUTDOWN_FORCE_SELF
+    // guarantees our own session logs off; a planned reason avoids the unplanned-state
+    // file delay. Falls through to the plain power-off if it is refused.
+    if (installUpdates) {
+        DWORD rc = InitiateShutdownW(nullptr, nullptr, 0,
+                                     SHUTDOWN_INSTALL_UPDATES | SHUTDOWN_POWEROFF | SHUTDOWN_FORCE_SELF,
+                                     SHTDN_REASON_MAJOR_APPLICATION | SHTDN_REASON_FLAG_PLANNED);
+        if (rc == ERROR_SUCCESS) {
+            return;
+        }
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "SystemProperties: InitiateShutdown(install updates) failed (rc %lu); plain power-off",
+                    rc);
+    }
+
     if (ExitWindowsEx(EWX_SHUTDOWN | EWX_POWEROFF, SHTDN_REASON_MAJOR_OTHER)) {
         return;
     }
@@ -326,10 +353,35 @@ void SystemProperties::shutdownClient()
                 "SystemProperties: ExitWindowsEx failed (err %lu); falling back to shutdown.exe",
                 GetLastError());
 
-    // Fallback: the shutdown CLI does its own privilege handling.
-    QProcess::startDetached(QStringLiteral("shutdown"), { QStringLiteral("/s"), QStringLiteral("/t"), QStringLiteral("0") });
+    // Fallback: the shutdown CLI does its own privilege handling. Use the full
+    // System32 path (not bare "shutdown") so a hijacked PATH can't redirect it.
+    const QString shutdownExe = qEnvironmentVariable("SystemRoot", QStringLiteral("C:\\Windows"))
+                                + QStringLiteral("\\System32\\shutdown.exe");
+    QProcess::startDetached(shutdownExe, { QStringLiteral("/s"), QStringLiteral("/t"), QStringLiteral("0") });
 #else
+    Q_UNUSED(installUpdates);
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "SystemProperties: shutdownClient is only supported on Windows");
+#endif
+}
+
+bool SystemProperties::updatesPending()
+{
+#ifdef Q_OS_WIN32
+    // The two registry keys Windows sets when an installed update is waiting for a
+    // reboot. Mirrors WindowsUpdateState on the host. KEY_WOW64_64KEY: always read the
+    // 64-bit view regardless of our own bitness.
+    auto keyExists = [](const wchar_t* subKey) -> bool {
+        HKEY h = nullptr;
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, subKey, 0, KEY_READ | KEY_WOW64_64KEY, &h) == ERROR_SUCCESS) {
+            RegCloseKey(h);
+            return true;
+        }
+        return false;
+    };
+    return keyExists(L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\RebootPending")
+        || keyExists(L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired");
+#else
+    return false;
 #endif
 }

@@ -23,7 +23,7 @@ FocusScope {
     readonly property color _text:     "#f0f0f0"
     readonly property color _textDim:  "#a0a0a0"
     readonly property color _green:    "#00E676"
-    readonly property string _version: "3.2.0"
+    readonly property string _version: "3.3.0"
     readonly property string _mono:    "JetBrains Mono"
 
     // 0 = Home, 1 = Apps, 2 = Settings
@@ -41,6 +41,32 @@ FocusScope {
     // Where to return when leaving Settings (Home or Apps).
     property int    _settingsReturnPage: 0
 
+    // ── Remote "Update host" job (state owned by HomeScreen; mirrored for the
+    //    global status-bar chip + RB reopen shortcut) ───────────────────────────
+    readonly property bool   _updateActive:  homeLoader.item ? homeLoader.item.updateJobActive  : false
+    readonly property string _updateHost:    homeLoader.item ? homeLoader.item.updateJobHostName : ""
+    readonly property string _updatePhase:   homeLoader.item ? homeLoader.item.updateJobPhase    : "IDLE"
+    readonly property int    _updatePercent: homeLoader.item ? homeLoader.item.updateJobPercent  : -1
+
+    function reopenUpdateDialog() {
+        if (!homeLoader.item || !homeLoader.item.updateJobActive) return
+        currentPage = 0
+        homeLoader.item.openUpdateDialog()
+    }
+    function _updatePhaseLabel(phase) {
+        switch (phase) {
+        case "CHECKING":    return qsTr("Checking…")
+        case "CHECK_READY": return qsTr("Updates found")
+        case "DOWNLOADING": return qsTr("Downloading")
+        case "INSTALLING":  return qsTr("Installing")
+        case "REBOOTING":   return qsTr("Restarting host")
+        case "DONE":        return qsTr("Done")
+        case "NO_UPDATES":  return qsTr("Up to date")
+        case "ERROR":       return qsTr("Failed")
+        }
+        return ""
+    }
+
     focus: true
 
     // B / Escape: Settings → return page, Apps → Home, Home → propagate (quit).
@@ -57,6 +83,16 @@ FocusScope {
     }
     Keys.onEscapePressed: { event.accepted = _goBack() }
     Keys.onBackPressed:   { event.accepted = _goBack() }
+
+    // RB (PageDown) reopens the running "Update host" view. Only on Home (where
+    // PageDown is otherwise unused) and only while a job is active, so it never
+    // steals the Settings tab-navigation.
+    Keys.onPressed: {
+        if (event.key === Qt.Key_PageDown && appShell._updateActive && currentPage === 0) {
+            appShell.reopenUpdateDialog()
+            event.accepted = true
+        }
+    }
 
     function showHome() {
         currentPage = 0
@@ -97,6 +133,11 @@ FocusScope {
         case "openCard":
             if (homeLoader.item) SdlGamepadKeyNavigation.simulateKey(Qt.Key_Return)
             break
+        case "shutdownHost":
+            // Open the POWER chooser for the currently-focused host card.
+            if (homeLoader.item && homeLoader.item.openPowerForCurrent)
+                homeLoader.item.openPowerForCurrent()
+            break
         case "cardMenu":
             SdlGamepadKeyNavigation.simulateKey(Qt.Key_Menu)
             break
@@ -129,6 +170,10 @@ FocusScope {
         if      (currentPage === 0 && homeLoader.item)     homeLoader.item.forceActiveFocus()
         else if (currentPage === 1 && appsLoader.item)     appsLoader.item.forceActiveFocus()
         else if (currentPage === 2 && settingsLoader.item) settingsLoader.item.forceActiveFocus()
+
+        // Back on the host list: drop any "force Tailscale" session pin.
+        if (currentPage === 0 && homeLoader.item && homeLoader.item.clearTailscalePreferences)
+            homeLoader.item.clearTailscalePreferences()
     }
 
     // Ambient vertical gradient — charcoal top → deep green bottom.
@@ -230,6 +275,7 @@ FocusScope {
 
         readonly property var _hintsHome: [
             { icon: _iconA, act: qsTr("Open"),     sh: false, kind: "openCard" },
+            { icon: _iconX, act: qsTr("Shutdown"), sh: false, kind: "shutdownHost" },
             { icon: _iconY, act: qsTr("Settings"), sh: false, kind: "settings" },
             { icon: _iconB, act: qsTr("Exit"),     sh: false, kind: "back" }
         ]
@@ -328,6 +374,7 @@ FocusScope {
         }
 
         Text {
+            id: versionLabel
             anchors.right: parent.right
             anchors.rightMargin: 16
             anchors.verticalCenter: parent.verticalCenter
@@ -336,6 +383,57 @@ FocusScope {
             font.family: appShell._mono
             font.pixelSize: 13
             font.letterSpacing: 1
+        }
+
+        // Global "Update host" chip: visible whenever a remote update job is running,
+        // on any page. Shows host + phase + a mini progress bar; RB (or a click)
+        // reopens the full dialog. Lets the update run in the background.
+        Row {
+            id: updateChip
+            visible: appShell._updateActive
+            anchors.right: versionLabel.left
+            anchors.rightMargin: 22
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 10
+
+            Image {
+                anchors.verticalCenter: parent.verticalCenter
+                source: statusBar._iconR
+                width: 40; height: 24
+                sourceSize.width: 80; sourceSize.height: 48
+                fillMode: Image.PreserveAspectFit; smooth: true
+            }
+            Column {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 3
+                Text {
+                    text: qsTr("Update")
+                          + (appShell._updateHost.length ? " · " + appShell._updateHost : "")
+                          + "   " + appShell._updatePhaseLabel(appShell._updatePhase)
+                    color: appShell._text; font.pixelSize: 13; font.family: "DM Sans"
+                }
+                Row {
+                    spacing: 8
+                    visible: appShell._updatePercent >= 0
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 120; height: 5; radius: 3; color: "#2a2a2a"
+                        Rectangle {
+                            width: parent.width * Math.max(0, Math.min(100, appShell._updatePercent)) / 100
+                            height: parent.height; radius: 3; color: appShell._green
+                        }
+                    }
+                    Text {
+                        text: appShell._updatePercent + "%"
+                        color: appShell._textDim; font.pixelSize: 11; font.family: "DM Sans"
+                    }
+                }
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: appShell.reopenUpdateDialog()
+            }
         }
     }
 }

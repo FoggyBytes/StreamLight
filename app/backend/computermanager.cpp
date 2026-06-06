@@ -193,6 +193,37 @@ ComputerManager::ComputerManager(StreamingPreferences* prefs)
     m_DelayedFlushThread = new DelayedFlushThread(this);
     m_DelayedFlushThread->start();
 
+    // Migration: older builds stored the host's Tailscale endpoint as a separate
+    // cloned tile ("<uuid>#tailscale", aliasSuffix "tailscale"). Fold each clone's
+    // address into its parent's tailscaleAddress and drop the clone so a single
+    // unified tile remains. Runs before any worker thread touches the map, so no
+    // locking is required.
+    {
+        QList<QString> cloneKeys;
+        for (auto it = m_KnownHosts.constBegin(); it != m_KnownHosts.constEnd(); ++it) {
+            if (it.value()->aliasSuffix == QStringLiteral("tailscale")) {
+                cloneKeys.append(it.key());
+            }
+        }
+        for (const auto& cloneKey : cloneKeys) {
+            NvComputer* clone = m_KnownHosts.value(cloneKey);
+            NvComputer* parent = m_KnownHosts.value(clone->uuid);  // bare uuid = parent
+            if (parent != nullptr && parent != clone) {
+                NvAddress ts = !clone->manualAddress.isNull() ? clone->manualAddress
+                                                              : clone->activeAddress;
+                if (!ts.isNull()) {
+                    parent->tailscaleAddress = ts;
+                }
+            }
+            m_KnownHosts.remove(cloneKey);
+            m_LastSerializedHosts.remove(cloneKey);
+            delete clone;
+        }
+        if (!cloneKeys.isEmpty()) {
+            saveHosts();
+        }
+    }
+
     // To quit in a timely manner, we must block additional requests
     // after we receive the aboutToQuit() signal. This is necessary
     // because NvHTTP uses aboutToQuit() to abort requests in progress
@@ -1041,43 +1072,39 @@ void ComputerManager::addNewHost(NvAddress address, bool mdns, QString name, NvA
     QThreadPool::globalInstance()->start(addTask);
 }
 
-bool ComputerManager::addTailscaleClone(QString parentUuid, QString tailscaleIp)
+bool ComputerManager::setTailscaleAddress(QString uuid, QString tailscaleIp)
 {
-    if (parentUuid.isEmpty() || tailscaleIp.isEmpty()) {
+    if (uuid.isEmpty() || tailscaleIp.isEmpty()) {
         return false;
     }
 
-    QString parentName;
-    uint16_t parentPort = 0;
+    NvComputer* computer = nullptr;
     {
         QReadLocker lock(&m_Lock);
-
-        // Abort if a Tailscale clone for this parent already exists.
-        const QString cloneKey = parentUuid + QStringLiteral("#tailscale");
-        if (m_KnownHosts.contains(cloneKey)) {
-            return false;
-        }
-
-        NvComputer* parent = m_KnownHosts.value(parentUuid);
-        if (parent == nullptr) {
-            return false;
-        }
-
-        QReadLocker parentLock(&parent->lock);
-        parentName = parent->name + QStringLiteral(" (Tailscale)");
-        // Reuse the parent's external port for the manual endpoint; defaults to
-        // DEFAULT_HTTP_PORT when no specific external port was negotiated.
-        parentPort = parent->localAddress.port() != 0
-                         ? parent->localAddress.port()
-                         : DEFAULT_HTTP_PORT;
+        // Primary tiles are keyed by the bare uuid (aliasSuffix empty).
+        computer = m_KnownHosts.value(uuid);
+    }
+    if (computer == nullptr) {
+        return false;
     }
 
-    addNewHost(NvAddress(tailscaleIp, parentPort),
-               /*mdns=*/false,
-               parentName,
-               NvAddress(),
-               QStringLiteral("tailscale"));
-    return true;
+    bool changed = false;
+    {
+        QWriteLocker cLock(&computer->lock);
+        uint16_t port = computer->localAddress.port() != 0
+                            ? computer->localAddress.port()
+                            : DEFAULT_HTTP_PORT;
+        NvAddress newAddr(tailscaleIp, port);
+        if (computer->tailscaleAddress != newAddr) {
+            computer->tailscaleAddress = newAddr;
+            changed = true;
+        }
+    }
+    if (changed) {
+        saveHost(computer);
+        emit computerStateChanged(computer);   // refresh the tile (badge + dual IP)
+    }
+    return changed;
 }
 
 QString ComputerManager::generatePinString()

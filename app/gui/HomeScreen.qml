@@ -19,6 +19,67 @@ FocusScope {
     property var appShell: null
     property ComputerModel computerModel: createModel()
 
+    // Whether Tailscale is installed on THIS client (drives the greyed "Tailscale"
+    // host option). Evaluated once — the client's install state rarely changes mid-run.
+    readonly property bool _clientHasTailscale: computerModel ? computerModel.clientHasTailscale() : false
+
+    // Opens the POWER chooser for the currently-focused host card. Used by the
+    // status-bar "X Shutdown" shortcut (mouse click + gamepad X). No-op when the
+    // focused cell isn't an online+paired host. Mirrors the Options → "Power…" entry.
+    function openPowerForCurrent() {
+        if (pcList.currentItem && pcList.currentItem.openPower)
+            pcList.currentItem.openPower()
+    }
+
+    // Drops any "force Tailscale" session pin so the poller reverts to LAN-first.
+    // Called when returning to the host list (after an apps/stream session).
+    function clearTailscalePreferences() {
+        if (computerModel) computerModel.clearTailscalePreferences()
+    }
+
+    // ── Remote "Update host" job state (one at a time, survives popup close) ───
+    property bool   updateJobActive: false
+    property int    updateJobHostIndex: -1
+    property string updateJobHostName: ""
+    property string updateJobPhase: "IDLE"
+    property int    updateJobPercent: -1
+    property string updateJobMessage: ""
+    property string updateJobError: ""
+    property var    updateJobUpdates: []
+    property var    updateJobCounts: ({})
+    property bool   _updateInstallStarted: false
+    property int    _updateMisses: 0
+
+    function startUpdateCheckFor(index, name) {
+        if (updateJobActive) { openUpdateDialog(); return }   // one job at a time
+        updateJobHostIndex = index
+        updateJobHostName = name
+        updateJobActive = true
+        _updateInstallStarted = false
+        _updateMisses = 0
+        updateJobPhase = "CHECKING"; updateJobPercent = -1
+        updateJobMessage = ""; updateJobError = ""
+        updateJobUpdates = []; updateJobCounts = ({})
+        computerModel.startUpdateCheck(index)
+        updatePollTimer.restart()
+        openUpdateDialog()
+    }
+    function startUpdateInstall(scope) {
+        _updateInstallStarted = true
+        updateJobPhase = "DOWNLOADING"; updateJobPercent = 0
+        updateJobMessage = qsTr("Preparing…")
+        computerModel.startUpdateInstall(updateJobHostIndex, scope)
+    }
+    function clearUpdateJob() {
+        updatePollTimer.stop()
+        updateJobActive = false
+        updateJobPhase = "IDLE"
+        if (updateDialog.opened) updateDialog.close()
+    }
+    function openUpdateDialog() {
+        if (!updateDialog.opened) updateDialog.open()
+    }
+
     // Local design tokens (mirrored from main.qml — IDs from parent components
     // are not reliably visible inside dynamically loaded Loader children).
     readonly property color _bg1:       "#151515"
@@ -111,13 +172,6 @@ FocusScope {
         model.initialize(ComputerManager)
         model.pairingCompleted.connect(pairingComplete)
         model.connectionTestCompleted.connect(testConnectionDialog.connectionTestComplete)
-        model.tailscaleSuggestion.connect(function(parentUuid, parentName, tailscaleIp) {
-            tailscaleSuggestDialog.parentUuid = parentUuid
-            tailscaleSuggestDialog.parentName = parentName
-            tailscaleSuggestDialog.tailscaleIp = tailscaleIp
-            tailscaleSuggestDialog.computerModel = model
-            tailscaleSuggestDialog.open()
-        })
         return model
     }
 
@@ -272,13 +326,14 @@ FocusScope {
 
         // ── Gamepad / keyboard handling ────────────────────────────────────────
         // A (Space/Return) → activate selected card
-        // X (Menu)         → open context menu of the selected card
+        // X (Menu)         → open the POWER chooser for the selected host
         // Y (Hangup)       → shortcut to Settings (consistent with AppsScreen)
         // A acts on the sub-focus: Options button → open menu, card → open host.
         Keys.onReturnPressed: { _activate(); event.accepted = true }
         Keys.onEnterPressed:  { _activate(); event.accepted = true }
         Keys.onSpacePressed:  { _activate(); event.accepted = true }
         Keys.onHangupPressed: { if (appShell) appShell.openSettings();        event.accepted = true }
+        Keys.onMenuPressed:   { homeScreen.openPowerForCurrent();             event.accepted = true }
 
         function _activate() {
             if (!currentItem) return
@@ -346,31 +401,68 @@ FocusScope {
             function openCardMenu() {
                 if (!hostOptsDropdown.opened) hostOptsDropdown.open()
             }
+            // Opens the POWER chooser for this host. Shared by the Options → "Power…"
+            // entry and the status-bar "X Shutdown" shortcut. Gated to online+paired
+            // hosts (the X shortcut can land on any focused card).
+            function openPower() {
+                if (!model.online || !model.paired)
+                    return
+                powerDialog.pcIndex              = index
+                powerDialog.hostName             = model.name
+                powerDialog.authState            = pcCard.streamTweakAuth
+                // Seed update status: client read synchronously; host arrives async.
+                powerDialog.clientUpdateState    = SystemProperties.updatesPending() ? "pending" : "none"
+                if (pcCard.streamTweakAuth === "authorized") {
+                    powerDialog.hostUpdateState  = "checking"
+                    homeScreen.computerModel.requestUpdateState(index)
+                } else {
+                    powerDialog.hostUpdateState  = "unavailable"
+                }
+                powerDialog.open()
+            }
 
             // Items to show in the dropdown — re-evaluated each time the
             // host's state flags change.
+            // Tiles for the Options popup: { kind, icon (emoji), label (compact), danger? }.
             property var menuItems: {
                 var items = []
-                if (model.online && model.paired)        items.push({ kind: "viewAllApps",        text: qsTr("View All Apps") })
-                if (!model.online && model.wakeable)     items.push({ kind: "wake",               text: qsTr("Wake PC") })
-                items.push({ kind: "testNetwork",        text: qsTr("Test Network") })
-                items.push({ kind: "rename",             text: qsTr("Rename PC") })
-                items.push({ kind: "delete",             text: qsTr("Delete PC") })
-                items.push({ kind: "viewDetails",        text: qsTr("View Details") })
-                if (model.online && model.paired)        items.push({ kind: "prepareStreamTweak", text: qsTr("StreamTweak Streaming Mode") })
-                if (model.online && model.paired)        items.push({ kind: "power",              text: qsTr("Power…") })
+                if (model.online && model.paired)        items.push({ kind: "viewAllApps",        icon: "🎮", label: qsTr("All Apps") })
+                // Tailscale: opens the host's apps over the 100.x endpoint. Greyed
+                // (non-clickable) when Tailscale isn't installed on this client.
+                if (model.online && model.paired && model.hasTailscale)
+                                                         items.push({ kind: "tailscale", iconSource: "qrc:/res/tailscale.svg",
+                                                                      label: qsTr("Tailscale"), disabled: !homeScreen._clientHasTailscale })
+                if (!model.online && model.wakeable)     items.push({ kind: "wake",               icon: "⏰", label: qsTr("Wake") })
+                items.push({ kind: "testNetwork",        icon: "📡", label: qsTr("Test Network") })
+                items.push({ kind: "rename",             icon: "✏️", label: qsTr("Rename") })
+                items.push({ kind: "delete",             icon: "🗑️", label: qsTr("Delete"), danger: true })
+                items.push({ kind: "viewDetails",        icon: "ℹ️", label: qsTr("Details") })
+                if (model.online && model.paired)        items.push({ kind: "prepareStreamTweak", icon: "🚀", label: qsTr("Streaming Mode") })
+                if (model.online && model.paired)        items.push({ kind: "power",              icon: "🔌", label: qsTr("Power") })
+                if (model.online && model.paired && pcCard.streamTweakAuth === "authorized")
+                                                         items.push({ kind: "updateHost",         icon: "🪟", label: qsTr("Windows Update") })
                 if (model.online && model.paired
                     && (pcCard.streamTweakAuth === "pending" || pcCard.streamTweakAuth === "denied"))
-                                                         items.push({ kind: "requestStAuth", text: qsTr("Request StreamTweak access") })
+                                                         items.push({ kind: "requestStAuth",       icon: "🔑", label: qsTr("Request Access") })
                 return items
             }
 
             function triggerOption(kind) {
+                hostOptsDropdown.close()   // close the Options popup before opening any target dialog
                 switch (kind) {
                 case "viewAllApps":
                     homeScreen.appShell.showApps(index, homeScreen.computerModel, true,
                                                   model.name, model.address, model.gpuModel,
                                                   model.isTailscaleClone)
+                    break
+                case "tailscale":
+                    // Force the active connection onto Tailscale, then open the host's
+                    // apps on the 100.x endpoint.
+                    if (homeScreen.computerModel.prepareTailscaleSession(index)) {
+                        homeScreen.appShell.showApps(index, homeScreen.computerModel, true,
+                                                      model.name, model.tailscaleAddress, model.gpuModel,
+                                                      true)
+                    }
                     break
                 case "wake":
                     homeScreen.computerModel.wakeComputer(index)
@@ -404,13 +496,12 @@ FocusScope {
                     homeScreen.computerModel.requestStreamTweakAuth(index)
                     break
                 case "power":
-                    powerDialog.pcIndex   = index
-                    powerDialog.hostName  = model.name
-                    powerDialog.authState = pcCard.streamTweakAuth
-                    powerDialog.open()
+                    pcCellWrap.openPower()
+                    break
+                case "updateHost":
+                    homeScreen.startUpdateCheckFor(index, model.name)
                     break
                 }
-                hostOptsDropdown.close()
             }
 
             // Inner card — portrait, fixed height; Options button sits underneath.
@@ -536,6 +627,9 @@ FocusScope {
                     function onStreamTweakAuthReceived(idx, state, pin) {
                         if (idx === index) {
                             pcCard.streamTweakAuth = state
+                            // Once authorized, learn the host's Tailscale endpoint (if any).
+                            if (state === "authorized")
+                                homeScreen.computerModel.refreshTailscale(index)
                             if (state === "pending" && pin.length > 0)
                                 homeScreen.stShowPin(index, model.name, model.address, pin)
                             else
@@ -563,28 +657,31 @@ FocusScope {
                     }
                 }
 
-                // ── Tailscale badge — top left (clone tiles only) ─────────────
+                // ── Tailscale badge — top left ────────────────────────────────
+                // Shown whenever the host advertises a Tailscale endpoint. Two lines
+                // ("TAILSCALE" + "AVAILABLE") when the LAN path is also up; a single
+                // "TAILSCALE" line when the host is reachable only via Tailscale.
                 Rectangle {
                     id: tailscaleBadge
-                    visible: model.isTailscaleClone === true
+                    visible: model.hasTailscale === true
                     anchors.top: parent.top
                     anchors.left: parent.left
                     anchors.topMargin: 12
                     anchors.leftMargin: 12
-                    height: 24
-                    width: tailscaleBadgeRow.implicitWidth + 16
+                    width: tailscaleBadgeCol.implicitWidth + 16
+                    height: tailscaleBadgeCol.implicitHeight + 10
                     radius: 3
                     color: Qt.rgba(0, 0, 0, 0.45)
                     border.color: "#ffffff"
                     border.width: 1
 
-                    Row {
-                        id: tailscaleBadgeRow
+                    Column {
+                        id: tailscaleBadgeCol
                         anchors.centerIn: parent
-                        spacing: 6
+                        spacing: 1
 
                         Label {
-                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.horizontalCenter: parent.horizontalCenter
                             text: qsTr("TAILSCALE")
                             color: "#ffffff"
                             font.family: "DM Sans"
@@ -592,94 +689,81 @@ FocusScope {
                             font.bold: true
                             font.letterSpacing: 1
                         }
+                        Label {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            visible: !model.tailscaleActive   // LAN path is also available
+                            text: qsTr("AVAILABLE")
+                            color: "#00E676"
+                            font.family: "DM Sans"
+                            font.pixelSize: 9
+                            font.bold: true
+                            font.letterSpacing: 1.5
+                        }
                     }
                 }
 
                 // ── Status badge — top right ──────────────────────────────────
+                // Single box, two stacked lines (matches the TAILSCALE/AVAILABLE badge):
+                // connectivity on top, StreamTweak access state below (when present).
                 Rectangle {
                     id: statusBadge
                     anchors.top: parent.top
                     anchors.right: parent.right
                     anchors.topMargin: 12
                     anchors.rightMargin: 12
-                    height: 24
-                    width: badgeRow.implicitWidth + 16
+                    width: statusBadgeCol.implicitWidth + 16
+                    height: statusBadgeCol.implicitHeight + 10
                     radius: 3
                     color: Qt.rgba(0, 0, 0, 0.45)
-                    border.color: badgeRow._stateColor
+                    border.color: "#ffffff"
                     border.width: 1
 
-                    Row {
-                        id: badgeRow
+                    property string _stateLabel:
+                          model.statusUnknown          ? qsTr("CHECKING")
+                        : model.online && model.paired ? qsTr("ONLINE")
+                        : model.online                 ? qsTr("REACHABLE")
+                        :                                qsTr("OFFLINE")
+                    property color _stateColor:
+                          model.statusUnknown          ? homeScreen._textMut
+                        : model.online && model.paired ? homeScreen._greenLk
+                        : model.online                 ? homeScreen._amber
+                        :                                homeScreen._textMut
+
+                    property bool _hasAuth: pcCard.streamTweakAuth === "authorized"
+                                         || pcCard.streamTweakAuth === "pending"
+                                         || pcCard.streamTweakAuth === "denied"
+                    property color _authColor:
+                          pcCard.streamTweakAuth === "authorized" ? homeScreen._green
+                        : pcCard.streamTweakAuth === "pending"    ? homeScreen._amber
+                        :                                           homeScreen._red
+                    property string _authLabel:
+                          pcCard.streamTweakAuth === "authorized" ? qsTr("AUTHORIZED")
+                        : pcCard.streamTweakAuth === "pending"    ? qsTr("PENDING")
+                        :                                           qsTr("DENIED")
+
+                    Column {
+                        id: statusBadgeCol
                         anchors.centerIn: parent
-                        spacing: 6
-
-                        property string _stateLabel:
-                              model.statusUnknown          ? qsTr("CHECKING")
-                            : model.online && model.paired ? qsTr("ONLINE")
-                            : model.online                 ? qsTr("REACHABLE")
-                            :                                qsTr("OFFLINE")
-
-                        property color _stateColor:
-                              model.statusUnknown          ? homeScreen._textMut
-                            : model.online && model.paired ? homeScreen._greenLk
-                            : model.online                 ? homeScreen._amber
-                            :                                homeScreen._textMut
+                        spacing: 1
 
                         Label {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: badgeRow._stateLabel
-                            color: badgeRow._stateColor
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: statusBadge._stateLabel
+                            color: statusBadge._stateColor
                             font.family: "DM Sans"
                             font.pixelSize: 11
                             font.bold: true
                             font.letterSpacing: 1
                         }
-                    }
-                }
-
-                // ── StreamTweak access badge — under the status badge ─────────
-                // Shows the host's authorization state for this client. Hidden when
-                // StreamTweak is absent / legacy / unreachable (state "none" or "").
-                Rectangle {
-                    id: authBadge
-                    visible: pcCard.streamTweakAuth === "authorized"
-                          || pcCard.streamTweakAuth === "pending"
-                          || pcCard.streamTweakAuth === "denied"
-                    anchors.top: statusBadge.bottom
-                    anchors.right: parent.right
-                    anchors.topMargin: 6
-                    anchors.rightMargin: 12
-                    height: 24
-                    width: authBadgeRow.implicitWidth + 16
-                    radius: 3
-                    color: Qt.rgba(0, 0, 0, 0.45)
-                    border.color: authBadgeRow._color
-                    border.width: 1
-
-                    Row {
-                        id: authBadgeRow
-                        anchors.centerIn: parent
-                        spacing: 6
-
-                        property color _color:
-                              pcCard.streamTweakAuth === "authorized" ? homeScreen._green
-                            : pcCard.streamTweakAuth === "pending"    ? homeScreen._amber
-                            :                                           homeScreen._red
-
-                        property string _label:
-                              pcCard.streamTweakAuth === "authorized" ? qsTr("AUTHORIZED")
-                            : pcCard.streamTweakAuth === "pending"    ? qsTr("PENDING")
-                            :                                           qsTr("DENIED")
-
                         Label {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: authBadgeRow._label
-                            color: authBadgeRow._color
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            visible: statusBadge._hasAuth
+                            text: statusBadge._authLabel
+                            color: statusBadge._authColor
                             font.family: "DM Sans"
-                            font.pixelSize: 11
+                            font.pixelSize: 9
                             font.bold: true
-                            font.letterSpacing: 1
+                            font.letterSpacing: 1.5
                         }
                     }
                 }
@@ -721,12 +805,19 @@ FocusScope {
                         elide: Label.ElideRight
                     }
 
-                    // IP address (and optional · GPU on the same line)
+                    // Physical (LAN) IP — kept even when reached via Tailscale.
+                    // With Tailscale the Tailscale IP is shown on the line below.
+                    // GPU (when known) sits inline on this physical-IP line.
                     Row {
                         spacing: 6
                         Label {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: model.address && model.address.length > 0 ? model.address : qsTr("N/A")
+                            text: {
+                                var ip = model.hasTailscale
+                                         ? (model.physicalAddress && model.physicalAddress.length ? model.physicalAddress : model.address)
+                                         : model.address
+                                return ip && ip.length > 0 ? ip : qsTr("N/A")
+                            }
                             font.family: homeScreen._mono
                             font.pixelSize: 13
                             color: homeScreen._textDim
@@ -747,6 +838,15 @@ FocusScope {
                             font.pixelSize: 13
                             color: homeScreen._textDim
                         }
+                    }
+                    // Tailscale IP — only when the host advertises a Tailscale endpoint.
+                    Label {
+                        visible: model.hasTailscale === true
+                              && model.tailscaleAddress && model.tailscaleAddress.length > 0
+                        text: model.tailscaleAddress || ""
+                        font.family: homeScreen._mono
+                        font.pixelSize: 13
+                        color: homeScreen._textDim
                     }
                     // NIC speed (separate line below IP, fetched from StreamTweak)
                     Label {
@@ -825,82 +925,12 @@ FocusScope {
                 }
             }
 
-            // Options dropdown opens upwards above the Options button. Non-modal.
-            Popup {
+            // Options chooser — wide centered tile grid (replaces the old dropdown list).
+            HostOptionsDialog {
                 id: hostOptsDropdown
-                x: optsBtn.x
-                y: optsBtn.y - hostOptsDropdown.implicitHeight - 4
-                width: optsBtn.width
-                implicitHeight: optsList.implicitHeight
-                padding: 0
-                modal: false
-                focus: true
-                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnPressOutsideParent
-
-                contentItem: ListView {
-                    id: optsList
-                    implicitHeight: contentHeight + 8
-                    topMargin: 4
-                    bottomMargin: 4
-                    focus: true
-                    keyNavigationEnabled: true
-                    interactive: false
-                    currentIndex: 0
-                    model: pcCellWrap.menuItems
-                    clip: true
-
-                    delegate: Item {
-                        width: optsList.width
-                        height: 32
-
-                        Rectangle {
-                            anchors.fill: parent
-                            color: optsList.currentIndex === index ? Qt.rgba(1,1,1,0.06) : "transparent"
-                        }
-                        // Left accent bar when selected (StreamLight green)
-                        Rectangle {
-                            visible: optsList.currentIndex === index
-                            anchors.left: parent.left
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            width: 3
-                            color: homeScreen._greenLk
-                        }
-                        Label {
-                            anchors.left: parent.left
-                            anchors.leftMargin: 14
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: modelData.text
-                            color: homeScreen._text
-                            font.family: "DM Sans"
-                            font.pixelSize: 13
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onEntered:  optsList.currentIndex = index
-                            onClicked:  pcCellWrap.triggerOption(modelData.kind)
-                        }
-                    }
-
-                    Keys.onReturnPressed: { pcCellWrap.triggerOption(model[currentIndex].kind); event.accepted = true }
-                    Keys.onEnterPressed:  { pcCellWrap.triggerOption(model[currentIndex].kind); event.accepted = true }
-                    Keys.onSpacePressed:  { pcCellWrap.triggerOption(model[currentIndex].kind); event.accepted = true }
-                }
-
-                background: Rectangle {
-                    color: "#1a1a1a"
-                    border.color: "#2a2a2a"
-                    border.width: 1
-                    radius: 6
-                }
-
-                onOpened: {
-                    optsList.currentIndex = 0
-                    optsList.forceActiveFocus()
-                }
+                hostName: model.name
+                items: pcCellWrap.menuItems
+                onChosen: function(kind) { pcCellWrap.triggerOption(kind) }
             }
         }
     }
@@ -1080,8 +1110,6 @@ FocusScope {
 
     PairDialog { id: pairDialog }
 
-    TailscaleSuggestDialog { id: tailscaleSuggestDialog }
-
     NavigableMessageDialog {
         id: deletePcDialog
         property int pcIndex: -1
@@ -1225,25 +1253,95 @@ FocusScope {
     // ── Power-off chooser (host / client / both) ──────────────────────────────
     PowerDialog {
         id: powerDialog
-        onConfirmed: function(target) {
+        onConfirmed: function(target, installUpdates) {
             if (target === "host") {
-                homeScreen.computerModel.shutdownHost(powerDialog.pcIndex)
+                homeScreen.computerModel.shutdownHost(powerDialog.pcIndex, installUpdates)
             } else if (target === "client") {
-                SystemProperties.shutdownClient()
+                SystemProperties.shutdownClient(installUpdates)
             } else if (target === "both") {
                 // Send the host shutdown first, then power off the client after a
                 // short delay so the bridge socket finishes writing the command.
-                homeScreen.computerModel.shutdownHost(powerDialog.pcIndex)
+                homeScreen.computerModel.shutdownHost(powerDialog.pcIndex, installUpdates)
+                bothShutdownTimer.installUpdates = installUpdates
                 bothShutdownTimer.restart()
             }
         }
     }
 
+    // Receives the host's update state (async) and resolves the Power dialog's host row.
+    Connections {
+        target: computerModel
+        function onUpdateStateReceived(idx, pending) {
+            if (idx === powerDialog.pcIndex)
+                powerDialog.hostUpdateState = pending ? "pending" : "none"
+        }
+    }
+
     Timer {
         id: bothShutdownTimer
+        property bool installUpdates: false
         interval: 1800
         repeat: false
-        onTriggered: SystemProperties.shutdownClient()
+        onTriggered: SystemProperties.shutdownClient(bothShutdownTimer.installUpdates)
+    }
+
+    // ── Remote "Update host" — dialog, poll timer, progress wiring ─────────────
+    UpdateDialog {
+        id: updateDialog
+        hostName:  homeScreen.updateJobHostName
+        phase:     homeScreen.updateJobPhase
+        percent:   homeScreen.updateJobPercent
+        message:   homeScreen.updateJobMessage
+        errorText: homeScreen.updateJobError
+        updates:   homeScreen.updateJobUpdates
+        counts:    homeScreen.updateJobCounts
+        onInstall: function(scope) { homeScreen.startUpdateInstall(scope) }
+        onHideRequested: updateDialog.close()        // background: job + chip stay alive
+        onDismissed:     homeScreen.clearUpdateJob()
+    }
+
+    Timer {
+        id: updatePollTimer
+        interval: 1500
+        repeat: true
+        onTriggered: if (homeScreen.updateJobActive)
+                         homeScreen.computerModel.requestUpdateProgress(homeScreen.updateJobHostIndex)
+    }
+
+    Connections {
+        target: computerModel
+        function onUpdateProgressReceived(idx, state) {
+            if (idx !== homeScreen.updateJobHostIndex || !homeScreen.updateJobActive)
+                return
+            var phase = state.phase ? state.phase : "IDLE"
+            if (phase === "IDLE") {
+                // Host unreachable. If the install had started, the box is rebooting
+                // (success); otherwise tolerate a few misses before declaring it lost.
+                if (homeScreen._updateInstallStarted) {
+                    homeScreen.updateJobPhase = "REBOOTING"
+                    homeScreen.updateJobPercent = 100
+                    homeScreen.updateJobMessage = qsTr("Host is restarting to finish updates.")
+                    updatePollTimer.stop()
+                } else if (++homeScreen._updateMisses >= 4) {
+                    homeScreen.updateJobPhase = "ERROR"
+                    homeScreen.updateJobMessage = qsTr("Lost contact with the host.")
+                    updatePollTimer.stop()
+                }
+                return
+            }
+            homeScreen._updateMisses = 0
+            if (phase === "DOWNLOADING" || phase === "INSTALLING")
+                homeScreen._updateInstallStarted = true
+            homeScreen.updateJobPhase   = phase
+            homeScreen.updateJobPercent = (state.percent !== undefined) ? state.percent : -1
+            homeScreen.updateJobMessage = state.message ? state.message : ""
+            homeScreen.updateJobError   = state.error ? state.error : ""
+            if (state.updates !== undefined) homeScreen.updateJobUpdates = state.updates
+            if (state.counts  !== undefined) homeScreen.updateJobCounts  = state.counts
+            // Terminal / restarting → stop polling; the view stays until the user closes it.
+            if (phase === "DONE" || phase === "NO_UPDATES" || phase === "ERROR" || phase === "REBOOTING")
+                updatePollTimer.stop()
+        }
     }
 
     // ── StreamTweak access PIN popup ──────────────────────────────────────────

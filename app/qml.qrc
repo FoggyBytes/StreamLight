@@ -19,8 +19,10 @@
         <file>gui/SegmentedSelector.qml</file>
         <file>gui/PairDialog.qml</file>
         <file>gui/AddHostDialog.qml</file>
-        <file>gui/TailscaleSuggestDialog.qml</file>
         <file>gui/PrepareCountdownDialog.qml</file>
         <file>gui/PowerDialog.qml</file>
+        <file>gui/DialogButton.qml</file>
+        <file>gui/UpdateDialog.qml</file>
+        <file>gui/HostOptionsDialog.qml</file>
     </qresource>
 </RCC>

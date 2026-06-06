@@ -1,0 +1,19 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Tailscale mark, 3x3 dot grid. Pattern (S=dim 20%, C=full):
+         S S S
+         C C C
+         S C S
+       White fill on every circle (Qt SVG ignores fill on the root <svg>). -->
+  <!-- top row: all dim -->
+  <circle cx="65.6"  cy="63.9"  r="63.9" fill="#ffffff" opacity="0.2"/>
+  <circle cx="257.2" cy="63.9"  r="63.9" fill="#ffffff" opacity="0.2"/>
+  <circle cx="446.4" cy="63.9"  r="63.9" fill="#ffffff" opacity="0.2"/>
+  <!-- middle row: all full -->
+  <circle cx="65.6"  cy="254.2" r="63.9" fill="#ffffff"/>
+  <circle cx="257.2" cy="254.2" r="63.9" fill="#ffffff"/>
+  <circle cx="446.4" cy="254.2" r="63.9" fill="#ffffff"/>
+  <!-- bottom row: corners dim, centre full -->
+  <circle cx="65.6"  cy="448.1" r="63.9" fill="#ffffff" opacity="0.2"/>
+  <circle cx="257.2" cy="448.1" r="63.9" fill="#ffffff"/>
+  <circle cx="446.4" cy="448.1" r="63.9" fill="#ffffff" opacity="0.2"/>
+</svg>

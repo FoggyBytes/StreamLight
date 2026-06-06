@@ -21,6 +21,11 @@
  *              edge cases where the log event is delayed or missed.
  *   SHUTDOWN — asks the host to power off. Destructive; StreamTweak only honours
  *              it from an approved client (verified AUTH1 signature). Fire-and-forget.
+ *   SHUTDOWN_UPDATE — like SHUTDOWN, but the host installs any pending Windows
+ *              updates before powering off ("Update and shut down"). Same approval
+ *              requirement as SHUTDOWN. Fire-and-forget.
+ *   UPDATESTATE — asks whether the host has updates waiting for a reboot.
+ *              StreamTweak replies with {"pending":true|false}.
  *   STATUS   — queries the current NIC speed from StreamTweak.
  *              StreamTweak replies with the link speed in Mbps (e.g. "1000").
  *   STATS    — requests real-time host metrics (GPU %, encoder %, temperature,
@@ -50,7 +55,8 @@ public:
 
     void sendPrepare(const QString& hostAddress);
     void sendRestore(const QString& hostAddress);
-    void sendShutdown(const QString& hostAddress);
+    // installUpdates: send SHUTDOWN_UPDATE ("Update and shut down") instead of SHUTDOWN.
+    void sendShutdown(const QString& hostAddress, bool installUpdates = false);
 
     /**
      * Asynchronously queries the NIC speed from StreamTweak.
@@ -71,6 +77,26 @@ public:
      * error/timeout / StreamTweak unreachable.
      */
     void requestAppStores(const QString& hostAddress, ResponseCallback onResult);
+
+    /**
+     * Asynchronously asks whether the host has Windows updates waiting for a reboot.
+     * Invokes onResult with {"pending":true|false}, or "" on error/timeout / legacy
+     * host (pre-7.2.1 hosts reply "ERR"). Informational only — used to hint the user
+     * in the Power dialog.
+     */
+    void requestUpdateState(const QString& hostAddress, ResponseCallback onResult);
+
+    /**
+     * Remote "Update host" feature (drives Windows Update Agent on the host).
+     *  - sendUpdateCheck: start an async scan. Fire-and-forget ("OK" discarded).
+     *  - sendUpdateNow:   install the scanned updates for the given scope ("SEC"/"ALL")
+     *                     and reboot if required. Destructive; authenticated.
+     *  - requestUpdateProgress: poll the job state; onResult gets the JSON snapshot,
+     *                     or "" on error/timeout (host unreachable / rebooting).
+     */
+    void sendUpdateCheck(const QString& hostAddress);
+    void sendUpdateNow(const QString& hostAddress, const QString& scope);
+    void requestUpdateProgress(const QString& hostAddress, ResponseCallback onResult);
 
     /**
      * Asynchronously requests the active session ID from StreamTweak.
