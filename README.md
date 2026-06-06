@@ -6,7 +6,7 @@
   <img width="960" height="540" alt="1" src="https://github.com/user-attachments/assets/26be0e53-ec1f-4184-800f-caad6e9cae34" />
 </div>
 
-**StreamLight** is the client-side half of the FoggyBytes streaming duo: the official FoggyBytes fork of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) with native integration for its host-side companion, [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak). It adds host NIC control, live host metrics in the overlay, store badges on game covers, session-quality reporting and a Tailscale dual-tile workflow — all driven from the client over a local TCP bridge to StreamTweak. From **3.0.0** the entire UI has been redesigned from the ground up with a flat, gamepad-first look inspired by the Xbox and Steam Big Picture interfaces, while the underlying streaming engine (FFmpeg / D3D11VA / DXVA2 / libplacebo / `moonlight-common-c`) is unchanged from 2.3.1.
+**StreamLight** is the client-side half of the FoggyBytes streaming duo: the official FoggyBytes fork of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) with native integration for its host-side companion, [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak). It adds host NIC control, live host metrics in the overlay, store badges on game covers, session-quality reporting, remote Windows Update, and Tailscale presence — all driven from the client over a local TCP bridge to StreamTweak. From **3.0.0** the entire UI has been redesigned from the ground up with a flat, gamepad-first look inspired by the Xbox and Steam Big Picture interfaces, while the underlying streaming engine (FFmpeg / D3D11VA / DXVA2 / libplacebo / `moonlight-common-c`) is unchanged from 2.3.1.
 
 <div align="center">
   <img width="960" height="540" alt="5" src="https://github.com/user-attachments/assets/1838e5c4-5342-4767-bd07-a63555e033c3" />
@@ -18,9 +18,9 @@
 
 ## ✅ Compatibility
 
-Windows 10 and 11. Works as a standalone Moonlight-compatible client against any Sunshine / Apollo / Vibeshine / Vibepollo host, **and** unlocks its full feature set when paired with [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) on the host PC (Tailscale dual-tile, live NIC speed transitions, host metrics overlay, store badges, session-quality reporting, remote pause, remote host power-off).
+Windows 10 and 11. Works as a standalone Moonlight-compatible client against any Sunshine / Apollo / Vibeshine / Vibepollo host, **and** unlocks its full feature set when paired with [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) on the host PC (Tailscale, live NIC speed transitions, host metrics overlay, store badges, session-quality reporting, remote pause, remote host power-off, remote Windows Update).
 
-> 🔐 **Authenticated bridge (3.1.0+).** Every command StreamLight sends to StreamTweak is signed with its existing Moonlight identity certificate; the host approves each client once via a 4-digit PIN confirmation. **Authorization never affects streaming** — without it you can still stream normally, you only lose the StreamTweak integration: host metrics overlay, NIC speed & Streaming Mode, store badges on covers, session quality reports & live charts, Tailscale dual-tile, remote pause, and remote host power-off. Each host card shows its access state (AUTHORIZED / PENDING / DENIED) as a badge. As of StreamTweak 7.2.0 this authentication is mandatory (the host no longer has an option to disable it). Requires **StreamTweak 7.2.0 or later** on the host for the power-off feature and for the advanced integration in general; update both apps together.
+> 🔐 **Authenticated bridge (3.1.0+).** Every command StreamLight sends to StreamTweak is signed with its existing Moonlight identity certificate; the host approves each client once via a 4-digit PIN confirmation. **Authorization never affects streaming** — without it you can still stream normally, you only lose the StreamTweak integration: host metrics overlay, NIC speed & Streaming Mode, store badges on covers, session quality reports & live charts, Tailscale, remote pause, remote host power-off, and remote Windows Update. Each host card shows its access state (AUTHORIZED / PENDING / DENIED) as a badge. As of StreamTweak 7.2.0 this authentication is mandatory (the host no longer has an option to disable it). Requires **StreamTweak 7.3.0 or later** on the host for the latest features (remote Windows Update, update-and-shut-down) and for the advanced integration in general; update both apps together.
 
 > ⚠️ **Not affiliated with or endorsed by the Moonlight project.** StreamLight is an independent fork. For upstream Moonlight support, use the [official client](https://github.com/moonlight-stream/moonlight-qt).
 
@@ -34,7 +34,7 @@ Windows 10 and 11. Works as a standalone Moonlight-compatible client against any
 
 **🏠 Home & App Grid**
 - Portrait host cards with per-host coloured gradient headers and an inline **+ Add Hosts** tile
-- Per-card **Options** dropdown: View All Apps, Test Network, Rename, Delete, View Details, **StreamTweak Streaming Mode**, Wake
+- Per-card **Options** chooser *(a wide tile grid as of 3.3.0)*: All Apps, Tailscale, Test Network, Rename, Delete, Details, **StreamTweak Streaming Mode**, Power…, Windows Update, Wake
 - Compact one-row header in the app grid: `hostname · ONLINE · IP · NIC speed · resolution · FPS`
 - 200×267 covers with store badges and a tight bright-green focus border; the running app's cover gets a thicker, pulsing border
 - App-name tooltip appears **instantly** below the cover, anchored outside the focus frame
@@ -44,7 +44,7 @@ Windows 10 and 11. Works as a standalone Moonlight-compatible client against any
 - Pill-style **segmented selectors** replace every dropdown — D-pad ◀ / ▶ pick the value, no popup, no focus leak
 - Inline subtitles replace hover tooltips; legacy copy reviewed and shortened
 - **Bitrate slider** with hold-to-accelerate, `Mbps` unit, and an **X / □ "Default"** prompt that restores the recommended value
-- **Auto-start Tailscale on launch** *(new in 3.0.0)* — a Network-tab toggle that launches `tailscale-ipn.exe` in the background at every startup so remote hosts can be reached via their `100.x.y.z` Tailscale IP without keeping the Tailscale tray manually open. Pairs naturally with the Tailscale dual-tile workflow on Home (see Paired Features below). Requires the official Tailscale Windows installer from [tailscale.com/download](https://tailscale.com/download); the Microsoft Store package is not supported
+- **Auto-start Tailscale on launch** *(new in 3.0.0)* — a Network-tab toggle that launches `tailscale-ipn.exe` in the background at every startup so remote hosts can be reached via their `100.x.y.z` Tailscale IP without keeping the Tailscale tray manually open. Pairs naturally with the unified Tailscale tile on Home (see Paired Features below). Requires the official Tailscale Windows installer from [tailscale.com/download](https://tailscale.com/download); the Microsoft Store package is not supported
 
 **🎯 Windows Xbox App Integration** *(new in 3.0.0)*
 - **Branded tile artwork** in the Windows 11 Xbox app's "My apps" section: StreamLight no longer shows the default grey square — a 1024×1024 dark-green gradient PNG with the swoosh glow is automatically placed in the tile, matching the visual quality of Steam, Epic Games Store, GOG GALAXY, Ubisoft Connect, EA App, and Battle.net
@@ -65,7 +65,18 @@ These features cross the bridge and require both apps. The version next to each 
 - **Store Badges on Game Covers** *(StreamTweak 5.0.0+)* — per-game badge overlaid on each cover (Steam, Epic, GOG, Ubisoft, Xbox, Battle.net, EA App), fetched via the `APPSTORES` command
 - **Session Quality Reporting** *(StreamTweak 5.2.0+)* — FPS, drops, RTT, jitter, decode latency, bitrate streamed every second; StreamTweak generates the quality grade and sparkline charts in its Logs tab
 - **Remote Session Pause** *(StreamTweak 6.0.0+)* — Pause button on StreamTweak's Home page terminates the stream on the client side; signal piggybacked on the existing per-second `STATS` channel
-- **Tailscale Dual-Tile** *(StreamTweak 6.3.0+, flagship of this release pair)* — after a successful pairing via LAN IP, StreamLight queries the new `TAILSCALE` bridge command. If StreamTweak detects a Tailscale `100.x.y.z` adapter on the host, a one-time popup offers to create a second tile pinned to that address. The LAN tile and the Tailscale tile coexist permanently; the Tailscale tile is **address-pinned**, so mDNS rediscovery on the LAN cannot collapse it back onto the parent. The underlying Moonlight UUID and server certificate are shared with the parent, so no second pairing is required. Combined with the new **Auto-start Tailscale on launch** Settings toggle on the client side, the full round-trip is automatic: open StreamLight → Tailscale comes up → the remote tile is live → one click streams from anywhere
+- **Tailscale, unified into one tile** *(StreamTweak 6.3.0+; single tile in StreamLight 3.3.0)* — after pairing via LAN IP, StreamLight queries the `TAILSCALE` bridge command. If StreamTweak reports a `100.x.y.z` Tailscale address, StreamLight records it on the host's **single** tile, which then tracks both the LAN and Tailscale IPs and shows a `TAILSCALE · AVAILABLE` badge (just `TAILSCALE` when only the Tailscale path is up). Opening the host or *All Apps* uses whichever path is available (LAN locally, Tailscale remotely); a dedicated **Tailscale** option forces the `100.x` endpoint. Combined with the **Auto-start Tailscale on launch** Settings toggle, the round-trip is automatic: open StreamLight → Tailscale comes up → one click streams from anywhere
+
+## ✨ What's New in 3.3.0 — "The Patch Tuesday Update"
+
+Windows Update, driven entirely from the couch. **Requires StreamTweak 7.3.0 or later**; update both apps together.
+
+- **Update the host's Windows Update** — Options → *Check Windows Update on host…* scans the host, shows the updates classified (*Security & critical / Defender / Optional*; feature/version upgrades shown but not installed remotely), lets you pick *Security + Defender* or *All updates*, then installs and restarts the host only if required. The job runs in the background (status-bar chip + **RB** to reopen), so the app stays usable while it works
+- **Update and shut down** — the Power… chooser can install pending Windows updates before powering off the host and/or this client; it checks both sides, shows where updates are pending (🟠 pending / ✓ up to date), and enables the option only when there's something to install. Plus an **X · Shutdown** status-bar shortcut for the highlighted host
+- **Options menu redesigned** — a wide tile grid (emoji + short label) instead of a text list, much comfier to navigate with a controller
+- **Tailscale unified into one tile** — a host reachable on the LAN *and* over Tailscale is now a **single** tile that tracks both IPs (with a `TAILSCALE · AVAILABLE` badge) instead of a duplicate. A *Tailscale* option opens the host's apps over the `100.x` address; existing duplicate tiles are merged automatically on first launch
+
+> 🙏 Thanks again to [**@SolemnDucc**](https://github.com/FoggyBytes/StreamLight/issues/1) for the headless-host Windows Update suggestions.
 
 ## ✨ What's New in 3.2.0 — "The Power Update"
 
@@ -105,7 +116,7 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
 ## 📝 Installation
 
 1. Go to the **Releases** page of this repository.
-2. Download the latest installer (`StreamLight_3.1.0_Installer.exe`) and run it.
+2. Download the latest installer (`StreamLight_3.3.0_Installer.exe`) and run it.
 
 Settings (paired hosts, video / audio / input preferences, client certificate) are stored under `HKCU\Software\Moonlight Game Streaming Project\Moonlight` — the same location used by upstream Moonlight and StreamLight 2.x. Upgrades from 2.x preserve all your hosts and preferences automatically. Box-art cache lives in `%LOCALAPPDATA%\Moonlight Game Streaming Project\Moonlight`.
 
