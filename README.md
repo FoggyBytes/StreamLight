@@ -65,6 +65,8 @@ These features cross the bridge and require both apps. The version next to each 
 - **Store Badges on Game Covers** *(StreamTweak 5.0.0+)* — per-game badge overlaid on each cover (Steam, Epic, GOG, Ubisoft, Xbox, Battle.net, EA App), fetched via the `APPSTORES` command
 - **Session Quality Reporting** *(StreamTweak 5.2.0+)* — FPS, drops, RTT, jitter, decode latency, bitrate streamed every second; StreamTweak generates the quality grade and sparkline charts in its Logs tab
 - **Remote Session Pause** *(StreamTweak 6.0.0+)* — Pause button on StreamTweak's Home page terminates the stream on the client side; signal piggybacked on the existing per-second `STATS` channel
+- **Remote Host Power-Off** *(StreamTweak 7.2.0+)* — a **Power…** chooser (Options menu) shuts down the host PC, this client PC, or both; a status-bar **X · Shutdown** shortcut opens it for the highlighted host. Host power-off rides the authenticated bridge and only works on an AUTHORIZED host
+- **Remote Windows Update** *(StreamTweak 7.3.0+)* — Options → **Check Windows Update on host…** scans, classifies and installs Windows updates on the host (Security + Defender / All), rebooting only if required, with a backgroundable progress view. The Power… chooser can also **install pending updates before shutting down**, on the host and/or this client, showing where updates are pending
 - **Tailscale, unified into one tile** *(StreamTweak 6.3.0+; single tile in StreamLight 3.3.0)* — after pairing via LAN IP, StreamLight queries the `TAILSCALE` bridge command. If StreamTweak reports a `100.x.y.z` Tailscale address, StreamLight records it on the host's **single** tile, which then tracks both the LAN and Tailscale IPs and shows a `TAILSCALE · AVAILABLE` badge (just `TAILSCALE` when only the Tailscale path is up). Opening the host or *All Apps* uses whichever path is available (LAN locally, Tailscale remotely); a dedicated **Tailscale** option forces the `100.x` endpoint. Combined with the **Auto-start Tailscale on launch** Settings toggle, the round-trip is automatic: open StreamLight → Tailscale comes up → one click streams from anywhere
 
 ## ✨ What's New in 3.3.0 — "The Patch Tuesday Update"
@@ -100,7 +102,7 @@ This release also folds in the **3.0.1 "Bridge Fix"** hardening (multi-packet `A
 
 StreamLight is a Qt 6 / QML fork of Moonlight-Qt. The decoder pipeline (FFmpeg / D3D11VA / DXVA2 / libplacebo / `moonlight-common-c`) is identical to upstream Moonlight; the UI layer was rewritten for 3.0.
 
-Integration with StreamTweak happens over a TCP bridge on **port 47998** (LAN, line-delimited ASCII). Commands sent by StreamLight: `PREPARE`, `RESTORE`, `STATUS`, `STATS`, `APPSTORES`, `TAILSCALE`, `SESSIONDATA`. From 3.1.0 each command is preceded by an `AUTH1` line signing it with the client's Moonlight certificate (RSA-SHA256), and a one-time `ENROLL` registers the client with the host for approval. The same bridge is used to send NIC commands from the client and to receive host metrics, store data, Tailscale presence, and remote-pause signals.
+Integration with StreamTweak happens over a TCP bridge on **port 47998** (LAN, line-delimited ASCII). Commands sent by StreamLight: `PREPARE`, `RESTORE`, `STATUS`, `STATS`, `APPSTORES`, `TAILSCALE`, `SESSIONDATA`, plus the power/update commands `SHUTDOWN`, `SHUTDOWN_UPDATE`, `UPDATESTATE`, `UPDATECHECK`, `UPDATE_NOW`, `UPDATEPROGRESS`. From 3.1.0 each command is preceded by an `AUTH1` line signing it with the client's Moonlight certificate (RSA-SHA256), and a one-time `ENROLL` registers the client with the host for approval. The same bridge carries NIC commands, host metrics, store data, Tailscale presence, remote-pause signals, remote power-off, and remote Windows Update.
 
 ```
 StreamLight (Qt, client PC)
@@ -111,6 +113,7 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
                                                            ▼
                                                 NIC speed via CIM/WMI
                                                 Host assets via filesystem
+                                                Windows Update via WUA
 ```
 
 ## 📝 Installation
