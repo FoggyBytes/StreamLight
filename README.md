@@ -3,13 +3,13 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue.svg)](https://github.com/FoggyBytes/StreamLight) [![Framework](https://img.shields.io/badge/Framework-Qt%206-brightgreen.svg)](https://www.qt.io/) [![Downloads](.badges/downloads.svg)](https://github.com/FoggyBytes/StreamLight/releases) [![Built on Moonlight](https://img.shields.io/badge/built%20on-Moonlight-blue?&logo=github)](https://github.com/moonlight-stream/moonlight-qt) [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-brightgreen.svg)](https://claude.ai/code)
 
 <div align="center">
-  <img width="960" height="540" alt="lighthome" src="https://github.com/user-attachments/assets/885f8c7e-adee-4f41-974a-1097dc35dc60" />
+  <img width="960" height="540" alt="1" src="https://github.com/user-attachments/assets/26be0e53-ec1f-4184-800f-caad6e9cae34" />
 </div>
 
 **StreamLight** is the client-side half of the FoggyBytes streaming duo: the official FoggyBytes fork of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) with native integration for its host-side companion, [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak). It adds host NIC control, live host metrics in the overlay, store badges on game covers, session-quality reporting and a Tailscale dual-tile workflow — all driven from the client over a local TCP bridge to StreamTweak. From **3.0.0** the entire UI has been redesigned from the ground up with a flat, gamepad-first look inspired by the Xbox and Steam Big Picture interfaces, while the underlying streaming engine (FFmpeg / D3D11VA / DXVA2 / libplacebo / `moonlight-common-c`) is unchanged from 2.3.1.
 
 <div align="center">
-  <img width="960" height="540" alt="lighthost" src="https://github.com/user-attachments/assets/e043e4f3-998c-412c-abad-a25c1c1fa775" />
+  <img width="960" height="540" alt="5" src="https://github.com/user-attachments/assets/1838e5c4-5342-4767-bd07-a63555e033c3" />
 </div>
 
 <div align="center">
