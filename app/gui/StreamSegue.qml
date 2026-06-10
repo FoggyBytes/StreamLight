@@ -5,14 +5,28 @@ import QtQuick.Window 2.2
 import SdlGamepadKeyNavigation 1.0
 import Session 1.0
 import SystemProperties 1.0
+import StreamingPreferences 1.0
 
 Item {
+    id: streamSegue
+
     property Session session
     property string appName
     property string stageText : isResume ? qsTr("Resuming %1...").arg(appName) :
                                            qsTr("Starting %1...").arg(appName)
     property bool isResume : false
     property bool quitAfter : false
+
+    // How many transparent auto-retries remain for a transient "no video from
+    // host" failure (host display/encoder still warming up on a cold start).
+    // Gated by the user setting; the retry segue passes an explicit decremented
+    // value so the cap is honoured regardless of the preference.
+    property int noVideoRetries : StreamingPreferences.autoReconnectNoVideo ? 1 : 0
+
+    // Resume session captured during sessionFinished (while `session` is still
+    // valid) and consumed by the delayed retry. `session` is nulled by
+    // readyForDeletion before the retry timer fires, so we can't build it later.
+    property var _pendingRetrySession : null
 
     function stageStarting(stage)
     {
@@ -62,6 +76,33 @@ Item {
 
     function sessionFinished(portTestResult)
     {
+        // Transient "no video from host" on a cold launch: the host's display/
+        // encoder is still warming up (common with virtual displays + HDR/AV1).
+        // The immediate resume reliably succeeds, so auto-retry once before
+        // surfacing an error to the user.
+        if (session && session.wasNoVideoTraffic() && noVideoRetries > 0) {
+            // Build the resume session NOW, while `session` is still valid — it
+            // gets nulled by readyForDeletion before the retry timer fires.
+            _pendingRetrySession = session.createRetrySession()
+            if (_pendingRetrySession) {
+                SdlGamepadKeyNavigation.enable()
+
+                // Suppress the "No video received" error that was queued.
+                streamSegueErrorDialog.text = ""
+
+                // Show a brief "reconnecting" spinner while the host settles.
+                stageText = qsTr("Host is starting up — reconnecting…")
+                stageSpinner.visible = true
+                stageLabel.visible = true
+                window.visible = true
+
+                noVideoRetryTimer.start()
+                return
+            }
+            // Couldn't build a retry session — fall through to the normal
+            // error-handling path below.
+        }
+
         if (portTestResult !== 0 && portTestResult !== -1 && streamSegueErrorDialog.text) {
             streamSegueErrorDialog.text += "\n\n" + qsTr("This PC's Internet connection is blocking StreamLight. Streaming over the Internet may not work while connected to this network.")
         }
@@ -106,6 +147,40 @@ Item {
         gc()
     }
 
+    // Replace this segue with a fresh one that resumes the same app. Called a
+    // short moment after a transient "no video from host" failure so the host's
+    // display/encoder has time to finish warming up.
+    function startNoVideoRetry()
+    {
+        var newSession = _pendingRetrySession
+        _pendingRetrySession = null
+
+        if (!newSession) {
+            // Couldn't build a retry session — fall back to the normal error path.
+            streamSegueErrorDialog.text = qsTr("No video received from host.")
+            streamSegueErrorDialog.open()
+            return
+        }
+
+        var component = Qt.createComponent("StreamSegue.qml")
+        if (component.status !== Component.Ready) {
+            console.warn("StreamSegue.qml not ready for retry:", component.errorString())
+            streamSegueErrorDialog.text = qsTr("No video received from host.")
+            streamSegueErrorDialog.open()
+            return
+        }
+
+        var segue = component.createObject(stackView, {
+            "appName":        appName,
+            "session":        newSession,
+            "isResume":       true,
+            "quitAfter":      quitAfter,
+            "noVideoRetries": noVideoRetries - 1
+        })
+        if (Window.window) Window.window.markStreamLaunching()
+        stackView.replace(stackView.currentItem, segue)
+    }
+
     StackView.onDeactivating: {
         // (toolbar removed in 3.0 redesign — nothing to restore here)
 
@@ -132,6 +207,16 @@ Item {
         // Kick off the stream
         spinnerTimer.start()
         streamLoader.active = true
+    }
+
+    Timer {
+        id: noVideoRetryTimer
+
+        // Brief delay so the host's display/encoder finishes warming up before
+        // we resume. The cold attempt already gave it the full no-video timeout,
+        // so this just covers RTSP teardown/settle of the failed session.
+        interval: 1500
+        onTriggered: startNoVideoRetry()
     }
 
     Timer {

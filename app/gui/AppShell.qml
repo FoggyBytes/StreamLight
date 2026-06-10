@@ -23,7 +23,7 @@ FocusScope {
     readonly property color _text:     "#f0f0f0"
     readonly property color _textDim:  "#a0a0a0"
     readonly property color _green:    "#00E676"
-    readonly property string _version: "3.3.0"
+    readonly property string _version: "3.4.0"
     readonly property string _mono:    "JetBrains Mono"
 
     // 0 = Home, 1 = Apps, 2 = Settings
@@ -373,66 +373,89 @@ FocusScope {
             }
         }
 
-        Text {
-            id: versionLabel
+        // Right cluster: optional "Update host" chip + version label, laid out by a
+        // SINGLE Row so the chip can never overlap the version. (The old approach
+        // anchored the chip's right edge to versionLabel.left; because the chip was a
+        // Row whose implicitWidth resolves to 0 until the async RB icon finishes
+        // loading, the anchor positioned the children with width 0 and they painted
+        // from versionLabel.left *rightward*, colliding with "v3.3.0" → the garbled
+        // bottom-right corner. A positioner skips invisible children, so the version
+        // sits flush-right when no job is active and the chip slots to its left when
+        // one is.)
+        Row {
+            id: rightCluster
             anchors.right: parent.right
             anchors.rightMargin: 16
             anchors.verticalCenter: parent.verticalCenter
-            text: "v" + appShell._version
-            color: appShell._textDim
-            font.family: appShell._mono
-            font.pixelSize: 13
-            font.letterSpacing: 1
-        }
+            spacing: 22
 
-        // Global "Update host" chip: visible whenever a remote update job is running,
-        // on any page. Shows host + phase + a mini progress bar; RB (or a click)
-        // reopens the full dialog. Lets the update run in the background.
-        Row {
-            id: updateChip
-            visible: appShell._updateActive
-            anchors.right: versionLabel.left
-            anchors.rightMargin: 22
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 10
+            // Global "Update host" chip: visible whenever a remote update job is
+            // running, on any page. Shows host + phase + a mini progress bar; RB (or a
+            // click) reopens the full dialog. Lets the update run in the background.
+            Item {
+                id: updateChip
+                visible: appShell._updateActive
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth:  chipContent.implicitWidth
+                implicitHeight: chipContent.implicitHeight
 
-            Image {
-                anchors.verticalCenter: parent.verticalCenter
-                source: statusBar._iconR
-                width: 40; height: 24
-                sourceSize.width: 80; sourceSize.height: 48
-                fillMode: Image.PreserveAspectFit; smooth: true
-            }
-            Column {
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 3
-                Text {
-                    text: qsTr("Update")
-                          + (appShell._updateHost.length ? " · " + appShell._updateHost : "")
-                          + "   " + appShell._updatePhaseLabel(appShell._updatePhase)
-                    color: appShell._text; font.pixelSize: 13; font.family: "DM Sans"
-                }
                 Row {
-                    spacing: 8
-                    visible: appShell._updatePercent >= 0
-                    Rectangle {
+                    id: chipContent
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 10
+
+                    Image {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 120; height: 5; radius: 3; color: "#2a2a2a"
-                        Rectangle {
-                            width: parent.width * Math.max(0, Math.min(100, appShell._updatePercent)) / 100
-                            height: parent.height; radius: 3; color: appShell._green
+                        source: statusBar._iconR
+                        width: 40; height: 24
+                        sourceSize.width: 80; sourceSize.height: 48
+                        fillMode: Image.PreserveAspectFit; smooth: true
+                    }
+                    Column {
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 3
+                        Text {
+                            width: Math.min(implicitWidth, 260)
+                            elide: Text.ElideRight
+                            text: qsTr("Update")
+                                  + (appShell._updateHost.length ? " · " + appShell._updateHost : "")
+                                  + "   " + appShell._updatePhaseLabel(appShell._updatePhase)
+                            color: appShell._text; font.pixelSize: 13; font.family: "DM Sans"
+                        }
+                        Row {
+                            spacing: 8
+                            visible: appShell._updatePercent >= 0
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 120; height: 5; radius: 3; color: "#2a2a2a"
+                                Rectangle {
+                                    width: parent.width * Math.max(0, Math.min(100, appShell._updatePercent)) / 100
+                                    height: parent.height; radius: 3; color: appShell._green
+                                }
+                            }
+                            Text {
+                                text: appShell._updatePercent + "%"
+                                color: appShell._textDim; font.pixelSize: 11; font.family: "DM Sans"
+                            }
                         }
                     }
-                    Text {
-                        text: appShell._updatePercent + "%"
-                        color: appShell._textDim; font.pixelSize: 11; font.family: "DM Sans"
-                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: appShell.reopenUpdateDialog()
                 }
             }
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: appShell.reopenUpdateDialog()
+
+            Text {
+                id: versionLabel
+                anchors.verticalCenter: parent.verticalCenter
+                text: "v" + appShell._version
+                color: appShell._textDim
+                font.family: appShell._mono
+                font.pixelSize: 13
+                font.letterSpacing: 1
             }
         }
     }

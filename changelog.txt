@@ -4,6 +4,26 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-----------------------------------------------------
+Version 3.4.0 - The Smooth Motion Update (10/06/2026)
+-----------------------------------------------------
+
+✨ NEW FEATURES:
+• Smoother motion on high-refresh displays — the Frame Pacing option (Settings → Video) now automatically uses hardware frame pacing when your display's refresh rate is an exact multiple of the stream's frame rate (e.g. 60 FPS on a 120 Hz screen). Each frame is held on screen for the right number of refresh cycles directly in hardware, giving a perfectly even cadence and removing the panning judder that previously required external tools like NVIDIA Inspector or Special-K — with no extra setting to manage. Hardware pacing applies to the Direct3D 11 renderer (the Windows default); everything else falls back to software pacing exactly as before
+• Frame pacing visible in the performance overlay — the overlay now shows the active frame-pacing mode (Hardware / Software / Off) so you can see exactly what's happening under the hood
+• Overlay profiles — a new Overlay tab in Settings lets you choose how much the in-stream performance overlay shows: Off, Minimal (resolution, FPS, bitrate, latency and network drops at a glance), Default (a balanced set plus a compact host-metrics summary) or Full (every stat StreamLight collects, including the host's GPU / encoder / temperature / VRAM / CPU). A live preview shows exactly how the overlay will look for the chosen profile. The overlay control moved here from the Network tab, and bitrate is now shown in the overlay. The overlay hotkey now cycles through the profiles — Off → Minimal → Default → Full → Off — each press of Ctrl+Alt+O (keyboard) or Select+L1+R1+X (gamepad) jumps to the next one, and the Settings selector follows along
+• Automatic reconnect on a slow host start — when a stream fails because no video ever arrives (the host's virtual display or HDR/AV1 encoder is still warming up on a cold start, which often required a manual second attempt), StreamLight now quietly retries once instead of showing an error. A brief "Host is starting up — reconnecting…" message appears and the resume usually connects immediately. Can be turned off in Settings → Network (on by default)
+
+🎨 UI:
+• A new Overlay tab in Settings (see above), with the performance-overlay control and a live mockup of each profile
+• Settings rows are slightly more compact across every tab
+• The grey/green highlight ring that appears around a toggle switch on hover, focus or press is now half the size — less obtrusive
+
+🐛 FIXES:
+• Fixed a visual glitch in the bottom status bar: while a host Windows-update job was running, the "Update" progress chip could overlap the version number in the bottom-right corner, leaving the text garbled. The chip and the version are now laid out together so they can never collide
+• "X · Shutdown" always works now: pressing X (or clicking the shortcut) on the My Hosts screen opens the Power chooser to shut down this PC even when the highlighted host is offline — or when no hosts are configured at all. Host shutdown still requires an online, approved host
+• Fixed a freeze that could lock up the whole PC when closing StreamLight while its window was in fullscreen mode, forcing a hard power-off. StreamLight now leaves fullscreen before shutting down so the graphics driver tears the window down cleanly
+
 --------------------------------------------------------
 Version 3.3.0 - The "Patch Tuesday Update" (06/06/2026)
 --------------------------------------------------------

@@ -24,6 +24,7 @@ public:
     virtual void notifyOverlayUpdated(Overlay::OverlayType) override;
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO stateInfo) override;
     virtual int getRendererAttributes() override;
+    virtual int getFramePacingSyncInterval() override { return m_SyncInterval; }
     virtual int getDecoderCapabilities() override;
     virtual InitFailureReason getInitFailureReason() override;
 
@@ -92,6 +93,11 @@ private:
     AVColorTransferCharacteristic m_LastColorTrc;
 
     bool m_AllowTearing;
+
+    // V-blanks to hold each presented frame (DXGI sync interval). 0 = present
+    // immediately (default). >=2 gives low-FPS streams a hardware-locked cadence
+    // on high-refresh displays when "Smooth low-FPS streams" is enabled.
+    int m_SyncInterval;
 
     std::array<Microsoft::WRL::ComPtr<ID3D11PixelShader>, PixelShaders::_COUNT> m_VideoPixelShaders;
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_VideoVertexBuffer;

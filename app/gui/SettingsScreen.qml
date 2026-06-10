@@ -33,8 +33,8 @@ FocusScope {
     readonly property color _greenLk:   "#00E676"
     readonly property color _focus:     "#00E676"
     readonly property int   _focusBd:   3
-    readonly property int   _rowHeight: 66
-    readonly property int   _rowHeightTall: 84
+    readonly property int   _rowHeight: 58
+    readonly property int   _rowHeightTall: 76
     readonly property int   _gapY:      24
 
     // Read by AppShell to show the "X · Default" status-bar prompt.
@@ -92,7 +92,8 @@ FocusScope {
             case 3: if (decoderSelector)       decoderSelector.forceActiveFocus();       break
             case 4: if (mdnsSwitch)            mdnsSwitch.forceActiveFocus();            break
             case 5: if (gameOptSwitch)         gameOptSwitch.forceActiveFocus();         break
-            case 6: if (aboutSlGithubBtn)      aboutSlGithubBtn.forceActiveFocus();      break
+            case 6: if (overlayModeSelector)   overlayModeSelector.forceActiveFocus();   break
+            case 7: if (aboutSlGithubBtn)      aboutSlGithubBtn.forceActiveFocus();      break
         }
     }
 
@@ -328,7 +329,7 @@ FocusScope {
             }
         }
         TabButton {
-            text: qsTr("About")
+            text: qsTr("Overlay")
             focusPolicy: Qt.NoFocus
             font.family: "DM Sans"
             font.pixelSize: 15
@@ -349,6 +350,32 @@ FocusScope {
                 text: parent.text
                 font: parent.font
                 color: tabBar.currentIndex === 6 ? settingsScreen._text : settingsScreen._textDim
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
+        TabButton {
+            text: qsTr("About")
+            focusPolicy: Qt.NoFocus
+            font.family: "DM Sans"
+            font.pixelSize: 15
+            font.bold: true
+            font.capitalization: Font.AllUppercase
+            font.letterSpacing: 1.2
+            background: Rectangle {
+                color: "transparent"
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 2
+                    color: tabBar.currentIndex === 7 ? settingsScreen._green : "transparent"
+                }
+            }
+            contentItem: Text {
+                text: parent.text
+                font: parent.font
+                color: tabBar.currentIndex === 7 ? settingsScreen._text : settingsScreen._textDim
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
             }
@@ -437,7 +464,8 @@ FocusScope {
                     case 3: return decoderTab.implicitHeight
                     case 4: return networkTab.implicitHeight
                     case 5: return sessionTab.implicitHeight
-                    case 6: return aboutTab.implicitHeight
+                    case 6: return overlayTab.implicitHeight
+                    case 7: return aboutTab.implicitHeight
                 }
                 return 0
             }
@@ -850,7 +878,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: vsyncSwitch; anchors.margins: -3; target: vsyncSwitch }
-                            Switch {
+                            STSwitch {
                                 id: vsyncSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -880,7 +908,7 @@ FocusScope {
                                     color: settingsScreen._text
                                 }
                                 Label {
-                                    text: qsTr("Reduces microstutter at the cost of higher latency")
+                                    text: qsTr("Removes microstutter and panning judder by pacing frames to your display. Automatically uses hardware pacing on high-refresh displays when possible")
                                     font.family: "DM Sans"
                                     font.pixelSize: 13
                                     color: settingsScreen._textDim
@@ -888,7 +916,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: framePacingSwitch; anchors.margins: -3; target: framePacingSwitch }
-                            Switch {
+                            STSwitch {
                                 id: framePacingSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1009,7 +1037,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: muteHostSwitch; anchors.margins: -3; target: muteHostSwitch }
-                            Switch {
+                            STSwitch {
                                 id: muteHostSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1047,7 +1075,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: muteFocusSwitch; anchors.margins: -3; target: muteFocusSwitch }
-                            Switch {
+                            STSwitch {
                                 id: muteFocusSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1125,7 +1153,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: absMouseSwitch; anchors.margins: -3; target: absMouseSwitch }
-                            Switch {
+                            STSwitch {
                                 id: absMouseSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1216,7 +1244,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: touchSwitch; anchors.margins: -3; target: touchSwitch }
-                            Switch {
+                            STSwitch {
                                 id: touchSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1244,7 +1272,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: swapMouseSwitch; anchors.margins: -3; target: swapMouseSwitch }
-                            Switch {
+                            STSwitch {
                                 id: swapMouseSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1272,7 +1300,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: revScrollSwitch; anchors.margins: -3; target: revScrollSwitch }
-                            Switch {
+                            STSwitch {
                                 id: revScrollSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1338,7 +1366,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: swapFaceSwitch; anchors.margins: -3; target: swapFaceSwitch }
-                            Switch {
+                            STSwitch {
                                 id: swapFaceSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1375,7 +1403,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: singleCtrlSwitch; anchors.margins: -3; target: singleCtrlSwitch }
-                            Switch {
+                            STSwitch {
                                 id: singleCtrlSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1402,7 +1430,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: gamepadMouseSwitch; anchors.margins: -3; target: gamepadMouseSwitch }
-                            Switch {
+                            STSwitch {
                                 id: gamepadMouseSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1439,7 +1467,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: bgGamepadSwitch; anchors.margins: -3; target: bgGamepadSwitch }
-                            Switch {
+                            STSwitch {
                                 id: bgGamepadSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1603,7 +1631,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: hdrSwitch; anchors.margins: -3; target: hdrSwitch }
-                            Switch {
+                            STSwitch {
                                 id: hdrSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1641,7 +1669,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: yuv444Switch; anchors.margins: -3; target: yuv444Switch }
-                            Switch {
+                            STSwitch {
                                 id: yuv444Switch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1689,7 +1717,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: vbrSwitch; anchors.margins: -3; target: vbrSwitch }
-                            Switch {
+                            STSwitch {
                                 id: vbrSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1759,7 +1787,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: mdnsSwitch; anchors.margins: -3; target: mdnsSwitch }
-                            Switch {
+                            STSwitch {
                                 id: mdnsSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1790,7 +1818,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: blockDetectSwitch; anchors.margins: -3; target: blockDetectSwitch }
-                            Switch {
+                            STSwitch {
                                 id: blockDetectSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1801,6 +1829,7 @@ FocusScope {
                         }
                         Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
 
+                        // ── Auto-reconnect on no video ────────────────────────
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeightTall
@@ -1808,32 +1837,36 @@ FocusScope {
                             Column {
                                 anchors.left: parent.left
                                 anchors.leftMargin: 16
+                                anchors.right: autoReconnectSwitch.left
+                                anchors.rightMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
                                 spacing: 3
 
                                 Label {
-                                    text: qsTr("Show performance stats while streaming")
+                                    text: qsTr("Automatically reconnect if the host is slow to start")
                                     font.family: "DM Sans"
                                     font.pixelSize: 16
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
-                                    text: qsTr("Real-time overlay. Toggle with Ctrl+Alt+O or Select+L1+R1+X.")
+                                    text: qsTr("If the host doesn't send video right away (e.g. a virtual display or HDR/AV1 encoder still warming up), StreamLight quietly retries once instead of showing an error.")
                                     font.family: "DM Sans"
                                     font.pixelSize: 13
                                     color: settingsScreen._textDim
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
                                 }
                             }
 
-                            FocusFrame { anchors.fill: perfStatsSwitch; anchors.margins: -3; target: perfStatsSwitch }
+                            FocusFrame { anchors.fill: autoReconnectSwitch; anchors.margins: -3; target: autoReconnectSwitch }
                             Switch {
-                                id: perfStatsSwitch
+                                id: autoReconnectSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.showPerformanceOverlay
-                                onCheckedChanged: { StreamingPreferences.showPerformanceOverlay = checked }
+                                checked: StreamingPreferences.autoReconnectNoVideo
+                                onCheckedChanged: { StreamingPreferences.autoReconnectNoVideo = checked }
                             }
                         }
                         Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
@@ -1872,7 +1905,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: tailscaleSwitch; anchors.margins: -3; target: tailscaleSwitch }
-                            Switch {
+                            STSwitch {
                                 id: tailscaleSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1954,7 +1987,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: gameOptSwitch; anchors.margins: -3; target: gameOptSwitch }
-                            Switch {
+                            STSwitch {
                                 id: gameOptSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -1992,7 +2025,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: quitAppSwitch; anchors.margins: -3; target: quitAppSwitch }
-                            Switch {
+                            STSwitch {
                                 id: quitAppSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -2092,7 +2125,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: connWarnSwitch; anchors.margins: -3; target: connWarnSwitch }
-                            Switch {
+                            STSwitch {
                                 id: connWarnSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -2120,7 +2153,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: configWarnSwitch; anchors.margins: -3; target: configWarnSwitch }
-                            Switch {
+                            STSwitch {
                                 id: configWarnSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -2158,7 +2191,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: discordSwitch; anchors.margins: -3; target: discordSwitch }
-                            Switch {
+                            STSwitch {
                                 id: discordSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -2196,7 +2229,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: keepAwakeSwitch; anchors.margins: -3; target: keepAwakeSwitch }
-                            Switch {
+                            STSwitch {
                                 id: keepAwakeSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -2234,7 +2267,7 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: hueSyncSwitch; anchors.margins: -3; target: hueSyncSwitch }
-                            Switch {
+                            STSwitch {
                                 id: hueSyncSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -2248,13 +2281,227 @@ FocusScope {
             }
 
             // ──────────────────────────────────────────────────────────────────
+            //                              OVERLAY TAB
+            //   A 4-state profile selector (Off / Minimal / Default / Full) plus a
+            //   live mockup that previews exactly which stats each profile shows
+            //   in the in-stream overlay. Values in the mockup are illustrative.
+            // ──────────────────────────────────────────────────────────────────
+            Column {
+                id: overlayTab
+                anchors.left: parent.left
+                anchors.right: parent.right
+                visible: tabBar.currentIndex === 6
+                spacing: 16
+
+                // Illustrative lines shown in the preview box, one entry per mode.
+                // Mirrors FFmpegVideoDecoder::stringifyVideoStats output so the
+                // preview matches what actually renders while streaming.
+                function _previewLines(mode) {
+                    if (mode === StreamingPreferences.OM_MINIMAL) {
+                        return [
+                            { t: "1920x1080 | 60 FPS | HEVC", dim: false },
+                            { t: "Bitrate: 41 Mbps", dim: false },
+                            { t: "RTT 11 ms | Net drops 0.10%", dim: false }
+                        ]
+                    }
+                    if (mode === StreamingPreferences.OM_DEFAULT) {
+                        return [
+                            { t: "--- Client Metrics (StreamLight) ---", dim: true },
+                            { t: "Video stream: 1920x1080 60.00 FPS (Codec: HEVC)", dim: false },
+                            { t: "Bitrate: 41.2 Mbps", dim: false },
+                            { t: "Frames dropped by your network connection: 0.10%", dim: false },
+                            { t: "Frames dropped due to network jitter: 0.02%", dim: false },
+                            { t: "Average network latency: 11 ms (variance: 2 ms)", dim: false },
+                            { t: "Average decoding time: 3.21 ms", dim: false },
+                            { t: "Frame pacing: Hardware (2:2 cadence)", dim: false },
+                            { t: "--- Host Metrics (StreamTweak) ---", dim: true },
+                            { t: "GPU: 47% | Enc: 12% | Temp: 62C", dim: false },
+                            { t: "CPU: 18% | Net TX: 41 Mbps", dim: false }
+                        ]
+                    }
+                    if (mode === StreamingPreferences.OM_FULL) {
+                        return [
+                            { t: "--- Client Metrics (StreamLight) ---", dim: true },
+                            { t: "Video stream: 1920x1080 60.00 FPS (Codec: HEVC)", dim: false },
+                            { t: "Bitrate: 41.2 Mbps, Peak (5s): 58.4", dim: false },
+                            { t: "Incoming frame rate from network: 60.00 FPS", dim: false },
+                            { t: "Decoding frame rate: 60.00 FPS", dim: false },
+                            { t: "Rendering frame rate: 60.00 FPS", dim: false },
+                            { t: "Host processing latency min/max/average: 1.2/4.8/2.1 ms", dim: false },
+                            { t: "Frames dropped by your network connection: 0.10%", dim: false },
+                            { t: "Frames dropped due to network jitter: 0.02%", dim: false },
+                            { t: "Average network latency: 11 ms (variance: 2 ms)", dim: false },
+                            { t: "Average decoding time: 3.21 ms", dim: false },
+                            { t: "Average frame queue delay: 0.40 ms", dim: false },
+                            { t: "Average rendering time (including monitor V-sync latency): 1.10 ms", dim: false },
+                            { t: "Frame pacing: Hardware (2:2 cadence)", dim: false },
+                            { t: "--- Host Metrics (StreamTweak) ---", dim: true },
+                            { t: "GPU: 47% | Enc: 12% | Temp: 62C | VRAM: 4096 / 8192 MB", dim: false },
+                            { t: "CPU: 18% | Net TX: 41 Mbps", dim: false }
+                        ]
+                    }
+                    // OM_OFF
+                    return [
+                        { t: "Overlay is off — no stats are shown while streaming.", dim: true }
+                    ]
+                }
+
+                // ── Section: OVERLAY ──────────────────────────────────────────
+                Label {
+                    text: qsTr("Overlay")
+                    font.family: "DM Sans"
+                    font.pixelSize: 13
+                    font.bold: true
+                    font.letterSpacing: 1.4
+                    font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut
+                    leftPadding: 14
+                }
+
+                Rectangle {
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: 8
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: overlayCol.implicitHeight + 8
+
+                    Column {
+                        id: overlayCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: 4
+                        spacing: 0
+
+                        // ── Profile selector ──────────────────────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 16
+                                anchors.right: overlayModeSelector.left
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+
+                                Label {
+                                    text: qsTr("Performance overlay")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 16
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: qsTr("Real-time stats while streaming. The hotkey cycles Off → Minimal → Default → Full: Ctrl+Alt+O (keyboard) or Select + L1 + R1 + X (gamepad).")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 13
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            SegmentedSelector {
+                                id: overlayModeSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                labels: [qsTr("Off"), qsTr("Minimal"), qsTr("Default"), qsTr("Full")]
+                                property var _values: [
+                                    StreamingPreferences.OM_OFF,
+                                    StreamingPreferences.OM_MINIMAL,
+                                    StreamingPreferences.OM_DEFAULT,
+                                    StreamingPreferences.OM_FULL
+                                ]
+
+                                Binding on currentIndex {
+                                    value: {
+                                        var v = StreamingPreferences.overlayMode
+                                        for (var i = 0; i < overlayModeSelector._values.length; i++) {
+                                            if (overlayModeSelector._values[i] === v) return i
+                                        }
+                                        return 0
+                                    }
+                                }
+                                onActivated: function(idx) { StreamingPreferences.overlayMode = _values[idx] }
+                            }
+                        }
+
+                        // ── Live preview — same panel, directly below the selector ──
+                        Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
+
+                        Item {
+                            width: parent.width
+                            height: previewWrap.implicitHeight + 24
+
+                            Column {
+                                id: previewWrap
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.leftMargin: 16
+                                anchors.rightMargin: 16
+                                anchors.top: parent.top
+                                anchors.topMargin: 12
+                                spacing: 12
+
+                                Label {
+                                    text: qsTr("How the overlay appears in the top-left corner while streaming. Values are illustrative.")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 13
+                                    color: settingsScreen._textDim
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                }
+
+                                // The dark stats box, styled like the real in-stream overlay
+                                // (RobotoMono there, JetBrains Mono here — the loaded app mono).
+                                Rectangle {
+                                    id: previewBox
+                                    width: parent.width
+                                    radius: 6
+                                    color: "#202020"
+                                    opacity: 0.96
+                                    implicitHeight: previewTextCol.implicitHeight + 20
+
+                                    Column {
+                                        id: previewTextCol
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.top: parent.top
+                                        anchors.margins: 10
+                                        spacing: 2
+
+                                        Repeater {
+                                            model: overlayTab._previewLines(StreamingPreferences.overlayMode)
+                                            delegate: Text {
+                                                width: previewTextCol.width
+                                                wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                                                text: modelData.t
+                                                color: modelData.dim ? "#8a8a8a" : "#e8e8e8"
+                                                font.family: "JetBrains Mono"
+                                                font.pixelSize: 12
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ──────────────────────────────────────────────────────────────────
             //                              ABOUT TAB
             // ──────────────────────────────────────────────────────────────────
             Column {
                 id: aboutTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === 6
+                visible: tabBar.currentIndex === 7
                 spacing: 16
 
                 // StreamLight card — title + version + author on the left,

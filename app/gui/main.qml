@@ -42,6 +42,31 @@ ApplicationWindow {
         _streamLaunchTimer.restart()
     }
 
+    // Single quit funnel. Closing the window while it is in fullscreen tears
+    // down the D3D11 swapchain in independent-flip/MPO state, which can hang
+    // the GPU/display on AMD and NVIDIA (whole-system freeze, no crash dump
+    // because no CPU exception is raised). Leaving fullscreen first puts the
+    // swapchain back into a plain windowed state, so its destruction at exit
+    // is benign. Qt.callLater defers the actual quit by one event-loop tick so
+    // the windowed transition is applied before teardown begins.
+    property bool _quitting: false
+    function quitApp() {
+        if (_quitting) return
+        _quitting = true
+        if (window.visibility === Window.FullScreen)
+            window.showNormal()
+        Qt.callLater(Qt.quit)
+    }
+
+    // Alt+F4 / window close button. Don't let Qt destroy the fullscreen window
+    // directly — bounce through quitApp() so we drop out of fullscreen first.
+    onClosing: function(close) {
+        if (!_quitting && window.visibility === Window.FullScreen) {
+            close.accepted = false
+            quitApp()
+        }
+    }
+
     id: window
     width: 1280
     height: 720
@@ -58,7 +83,7 @@ ApplicationWindow {
     FontLoader { source: "qrc:/res/fonts/JetBrainsMono-Medium.ttf" }
 
     // ── Design system palette ─────────────────────────────────────────────────
-    readonly property string appDisplayVersion: "3.3.0"
+    readonly property string appDisplayVersion: "3.4.0"
 
     readonly property color clrBg:      "#0d0d0d"
     readonly property color clrBg1:     "#151515"
@@ -368,7 +393,7 @@ ApplicationWindow {
         standardButtons: Dialog.Yes | Dialog.No
         text: qsTr("Are you sure you want to quit?")
         // For keyboard/gamepad navigation
-        onAccepted: Qt.quit()
+        onAccepted: quitApp()
     }
 
     // HACK: This belongs in StreamSegue but keeping a dialog around after the parent
@@ -386,7 +411,7 @@ ApplicationWindow {
 
         onClosed: {
             if (quitAfter) {
-                Qt.quit()
+                quitApp()
             }
 
             // StreamSegue assumes its dialog will be re-created each time we

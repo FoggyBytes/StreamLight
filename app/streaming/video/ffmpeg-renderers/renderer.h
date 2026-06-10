@@ -137,6 +137,12 @@ private:
 #define RENDERER_ATTRIBUTE_NO_BUFFERING 0x08
 #define RENDERER_ATTRIBUTE_FORCE_PACING 0x10
 
+// The renderer paces itself in hardware (e.g. via an integer swapchain sync
+// interval) and does not need (and must not be driven by) the software Pacer's
+// V-sync source. Used to give low-FPS streams a perfect cadence on high-refresh
+// displays (e.g. 60 FPS on a 120 Hz panel) without judder.
+#define RENDERER_ATTRIBUTE_SELF_PACING 0x20
+
 class IFFmpegRenderer : public Overlay::IOverlayRenderer {
 public:
     enum class RendererType {
@@ -215,6 +221,13 @@ public:
 
     virtual int getRendererAttributes() {
         // No special attributes by default
+        return 0;
+    }
+
+    // Number of V-blanks each frame is held for when the renderer paces itself
+    // in hardware (DXGI sync interval). >=2 means hardware frame pacing is active;
+    // 0 means the renderer does not self-pace. Used by the performance overlay.
+    virtual int getFramePacingSyncInterval() {
         return 0;
     }
 

@@ -24,11 +24,28 @@ FocusScope {
     readonly property bool _clientHasTailscale: computerModel ? computerModel.clientHasTailscale() : false
 
     // Opens the POWER chooser for the currently-focused host card. Used by the
-    // status-bar "X Shutdown" shortcut (mouse click + gamepad X). No-op when the
-    // focused cell isn't an online+paired host. Mirrors the Options → "Power…" entry.
+    // status-bar "X Shutdown" shortcut (mouse click + gamepad X). When the focused
+    // cell is an online+paired host, opens the full Host/Client/Both chooser
+    // (mirrors the Options → "Power…" entry). Otherwise — an offline host, the
+    // "+ Add" tile, or no hosts at all — it still opens the chooser for THIS client
+    // only, so the user can always power off the device they're holding.
     function openPowerForCurrent() {
-        if (pcList.currentItem && pcList.currentItem.openPower)
-            pcList.currentItem.openPower()
+        var cur = pcList.currentItem
+        if (cur && cur.isPowerableHost && cur.openPower)
+            cur.openPower()
+        else
+            openPowerClientOnly()
+    }
+
+    // Power chooser limited to the local client (no reachable/authorized host).
+    function openPowerClientOnly() {
+        powerDialog.clientOnly         = true
+        powerDialog.pcIndex            = -1
+        powerDialog.hostName           = ""
+        powerDialog.authState          = "none"   // Host & Both disabled; Client default
+        powerDialog.clientUpdateState  = SystemProperties.updatesPending() ? "pending" : "none"
+        powerDialog.hostUpdateState    = "unavailable"
+        powerDialog.open()
     }
 
     // Drops any "force Tailscale" session pin so the poller reverts to LAN-first.
@@ -396,6 +413,10 @@ FocusScope {
             width: pcList.cellWidth
             height: pcList.cellHeight
 
+            // True when this host can be powered off remotely (drives the X shortcut
+            // fallback to client-only when it isn't).
+            readonly property bool isPowerableHost: model.online && model.paired
+
             // Exposed to the GridView's key handlers
             function activateCard() { pcCard.doActivate() }
             function openCardMenu() {
@@ -407,6 +428,7 @@ FocusScope {
             function openPower() {
                 if (!model.online || !model.paired)
                     return
+                powerDialog.clientOnly           = false
                 powerDialog.pcIndex              = index
                 powerDialog.hostName             = model.name
                 powerDialog.authState            = pcCard.streamTweakAuth
@@ -998,6 +1020,9 @@ FocusScope {
         Keys.onReturnPressed: { addPcDialog.open(); event.accepted = true }
         Keys.onEnterPressed:  { addPcDialog.open(); event.accepted = true }
         Keys.onSpacePressed:  { addPcDialog.open(); event.accepted = true }
+        // X (Menu): no host to power off here, but still let the user shut down
+        // this client (matches the host cards' X shortcut).
+        Keys.onMenuPressed:   { homeScreen.openPowerClientOnly(); event.accepted = true }
         Keys.onRightPressed:  { refreshTile.forceActiveFocus(); event.accepted = true }
         Keys.onLeftPressed: {
             if (pcList.count > 0) {
@@ -1070,6 +1095,7 @@ FocusScope {
         Keys.onReturnPressed: { ComputerManager.startPolling(); event.accepted = true }
         Keys.onEnterPressed:  { ComputerManager.startPolling(); event.accepted = true }
         Keys.onSpacePressed:  { ComputerManager.startPolling(); event.accepted = true }
+        Keys.onMenuPressed:   { homeScreen.openPowerClientOnly(); event.accepted = true }
         Keys.onLeftPressed:   { addHostTile.forceActiveFocus(); event.accepted = true }
     }
 

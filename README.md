@@ -69,6 +69,18 @@ These features cross the bridge and require both apps. The version next to each 
 - **Remote Windows Update** *(StreamTweak 7.3.0+)* — Options → **Check Windows Update on host…** scans, classifies and installs Windows updates on the host (Security + Defender / All), rebooting only if required, with a backgroundable progress view. The Power… chooser can also **install pending updates before shutting down**, on the host and/or this client, showing where updates are pending
 - **Tailscale, unified into one tile** *(StreamTweak 6.3.0+; single tile in StreamLight 3.3.0)* — after pairing via LAN IP, StreamLight queries the `TAILSCALE` bridge command. If StreamTweak reports a `100.x.y.z` Tailscale address, StreamLight records it on the host's **single** tile, which then tracks both the LAN and Tailscale IPs and shows a `TAILSCALE · AVAILABLE` badge (just `TAILSCALE` when only the Tailscale path is up). Opening the host or *All Apps* uses whichever path is available (LAN locally, Tailscale remotely); a dedicated **Tailscale** option forces the `100.x` endpoint. Combined with the **Auto-start Tailscale on launch** Settings toggle, the round-trip is automatic: open StreamLight → Tailscale comes up → one click streams from anywhere
 
+## ✨ What's New in 3.4.0 — The Smooth Motion Update
+
+Smoother motion on high-refresh displays and a configurable performance overlay, plus the fixes from the unreleased 3.3.1. No StreamTweak update required.
+
+- **Smoother motion on high-refresh displays** — the **Frame Pacing** option (*Settings → Video*) now automatically uses **hardware frame pacing** when your display's refresh rate is an exact multiple of the stream's frame rate (e.g. 60 FPS on a 120 Hz screen). Each frame is held on screen for the right number of refresh cycles directly in hardware, giving a perfectly even cadence and removing the panning judder that used to require NVIDIA Inspector or Special-K — with no extra setting to manage. Hardware pacing applies to the Direct3D 11 renderer (the Windows default); everything else falls back to software pacing as before. The **performance overlay** now shows the active pacing mode (*Hardware / Software / Off*)
+- **Overlay profiles** — a new **Overlay** tab (*Settings → Overlay*) lets you choose how much the in-stream performance overlay shows: **Off**, **Minimal** (resolution, FPS, bitrate, latency and network drops at a glance), **Default** (a balanced set plus a compact host-metrics summary) or **Full** (every stat StreamLight collects, including the host's GPU / encoder / temperature / VRAM / CPU). A live preview shows exactly how the overlay will look for the chosen profile. The overlay control moved here from the Network tab, and bitrate is now shown in the overlay. The overlay hotkey now **cycles** through the profiles — *Off → Minimal → Default → Full → Off* — each press of **Ctrl+Alt+O** (keyboard) or **Select+L1+R1+X** (gamepad) jumps to the next, and the Settings selector follows along
+- **Automatic reconnect on a slow host start** — when a stream fails because no video ever arrives (the host's virtual display or HDR/AV1 encoder is still warming up on a cold start — the case that used to need a manual second attempt), StreamLight now quietly retries once instead of showing an error. A brief *"Host is starting up — reconnecting…"* message appears and the resume usually connects right away. Toggle in *Settings → Network* (on by default)
+- **UI polish** — Settings rows are slightly more compact across every tab, and the highlight ring around toggle switches (on hover/focus/press) is now half the size
+- **Status-bar glitch fixed** — while a host Windows-update job was running, the bottom-right *Update* progress chip could overlap the version number and render as garbled text. The chip and version are now laid out together so they never collide
+- **`X · Shutdown` always available** — pressing **X** (or clicking the shortcut) on *My Hosts* now opens the Power chooser to shut down **this PC** even when the highlighted host is offline, or when no hosts are configured at all. Host shutdown still requires an online, approved host
+- **Fullscreen-exit freeze fixed** — closing StreamLight while its window was fullscreen could lock up the whole PC, forcing a hard power-off; it now leaves fullscreen before shutting down so the graphics driver tears the window down cleanly
+
 ## ✨ What's New in 3.3.0 — "The Patch Tuesday Update"
 
 Windows Update, driven entirely from the couch. **Requires StreamTweak 7.3.0 or later**; update both apps together.
@@ -119,7 +131,7 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
 ## 📝 Installation
 
 1. Go to the **Releases** page of this repository.
-2. Download the latest installer (`StreamLight_3.3.0_Installer.exe`) and run it.
+2. Download the latest installer (`StreamLight_3.4.0_Installer.exe`) and run it.
 
 Settings (paired hosts, video / audio / input preferences, client certificate) are stored under `HKCU\Software\Moonlight Game Streaming Project\Moonlight` — the same location used by upstream Moonlight and StreamLight 2.x. Upgrades from 2.x preserve all your hosts and preferences automatically. Box-art cache lives in `%LOCALAPPDATA%\Moonlight Game Streaming Project\Moonlight`.
 

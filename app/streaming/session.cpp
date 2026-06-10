@@ -98,6 +98,7 @@ void Session::clConnectionTerminated(int errorCode)
 
     case ML_ERROR_NO_VIDEO_TRAFFIC:
         s_ActiveSession->m_UnexpectedTermination = true;
+        s_ActiveSession->m_NoVideoTraffic = true;
 
         char ports[128];
         SDL_assert(portFlags != 0);
@@ -1852,6 +1853,13 @@ void Session::start()
     thread->start();
 }
 
+Session* Session::createRetrySession()
+{
+    // Same host + app. The host already has an active game session from the
+    // failed attempt, so this connects as a "resume" (currentGameId != 0).
+    return new Session(m_Computer, m_App);
+}
+
 void Session::interrupt()
 {
     // Stop any connection in progress
@@ -2068,7 +2076,8 @@ void Session::exec()
     RichPresenceManager presence(*m_Preferences, m_App.name);
 
     // Toggle the stats overlay if requested by the user
-    m_OverlayManager.setOverlayState(Overlay::OverlayDebug, m_Preferences->showPerformanceOverlay);
+    m_OverlayManager.setOverlayState(Overlay::OverlayDebug,
+                                     m_Preferences->overlayMode != StreamingPreferences::OM_OFF);
 
     // Switch to async logging mode when we enter the SDL loop
     StreamUtils::enterAsyncLoggingMode();

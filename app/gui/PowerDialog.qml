@@ -19,6 +19,12 @@ Popup {
     property string authState: "none"
     readonly property bool hostAllowed: authState === "authorized"
 
+    // Client-only mode: opened from the X shortcut when there's no reachable/paired
+    // host (offline host, the "+ Add" tile, or no hosts at all). Host & Both stay
+    // disabled and the access hint is suppressed — the user can still power off THIS
+    // PC. Set by the caller before open(); reset to false for the full host chooser.
+    property bool clientOnly: false
+
     // Windows-update status of each side, set by HomeScreen when the dialog opens.
     //   host:   "checking" | "pending" | "none" | "unavailable" (not authorized)
     //   client: "pending" | "none"  (always determinable locally)
@@ -125,9 +131,10 @@ Popup {
             Layout.maximumWidth: 520
         }
 
-        // Inline hint shown when the host hasn't approved this device yet.
+        // Inline hint shown when the host hasn't approved this device yet. Suppressed
+        // in client-only mode (no host context — the hint would be misleading).
         Label {
-            visible: !pop.hostAllowed
+            visible: !pop.hostAllowed && !pop.clientOnly
             text: qsTr("Host shutdown needs StreamTweak access. Approve this device on the host (Settings → Bridge security) to enable Host and Both.")
             font.family: "DM Sans"
             font.pixelSize: 13

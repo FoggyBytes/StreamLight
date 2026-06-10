@@ -43,6 +43,10 @@ public:
 
     void renderOnMainThread();
 
+    // True when the software pacer is actively pacing to V-sync (i.e. a V-sync
+    // source was created during initialize()). Used by the performance overlay.
+    bool isActive() const { return m_VsyncSource != nullptr; }
+
 private:
     static int vsyncThread(void* context);
 

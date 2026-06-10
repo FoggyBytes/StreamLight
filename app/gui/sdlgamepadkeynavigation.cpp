@@ -245,7 +245,19 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
             // SDL may send us a quit event since we initialize
             // the video subsystem on startup. If we get one,
             // forward it on for Qt to take care of.
-            QCoreApplication::instance()->quit();
+            //
+            // Drop any fullscreen top-level window back to windowed first, then
+            // quit on the next event-loop tick. Destroying a fullscreen D3D11
+            // swapchain in independent-flip/MPO state can hang the GPU/display
+            // (see main.qml quitApp()); leaving fullscreen makes teardown safe.
+            for (QWindow* w : QGuiApplication::topLevelWindows()) {
+                if (w->visibility() == QWindow::FullScreen) {
+                    w->setVisibility(QWindow::Windowed);
+                }
+            }
+            QTimer::singleShot(0, QCoreApplication::instance(), []() {
+                QCoreApplication::instance()->quit();
+            });
             break;
         case SDL_CONTROLLERBUTTONDOWN:
         case SDL_CONTROLLERBUTTONUP:

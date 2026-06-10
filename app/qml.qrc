@@ -17,6 +17,7 @@
         <file>gui/CenteredGridView.qml</file>
         <file>gui/CliPair.qml</file>
         <file>gui/SegmentedSelector.qml</file>
+        <file>gui/STSwitch.qml</file>
         <file>gui/PairDialog.qml</file>
         <file>gui/AddHostDialog.qml</file>
         <file>gui/PrepareCountdownDialog.qml</file>

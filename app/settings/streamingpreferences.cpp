@@ -39,7 +39,9 @@
 #define SER_DEFAULTVER "defaultver"
 #define SER_PACKETSIZE "packetsize"
 #define SER_DETECTNETBLOCKING "detectnetblocking"
+#define SER_AUTORECONNECTNOVIDEO "autoreconnectnovideo"
 #define SER_SHOWPERFOVERLAY "showperfoverlay"
+#define SER_OVERLAYMODE "overlaymode"
 #define SER_SWAPMOUSEBUTTONS "swapmousebuttons"
 #define SER_MUTEONFOCUSLOSS "muteonfocusloss"
 #define SER_BACKGROUNDGAMEPAD "backgroundgamepad"
@@ -139,7 +141,19 @@ void StreamingPreferences::reload()
     richPresence = settings.value(SER_RICHPRESENCE, true).toBool();
     gamepadMouse = settings.value(SER_GAMEPADMOUSE, true).toBool();
     detectNetworkBlocking = settings.value(SER_DETECTNETBLOCKING, true).toBool();
-    showPerformanceOverlay = settings.value(SER_SHOWPERFOVERLAY, false).toBool();
+    autoReconnectNoVideo = settings.value(SER_AUTORECONNECTNOVIDEO, true).toBool();
+    // Overlay verbosity. New 4-state setting (Off/Minimal/Default/Full). Migrate
+    // from the old boolean: an enabled legacy overlay showed everything, so it
+    // maps to OM_FULL; a disabled one maps to OM_OFF.
+    if (settings.contains(SER_OVERLAYMODE)) {
+        overlayMode = static_cast<OverlayMode>(settings.value(SER_OVERLAYMODE,
+                                               static_cast<int>(OverlayMode::OM_OFF)).toInt());
+    }
+    else {
+        overlayMode = settings.value(SER_SHOWPERFOVERLAY, false).toBool()
+                          ? OverlayMode::OM_FULL
+                          : OverlayMode::OM_OFF;
+    }
     packetSize = settings.value(SER_PACKETSIZE, 0).toInt();
     swapMouseButtons = settings.value(SER_SWAPMOUSEBUTTONS, false).toBool();
     muteOnFocusLoss = settings.value(SER_MUTEONFOCUSLOSS, false).toBool();
@@ -215,7 +229,8 @@ void StreamingPreferences::save()
     settings.setValue(SER_GAMEPADMOUSE, gamepadMouse);
     settings.setValue(SER_PACKETSIZE, packetSize);
     settings.setValue(SER_DETECTNETBLOCKING, detectNetworkBlocking);
-    settings.setValue(SER_SHOWPERFOVERLAY, showPerformanceOverlay);
+    settings.setValue(SER_AUTORECONNECTNOVIDEO, autoReconnectNoVideo);
+    settings.setValue(SER_OVERLAYMODE, static_cast<int>(overlayMode));
     settings.setValue(SER_AUDIOCFG, static_cast<int>(audioConfig));
     settings.setValue(SER_HDR, enableHdr);
     settings.setValue(SER_YUV444, enableYUV444);

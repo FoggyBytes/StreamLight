@@ -62,6 +62,7 @@ D3D11VARenderer::D3D11VARenderer(int decoderSelectionPass)
       m_DevicesWithCodecSupport(0),
       m_LastColorTrc(AVCOL_TRC_UNSPECIFIED),
       m_AllowTearing(false),
+      m_SyncInterval(0),
       m_OverlayLock(0),
       m_HwDeviceContext(nullptr)
 {
@@ -663,6 +664,30 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
         return false;
     }
 
+    // Determine whether we can pace the stream in hardware on a high-refresh display.
+    // When frame pacing is enabled (which implies V-sync, so we're not in tearing mode)
+    // and the display refresh rate is an integer multiple (>=2x) of the stream frame
+    // rate, we present each frame for exactly that many V-blanks via the DXGI sync
+    // interval. This yields a perfect, hardware-locked cadence (e.g. 2:2 for 60 FPS on
+    // 120 Hz) with no judder, and lets us bypass the software Pacer. When it doesn't
+    // apply (matched/non-integer refresh, tearing mode), m_SyncInterval stays 0 and the
+    // software Pacer handles pacing as before.
+    m_SyncInterval = 0;
+    if (params->enableVsync && !m_AllowTearing && params->enableFramePacing) {
+        int displayHz = StreamUtils::getDisplayRefreshRate(params->window);
+        int fps = params->frameRate;
+        if (fps > 0 && displayHz >= fps * 2) {
+            int n = (displayHz + fps / 2) / fps; // round(displayHz / fps)
+            int diff = displayHz - n * fps;      // allow +/-1 Hz of reporting slack
+            if (n >= 2 && diff <= 1 && diff >= -1) {
+                m_SyncInterval = n;
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "Hardware frame pacing enabled: holding each frame for %d V-blanks (%d Hz / %d FPS)",
+                            n, displayHz, fps);
+            }
+        }
+    }
+
     return true;
 }
 
@@ -788,8 +813,13 @@ void D3D11VARenderer::renderFrame(AVFrame* frame)
         m_LastColorTrc = frame->color_trc;
     }
 
-    // Present according to the decoder parameters
-    hr = m_SwapChain->Present(0, flags);
+    // Present according to the decoder parameters. m_SyncInterval is normally 0
+    // (non-blocking; DWM/Pacer handle timing). When hardware frame pacing is
+    // active it is >=2, so Present() holds each frame for that many V-blanks,
+    // producing a hardware-locked cadence for low-FPS streams on high-refresh
+    // displays. SyncInterval is always 0 in tearing mode (enforced by the guard
+    // that computes m_SyncInterval, since tearing requires V-sync off).
+    hr = m_SwapChain->Present(m_SyncInterval, flags);
 
     if (m_DecodeDevice == m_RenderDevice) {
         // Release the context lock
@@ -1450,11 +1480,16 @@ int D3D11VARenderer::getRendererAttributes()
     // This renderer supports HDR
     attributes |= RENDERER_ATTRIBUTE_HDR_SUPPORT;
 
+    if (m_SyncInterval >= 2) {
+        // We pace ourselves in hardware via the DXGI sync interval, so the
+        // software Pacer's V-sync source is unnecessary (and would add latency).
+        attributes |= RENDERER_ATTRIBUTE_SELF_PACING;
+    }
     // This renderer requires frame pacing to synchronize with VBlank when we're in full-screen.
     // In windowed mode, we will render as fast we can and DWM will grab whatever is latest at the
     // time unless the user opts for pacing. We will use pacing in full-screen mode and normal DWM
     // sequencing in full-screen desktop mode to behave similarly to the DXVA2 renderer.
-    if ((SDL_GetWindowFlags(m_DecoderParams.window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == SDL_WINDOW_FULLSCREEN) {
+    else if ((SDL_GetWindowFlags(m_DecoderParams.window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == SDL_WINDOW_FULLSCREEN) {
         attributes |= RENDERER_ATTRIBUTE_FORCE_PACING;
     }
 

@@ -131,6 +131,21 @@ public:
         return m_OverlayManager;
     }
 
+    // Advance the performance overlay through Off -> Minimal -> Default -> Full
+    // -> Off ... — bound to the overlay hotkey (Ctrl+Alt+O / Select+L1+R1+X).
+    // This drives the same persisted setting shown in Settings > Overlay, so the
+    // selector there stays in sync; the overlay layer is shown whenever the
+    // resulting profile is not Off.
+    void cycleOverlayMode()
+    {
+        int next = (static_cast<int>(m_Preferences->overlayMode) + 1)
+                   % (static_cast<int>(StreamingPreferences::OM_FULL) + 1);
+        m_Preferences->overlayMode = static_cast<StreamingPreferences::OverlayMode>(next);
+        m_Preferences->save();
+        m_OverlayManager.setOverlayState(Overlay::OverlayDebug,
+            m_Preferences->overlayMode != StreamingPreferences::OM_OFF);
+    }
+
     /** Thread-safe snapshot of the latest host metrics from StreamTweak. */
     HostMetrics getHostMetrics() const
     {
@@ -146,6 +161,17 @@ public:
     void flushWindowEvents();
 
     void setShouldExit(bool quitHostApp = false);
+
+    // True if the last connection terminated because no video traffic ever
+    // arrived from the host (ML_ERROR_NO_VIDEO_TRAFFIC). This is usually a
+    // transient host warm-up race (virtual display / HDR / AV1 encoder not yet
+    // producing frames on a cold game-session start), so the UI auto-retries once.
+    Q_INVOKABLE bool wasNoVideoTraffic() const { return m_NoVideoTraffic; }
+
+    // Build a fresh Session for the same host+app, used to auto-resume after a
+    // transient no-video failure. The new session resumes since the game session
+    // already exists on the host.
+    Q_INVOKABLE Session* createRetrySession();
 
 signals:
     void stageStarting(QString stage);
@@ -282,6 +308,7 @@ private:
     Uint32 m_FullScreenFlag;
     QQuickWindow* m_QtWindow;
     bool m_UnexpectedTermination;
+    bool m_NoVideoTraffic = false;
     SdlInputHandler* m_InputHandler;
     int m_MouseEmulationRefCount;
     int m_FlushingWindowEventsRef;

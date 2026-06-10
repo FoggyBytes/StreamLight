@@ -497,8 +497,18 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
     // Don't bother initializing Pacer if we're not actually going to render
     if (testMode != TestMode::TestFrameOnly) {
         m_Pacer = new Pacer(m_FrontendRenderer, &m_ActiveWndVideoStats);
-        if (!m_Pacer->initialize(params->window, params->frameRate,
-                                 params->enableFramePacing || (params->enableVsync && (m_FrontendRenderer->getRendererAttributes() & RENDERER_ATTRIBUTE_FORCE_PACING)))) {
+        int rendererAttributes = m_FrontendRenderer->getRendererAttributes();
+        bool enablePacing;
+        if (rendererAttributes & RENDERER_ATTRIBUTE_SELF_PACING) {
+            // The renderer paces itself in hardware (integer sync interval); the
+            // software Pacer's V-sync source would be redundant and add latency.
+            enablePacing = false;
+        }
+        else {
+            enablePacing = params->enableFramePacing ||
+                    (params->enableVsync && (rendererAttributes & RENDERER_ATTRIBUTE_FORCE_PACING));
+        }
+        if (!m_Pacer->initialize(params->window, params->frameRate, enablePacing)) {
             return false;
         }
     }
@@ -818,14 +828,15 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
     // Start with an empty string
     output[offset] = 0;
 
-    // Client metrics header — mirrors "--- Host Metrics (StreamTweak) ---" at the bottom
-    ret = snprintf(&output[offset], length - offset,
-                   "--- Client Metrics (StreamLight) ---\n");
-    if (ret < 0 || ret >= length - offset) {
-        SDL_assert(false);
+    // Overlay verbosity profile chosen by the user (Settings > Overlay), also
+    // cycled live by the overlay hotkey (Off -> Minimal -> Default -> Full).
+    // When the profile is Off the OverlayDebug layer is disabled and this is
+    // never called; guard anyway.
+    const StreamingPreferences::OverlayMode mode = StreamingPreferences::get()->overlayMode;
+    if (mode == StreamingPreferences::OM_OFF) {
         return;
     }
-    offset += ret;
+    const bool full = (mode == StreamingPreferences::OM_FULL);
 
     switch (m_VideoFormat)
     {
@@ -895,72 +906,123 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
         break;
     }
 
-    if (stats.receivedFps > 0) {
-        if (m_VideoDecoderCtx != nullptr) {
-#ifdef DISPLAY_BITRATE
-            double avgVideoMbps = m_BwTracker.GetAverageMbps();
-            double peakVideoMbps = m_BwTracker.GetPeakMbps();
-#endif
+    // ── Minimal profile ──────────────────────────────────────────────────────
+    // A compact, headerless 3-line block: resolution + FPS + codec, bitrate, and
+    // the two figures a player glances at (latency + network drops). No host
+    // section. Returns early before the verbose path below.
+    if (mode == StreamingPreferences::OM_MINIMAL) {
+        if (stats.receivedFps > 0 && m_VideoDecoderCtx != nullptr) {
+            ret = snprintf(&output[offset], length - offset,
+                           "%dx%d | %.0f FPS | %s\n",
+                           m_VideoDecoderCtx->width, m_VideoDecoderCtx->height,
+                           stats.totalFps, codecString);
+            if (ret > 0 && ret < length - offset) offset += ret;
+        }
 
-            ret = snprintf(&output[offset],
-                           length - offset,
-                           "Video stream: %dx%d %.2f FPS (Codec: %s)\n"
-#ifdef DISPLAY_BITRATE
-                           "Bitrate: %.1f Mbps, Peak (%us): %.1f\n"
-#endif
-                           ,
-                           m_VideoDecoderCtx->width,
-                           m_VideoDecoderCtx->height,
-                           stats.totalFps,
-                           codecString
-#ifdef DISPLAY_BITRATE
-                           ,
-                           avgVideoMbps,
-                           m_BwTracker.GetWindowSeconds(),
-                           peakVideoMbps
-#endif
-                           );
-            if (ret < 0 || ret >= length - offset) {
-                SDL_assert(false);
-                return;
+        ret = snprintf(&output[offset], length - offset,
+                       "Bitrate: %.0f Mbps\n", m_BwTracker.GetAverageMbps());
+        if (ret > 0 && ret < length - offset) offset += ret;
+
+        if (stats.renderedFrames != 0) {
+            if (stats.lastRtt != 0) {
+                ret = snprintf(&output[offset], length - offset,
+                               "RTT %u ms | Net drops %.2f%%\n",
+                               stats.lastRtt,
+                               (float)stats.networkDroppedFrames / stats.totalFrames * 100);
             }
-
-            offset += ret;
+            else {
+                ret = snprintf(&output[offset], length - offset,
+                               "Net drops %.2f%%\n",
+                               (float)stats.networkDroppedFrames / stats.totalFrames * 100);
+            }
+            if (ret > 0 && ret < length - offset) offset += ret;
         }
-
-        ret = snprintf(&output[offset],
-                       length - offset,
-                       "Incoming frame rate from network: %.2f FPS\n"
-                       "Decoding frame rate: %.2f FPS\n"
-                       "Rendering frame rate: %.2f FPS\n",
-                       stats.receivedFps,
-                       stats.decodedFps,
-                       stats.renderedFps);
-        if (ret < 0 || ret >= length - offset) {
-            SDL_assert(false);
-            return;
-        }
-
-        offset += ret;
+        return;
     }
 
-    if (stats.framesWithHostProcessingLatency > 0) {
-        ret = snprintf(&output[offset],
-                       length - offset,
-                       "Host processing latency min/max/average: %.1f/%.1f/%.1f ms\n",
-                       (float)stats.minHostProcessingLatency / 10,
-                       (float)stats.maxHostProcessingLatency / 10,
-                       (float)stats.totalHostProcessingLatency / 10 / stats.framesWithHostProcessingLatency);
-    } else {
-        ret = snprintf(&output[offset],
-                       length - offset,
-                       "Host processing latency min/max/average: N/A\n");
-    }
+    // ── Default / Full profiles ──────────────────────────────────────────────
+    // Client metrics header — mirrors "--- Host Metrics (StreamTweak) ---" at the bottom
+    ret = snprintf(&output[offset], length - offset,
+                   "--- Client Metrics (StreamLight) ---\n");
     if (ret < 0 || ret >= length - offset) {
         SDL_assert(false);
         return;
     }
     offset += ret;
+
+    if (stats.receivedFps > 0) {
+        if (m_VideoDecoderCtx != nullptr) {
+            ret = snprintf(&output[offset],
+                           length - offset,
+                           "Video stream: %dx%d %.2f FPS (Codec: %s)\n",
+                           m_VideoDecoderCtx->width,
+                           m_VideoDecoderCtx->height,
+                           stats.totalFps,
+                           codecString);
+            if (ret < 0 || ret >= length - offset) {
+                SDL_assert(false);
+                return;
+            }
+            offset += ret;
+
+            // Bitrate: average always; the full profile also shows the windowed peak.
+            if (full) {
+                ret = snprintf(&output[offset], length - offset,
+                               "Bitrate: %.1f Mbps, Peak (%us): %.1f\n",
+                               m_BwTracker.GetAverageMbps(),
+                               m_BwTracker.GetWindowSeconds(),
+                               m_BwTracker.GetPeakMbps());
+            }
+            else {
+                ret = snprintf(&output[offset], length - offset,
+                               "Bitrate: %.1f Mbps\n",
+                               m_BwTracker.GetAverageMbps());
+            }
+            if (ret < 0 || ret >= length - offset) {
+                SDL_assert(false);
+                return;
+            }
+            offset += ret;
+        }
+
+        // Per-stage frame-rate breakdown — full profile only.
+        if (full) {
+            ret = snprintf(&output[offset],
+                           length - offset,
+                           "Incoming frame rate from network: %.2f FPS\n"
+                           "Decoding frame rate: %.2f FPS\n"
+                           "Rendering frame rate: %.2f FPS\n",
+                           stats.receivedFps,
+                           stats.decodedFps,
+                           stats.renderedFps);
+            if (ret < 0 || ret >= length - offset) {
+                SDL_assert(false);
+                return;
+            }
+            offset += ret;
+        }
+    }
+
+    // Host processing latency — full profile only.
+    if (full) {
+        if (stats.framesWithHostProcessingLatency > 0) {
+            ret = snprintf(&output[offset],
+                           length - offset,
+                           "Host processing latency min/max/average: %.1f/%.1f/%.1f ms\n",
+                           (float)stats.minHostProcessingLatency / 10,
+                           (float)stats.maxHostProcessingLatency / 10,
+                           (float)stats.totalHostProcessingLatency / 10 / stats.framesWithHostProcessingLatency);
+        } else {
+            ret = snprintf(&output[offset],
+                           length - offset,
+                           "Host processing latency min/max/average: N/A\n");
+        }
+        if (ret < 0 || ret >= length - offset) {
+            SDL_assert(false);
+            return;
+        }
+        offset += ret;
+    }
 
     if (stats.renderedFrames != 0) {
         char rttString[32];
@@ -972,25 +1034,60 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
             snprintf(rttString, sizeof(rttString), "N/A");
         }
 
+        // Network drops, jitter drops, latency and decode time — default and full.
         ret = snprintf(&output[offset],
                        length - offset,
                        "Frames dropped by your network connection: %.2f%%\n"
                        "Frames dropped due to network jitter: %.2f%%\n"
                        "Average network latency: %s\n"
-                       "Average decoding time: %.2f ms\n"
-                       "Average frame queue delay: %.2f ms\n"
-                       "Average rendering time (including monitor V-sync latency): %.2f ms\n",
+                       "Average decoding time: %.2f ms\n",
                        (float)stats.networkDroppedFrames / stats.totalFrames * 100,
                        (float)stats.pacerDroppedFrames / stats.decodedFrames * 100,
                        rttString,
-                       (double)(stats.totalDecodeTimeUs / 1000.0) / stats.decodedFrames,
-                       (double)(stats.totalPacerTimeUs / 1000.0) / stats.renderedFrames,
-                       (double)(stats.totalRenderTimeUs / 1000.0) / stats.renderedFrames);
+                       (double)(stats.totalDecodeTimeUs / 1000.0) / stats.decodedFrames);
         if (ret < 0 || ret >= length - offset) {
             SDL_assert(false);
             return;
         }
+        offset += ret;
 
+        // Frame queue delay and rendering time — full profile only.
+        if (full) {
+            ret = snprintf(&output[offset],
+                           length - offset,
+                           "Average frame queue delay: %.2f ms\n"
+                           "Average rendering time (including monitor V-sync latency): %.2f ms\n",
+                           (double)(stats.totalPacerTimeUs / 1000.0) / stats.renderedFrames,
+                           (double)(stats.totalRenderTimeUs / 1000.0) / stats.renderedFrames);
+            if (ret < 0 || ret >= length - offset) {
+                SDL_assert(false);
+                return;
+            }
+            offset += ret;
+        }
+    }
+
+    // Frame pacing status — surfaces which mechanism is actually in effect under
+    // the hood: "Hardware (N:N cadence)" when the renderer self-paces via the DXGI
+    // sync interval, "Software" when the V-sync Pacer is driving frames, or "Off".
+    {
+        const char* pacingMode = "Off";
+        char pacingBuf[40];
+        int hwInterval = (m_FrontendRenderer != nullptr) ? m_FrontendRenderer->getFramePacingSyncInterval() : 0;
+        if (hwInterval >= 2) {
+            snprintf(pacingBuf, sizeof(pacingBuf), "Hardware (%d:%d cadence)", hwInterval, hwInterval);
+            pacingMode = pacingBuf;
+        }
+        else if (m_Pacer != nullptr && m_Pacer->isActive()) {
+            pacingMode = "Software";
+        }
+
+        ret = snprintf(&output[offset], length - offset,
+                       "Frame pacing: %s\n", pacingMode);
+        if (ret < 0 || ret >= length - offset) {
+            SDL_assert(false);
+            return;
+        }
         offset += ret;
     }
 
@@ -1017,20 +1114,30 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
             FMT(netStr,  hm.netTx);
 #undef FMT
 
-            // VRAM: "used / total MB" when total is known, "used MB" otherwise, "N/A" if unavailable.
-            char vramStr[24];
-            if (hm.vramUsed >= 0 && hm.vramTotal >= 0)
-                snprintf(vramStr, sizeof(vramStr), "%d / %d MB", hm.vramUsed, hm.vramTotal);
-            else if (hm.vramUsed >= 0)
-                snprintf(vramStr, sizeof(vramStr), "%d MB", hm.vramUsed);
-            else
-                snprintf(vramStr, sizeof(vramStr), "N/A");
+            // VRAM line is only shown in the full profile. "used / total MB"
+            // when total is known, "used MB" otherwise, "N/A" if unavailable.
+            if (full) {
+                char vramStr[24];
+                if (hm.vramUsed >= 0 && hm.vramTotal >= 0)
+                    snprintf(vramStr, sizeof(vramStr), "%d / %d MB", hm.vramUsed, hm.vramTotal);
+                else if (hm.vramUsed >= 0)
+                    snprintf(vramStr, sizeof(vramStr), "%d MB", hm.vramUsed);
+                else
+                    snprintf(vramStr, sizeof(vramStr), "N/A");
 
-            ret = snprintf(&output[offset], length - offset,
-                           "--- Host Metrics (StreamTweak) ---\n"
-                           "GPU: %s%% | Enc: %s%% | Temp: %sC | VRAM: %s\n"
-                           "CPU: %s%% | Net TX: %s Mbps\n",
-                           gpuStr, encStr, tempStr, vramStr, cpuStr, netStr);
+                ret = snprintf(&output[offset], length - offset,
+                               "--- Host Metrics (StreamTweak) ---\n"
+                               "GPU: %s%% | Enc: %s%% | Temp: %sC | VRAM: %s\n"
+                               "CPU: %s%% | Net TX: %s Mbps\n",
+                               gpuStr, encStr, tempStr, vramStr, cpuStr, netStr);
+            }
+            else {
+                ret = snprintf(&output[offset], length - offset,
+                               "--- Host Metrics (StreamTweak) ---\n"
+                               "GPU: %s%% | Enc: %s%% | Temp: %sC\n"
+                               "CPU: %s%% | Net TX: %s Mbps\n",
+                               gpuStr, encStr, tempStr, cpuStr, netStr);
+            }
 
             if (ret > 0 && ret < length - offset)
                 offset += ret;

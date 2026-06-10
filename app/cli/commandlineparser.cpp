@@ -482,8 +482,20 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     // Resolve --keep-awake and --no-keep-awake options
     preferences->keepAwake = parser.getToggleOptionValue("keep-awake", preferences->keepAwake);
 
-    // Resolve --performance-overlay and --no-performance-overlay options
-    preferences->showPerformanceOverlay = parser.getToggleOptionValue("performance-overlay", preferences->showPerformanceOverlay);
+    // Resolve --performance-overlay and --no-performance-overlay options.
+    // The CLI is a simple on/off toggle; "on" maps to the full overlay (the
+    // legacy behaviour, which showed every stat), "off" maps to OM_OFF.
+    {
+        bool overlayOn = parser.getToggleOptionValue(
+            "performance-overlay",
+            preferences->overlayMode != StreamingPreferences::OM_OFF);
+        if (!overlayOn) {
+            preferences->overlayMode = StreamingPreferences::OM_OFF;
+        }
+        else if (preferences->overlayMode == StreamingPreferences::OM_OFF) {
+            preferences->overlayMode = StreamingPreferences::OM_FULL;
+        }
+    }
 
     // Resolve --hdr and --no-hdr options
     preferences->enableHdr = parser.getToggleOptionValue("hdr", preferences->enableHdr);
