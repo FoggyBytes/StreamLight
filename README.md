@@ -81,6 +81,8 @@ Smoother motion on high-refresh displays and a configurable performance overlay,
 - **`X · Shutdown` always available** — pressing **X** (or clicking the shortcut) on *My Hosts* now opens the Power chooser to shut down **this PC** even when the highlighted host is offline, or when no hosts are configured at all. Host shutdown still requires an online, approved host
 - **Fullscreen-exit freeze fixed** — closing StreamLight while its window was fullscreen could lock up the whole PC, forcing a hard power-off; it now leaves fullscreen before shutting down so the graphics driver tears the window down cleanly
 
+> 🙏 Huge thanks to [**@Soladus**](https://github.com/Soladus) for reporting the high-refresh judder ([#2](https://github.com/FoggyBytes/StreamLight/issues/2)) and beta-testing the frame-pacing fix on both NVIDIA and AMD clients — the logs and measurements made this release possible.
+
 ## ✨ What's New in 3.3.0 — "The Patch Tuesday Update"
 
 Windows Update, driven entirely from the couch. **Requires StreamTweak 7.3.0 or later**; update both apps together.

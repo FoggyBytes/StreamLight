@@ -24,6 +24,9 @@ Version 3.4.0 - The Smooth Motion Update (10/06/2026)
 • "X · Shutdown" always works now: pressing X (or clicking the shortcut) on the My Hosts screen opens the Power chooser to shut down this PC even when the highlighted host is offline — or when no hosts are configured at all. Host shutdown still requires an online, approved host
 • Fixed a freeze that could lock up the whole PC when closing StreamLight while its window was in fullscreen mode, forcing a hard power-off. StreamLight now leaves fullscreen before shutting down so the graphics driver tears the window down cleanly
 
+🙏 THANKS:
+• Huge thanks to @Soladus for reporting the high-refresh judder (https://github.com/FoggyBytes/StreamLight/issues/2) and for thoroughly beta-testing the frame-pacing fix on both NVIDIA and AMD clients — your logs and measurements made this release possible
+
 --------------------------------------------------------
 Version 3.3.0 - The "Patch Tuesday Update" (06/06/2026)
 --------------------------------------------------------
