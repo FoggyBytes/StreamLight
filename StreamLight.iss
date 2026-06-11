@@ -1,8 +1,8 @@
-; StreamLight 3.4.0 — Moonlight fork with StreamTweak integration.
+; StreamLight 3.4.1 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
-#define AppVersion "3.4.0"
+#define AppVersion "3.4.1"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"

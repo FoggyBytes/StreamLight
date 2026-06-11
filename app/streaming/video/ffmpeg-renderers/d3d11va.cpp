@@ -669,17 +669,26 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
     // and the display refresh rate is an integer multiple (>=2x) of the stream frame
     // rate, we present each frame for exactly that many V-blanks via the DXGI sync
     // interval. This yields a perfect, hardware-locked cadence (e.g. 2:2 for 60 FPS on
-    // 120 Hz) with no judder, and lets us bypass the software Pacer. When it doesn't
-    // apply (matched/non-integer refresh, tearing mode), m_SyncInterval stays 0 and the
-    // software Pacer handles pacing as before.
+    // 120 Hz, 4:4 for 60 FPS on 240 Hz) with no judder, and lets us bypass the software
+    // Pacer. When it doesn't apply (matched/non-integer refresh, ratio above 4x, tearing
+    // mode), m_SyncInterval stays 0 and the software Pacer handles pacing as before.
+    //
+    // NB: DXGI's Present() sync interval is only valid for 1..4, so we cap the multiple
+    // at 4 (e.g. 240 Hz / 60 FPS). Higher ratios (360/480/500 Hz esports panels at 60 FPS)
+    // can't be hardware-locked and fall back to the software Pacer.
+    //
+    // Hardware pacing applies only in Automatic and Multiple modes (Matched forces
+    // the software pacer; Off disables pacing).
+    bool hwPacingAllowed = (params->framePacingMode == StreamingPreferences::FP_AUTO ||
+                            params->framePacingMode == StreamingPreferences::FP_MULTIPLE);
     m_SyncInterval = 0;
-    if (params->enableVsync && !m_AllowTearing && params->enableFramePacing) {
+    if (params->enableVsync && !m_AllowTearing && hwPacingAllowed) {
         int displayHz = StreamUtils::getDisplayRefreshRate(params->window);
         int fps = params->frameRate;
         if (fps > 0 && displayHz >= fps * 2) {
             int n = (displayHz + fps / 2) / fps; // round(displayHz / fps)
             int diff = displayHz - n * fps;      // allow +/-1 Hz of reporting slack
-            if (n >= 2 && diff <= 1 && diff >= -1) {
+            if (n >= 2 && n <= 4 && diff <= 1 && diff >= -1) {
                 m_SyncInterval = n;
                 SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                             "Hardware frame pacing enabled: holding each frame for %d V-blanks (%d Hz / %d FPS)",

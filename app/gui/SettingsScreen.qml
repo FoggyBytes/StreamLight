@@ -892,11 +892,14 @@ FocusScope {
                         // ── Frame Pacing ──────────────────────────────────────
                         Item {
                             width: parent.width
-                            height: settingsScreen._rowHeightTall
+                            height: Math.max(settingsScreen._rowHeightTall, fpCol.implicitHeight + 16)
 
                             Column {
+                                id: fpCol
                                 anchors.left: parent.left
                                 anchors.leftMargin: 16
+                                anchors.right: framePacingSelector.left
+                                anchors.rightMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
                                 spacing: 3
 
@@ -908,22 +911,39 @@ FocusScope {
                                     color: settingsScreen._text
                                 }
                                 Label {
-                                    text: qsTr("Removes microstutter and panning judder by pacing frames to your display. Automatically uses hardware pacing on high-refresh displays when possible")
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: qsTr("Smooths motion and removes judder. Automatic chooses for you; Matched is for a screen at the stream's FPS (60 Hz / 60 FPS), Multiple for a whole multiple — 120 Hz (2×) or 240 Hz (4×) for 60 FPS.")
                                     font.family: "DM Sans"
                                     font.pixelSize: 13
                                     color: settingsScreen._textDim
                                 }
                             }
 
-                            FocusFrame { anchors.fill: framePacingSwitch; anchors.margins: -3; target: framePacingSwitch }
-                            STSwitch {
-                                id: framePacingSwitch
+                            SegmentedSelector {
+                                id: framePacingSelector
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
-                                enabled: StreamingPreferences.enableVsync
-                                checked: StreamingPreferences.enableVsync && StreamingPreferences.framePacing
-                                onCheckedChanged: { StreamingPreferences.framePacing = checked }
+
+                                labels: [qsTr("Off"), qsTr("Automatic"), qsTr("Matched"), qsTr("Multiple")]
+                                property var _values: [
+                                    StreamingPreferences.FP_OFF,
+                                    StreamingPreferences.FP_AUTO,
+                                    StreamingPreferences.FP_MATCHED,
+                                    StreamingPreferences.FP_MULTIPLE
+                                ]
+
+                                Binding on currentIndex {
+                                    value: {
+                                        var v = StreamingPreferences.framePacingMode
+                                        for (var i = 0; i < framePacingSelector._values.length; i++) {
+                                            if (framePacingSelector._values[i] === v) return i
+                                        }
+                                        return 0
+                                    }
+                                }
+                                onActivated: function(idx) { StreamingPreferences.framePacingMode = _values[idx] }
                             }
                         }
                     }

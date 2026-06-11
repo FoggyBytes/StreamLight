@@ -4,6 +4,16 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-----------------------------------------------
+Version 3.4.1 - Frame Pacing Modes (11/06/2026)
+-----------------------------------------------
+
+✨ IMPROVEMENTS:
+• Frame Pacing is now a four-way choice (Settings → Video) instead of a single on/off switch — Off, Automatic, Matched, Multiple. Automatic keeps the previous behaviour (hardware pacing when your display's refresh rate is a whole multiple of the stream's FPS, software otherwise). Matched forces software pacing, best when your screen runs at the stream's frame rate (e.g. 60 Hz for 60 FPS). Multiple uses hardware pacing only, with no software fallback — for a screen running a multiple of the stream (e.g. 120 Hz = 2× or 240 Hz = 4× for 60 FPS). Choosing Multiple guarantees the software pacer never engages, for anyone who wants only the lowest-latency hardware cadence
+
+🙏 THANKS:
+• Thanks again to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/2) — the explicit Matched/Multiple modes come straight from your feedback after testing the 3.4.0 frame-pacing fix
+
 -----------------------------------------------------
 Version 3.4.0 - The Smooth Motion Update (10/06/2026)
 -----------------------------------------------------

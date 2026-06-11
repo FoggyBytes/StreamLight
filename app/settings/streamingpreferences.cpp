@@ -31,6 +31,7 @@
 #define SER_ABSTOUCHMODE "abstouchmode"
 #define SER_STARTWINDOWED "startwindowed"
 #define SER_FRAMEPACING "framepacing"
+#define SER_FRAMEPACINGMODE "framepacingmode"
 #define SER_CONNWARNINGS "connwarnings"
 #define SER_CONFWARNINGS "confwarnings"
 #define SER_UIDISPLAYMODE "uidisplaymode"
@@ -135,7 +136,18 @@ void StreamingPreferences::reload()
     quitAppAfter = settings.value(SER_QUITAPPAFTER, false).toBool();
     absoluteMouseMode = settings.value(SER_ABSMOUSEMODE, false).toBool();
     absoluteTouchMode = settings.value(SER_ABSTOUCHMODE, true).toBool();
-    framePacing = settings.value(SER_FRAMEPACING, false).toBool();
+    // Frame pacing. New 4-state setting (Off/Automatic/Matched/Multiple). Migrate
+    // from the old boolean: an enabled legacy toggle did automatic HW/SW pacing,
+    // so it maps to FP_AUTO; a disabled one maps to FP_OFF.
+    if (settings.contains(SER_FRAMEPACINGMODE)) {
+        framePacingMode = static_cast<FramePacingMode>(settings.value(SER_FRAMEPACINGMODE,
+                                                       static_cast<int>(FramePacingMode::FP_OFF)).toInt());
+    }
+    else {
+        framePacingMode = settings.value(SER_FRAMEPACING, false).toBool()
+                              ? FramePacingMode::FP_AUTO
+                              : FramePacingMode::FP_OFF;
+    }
     connectionWarnings = settings.value(SER_CONNWARNINGS, true).toBool();
     configurationWarnings = settings.value(SER_CONFWARNINGS, true).toBool();
     richPresence = settings.value(SER_RICHPRESENCE, true).toBool();
@@ -222,7 +234,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_QUITAPPAFTER, quitAppAfter);
     settings.setValue(SER_ABSMOUSEMODE, absoluteMouseMode);
     settings.setValue(SER_ABSTOUCHMODE, absoluteTouchMode);
-    settings.setValue(SER_FRAMEPACING, framePacing);
+    settings.setValue(SER_FRAMEPACINGMODE, static_cast<int>(framePacingMode));
     settings.setValue(SER_CONNWARNINGS, connectionWarnings);
     settings.setValue(SER_CONFWARNINGS, configurationWarnings);
     settings.setValue(SER_RICHPRESENCE, richPresence);

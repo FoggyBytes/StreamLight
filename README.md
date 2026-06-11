@@ -69,6 +69,16 @@ These features cross the bridge and require both apps. The version next to each 
 - **Remote Windows Update** *(StreamTweak 7.3.0+)* — Options → **Check Windows Update on host…** scans, classifies and installs Windows updates on the host (Security + Defender / All), rebooting only if required, with a backgroundable progress view. The Power… chooser can also **install pending updates before shutting down**, on the host and/or this client, showing where updates are pending
 - **Tailscale, unified into one tile** *(StreamTweak 6.3.0+; single tile in StreamLight 3.3.0)* — after pairing via LAN IP, StreamLight queries the `TAILSCALE` bridge command. If StreamTweak reports a `100.x.y.z` Tailscale address, StreamLight records it on the host's **single** tile, which then tracks both the LAN and Tailscale IPs and shows a `TAILSCALE · AVAILABLE` badge (just `TAILSCALE` when only the Tailscale path is up). Opening the host or *All Apps* uses whichever path is available (LAN locally, Tailscale remotely); a dedicated **Tailscale** option forces the `100.x` endpoint. Combined with the **Auto-start Tailscale on launch** Settings toggle, the round-trip is automatic: open StreamLight → Tailscale comes up → one click streams from anywhere
 
+## ✨ What's New in 3.4.1 — Frame Pacing Modes
+
+A small follow-up to The Smooth Motion Update, from beta-tester feedback. No StreamTweak update required.
+
+- **Frame Pacing is now a four-way choice** (*Settings → Video*) instead of a single on/off switch: **Off**, **Automatic**, **Matched** and **Multiple**.
+  - **Automatic** — keeps 3.4.0's behaviour: hardware pacing when your display's refresh is a whole multiple of the stream's FPS, software otherwise
+  - **Matched** — forces software pacing; best when your screen runs at the stream's frame rate (e.g. 60 Hz for 60 FPS)
+  - **Multiple** — hardware pacing only, **no software fallback**, for a screen at a whole multiple of the stream (e.g. 120 Hz = 2× or 240 Hz = 4× for 60 FPS). Choosing this guarantees the software pacer never engages — for anyone who wants only the lowest-latency hardware cadence
+- Thanks to [**@Soladus**](https://github.com/FoggyBytes/StreamLight/issues/2), whose feedback after testing the 3.4.0 fix prompted the explicit Matched/Multiple modes
+
 ## ✨ What's New in 3.4.0 — The Smooth Motion Update
 
 Smoother motion on high-refresh displays and a configurable performance overlay, plus the fixes from the unreleased 3.3.1. No StreamTweak update required.

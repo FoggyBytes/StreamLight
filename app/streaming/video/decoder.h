@@ -43,6 +43,7 @@ typedef struct _DECODER_PARAMETERS {
     int frameRate;
     bool enableVsync;
     bool enableFramePacing;
+    int  framePacingMode;   // StreamingPreferences::FramePacingMode
     bool testOnly;
 } DECODER_PARAMETERS, *PDECODER_PARAMETERS;
 

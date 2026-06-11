@@ -505,8 +505,13 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
             enablePacing = false;
         }
         else {
-            enablePacing = params->enableFramePacing ||
-                    (params->enableVsync && (rendererAttributes & RENDERER_ATTRIBUTE_FORCE_PACING));
+            // Software pacing runs for the Matched and Automatic modes. Multiple is
+            // hardware-only (no software fallback) and Off disables pacing. FORCE_PACING
+            // is a renderer requirement (e.g. fullscreen-exclusive D3D11) and always applies.
+            bool wantSoftware = (params->framePacingMode == StreamingPreferences::FP_MATCHED ||
+                                 params->framePacingMode == StreamingPreferences::FP_AUTO);
+            bool forcePacing = params->enableVsync && (rendererAttributes & RENDERER_ATTRIBUTE_FORCE_PACING);
+            enablePacing = wantSoftware || forcePacing;
         }
         if (!m_Pacer->initialize(params->window, params->frameRate, enablePacing)) {
             return false;

@@ -464,8 +464,14 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     // Resolve --audio-on-host and --no-audio-on-host options
     preferences->playAudioOnHost = parser.getToggleOptionValue("audio-on-host", preferences->playAudioOnHost);
 
-    // Resolve --frame-pacing and --no-frame-pacing options
-    preferences->framePacing = parser.getToggleOptionValue("frame-pacing", preferences->framePacing);
+    // Resolve --frame-pacing and --no-frame-pacing options. The CLI is a simple
+    // on/off toggle; map it to the Automatic / Off modes of framePacingMode.
+    {
+        bool fp = parser.getToggleOptionValue("frame-pacing",
+                                              preferences->framePacingMode != StreamingPreferences::FP_OFF);
+        preferences->framePacingMode = fp ? StreamingPreferences::FP_AUTO
+                                          : StreamingPreferences::FP_OFF;
+    }
 
     // Resolve --mute-on-focus-loss and --no-mute-on-focus-loss options
     preferences->muteOnFocusLoss = parser.getToggleOptionValue("mute-on-focus-loss", preferences->muteOnFocusLoss);

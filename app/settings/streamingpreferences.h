@@ -80,6 +80,20 @@ public:
     };
     Q_ENUM(OverlayMode)
 
+    // Frame pacing mode. FP_OFF = no pacing; FP_AUTO = hardware when the display
+    // refresh is an integer multiple of the stream FPS, software otherwise;
+    // FP_MATCHED = always software (for a display running at the stream's FPS);
+    // FP_MULTIPLE = hardware only, no software fallback (display at a multiple of
+    // the stream's FPS). See FFmpegVideoDecoder and D3D11VARenderer.
+    enum FramePacingMode
+    {
+        FP_OFF,
+        FP_AUTO,
+        FP_MATCHED,
+        FP_MULTIPLE
+    };
+    Q_ENUM(FramePacingMode)
+
     Q_PROPERTY(int width MEMBER width NOTIFY displayModeChanged)
     Q_PROPERTY(int height MEMBER height NOTIFY displayModeChanged)
     Q_PROPERTY(int fps MEMBER fps NOTIFY displayModeChanged)
@@ -94,7 +108,7 @@ public:
     Q_PROPERTY(bool quitAppAfter MEMBER quitAppAfter NOTIFY quitAppAfterChanged)
     Q_PROPERTY(bool absoluteMouseMode MEMBER absoluteMouseMode NOTIFY absoluteMouseModeChanged)
     Q_PROPERTY(bool absoluteTouchMode MEMBER absoluteTouchMode NOTIFY absoluteTouchModeChanged)
-    Q_PROPERTY(bool framePacing MEMBER framePacing NOTIFY framePacingChanged)
+    Q_PROPERTY(FramePacingMode framePacingMode MEMBER framePacingMode NOTIFY framePacingModeChanged)
     Q_PROPERTY(bool connectionWarnings MEMBER connectionWarnings NOTIFY connectionWarningsChanged)
     Q_PROPERTY(bool configurationWarnings MEMBER configurationWarnings NOTIFY configurationWarningsChanged)
     Q_PROPERTY(bool richPresence MEMBER richPresence NOTIFY richPresenceChanged)
@@ -134,7 +148,7 @@ public:
     bool quitAppAfter;
     bool absoluteMouseMode;
     bool absoluteTouchMode;
-    bool framePacing;
+    FramePacingMode framePacingMode;
     bool connectionWarnings;
     bool configurationWarnings;
     bool richPresence;
@@ -182,7 +196,7 @@ signals:
     void videoDecoderSelectionChanged();
     void uiDisplayModeChanged();
     void windowModeChanged();
-    void framePacingChanged();
+    void framePacingModeChanged();
     void connectionWarningsChanged();
     void configurationWarningsChanged();
     void richPresenceChanged();
