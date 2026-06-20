@@ -1859,7 +1859,12 @@ Session* Session::createRetrySession()
 {
     // Same host + app. The host already has an active game session from the
     // failed attempt, so this connects as a "resume" (currentGameId != 0).
-    return new Session(m_Computer, m_App);
+    // Clone this session's (already per-game-resolved) preferences so the retry
+    // keeps the same effective settings without sharing/owning our copy.
+    StreamingPreferences* prefs = m_Preferences->clone();
+    Session* session = new Session(m_Computer, m_App, prefs);
+    prefs->setParent(session);
+    return session;
 }
 
 void Session::interrupt()

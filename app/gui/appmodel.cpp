@@ -1,5 +1,8 @@
 #include "appmodel.h"
 
+#include "settings/appsettings.h"
+#include "settings/streamingpreferences.h"
+
 AppModel::AppModel(QObject *parent)
     : QAbstractListModel(parent)
 {
@@ -43,7 +46,73 @@ Session* AppModel::createSessionForApp(int appIndex)
 {
     Q_ASSERT(appIndex < m_VisibleApps.count());
     NvApp app = m_VisibleApps.at(appIndex);
-    return new Session(m_Computer, app);
+
+    // Apply this game's per-app overrides on top of a clone of the global
+    // preferences (the global object is never mutated). The clone is owned by
+    // the Session.
+    StreamingPreferences* prefs = AppSettingsManager::get()->buildPrefs(
+        StreamingPreferences::get(), m_Computer->uuid, app.id);
+    Session* session = new Session(m_Computer, app, prefs);
+    prefs->setParent(session);
+    return session;
+}
+
+QVariantMap AppModel::getAppOverride(int appIndex)
+{
+    QVariantMap m;
+    if (appIndex < 0 || appIndex >= m_VisibleApps.count()) {
+        return m;
+    }
+    AppOverride ov = AppSettingsManager::get()->getOverride(m_Computer->uuid, m_VisibleApps.at(appIndex).id);
+    if (ov.hasResolution)  { m["width"] = ov.width; m["height"] = ov.height; }
+    if (ov.hasFps)         m["fps"] = ov.fps;
+    if (ov.hasBitrate)     m["bitrate"] = ov.bitrateKbps;
+    if (ov.hasHdr)         m["hdr"] = ov.enableHdr;
+    if (ov.hasCodec)       m["codec"] = ov.videoCodecConfig;
+    if (ov.hasFramePacing) m["framepacing"] = ov.framePacingMode;
+    if (ov.hasAudio)       m["audio"] = ov.audioConfig;
+    return m;
+}
+
+void AppModel::setAppOverride(int appIndex, const QVariantMap& src)
+{
+    if (appIndex < 0 || appIndex >= m_VisibleApps.count()) {
+        return;
+    }
+    AppOverride ov;
+    if (src.contains("width") && src.contains("height")) {
+        ov.hasResolution = true;
+        ov.width = src.value("width").toInt();
+        ov.height = src.value("height").toInt();
+    }
+    if (src.contains("fps"))         { ov.hasFps = true;         ov.fps = src.value("fps").toInt(); }
+    if (src.contains("bitrate"))     { ov.hasBitrate = true;     ov.bitrateKbps = src.value("bitrate").toInt(); }
+    if (src.contains("hdr"))         { ov.hasHdr = true;         ov.enableHdr = src.value("hdr").toBool(); }
+    if (src.contains("codec"))       { ov.hasCodec = true;       ov.videoCodecConfig = src.value("codec").toInt(); }
+    if (src.contains("framepacing")) { ov.hasFramePacing = true; ov.framePacingMode = src.value("framepacing").toInt(); }
+    if (src.contains("audio"))       { ov.hasAudio = true;       ov.audioConfig = src.value("audio").toInt(); }
+
+    AppSettingsManager::get()->setOverride(m_Computer->uuid, m_VisibleApps.at(appIndex).id, ov);
+    QModelIndex idx = index(appIndex, 0);
+    emit dataChanged(idx, idx, { OverriddenRole });
+}
+
+bool AppModel::appHasOverride(int appIndex)
+{
+    if (appIndex < 0 || appIndex >= m_VisibleApps.count()) {
+        return false;
+    }
+    return AppSettingsManager::get()->hasOverride(m_Computer->uuid, m_VisibleApps.at(appIndex).id);
+}
+
+void AppModel::clearAppOverride(int appIndex)
+{
+    if (appIndex < 0 || appIndex >= m_VisibleApps.count()) {
+        return;
+    }
+    AppSettingsManager::get()->clearOverride(m_Computer->uuid, m_VisibleApps.at(appIndex).id);
+    QModelIndex idx = index(appIndex, 0);
+    emit dataChanged(idx, idx, { OverriddenRole });
 }
 
 int AppModel::getDirectLaunchAppIndex()
@@ -92,6 +161,8 @@ QVariant AppModel::data(const QModelIndex &index, int role) const
         return app.directLaunch;
     case AppCollectorGameRole:
         return app.isAppCollectorGame;
+    case OverriddenRole:
+        return AppSettingsManager::get()->hasOverride(m_Computer->uuid, app.id);
     default:
         return QVariant();
     }
@@ -108,6 +179,7 @@ QHash<int, QByteArray> AppModel::roleNames() const
     names[AppIdRole] = "appid";
     names[DirectLaunchRole] = "directLaunch";
     names[AppCollectorGameRole] = "appCollectorGame";
+    names[OverriddenRole] = "overridden";
 
     return names;
 }

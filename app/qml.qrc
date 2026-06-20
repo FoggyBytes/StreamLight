@@ -25,5 +25,7 @@
         <file>gui/DialogButton.qml</file>
         <file>gui/UpdateDialog.qml</file>
         <file>gui/HostOptionsDialog.qml</file>
+        <file>gui/AppSettingsDialog.qml</file>
+        <file>gui/HostProfilesDialog.qml</file>
     </qresource>
 </RCC>

@@ -5,6 +5,7 @@
 #include "streaming/session.h"
 
 #include <QAbstractListModel>
+#include <QVariant>
 
 class AppModel : public QAbstractListModel
 {
@@ -19,6 +20,7 @@ class AppModel : public QAbstractListModel
         AppIdRole,
         DirectLaunchRole,
         AppCollectorGameRole,
+        OverriddenRole,
     };
 
 public:
@@ -40,6 +42,14 @@ public:
     Q_INVOKABLE void setAppHidden(int appIndex, bool hidden);
 
     Q_INVOKABLE void setAppDirectLaunch(int appIndex, bool directLaunch);
+
+    // Per-game settings overrides (see AppSettingsManager). The map keys are a
+    // subset of: width, height, fps, bitrate, hdr, codec, framepacing, audio.
+    // A missing key means "inherit the global setting".
+    Q_INVOKABLE QVariantMap getAppOverride(int appIndex);
+    Q_INVOKABLE void setAppOverride(int appIndex, const QVariantMap& ov);
+    Q_INVOKABLE bool appHasOverride(int appIndex);
+    Q_INVOKABLE void clearAppOverride(int appIndex);
 
     QVariant data(const QModelIndex &index, int role) const override;
 

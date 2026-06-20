@@ -4,6 +4,30 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-----------------------------------------------------
+Version 4.0.0 - The Profiles Update (20/06/2026)
+-----------------------------------------------------
+
+No StreamTweak update required — everything in 4.0.0 is client-side.
+
+✨ NEW FEATURES:
+• Per-game settings — each game can override the global streaming settings, so different titles launch with their own configuration automatically. Customize resolution, frame rate, bitrate, HDR, video codec, frame pacing and audio per game; anything left on "Global" inherits your main Settings. Open it from a game's tile (the tune icon, top-right) or, with a gamepad, press Select on the highlighted game. A green tune badge marks customized games, and "Reset to Global" clears it. (e.g. a AAA game at 4K/120/AV1/HDR, a 2D indie at 1080p/60.) The global settings are never changed
+• Per-host profiles — save up to three named profiles per host (e.g. a "Docked" 4K/120/HDR profile and a "Portable" 1080p/60 SDR one) and switch between them in a click. Open the new "Profiles" button under a host tile; create, rename (up to 14 characters) and delete profiles, or pick "Off" to use the global settings. The active profile is applied automatically every time you stream that host. With a gamepad, LB / RB cycle the active profile straight from the host list. Profiles activate only on confirm (A / click) — moving the cursor between them never changes the active one
+• Settings reflect the active profile — when a host has an active profile, opening Settings shows the rows that profile overrides as greyed and locked, with a "🔒 Greyed settings are controlled by the active host profile" notice at the top of each affected section, so it's always clear what's coming from the profile versus your global settings
+• Hide host IP addresses — a new privacy toggle (Settings → Session) masks every host IP across the app (host list and app-list header) as •••.•••.•••.••• — handy for screenshots and screen-sharing. Off by default
+
+🎨 UI:
+• Richer host header — the bar at the top of a host's app list now shows the full effective streaming config: profile · IP · NIC · resolution · FPS · bitrate · HDR (only when on) · codec · audio. With a profile active, these reflect what that host will actually stream at
+• Active-profile chip on host tiles — a host with an active profile shows a chip with the profile name; the app-list header shows the active profile name beside the host name
+• Profiles and Options buttons sit side-by-side under each host tile, fully d-pad navigable
+• Customize moved to the Select button (View / Create / − on Xbox / PlayStation / Switch) in the app list, since X now stops a running app
+• Per-game inherit option shows the active profile's name in place of "Global" when a profile is active, since per-game settings stack on top of it
+• Nintendo controller button glyphs — the bottom status bar now shows Switch-style A/B/X/Y/L/R icons (mapped by physical button position) when a Switch Pro Controller or Joy-Cons are connected, alongside the existing Xbox and PlayStation glyphs
+• Frame Pacing modes renamed for clarity — the two manual modes are now "Software" and "Hardware" (previously "Matched" and "Multiple"), naming the pacer that actually runs instead of an assumed display/FPS relationship. Same behaviour: Software always paces in software; Hardware locks the cadence in the GPU with no software fallback
+
+🙏 THANKS:
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/2) for the Frame Pacing naming feedback — "Software/Hardware" makes it clear which pacer is running
+
 -----------------------------------------------
 Version 3.4.1 - Frame Pacing Modes (11/06/2026)
 -----------------------------------------------

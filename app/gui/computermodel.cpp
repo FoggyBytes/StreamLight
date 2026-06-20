@@ -1,5 +1,7 @@
 #include "computermodel.h"
 #include "../TailscaleManager.h"
+#include "settings/appsettings.h"
+#include "settings/streamingpreferences.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -77,6 +79,14 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
         // True when the host is currently reached only through Tailscale (LAN down).
         return !computer->tailscaleAddress.isNull() &&
                computer->activeAddress == computer->tailscaleAddress;
+    case ProfileCountRole:
+        return HostProfileManager::get()->count(computer->uuid);
+    case ActiveProfileSlotRole:
+        return HostProfileManager::get()->active(computer->uuid);
+    case ActiveProfileNameRole: {
+        int a = HostProfileManager::get()->active(computer->uuid);
+        return a >= 0 ? HostProfileManager::get()->name(computer->uuid, a) : QString();
+    }
     case DetailsRole: {
         QString state, pairState;
 
@@ -152,6 +162,9 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
     names[TailscaleAddressRole] = "tailscaleAddress";
     names[HasTailscaleRole] = "hasTailscale";
     names[TailscaleActiveRole] = "tailscaleActive";
+    names[ProfileCountRole] = "profileCount";
+    names[ActiveProfileSlotRole] = "activeProfileSlot";
+    names[ActiveProfileNameRole] = "activeProfileName";
 
     return names;
 }
@@ -167,7 +180,11 @@ Session* ComputerModel::createSessionForCurrentGame(int computerIndex)
 
     for (NvApp& app : computer->appList) {
         if (app.id == computer->currentGameId) {
-            return new Session(computer, app);
+            StreamingPreferences* prefs = AppSettingsManager::get()->buildPrefs(
+                StreamingPreferences::get(), computer->uuid, app.id);
+            Session* session = new Session(computer, app, prefs);
+            prefs->setParent(session);
+            return session;
         }
     }
 
@@ -604,6 +621,93 @@ QVariantMap ComputerModel::getCachedAppStores(int computerIndex) const
     NvComputer* computer = m_Computers[computerIndex];
     QReadLocker lock(&computer->lock);
     return m_appStoresCache.value(computer->uuid, QVariantMap());
+}
+
+// ── Per-host streaming profiles (StreamLight 4.0.0) ──────────────────────────
+int ComputerModel::hostProfileCount(int computerIndex) const
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return 0;
+    return HostProfileManager::get()->count(m_Computers[computerIndex]->uuid);
+}
+
+int ComputerModel::hostActiveProfile(int computerIndex) const
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return -1;
+    return HostProfileManager::get()->active(m_Computers[computerIndex]->uuid);
+}
+
+QString ComputerModel::hostActiveProfileName(int computerIndex) const
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return QString();
+    auto* m = HostProfileManager::get();
+    const QString uuid = m_Computers[computerIndex]->uuid;
+    int a = m->active(uuid);
+    return a >= 0 ? m->name(uuid, a) : QString();
+}
+
+void ComputerModel::setHostActiveProfile(int computerIndex, int slot)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+    HostProfileManager::get()->setActive(m_Computers[computerIndex]->uuid, slot);
+    QModelIndex idx = index(computerIndex, 0);
+    emit dataChanged(idx, idx, { ProfileCountRole, ActiveProfileSlotRole, ActiveProfileNameRole });
+}
+
+void ComputerModel::cycleHostProfile(int computerIndex, int dir)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+    HostProfileManager::get()->cycle(m_Computers[computerIndex]->uuid, dir);
+    QModelIndex idx = index(computerIndex, 0);
+    emit dataChanged(idx, idx, { ProfileCountRole, ActiveProfileSlotRole, ActiveProfileNameRole });
+}
+
+QString ComputerModel::hostProfileName(int computerIndex, int slot) const
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return QString();
+    return HostProfileManager::get()->name(m_Computers[computerIndex]->uuid, slot);
+}
+
+void ComputerModel::setHostProfileName(int computerIndex, int slot, const QString& name)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+    HostProfileManager::get()->setName(m_Computers[computerIndex]->uuid, slot, name);
+    QModelIndex idx = index(computerIndex, 0);
+    emit dataChanged(idx, idx, { ProfileCountRole, ActiveProfileSlotRole, ActiveProfileNameRole });
+}
+
+QVariantMap ComputerModel::hostProfileSettings(int computerIndex, int slot) const
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return QVariantMap();
+    return appOverrideToMap(HostProfileManager::get()->settings(m_Computers[computerIndex]->uuid, slot));
+}
+
+void ComputerModel::setHostProfileSettings(int computerIndex, int slot, const QVariantMap& ov)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+    HostProfileManager::get()->setSettings(m_Computers[computerIndex]->uuid, slot, appOverrideFromMap(ov));
+}
+
+int ComputerModel::addHostProfile(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return -1;
+    int slot = HostProfileManager::get()->add(m_Computers[computerIndex]->uuid);
+    QModelIndex idx = index(computerIndex, 0);
+    emit dataChanged(idx, idx, { ProfileCountRole, ActiveProfileSlotRole, ActiveProfileNameRole });
+    return slot;
+}
+
+void ComputerModel::removeHostProfile(int computerIndex, int slot)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+    HostProfileManager::get()->remove(m_Computers[computerIndex]->uuid, slot);
+    QModelIndex idx = index(computerIndex, 0);
+    emit dataChanged(idx, idx, { ProfileCountRole, ActiveProfileSlotRole, ActiveProfileNameRole });
+}
+
+QVariantMap ComputerModel::hostActiveOverride(int computerIndex) const
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return QVariantMap();
+    return appOverrideToMap(HostProfileManager::get()->activeOverride(m_Computers[computerIndex]->uuid));
 }
 
 #include "computermodel.moc"

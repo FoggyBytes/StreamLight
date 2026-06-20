@@ -4,6 +4,7 @@
         <file>res/baseline-warning-24px.svg</file>
         <file>res/no_app_image.png</file>
         <file>res/tailscale.svg</file>
+        <file>res/tune.svg</file>
         <file>streamlight.ico</file>
         <file>streamlightxbox.png</file>
         <file>res/baseline-help_outline-24px.svg</file>
@@ -28,6 +29,13 @@
         <file>res/pad_ps_triangle.svg</file>
         <file>res/pad_ps_l1.svg</file>
         <file>res/pad_ps_r1.svg</file>
+        <file>res/pad_switch_a.svg</file>
+        <file>res/pad_switch_b.svg</file>
+        <file>res/pad_switch_x.svg</file>
+        <file>res/pad_switch_y.svg</file>
+        <file>res/pad_switch_l.svg</file>
+        <file>res/pad_switch_r.svg</file>
+        <file>res/pad_switch_minus.svg</file>
         <file>res/pad_xbox_start.svg</file>
         <file>res/pad_xbox_view.svg</file>
         <file>res/pad_ps_options.svg</file>

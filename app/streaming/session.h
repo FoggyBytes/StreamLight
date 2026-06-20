@@ -138,10 +138,17 @@ public:
     // resulting profile is not Off.
     void cycleOverlayMode()
     {
-        int next = (static_cast<int>(m_Preferences->overlayMode) + 1)
-                   % (static_cast<int>(StreamingPreferences::OM_FULL) + 1);
-        m_Preferences->overlayMode = static_cast<StreamingPreferences::OverlayMode>(next);
-        m_Preferences->save();
+        auto mode = static_cast<StreamingPreferences::OverlayMode>(
+            (static_cast<int>(m_Preferences->overlayMode) + 1)
+            % (static_cast<int>(StreamingPreferences::OM_FULL) + 1));
+        // Apply to the live session preferences (which may be a per-game clone).
+        m_Preferences->overlayMode = mode;
+        // Persist on the GLOBAL singleton — not the session clone — so Settings >
+        // Overlay stays in sync and we never write per-game overrides to the
+        // global store.
+        auto* global = StreamingPreferences::get();
+        global->overlayMode = mode;
+        global->save();
         m_OverlayManager.setOverlayState(Overlay::OverlayDebug,
             m_Preferences->overlayMode != StreamingPreferences::OM_OFF);
     }

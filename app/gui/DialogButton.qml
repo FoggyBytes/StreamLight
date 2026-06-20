@@ -7,6 +7,10 @@ import QtQuick.Controls 2.5
 Button {
     id: btn
     property bool affirmative: false
+    // Destructive action: red text + red focus border/tint (§22).
+    property bool danger: false
+    // Label size — lower it for compact footers.
+    property int fontSize: 15
     signal activated()
 
     activeFocusOnTab: true
@@ -19,18 +23,21 @@ Button {
         implicitWidth: 150
         implicitHeight: 42
         radius: 8
-        color: btn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.20)
+        color: btn.activeFocus ? (btn.danger ? Qt.rgba(0.93, 0.27, 0.27, 0.20)
+                                             : Qt.rgba(0, 0.9, 0.46, 0.20))
              : btn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
              :                   "#1f1f1f"
-        border.color: btn.activeFocus ? "#00E676"
+        border.color: btn.activeFocus ? (btn.danger ? "#ef4444" : "#00E676")
                     : btn.hovered     ? "#3a3a3a"
                     :                   "#2a2a2a"
         border.width: btn.activeFocus ? 2 : 1
     }
     contentItem: Label {
         text: btn.text
-        color: btn.affirmative ? "#00E676" : "#f0f0f0"
-        font.family: "DM Sans"; font.pixelSize: 15; font.bold: true
+        color: btn.danger      ? "#ef4444"
+             : btn.affirmative ? "#00E676"
+             :                   "#f0f0f0"
+        font.family: "DM Sans"; font.pixelSize: btn.fontSize; font.bold: true
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
     }

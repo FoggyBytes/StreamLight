@@ -23,7 +23,7 @@ FocusScope {
     readonly property color _text:     "#f0f0f0"
     readonly property color _textDim:  "#a0a0a0"
     readonly property color _green:    "#00E676"
-    readonly property string _version: "3.4.1"
+    readonly property string _version: "4.0.0"
     readonly property string _mono:    "JetBrains Mono"
 
     // 0 = Home, 1 = Apps, 2 = Settings
@@ -42,7 +42,7 @@ FocusScope {
     property int    _settingsReturnPage: 0
 
     // ── Remote "Update host" job (state owned by HomeScreen; mirrored for the
-    //    global status-bar chip + RB reopen shortcut) ───────────────────────────
+    //    global status-bar chip + Select reopen shortcut) ─────────────────────────
     readonly property bool   _updateActive:  homeLoader.item ? homeLoader.item.updateJobActive  : false
     readonly property string _updateHost:    homeLoader.item ? homeLoader.item.updateJobHostName : ""
     readonly property string _updatePhase:   homeLoader.item ? homeLoader.item.updateJobPhase    : "IDLE"
@@ -84,13 +84,27 @@ FocusScope {
     Keys.onEscapePressed: { event.accepted = _goBack() }
     Keys.onBackPressed:   { event.accepted = _goBack() }
 
-    // RB (PageDown) reopens the running "Update host" view. Only on Home (where
-    // PageDown is otherwise unused) and only while a job is active, so it never
-    // steals the Settings tab-navigation.
+    // On Home: LB/RB (PageUp/PageDown) switch the focused host's active streaming
+    // profile (no-ops with ≤ 1 profile). Select (Key_F13) reopens the running
+    // "Update host" view when a host update job is active.
     Keys.onPressed: {
-        if (event.key === Qt.Key_PageDown && appShell._updateActive && currentPage === 0) {
-            appShell.reopenUpdateDialog()
-            event.accepted = true
+        if (currentPage !== 0)
+            return
+        if (event.key === Qt.Key_F13) {
+            if (appShell._updateActive) {
+                appShell.reopenUpdateDialog()
+                event.accepted = true
+            }
+        } else if (event.key === Qt.Key_PageDown) {
+            if (homeLoader.item && homeLoader.item.focusedProfileCount > 1) {
+                homeLoader.item.cycleFocusedProfile(1)
+                event.accepted = true
+            }
+        } else if (event.key === Qt.Key_PageUp) {
+            if (homeLoader.item && homeLoader.item.focusedProfileCount > 1) {
+                homeLoader.item.cycleFocusedProfile(-1)
+                event.accepted = true
+            }
         }
     }
 
@@ -109,10 +123,35 @@ FocusScope {
         currentPage           = 1
     }
 
+    // Active-profile context passed into Settings: when Settings is opened from a
+    // host's app view and that host has an active profile, the rows the profile
+    // overrides are shown greyed + disabled (changing them wouldn't affect that
+    // host). Empty when opened from Home (no host context).
+    property var    _settingsProfileOverride: ({})
+    property string _settingsProfileName: ""
+
     // Also called by main.qml Keys.onMenuPressed.
     function openSettings() {
         if (currentPage !== 2) {
             _settingsReturnPage = currentPage
+            // Determine the host context: the app-view host, or (from Home) the
+            // highlighted host card. Its active profile drives the greyed rows.
+            var mdl = null, idx = -1
+            if (currentPage === 1 && _appsModel && _appsIdx >= 0) {
+                mdl = _appsModel; idx = _appsIdx
+            } else if (currentPage === 0 && homeLoader.item
+                       && homeLoader.item.computerModel
+                       && homeLoader.item.currentHostIndex >= 0) {
+                mdl = homeLoader.item.computerModel
+                idx = homeLoader.item.currentHostIndex
+            }
+            if (mdl && idx >= 0) {
+                _settingsProfileOverride = mdl.hostActiveOverride(idx)
+                _settingsProfileName     = mdl.hostActiveProfileName(idx)
+            } else {
+                _settingsProfileOverride = ({})
+                _settingsProfileName     = ""
+            }
         }
         currentPage = 2
     }
@@ -149,6 +188,11 @@ FocusScope {
                 appsLoader.item.stopFocusedApp()
             }
             break
+        case "customize":
+            if (appsLoader.item && appsLoader.item.openCustomizeForFocused) {
+                appsLoader.item.openCustomizeForFocused()
+            }
+            break
         case "change":
             SdlGamepadKeyNavigation.simulateKey(Qt.Key_Space)
             break
@@ -157,6 +201,14 @@ FocusScope {
             break
         case "nextTab":
             SdlGamepadKeyNavigation.simulateKey(Qt.Key_PageDown)
+            break
+        case "prevProfile":
+            if (homeLoader.item && homeLoader.item.cycleFocusedProfile)
+                homeLoader.item.cycleFocusedProfile(-1)
+            break
+        case "nextProfile":
+            if (homeLoader.item && homeLoader.item.cycleFocusedProfile)
+                homeLoader.item.cycleFocusedProfile(1)
             break
         case "defaultBitrate":
             if (settingsLoader.item && settingsLoader.item.resetBitrateToDefault) {
@@ -242,6 +294,8 @@ FocusScope {
             focus: currentPage === 2
             source: "qrc:/gui/SettingsScreen.qml"
             onLoaded: {
+                item.activeProfileOverride = appShell._settingsProfileOverride
+                item.activeProfileName     = appShell._settingsProfileName
                 item.forceActiveFocus()
             }
         }
@@ -265,20 +319,38 @@ FocusScope {
         }
 
         readonly property bool _padIsPs: SdlGamepadKeyNavigation.controllerType === "ps"
+        readonly property bool _padIsSwitch: SdlGamepadKeyNavigation.controllerType === "switch"
 
-        readonly property string _iconA: _padIsPs ? "qrc:/res/pad_ps_cross.svg"    : "qrc:/res/pad_xbox_a.svg"
-        readonly property string _iconB: _padIsPs ? "qrc:/res/pad_ps_circle.svg"   : "qrc:/res/pad_xbox_b.svg"
-        readonly property string _iconX: _padIsPs ? "qrc:/res/pad_ps_square.svg"   : "qrc:/res/pad_xbox_x.svg"
-        readonly property string _iconY: _padIsPs ? "qrc:/res/pad_ps_triangle.svg" : "qrc:/res/pad_xbox_y.svg"
-        readonly property string _iconL: _padIsPs ? "qrc:/res/pad_ps_l1.svg"       : "qrc:/res/pad_xbox_lb.svg"
-        readonly property string _iconR: _padIsPs ? "qrc:/res/pad_ps_r1.svg"       : "qrc:/res/pad_xbox_rb.svg"
+        // Glyphs are chosen by SDL button POSITION. Nintendo swaps A/B and X/Y
+        // relative to Xbox, so the Switch glyph for the south button (_iconA)
+        // is the one labeled "B", the east button (_iconB) is labeled "A", etc.
+        readonly property string _iconA: _padIsPs ? "qrc:/res/pad_ps_cross.svg"    : _padIsSwitch ? "qrc:/res/pad_switch_b.svg" : "qrc:/res/pad_xbox_a.svg"
+        readonly property string _iconB: _padIsPs ? "qrc:/res/pad_ps_circle.svg"   : _padIsSwitch ? "qrc:/res/pad_switch_a.svg" : "qrc:/res/pad_xbox_b.svg"
+        readonly property string _iconX: _padIsPs ? "qrc:/res/pad_ps_square.svg"   : _padIsSwitch ? "qrc:/res/pad_switch_y.svg" : "qrc:/res/pad_xbox_x.svg"
+        readonly property string _iconY: _padIsPs ? "qrc:/res/pad_ps_triangle.svg" : _padIsSwitch ? "qrc:/res/pad_switch_x.svg" : "qrc:/res/pad_xbox_y.svg"
+        readonly property string _iconL: _padIsPs ? "qrc:/res/pad_ps_l1.svg"       : _padIsSwitch ? "qrc:/res/pad_switch_l.svg" : "qrc:/res/pad_xbox_lb.svg"
+        readonly property string _iconR: _padIsPs ? "qrc:/res/pad_ps_r1.svg"       : _padIsSwitch ? "qrc:/res/pad_switch_r.svg" : "qrc:/res/pad_xbox_rb.svg"
+        // Select / Back / View / Create / − button.
+        readonly property string _iconSelect: _padIsPs ? "qrc:/res/pad_ps_create.svg" : _padIsSwitch ? "qrc:/res/pad_switch_minus.svg" : "qrc:/res/pad_xbox_view.svg"
 
-        readonly property var _hintsHome: [
-            { icon: _iconA, act: qsTr("Open"),     sh: false, kind: "openCard" },
-            { icon: _iconX, act: qsTr("Shutdown"), sh: false, kind: "shutdownHost" },
-            { icon: _iconY, act: qsTr("Settings"), sh: false, kind: "settings" },
-            { icon: _iconB, act: qsTr("Exit"),     sh: false, kind: "back" }
-        ]
+        // LB/RB "Prev/Next profile" appear only when the focused host has >1 profile.
+        readonly property int _homeProfileCount:
+            (currentPage === 0 && homeLoader.item && homeLoader.item.focusedProfileCount !== undefined)
+                ? homeLoader.item.focusedProfileCount : 0
+        property var _hintsHome: {
+            var base = [
+                { icon: _iconA, act: qsTr("Open"),     sh: false, kind: "openCard" },
+                { icon: _iconX, act: qsTr("Shutdown"), sh: false, kind: "shutdownHost" },
+                { icon: _iconY, act: qsTr("Settings"), sh: false, kind: "settings" },
+                { icon: _iconB, act: qsTr("Exit"),     sh: false, kind: "back" }
+            ]
+            if (statusBar._homeProfileCount > 1) {
+                base.push(
+                    { icon: _iconL, act: qsTr("Prev profile"), sh: true, kind: "prevProfile" },
+                    { icon: _iconR, act: qsTr("Next profile"), sh: true, kind: "nextProfile" })
+            }
+            return base
+        }
         // Apps prompts swap to Resume/Stop when the focused app is the running one.
         readonly property bool _focusedAppRunning:
             currentPage === 1
@@ -287,16 +359,18 @@ FocusScope {
         property var _hintsApps: {
             if (statusBar._focusedAppRunning) {
                 return [
-                    { icon: _iconA, act: qsTr("Resume"),   sh: false, kind: "launchApp" },
-                    { icon: _iconX, act: qsTr("Stop"),     sh: false, kind: "stopApp" },
-                    { icon: _iconB, act: qsTr("Back"),     sh: false, kind: "back" },
-                    { icon: _iconY, act: qsTr("Settings"), sh: false, kind: "settings" }
+                    { icon: _iconA, act: qsTr("Resume"),    sh: false, kind: "launchApp" },
+                    { icon: _iconX, act: qsTr("Stop"),      sh: false, kind: "stopApp" },
+                    { icon: _iconB, act: qsTr("Back"),      sh: false, kind: "back" },
+                    { icon: _iconY, act: qsTr("Settings"),  sh: false, kind: "settings" },
+                    { icon: _iconSelect, act: qsTr("Customize"), sh: true,  kind: "customize" }
                 ]
             }
             return [
-                { icon: _iconA, act: qsTr("Launch"),   sh: false, kind: "launchApp" },
-                { icon: _iconB, act: qsTr("Back"),     sh: false, kind: "back" },
-                { icon: _iconY, act: qsTr("Settings"), sh: false, kind: "settings" }
+                { icon: _iconA, act: qsTr("Launch"),    sh: false, kind: "launchApp" },
+                { icon: _iconB, act: qsTr("Back"),      sh: false, kind: "back" },
+                { icon: _iconY, act: qsTr("Settings"),  sh: false, kind: "settings" },
+                { icon: _iconSelect, act: qsTr("Customize"), sh: true,  kind: "customize" }
             ]
         }
         // Settings prompts add "X · Default" when the bitrate differs from recommended.
@@ -406,7 +480,7 @@ FocusScope {
 
                     Image {
                         anchors.verticalCenter: parent.verticalCenter
-                        source: statusBar._iconR
+                        source: statusBar._iconSelect
                         width: 40; height: 24
                         sourceSize.width: 80; sourceSize.height: 48
                         fillMode: Image.PreserveAspectFit; smooth: true

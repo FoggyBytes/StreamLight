@@ -34,8 +34,8 @@ Windows 10 and 11. Works as a standalone Moonlight-compatible client against any
 
 **🏠 Home & App Grid**
 - Portrait host cards with per-host coloured gradient headers and an inline **+ Add Hosts** tile
-- Per-card **Options** chooser *(a wide tile grid as of 3.3.0)*: All Apps, Tailscale, Test Network, Rename, Delete, Details, **StreamTweak Streaming Mode**, Power…, Windows Update, Wake
-- Compact one-row header in the app grid: `hostname · ONLINE · IP · NIC speed · resolution · FPS`
+- Per-card **Profiles** and **Options** buttons under each tile *(Profiles new in 4.0.0)*. **Options** *(a wide tile grid as of 3.3.0)*: All Apps, Tailscale, Test Network, Rename, Delete, Details, **StreamTweak Streaming Mode**, Power…, Windows Update, Wake
+- One-row header in the app grid: `profile · ONLINE · IP · NIC speed · resolution · FPS · bitrate · HDR · codec · audio` *(effective config, reflecting the active host profile; new fields in 4.0.0)*
 - 200×267 covers with store badges and a tight bright-green focus border; the running app's cover gets a thicker, pulsing border
 - App-name tooltip appears **instantly** below the cover, anchored outside the focus frame
 
@@ -68,6 +68,18 @@ These features cross the bridge and require both apps. The version next to each 
 - **Remote Host Power-Off** *(StreamTweak 7.2.0+)* — a **Power…** chooser (Options menu) shuts down the host PC, this client PC, or both; a status-bar **X · Shutdown** shortcut opens it for the highlighted host. Host power-off rides the authenticated bridge and only works on an AUTHORIZED host
 - **Remote Windows Update** *(StreamTweak 7.3.0+)* — Options → **Check Windows Update on host…** scans, classifies and installs Windows updates on the host (Security + Defender / All), rebooting only if required, with a backgroundable progress view. The Power… chooser can also **install pending updates before shutting down**, on the host and/or this client, showing where updates are pending
 - **Tailscale, unified into one tile** *(StreamTweak 6.3.0+; single tile in StreamLight 3.3.0)* — after pairing via LAN IP, StreamLight queries the `TAILSCALE` bridge command. If StreamTweak reports a `100.x.y.z` Tailscale address, StreamLight records it on the host's **single** tile, which then tracks both the LAN and Tailscale IPs and shows a `TAILSCALE · AVAILABLE` badge (just `TAILSCALE` when only the Tailscale path is up). Opening the host or *All Apps* uses whichever path is available (LAN locally, Tailscale remotely); a dedicated **Tailscale** option forces the `100.x` endpoint. Combined with the **Auto-start Tailscale on launch** Settings toggle, the round-trip is automatic: open StreamLight → Tailscale comes up → one click streams from anywhere
+
+## ✨ What's New in 4.0.0 — The Profiles Update
+
+No StreamTweak update required — everything in 4.0.0 is client-side.
+
+- **Per-game settings** — each game can override the global streaming settings (resolution, frame rate, bitrate, HDR, video codec, frame pacing, audio); anything left on **"Global"** inherits your main Settings. Open it from a game's tile (the **tune** icon, top-right) or press **Select** on the highlighted game with a gamepad. A green badge marks customized games; the global settings are never touched. *(e.g. a AAA title at 4K/120/AV1/HDR, a 2D indie at 1080p/60.)*
+- **Per-host profiles** — save up to **three named profiles per host** (e.g. a *Docked* 4K/120/HDR profile and a *Portable* 1080p/60 SDR one) and switch between them in a click. A new **Profiles** button under each host tile opens the manager: create, rename (≤14 chars) and delete profiles, or pick **Off** to fall back to the global settings. The active profile is applied automatically every time you stream that host; **LB / RB** cycle it straight from the host list. Profiles activate only on confirm (**A** / click) — moving the cursor never changes the active one. Per-game settings stack **on top** of the active profile (cascade: global ← host profile ← per-game).
+- **Settings reflect the active profile** — with a host profile active, opening Settings shows the rows that profile overrides as **greyed and locked**, with a *🔒 "Greyed settings are controlled by the active host profile"* notice at the top of each affected section.
+- **Richer host header** — the app-list header now shows the full **effective** config: `profile · IP · NIC · resolution · FPS · bitrate · HDR (when on) · codec · audio`.
+- **Hide host IP addresses** — a privacy toggle (*Settings → Session*) masks every host IP across the app as `•••.•••.•••.•••` — handy for screenshots. Off by default.
+- **Nintendo controller glyphs** — the status bar now shows Switch-style A/B/X/Y/L/R icons (mapped by physical button position) when a Switch Pro Controller or Joy-Cons are connected, next to the existing Xbox and PlayStation glyphs.
+- **Frame Pacing modes renamed** — the two manual modes are now **Software** / **Hardware** (was Matched / Multiple), naming the pacer that actually runs. Same behaviour.
 
 ## ✨ What's New in 3.4.1 — Frame Pacing Modes
 
@@ -143,7 +155,7 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
 ## 📝 Installation
 
 1. Go to the **Releases** page of this repository.
-2. Download the latest installer (`StreamLight_3.4.0_Installer.exe`) and run it.
+2. Download the latest installer (`StreamLight_4.0.0_Installer.exe`) and run it.
 
 Settings (paired hosts, video / audio / input preferences, client certificate) are stored under `HKCU\Software\Moonlight Game Streaming Project\Moonlight` — the same location used by upstream Moonlight and StreamLight 2.x. Upgrades from 2.x preserve all your hosts and preferences automatically. Box-art cache lives in `%LOCALAPPDATA%\Moonlight Game Streaming Project\Moonlight`.
 

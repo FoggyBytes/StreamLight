@@ -91,14 +91,19 @@ FocusScope {
         }
     }
 
+    // At a boundary we leave the event UNaccepted so KeyNavigation.left/right
+    // (if set on the instance) can move focus to a neighbour — e.g. Right past
+    // the last profile tab focuses the "+ Add" button.
     Keys.onLeftPressed: {
         var i = selector.currentIndex - 1
         while (i >= 0 && selector.isDisabled(i)) i--
         if (i >= 0) {
             selector.currentIndex = i
             selector.activated(i)
+            event.accepted = true
+        } else {
+            event.accepted = false
         }
-        event.accepted = true
     }
     Keys.onRightPressed: {
         var i = selector.currentIndex + 1
@@ -106,7 +111,9 @@ FocusScope {
         if (i < selector.labels.length) {
             selector.currentIndex = i
             selector.activated(i)
+            event.accepted = true
+        } else {
+            event.accepted = false
         }
-        event.accepted = true
     }
 }

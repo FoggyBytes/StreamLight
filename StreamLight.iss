@@ -1,8 +1,8 @@
-; StreamLight 3.4.1 — Moonlight fork with StreamTweak integration.
+; StreamLight 4.0.0 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
-#define AppVersion "3.4.1"
+#define AppVersion "4.0.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -168,7 +168,8 @@ begin
     '•  Auto HDR toggle + spatial audio (Dolby Atmos / Windows Sonic)' + #13#10 +
     '•  Game library sync with store badges (Steam, Epic, GOG, Xbox, …)' + #13#10 +
     '•  Session quality grading and per-stream telemetry' + #13#10 +
-    '•  Tailscale dual-tile for remote streaming over the internet';
+    '•  Remote host power-off and Windows Update' + #13#10 +
+    '•  Tailscale presence for remote streaming over the internet';
 
   StreamTweakOutroLabel := TNewStaticText.Create(StreamTweakPage);
   StreamTweakOutroLabel.Parent := StreamTweakPage.Surface;

@@ -18,6 +18,11 @@ public:
 
     void reload();
 
+    // Creates a standalone copy of these preferences (not the QML singleton, not
+    // persisted). Used to build per-game effective settings at launch without
+    // mutating the global object. See AppSettingsManager.
+    StreamingPreferences* clone(QObject* parent = nullptr) const;
+
     enum AudioConfig
     {
         AC_STEREO,
@@ -131,6 +136,7 @@ public:
     Q_PROPERTY(bool swapFaceButtons MEMBER swapFaceButtons NOTIFY swapFaceButtonsChanged)
     Q_PROPERTY(bool keepAwake MEMBER keepAwake NOTIFY keepAwakeChanged)
     Q_PROPERTY(bool hueSyncIntegration MEMBER hueSyncIntegration NOTIFY hueSyncIntegrationChanged)
+    Q_PROPERTY(bool hideHostIps MEMBER hideHostIps NOTIFY hideHostIpsChanged)
     Q_PROPERTY(bool tailscaleAutoStart MEMBER tailscaleAutoStart NOTIFY tailscaleAutoStartChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
     // Directly accessible members for preferences
@@ -163,6 +169,7 @@ public:
     bool swapFaceButtons;
     bool keepAwake;
     bool hueSyncIntegration;
+    bool hideHostIps;
     bool tailscaleAutoStart;
     int packetSize;
     AudioConfig audioConfig;
@@ -212,6 +219,7 @@ signals:
     void captureSysKeysModeChanged();
     void keepAwakeChanged();
     void hueSyncIntegrationChanged();
+    void hideHostIpsChanged();
     void tailscaleAutoStartChanged();
 private:
     explicit StreamingPreferences(QQmlEngine *qmlEngine);

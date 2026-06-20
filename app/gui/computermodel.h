@@ -26,7 +26,10 @@ class ComputerModel : public QAbstractListModel
         PhysicalAddressRole,
         TailscaleAddressRole,
         HasTailscaleRole,
-        TailscaleActiveRole
+        TailscaleActiveRole,
+        ProfileCountRole,
+        ActiveProfileSlotRole,
+        ActiveProfileNameRole
     };
 
 public:
@@ -126,6 +129,23 @@ public:
 
     /** Clears any Tailscale session pin on all hosts (poller reverts to LAN-first). */
     Q_INVOKABLE void clearTailscalePreferences();
+
+    // ── Per-host streaming profiles (StreamLight 4.0.0) ──────────────────────
+    Q_INVOKABLE int hostProfileCount(int computerIndex) const;
+    Q_INVOKABLE int hostActiveProfile(int computerIndex) const;       // slot, or -1
+    Q_INVOKABLE QString hostActiveProfileName(int computerIndex) const;
+    Q_INVOKABLE void setHostActiveProfile(int computerIndex, int slot);
+    Q_INVOKABLE void cycleHostProfile(int computerIndex, int dir);    // -1 prev / +1 next
+    Q_INVOKABLE QString hostProfileName(int computerIndex, int slot) const;
+    Q_INVOKABLE void setHostProfileName(int computerIndex, int slot, const QString& name);
+    Q_INVOKABLE QVariantMap hostProfileSettings(int computerIndex, int slot) const;
+    Q_INVOKABLE void setHostProfileSettings(int computerIndex, int slot, const QVariantMap& ov);
+    Q_INVOKABLE int addHostProfile(int computerIndex);                // new slot, or -1
+    Q_INVOKABLE void removeHostProfile(int computerIndex, int slot);
+
+    // The active profile's override as a QVariantMap (keys: width/height/fps/
+    // bitrate/hdr/codec/framepacing/audio/hue). Empty when no profile is active.
+    Q_INVOKABLE QVariantMap hostActiveOverride(int computerIndex) const;
 
 signals:
     void pairingCompleted(QVariant error);

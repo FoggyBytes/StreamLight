@@ -51,6 +51,7 @@
 #define SER_CAPTURESYSKEYS "capturesyskeys"
 #define SER_KEEPAWAKE "keepawake"
 #define SER_HUESYNC "huesync"
+#define SER_HIDEHOSTIPS "hidehostips"
 #define SER_TAILSCALE_AUTOSTART "tailscaleautostart"
 #define CURRENT_DEFAULT_VER 2
 
@@ -99,6 +100,59 @@ StreamingPreferences* StreamingPreferences::get(QQmlEngine *qmlEngine)
 
         return s_GlobalPrefs;
     }
+}
+
+StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
+{
+    // Private ctor reloads from QSettings; we then overwrite with this object's
+    // in-memory values so unsaved changes are captured too. The result is a plain
+    // (non-singleton, non-QML, non-persisted) copy used for a single session.
+    auto* p = new StreamingPreferences(nullptr);
+
+    p->width = width;
+    p->height = height;
+    p->fps = fps;
+    p->bitrateKbps = bitrateKbps;
+    p->unlockBitrate = unlockBitrate;
+    p->autoAdjustBitrate = autoAdjustBitrate;
+    p->enableVsync = enableVsync;
+    p->gameOptimizations = gameOptimizations;
+    p->playAudioOnHost = playAudioOnHost;
+    p->multiController = multiController;
+    p->enableMdns = enableMdns;
+    p->quitAppAfter = quitAppAfter;
+    p->absoluteMouseMode = absoluteMouseMode;
+    p->absoluteTouchMode = absoluteTouchMode;
+    p->framePacingMode = framePacingMode;
+    p->connectionWarnings = connectionWarnings;
+    p->configurationWarnings = configurationWarnings;
+    p->richPresence = richPresence;
+    p->gamepadMouse = gamepadMouse;
+    p->detectNetworkBlocking = detectNetworkBlocking;
+    p->autoReconnectNoVideo = autoReconnectNoVideo;
+    p->overlayMode = overlayMode;
+    p->swapMouseButtons = swapMouseButtons;
+    p->muteOnFocusLoss = muteOnFocusLoss;
+    p->backgroundGamepad = backgroundGamepad;
+    p->reverseScrollDirection = reverseScrollDirection;
+    p->swapFaceButtons = swapFaceButtons;
+    p->keepAwake = keepAwake;
+    p->hueSyncIntegration = hueSyncIntegration;
+    p->hideHostIps = hideHostIps;
+    p->tailscaleAutoStart = tailscaleAutoStart;
+    p->packetSize = packetSize;
+    p->audioConfig = audioConfig;
+    p->videoCodecConfig = videoCodecConfig;
+    p->enableHdr = enableHdr;
+    p->enableYUV444 = enableYUV444;
+    p->videoDecoderSelection = videoDecoderSelection;
+    p->windowMode = windowMode;
+    p->recommendedFullScreenMode = recommendedFullScreenMode;
+    p->uiDisplayMode = uiDisplayMode;
+    p->captureSysKeysMode = captureSysKeysMode;
+
+    p->setParent(parent);
+    return p;
 }
 
 void StreamingPreferences::reload()
@@ -174,6 +228,7 @@ void StreamingPreferences::reload()
     swapFaceButtons = settings.value(SER_SWAPFACEBUTTONS, false).toBool();
     keepAwake = settings.value(SER_KEEPAWAKE, true).toBool();
     hueSyncIntegration = settings.value(SER_HUESYNC, false).toBool();
+    hideHostIps = settings.value(SER_HIDEHOSTIPS, false).toBool();
     tailscaleAutoStart = settings.value(SER_TAILSCALE_AUTOSTART, false).toBool();
     enableHdr = settings.value(SER_HDR, false).toBool();
     captureSysKeysMode = static_cast<CaptureSysKeysMode>(settings.value(SER_CAPTURESYSKEYS,
@@ -259,6 +314,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_CAPTURESYSKEYS, captureSysKeysMode);
     settings.setValue(SER_KEEPAWAKE, keepAwake);
     settings.setValue(SER_HUESYNC, hueSyncIntegration);
+    settings.setValue(SER_HIDEHOSTIPS, hideHostIps);
     settings.setValue(SER_TAILSCALE_AUTOSTART, tailscaleAutoStart);
 }
 

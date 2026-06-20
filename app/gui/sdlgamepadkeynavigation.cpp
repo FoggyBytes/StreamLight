@@ -323,10 +323,11 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
                 sendKey(type, Qt::Key_Menu);
                 break;
             case SDL_CONTROLLER_BUTTON_Y:
-            case SDL_CONTROLLER_BUTTON_START:
                 // HACK: We use this keycode to inform main.qml
                 // to show the settings when Key_Menu is handled
                 // by the control in focus.
+                // NB: Only Y opens Settings — Start is intentionally NOT mapped
+                // here (it used to also open Settings, which was unwanted).
                 sendKey(type, Qt::Key_Hangup);
                 break;
             case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
@@ -336,6 +337,13 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
             case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
                 // Used by SettingsScreen to switch to the next tab.
                 sendKey(type, Qt::Key_PageDown);
+                break;
+            case SDL_CONTROLLER_BUTTON_BACK:
+                // Select / View / Create / − button. Used by the app list to open
+                // per-game Customize. NB: NOT Qt::Key_Select — that key is treated
+                // by Qt as an activation key (it would launch the focused app).
+                // Key_F13 is inert and only our explicit handler consumes it.
+                sendKey(type, Qt::Key_F13);
                 break;
             default:
                 break;

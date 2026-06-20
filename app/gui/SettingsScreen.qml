@@ -40,6 +40,23 @@ FocusScope {
     // Read by AppShell to show the "X · Default" status-bar prompt.
     property bool bitrateNonDefault: false
 
+    // Active host-profile context (set by AppShell when Settings is opened from a
+    // host with an active profile). Rows whose key the profile overrides are shown
+    // greyed + disabled, since editing them here wouldn't affect that host.
+    // Direct per-key bindings (not a function) so they react when the map is set.
+    property var    activeProfileOverride: ({})
+    property string activeProfileName: ""
+
+    readonly property bool _lockResFps:      activeProfileOverride
+                                             && (activeProfileOverride.width !== undefined
+                                                 || activeProfileOverride.fps !== undefined)
+    readonly property bool _lockBitrate:     activeProfileOverride && activeProfileOverride.bitrate !== undefined
+    readonly property bool _lockHdr:         activeProfileOverride && activeProfileOverride.hdr !== undefined
+    readonly property bool _lockCodec:       activeProfileOverride && activeProfileOverride.codec !== undefined
+    readonly property bool _lockFramePacing: activeProfileOverride && activeProfileOverride.framepacing !== undefined
+    readonly property bool _lockAudio:       activeProfileOverride && activeProfileOverride.audio !== undefined
+    readonly property bool _lockHue:         activeProfileOverride && activeProfileOverride.hue !== undefined
+
     // Latest-release tags fetched once per Settings open from the GitHub API.
     property string streamLightLatest: ""
     property string streamTweakLatest: ""
@@ -396,6 +413,38 @@ FocusScope {
         z: 1
     }
 
+    // Notice placed at the top of any settings sub-block that contains rows locked
+    // by the active host profile. Collapses to zero height when not active.
+    component ProfileLockNotice: Item {
+        property bool active: false
+        width: parent ? parent.width : 0
+        visible: active && settingsScreen.activeProfileName.length > 0
+        height: visible ? settingsScreen._rowHeight : 0
+        Row {
+            anchors.left: parent.left; anchors.leftMargin: 16
+            anchors.right: parent.right; anchors.rightMargin: 16
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+            Label {
+                text: "🔒"; font.pixelSize: 14
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Label {
+                width: parent.width - 28
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Greyed settings are controlled by the active host profile “%1”.")
+                      .arg(settingsScreen.activeProfileName)
+                font.family: "DM Sans"; font.pixelSize: 13
+                color: settingsScreen._textDim
+                wrapMode: Text.WordWrap
+            }
+        }
+        Rectangle {
+            anchors.bottom: parent.bottom
+            x: 16; width: parent.width - 32; height: 1; color: settingsScreen._border
+        }
+    }
+
     Flickable {
         id: contentFlick
         anchors.top: tabBar.bottom
@@ -508,13 +557,23 @@ FocusScope {
                         anchors.topMargin: 4
                         spacing: 0
 
-                        // ── Resolution ────────────────────────────────────────
+                        // Active-profile notice — shown only when this VIDEO block
+                        // actually has a setting locked by the active profile.
+                        ProfileLockNotice {
+                            active: settingsScreen._lockResFps
+                                    || settingsScreen._lockBitrate
+                                    || settingsScreen._lockFramePacing
+                        }
+
+                        // ── Resolution / Frame rate ───────────────────────────
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeight
+                            enabled: !settingsScreen._lockResFps
+                            opacity: enabled ? 1.0 : 0.4
 
                             Label {
-                                text: qsTr("Resolution")
+                                text: qsTr("Resolution / Frame rate")
                                 font.family: "DM Sans"
                                 font.pixelSize: 16
                                 font.bold: true
@@ -526,8 +585,8 @@ FocusScope {
 
                             SegmentedSelector {
                                 id: resolutionSelector
-                                anchors.right: parent.right
-                                anchors.rightMargin: 16
+                                anchors.right: fpsSelector.left
+                                anchors.rightMargin: 24
                                 anchors.verticalCenter: parent.verticalCenter
 
                                 property var _widths:  [1280, 1920, 2560, 3840]
@@ -583,24 +642,6 @@ FocusScope {
                                         }
                                     }
                                 }
-                            }
-                        }
-                        Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
-
-                        // ── Frame rate ────────────────────────────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeight
-
-                            Label {
-                                text: qsTr("Frame rate")
-                                font.family: "DM Sans"
-                                font.pixelSize: 16
-                                font.bold: true
-                                color: settingsScreen._text
-                                anchors.left: parent.left
-                                anchors.leftMargin: 16
-                                anchors.verticalCenter: parent.verticalCenter
                             }
 
                             SegmentedSelector {
@@ -660,6 +701,8 @@ FocusScope {
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeightTall
+                            enabled: !settingsScreen._lockBitrate
+                            opacity: enabled ? 1.0 : 0.4
 
                             Column {
                                 anchors.left: parent.left
@@ -893,6 +936,8 @@ FocusScope {
                         Item {
                             width: parent.width
                             height: Math.max(settingsScreen._rowHeightTall, fpCol.implicitHeight + 16)
+                            enabled: !settingsScreen._lockFramePacing
+                            opacity: enabled ? 1.0 : 0.4
 
                             Column {
                                 id: fpCol
@@ -913,7 +958,7 @@ FocusScope {
                                 Label {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
-                                    text: qsTr("Smooths motion and removes judder. Automatic chooses for you; Matched is for a screen at the stream's FPS (60 Hz / 60 FPS), Multiple for a whole multiple — 120 Hz (2×) or 240 Hz (4×) for 60 FPS.")
+                                    text: qsTr("Removes judder on high-refresh displays. Software paces every frame; Hardware locks the GPU cadence for a multiple-refresh display (e.g. 120 Hz / 60 FPS = 2×, 240 Hz / 60 FPS = 4×).")
                                     font.family: "DM Sans"
                                     font.pixelSize: 13
                                     color: settingsScreen._textDim
@@ -926,7 +971,7 @@ FocusScope {
                                 anchors.rightMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
 
-                                labels: [qsTr("Off"), qsTr("Automatic"), qsTr("Matched"), qsTr("Multiple")]
+                                labels: [qsTr("Off"), qsTr("Automatic"), qsTr("Software"), qsTr("Hardware")]
                                 property var _values: [
                                     StreamingPreferences.FP_OFF,
                                     StreamingPreferences.FP_AUTO,
@@ -987,10 +1032,14 @@ FocusScope {
                         anchors.topMargin: 4
                         spacing: 0
 
+                        ProfileLockNotice { active: settingsScreen._lockAudio }
+
                         // ── Audio configuration ───────────────────────────────
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeight
+                            enabled: !settingsScreen._lockAudio
+                            opacity: enabled ? 1.0 : 0.4
 
                             Label {
                                 text: qsTr("Audio configuration")
@@ -1537,6 +1586,10 @@ FocusScope {
                         anchors.topMargin: 4
                         spacing: 0
 
+                        ProfileLockNotice {
+                            active: settingsScreen._lockCodec || settingsScreen._lockHdr
+                        }
+
                         // ── Video decoder ─────────────────────────────────────
                         Item {
                             width: parent.width
@@ -1584,6 +1637,8 @@ FocusScope {
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeight
+                            enabled: !settingsScreen._lockCodec
+                            opacity: enabled ? 1.0 : 0.4
 
                             Label {
                                 text: qsTr("Video codec")
@@ -1628,6 +1683,8 @@ FocusScope {
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeightTall
+                            enabled: !settingsScreen._lockHdr
+                            opacity: enabled ? 1.0 : 0.4
 
                             Column {
                                 anchors.left: parent.left
@@ -2085,6 +2142,8 @@ FocusScope {
                         anchors.topMargin: 4
                         spacing: 0
 
+                        ProfileLockNotice { active: settingsScreen._lockHue }
+
                         // ── GUI mode (dropdown) ───────────────────────────────
                         Item {
                             width: parent.width
@@ -2264,6 +2323,8 @@ FocusScope {
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeightTall
+                            enabled: !settingsScreen._lockHue
+                            opacity: enabled ? 1.0 : 0.4
 
                             Column {
                                 anchors.left: parent.left
@@ -2294,6 +2355,44 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.hueSyncIntegration
                                 onCheckedChanged: { StreamingPreferences.hueSyncIntegration = checked }
+                            }
+                        }
+                        Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
+
+                        // ── Hide host IP addresses ────────────────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+
+                                Label {
+                                    text: qsTr("Hide host IP addresses")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 16
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Masks host IPs across the app for privacy (e.g. screenshots)")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 13
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            FocusFrame { anchors.fill: hideIpsSwitch; anchors.margins: -3; target: hideIpsSwitch }
+                            STSwitch {
+                                id: hideIpsSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.hideHostIps
+                                onCheckedChanged: { StreamingPreferences.hideHostIps = checked }
                             }
                         }
                     }

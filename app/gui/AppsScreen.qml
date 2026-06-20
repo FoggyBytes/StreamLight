@@ -26,6 +26,22 @@ FocusScope {
     property bool   isTailscaleClone: false
     // NIC speed (e.g. "2.5 Gbps") fetched from StreamTweak via the bridge.
     property string hostNicSpeed: ""
+    // Active per-host streaming profile (empty when no profile is active).
+    property string hostProfileName: ""
+    // Active profile's override map (empty when none). The header shows the
+    // EFFECTIVE config = global StreamingPreferences with this override applied.
+    property var hostOverride: ({})
+
+    readonly property int  _effW:       (hostOverride && hostOverride.width   !== undefined) ? hostOverride.width   : StreamingPreferences.width
+    readonly property int  _effH:       (hostOverride && hostOverride.height  !== undefined) ? hostOverride.height  : StreamingPreferences.height
+    readonly property int  _effFps:     (hostOverride && hostOverride.fps     !== undefined) ? hostOverride.fps     : StreamingPreferences.fps
+    readonly property int  _effBitrate: (hostOverride && hostOverride.bitrate !== undefined) ? hostOverride.bitrate : StreamingPreferences.bitrateKbps
+    readonly property bool _effHdr:     (hostOverride && hostOverride.hdr     !== undefined) ? hostOverride.hdr     : StreamingPreferences.enableHdr
+    readonly property int  _effCodec:   (hostOverride && hostOverride.codec   !== undefined) ? hostOverride.codec   : StreamingPreferences.videoCodecConfig
+    readonly property int  _effAudio:   (hostOverride && hostOverride.audio   !== undefined) ? hostOverride.audio   : StreamingPreferences.audioConfig
+
+    function _codecLabel(c) { return c === 1 ? "H.264" : c === 2 ? "HEVC" : c === 4 ? "AV1" : qsTr("Auto codec") }
+    function _audioLabel(a) { return a === 1 ? "5.1" : a === 2 ? "7.1" : qsTr("Stereo") }
 
     // ── Local design tokens ──────────────────────────────────────────────────
     readonly property color _text:    "#f0f0f0"
@@ -55,13 +71,13 @@ FocusScope {
         return palette[Math.abs(h) % palette.length]
     }
 
-    // Y → Settings; X (Menu) → stop running app if focused.
+    // Y → Settings; X (Menu) → stop running app if focused; RB → Customize.
     Keys.onHangupPressed: { if (appShell) appShell.openSettings() }
     Keys.onMenuPressed: {
         if (focusedAppIsRunning) {
             stopFocusedApp()
-            event.accepted = true
         }
+        event.accepted = true
     }
 
     // Bound to delegate._running (a property — reactive) so the status-bar
@@ -77,6 +93,20 @@ FocusScope {
     function stopFocusedApp() {
         if (appGrid && appGrid.currentItem && appGrid.currentItem.doQuitGame) {
             appGrid.currentItem.doQuitGame()
+        }
+    }
+    function openCustomize(idx, name) {
+        if (idx === undefined || idx < 0) return
+        appSettingsDialog.appModel = appGrid.appModel
+        appSettingsDialog.appIndex = idx
+        appSettingsDialog.appName = name ? name : ""
+        // So the per-game "inherit" option shows the active profile's name.
+        appSettingsDialog.activeProfileName = appsRoot.hostProfileName
+        appSettingsDialog.open()
+    }
+    function openCustomizeForFocused() {
+        if (appGrid && appGrid.currentItem) {
+            openCustomize(appGrid.currentIndex, appGrid.currentItem._appName)
         }
     }
 
@@ -98,6 +128,9 @@ FocusScope {
     function _initFromHost() {
         if (!hostComputerModel || computerIndex < 0) return
         hostComputerModel.requestStreamTweakStatus(computerIndex)
+        hostProfileName = (hostComputerModel.hostActiveProfile(computerIndex) >= 0)
+                          ? hostComputerModel.hostActiveProfileName(computerIndex) : ""
+        hostOverride = hostComputerModel.hostActiveOverride(computerIndex)
         if (appGrid) {
             appGrid.storeMap = hostComputerModel.getCachedAppStores(computerIndex)
             hostComputerModel.requestAppStores(computerIndex)
@@ -208,6 +241,36 @@ FocusScope {
                 }
             }
 
+            // Active profile badge — shown only when a per-host profile is active.
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: appsRoot.hostProfileName.length > 0
+                text: "·"
+                color: appsRoot._textMut
+                font.pixelSize: 16
+            }
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: appsRoot.hostProfileName.length > 0
+                width: profileBadgeLabel.implicitWidth + 14
+                height: 22
+                radius: 3
+                color: Qt.rgba(0, 0, 0, 0.35)
+                border.color: "#ffffff"
+                border.width: 1
+
+                Label {
+                    id: profileBadgeLabel
+                    anchors.centerIn: parent
+                    text: appsRoot.hostProfileName.toUpperCase()
+                    color: "#ffffff"
+                    font.family: "DM Sans"
+                    font.pixelSize: 10
+                    font.bold: true
+                    font.letterSpacing: 1.2
+                }
+            }
+
             // TAILSCALE badge — mirrors the one on the HomeScreen tile.
             Label {
                 anchors.verticalCenter: parent.verticalCenter
@@ -240,6 +303,7 @@ FocusScope {
 
             Label {
                 anchors.verticalCenter: parent.verticalCenter
+                visible: !StreamingPreferences.hideHostIps
                 text: "·"
                 color: appsRoot._textMut
                 font.pixelSize: 16
@@ -247,7 +311,8 @@ FocusScope {
 
             Label {
                 anchors.verticalCenter: parent.verticalCenter
-                text: appsRoot.hostAddress && appsRoot.hostAddress.length > 0
+                visible: !StreamingPreferences.hideHostIps
+                text: (appsRoot.hostAddress && appsRoot.hostAddress.length > 0)
                       ? appsRoot.hostAddress : qsTr("N/A")
                 color: appsRoot._textDim
                 font.family: appsRoot._mono
@@ -282,12 +347,12 @@ FocusScope {
             Label {
                 anchors.verticalCenter: parent.verticalCenter
                 text: {
-                    var h = StreamingPreferences.height
+                    var h = appsRoot._effH
                     if (h >= 2160) return "4K"
                     if (h >= 1440) return "1440p"
                     if (h >= 1080) return "1080p"
                     if (h >= 720)  return "720p"
-                    return StreamingPreferences.width + "x" + h
+                    return appsRoot._effW + "x" + h
                 }
                 color: appsRoot._textDim
                 font.family: appsRoot._mono
@@ -303,7 +368,70 @@ FocusScope {
 
             Label {
                 anchors.verticalCenter: parent.verticalCenter
-                text: StreamingPreferences.fps + " FPS"
+                text: appsRoot._effFps + " FPS"
+                color: appsRoot._textDim
+                font.family: appsRoot._mono
+                font.pixelSize: 14
+            }
+
+            // ── Bitrate ───────────────────────────────────────────────────
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "·"
+                color: appsRoot._textMut
+                font.pixelSize: 16
+            }
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: (appsRoot._effBitrate / 1000).toFixed(0) + " Mbps"
+                color: appsRoot._textDim
+                font.family: appsRoot._mono
+                font.pixelSize: 14
+            }
+
+            // ── HDR (only when effectively ON) ────────────────────────────
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: appsRoot._effHdr
+                text: "·"
+                color: appsRoot._textMut
+                font.pixelSize: 16
+            }
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: appsRoot._effHdr
+                text: "HDR"
+                color: appsRoot._greenLk
+                font.family: appsRoot._mono
+                font.pixelSize: 14
+                font.bold: true
+            }
+
+            // ── Video codec ───────────────────────────────────────────────
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "·"
+                color: appsRoot._textMut
+                font.pixelSize: 16
+            }
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: appsRoot._codecLabel(appsRoot._effCodec)
+                color: appsRoot._textDim
+                font.family: appsRoot._mono
+                font.pixelSize: 14
+            }
+
+            // ── Audio ─────────────────────────────────────────────────────
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "·"
+                color: appsRoot._textMut
+                font.pixelSize: 16
+            }
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: appsRoot._audioLabel(appsRoot._effAudio)
                 color: appsRoot._textDim
                 font.family: appsRoot._mono
                 font.pixelSize: 14
@@ -391,6 +519,16 @@ FocusScope {
         Keys.onEnterPressed:  { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
         Keys.onSpacePressed:  { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
 
+        // Select (View/Create/−) → Customize the focused app. The Select button
+        // is mapped to Key_F13 (Key_Select would be treated as an activation key
+        // and launch the app instead).
+        Keys.onPressed: {
+            if (event.key === Qt.Key_F13) {
+                appsRoot.openCustomizeForFocused()
+                event.accepted = true
+            }
+        }
+
         function storeIconSource(store) {
             if (store === "Steam")           return "qrc:/res/store_steam.svg"
             if (store === "Epic Games")      return "qrc:/res/store_epic.svg"
@@ -421,8 +559,9 @@ FocusScope {
         property alias appNameText: appNameTextLoader.item
 
         // Exposed to appsRoot for the Resume/Stop status-bar swap.
-        property int  _appId:   model.appid
-        property bool _running: model.running
+        property int    _appId:   model.appid
+        property string _appName: model.name
+        property bool   _running: model.running
 
         opacity: model.hidden ? 0.4 : 1.0
 
@@ -481,6 +620,30 @@ FocusScope {
                 NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutSine }
             }
             Binding on opacity { when: !coverFocusBorder._running; value: 1.0 }
+        }
+
+        // Per-game settings ("tune") affordance, top-right of the cover. Green
+        // when this game has overrides, subtle otherwise. Tap to customize.
+        Rectangle {
+            id: tuneBadge
+            anchors.right: appIcon.right
+            anchors.top: appIcon.top
+            anchors.margins: 6
+            width: 36; height: 36; radius: 18
+            z: 4
+            color: model.overridden ? "#E600C853" : "#A0000000"
+            border.color: model.overridden ? "#00E676" : "#60FFFFFF"
+            border.width: 1
+            Image {
+                anchors.centerIn: parent
+                source: "qrc:/res/tune.svg"
+                sourceSize.width: 20; sourceSize.height: 20
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: appsRoot.openCustomize(index, model.name)
+            }
         }
 
         // Instant name pill below the focus border (no hover delay).
@@ -705,4 +868,9 @@ FocusScope {
 
     ScrollBar.vertical: ScrollBar {}
     }   // end GridView (appGrid)
+
+    AppSettingsDialog {
+        id: appSettingsDialog
+        onClosedByUser: appGrid.forceActiveFocus()
+    }
 }       // end Item (appsRoot)

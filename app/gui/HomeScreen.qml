@@ -19,6 +19,10 @@ FocusScope {
     property var appShell: null
     property ComputerModel computerModel: createModel()
 
+    // Index of the currently-highlighted host card (for the Settings active-profile
+    // greying when Settings is opened from Home).
+    readonly property int currentHostIndex: pcList.currentIndex
+
     // Whether Tailscale is installed on THIS client (drives the greyed "Tailscale"
     // host option). Evaluated once — the client's install state rarely changes mid-run.
     readonly property bool _clientHasTailscale: computerModel ? computerModel.clientHasTailscale() : false
@@ -52,6 +56,22 @@ FocusScope {
     // Called when returning to the host list (after an apps/stream session).
     function clearTailscalePreferences() {
         if (computerModel) computerModel.clearTailscalePreferences()
+    }
+
+    // ── Per-host profile switching (LB/RB status-bar shortcut) ────────────────
+    // Number of profiles on the currently-focused host card (0 for the "+ Add"
+    // tile / no hosts). Drives the LB/RB hints, which hide when ≤ 1.
+    readonly property int focusedProfileCount:
+        (pcList.currentItem && pcList.currentItem.profileCount !== undefined)
+            ? pcList.currentItem.profileCount : 0
+
+    // Cycles the focused host's active profile (dir: -1 prev / +1 next). No-op
+    // unless the focused card is a host with more than one profile.
+    function cycleFocusedProfile(dir) {
+        if (!computerModel) return
+        var cur = pcList.currentItem
+        if (cur && cur.profileCount !== undefined && cur.profileCount > 1)
+            computerModel.cycleHostProfile(pcList.currentIndex, dir)
     }
 
     // ── Remote "Update host" job state (one at a time, survives popup close) ───
@@ -322,7 +342,8 @@ FocusScope {
         height: count === 0 ? 220 : Math.ceil(count / pcList._columns) * cellHeight
 
         // Portrait tile: taller than wide, like an app cover.
-        // Inner pcCard is 320 high, Options button 30 + spacing 4 + margins 8 ≈ 380 total.
+        // Inner pcCard is 320 high; Profiles/Options sit side-by-side below it
+        // (one row, 30 high + spacing 4 + margins 8 ≈ 380 total).
         property int _columns: Math.max(1, Math.floor(width / 270))
         cellWidth:  width / _columns
         cellHeight: 380
@@ -337,9 +358,11 @@ FocusScope {
         clip: true
         boundsBehavior: Flickable.StopAtBounds
 
-        // Sub-focus inside a host cell: false = card body (Open),
-        // true = Options button under the card. D-pad Down/Up flips it.
-        property bool subFocusOptions: false
+        // Sub-focus inside a host cell:
+        //   0 = card body (Open) · 1 = Profiles button · 2 = Options button.
+        // Down from the card focuses Profiles; the two buttons sit side-by-side
+        // and are walked with Left/Right; Up returns to the card.
+        property int subFocus: 0
 
         // ── Gamepad / keyboard handling ────────────────────────────────────────
         // A (Space/Return) → activate selected card
@@ -354,8 +377,9 @@ FocusScope {
 
         function _activate() {
             if (!currentItem) return
-            if (pcList.subFocusOptions) currentItem.openCardMenu()
-            else                        currentItem.activateCard()
+            if (pcList.subFocus === 2)      currentItem.openCardMenu()
+            else if (pcList.subFocus === 1) currentItem.openProfiles()
+            else                            currentItem.activateCard()
         }
 
         // Cross-area navigation + card/Options sub-focus.
@@ -363,9 +387,9 @@ FocusScope {
         //  with the sidebar itself in 3.0; we now let GridView handle the
         //  arrow internally, which simply does nothing on the first column.)
         Keys.onUpPressed: {
-            // From Options → back to its card.
-            if (pcList.subFocusOptions) {
-                pcList.subFocusOptions = false
+            // From either button (Profiles/Options) → back to the card body.
+            if (pcList.subFocus > 0) {
+                pcList.subFocus = 0
                 event.accepted = true
                 return
             }
@@ -374,30 +398,53 @@ FocusScope {
             // row, Qt simply ignores the keystroke.
             event.accepted = false
         }
-        Keys.onRightPressed: {
-            // From the last card in the grid → jump to the inline "+ Add Hosts"
-            // tile. Other right-arrow presses fall through to GridView's
-            // default column navigation.
-            if (count > 0 && currentIndex === count - 1 && !pcList.subFocusOptions) {
-                addHostTile.forceActiveFocus()
-                event.accepted = true
-                return
-            }
-            event.accepted = false
-        }
         Keys.onDownPressed: {
             if (count <= 0) {
                 event.accepted = false
                 return
             }
-            // First press from card → sub-focus the Options of the same cell.
-            if (!pcList.subFocusOptions) {
-                pcList.subFocusOptions = true
+            // Card → Profiles (left button of the side-by-side pair).
+            if (pcList.subFocus === 0) {
+                pcList.subFocus = 1
                 event.accepted = true
                 return
             }
-            // Already on Options: drop sub-focus and let the GridView move down.
-            pcList.subFocusOptions = false
+            // Already on a button: drop sub-focus and let the GridView move down.
+            pcList.subFocus = 0
+            event.accepted = false
+        }
+        Keys.onLeftPressed: {
+            // On the buttons row: Options → Profiles; stay on Profiles.
+            if (pcList.subFocus === 2) {
+                pcList.subFocus = 1
+                event.accepted = true
+                return
+            }
+            if (pcList.subFocus === 1) {
+                event.accepted = true
+                return
+            }
+            // Card focus: let GridView do its column navigation.
+            event.accepted = false
+        }
+        Keys.onRightPressed: {
+            // On the buttons row: Profiles → Options; stay on Options.
+            if (pcList.subFocus === 1) {
+                pcList.subFocus = 2
+                event.accepted = true
+                return
+            }
+            if (pcList.subFocus === 2) {
+                event.accepted = true
+                return
+            }
+            // Card focus: from the last card jump to the inline "+ Add Hosts"
+            // tile; otherwise fall through to GridView's column navigation.
+            if (count > 0 && currentIndex === count - 1) {
+                addHostTile.forceActiveFocus()
+                event.accepted = true
+                return
+            }
             event.accepted = false
         }
 
@@ -416,6 +463,10 @@ FocusScope {
             // True when this host can be powered off remotely (drives the X shortcut
             // fallback to client-only when it isn't).
             readonly property bool isPowerableHost: model.online && model.paired
+
+            // Number of saved streaming profiles for this host (drives the chip and
+            // the LB/RB status-bar shortcut). Aliased so it tracks model updates.
+            property int profileCount: model.profileCount
 
             // Exposed to the GridView's key handlers
             function activateCard() { pcCard.doActivate() }
@@ -441,6 +492,15 @@ FocusScope {
                     powerDialog.hostUpdateState  = "unavailable"
                 }
                 powerDialog.open()
+            }
+
+            // Opens the per-host streaming-profiles manager. Shared by the
+            // Profiles button and (future) shortcuts.
+            function openProfiles() {
+                hostProfilesDialog.pcIndex  = index
+                hostProfilesDialog.hostName = model.name
+                hostProfilesDialog.reload()
+                hostProfilesDialog.open()
             }
 
             // Items to show in the dropdown — re-evaluated each time the
@@ -582,10 +642,11 @@ FocusScope {
                 // All three are suppressed when the user is driving with the
                 // mouse (pointer mode) so the keyboard/gamepad selection ring
                 // never coexists with the hover ring on a different card.
-                readonly property bool _isCurrent:   pcList.currentIndex === index
-                readonly property bool _current:     _isCurrent && !homeScreen._pointerMode
-                readonly property bool _focused:     _current && pcList.activeFocus && !pcList.subFocusOptions
-                readonly property bool _optsFocused: _current && pcList.activeFocus &&  pcList.subFocusOptions
+                readonly property bool _isCurrent:        pcList.currentIndex === index
+                readonly property bool _current:          _isCurrent && !homeScreen._pointerMode
+                readonly property bool _focused:          _current && pcList.activeFocus && pcList.subFocus === 0
+                readonly property bool _profilesFocused:  _current && pcList.activeFocus && pcList.subFocus === 1
+                readonly property bool _optsFocused:      _current && pcList.activeFocus && pcList.subFocus === 2
                 readonly property bool _hoverVisible: cardMouse.containsMouse && !homeScreen._keyMode
 
                 function doActivate() {
@@ -790,6 +851,57 @@ FocusScope {
                     }
                 }
 
+                // ── Active-profile chip (bottom-right) ────────────────────────
+                // Styled like the top badges (white border, all-white text).
+                // Shown only when at least one profile exists. Click → next profile.
+                Rectangle {
+                    id: profileChip
+                    anchors.bottom: parent.bottom
+                    anchors.right: parent.right
+                    anchors.bottomMargin: 14
+                    anchors.rightMargin: 14
+                    visible: model.profileCount >= 1 && model.activeProfileSlot >= 0
+                    width: profileChipCol.implicitWidth + 16
+                    height: profileChipCol.implicitHeight + 10
+                    radius: 3
+                    color: Qt.rgba(0, 0, 0, 0.45)
+                    border.color: "#ffffff"
+                    border.width: 1
+
+                    Column {
+                        id: profileChipCol
+                        anchors.centerIn: parent
+                        spacing: 1
+
+                        Label {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: qsTr("PROFILE %1").arg(model.activeProfileSlot + 1)
+                            color: "#ffffff"
+                            font.family: "DM Sans"
+                            font.pixelSize: 9
+                            font.bold: true
+                            font.letterSpacing: 1.5
+                        }
+                        Label {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: model.activeProfileName
+                            color: "#ffffff"
+                            font.family: "DM Sans"
+                            font.pixelSize: 12
+                            font.bold: true
+                            font.letterSpacing: 0.5
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        // Only cycles when there is more than one profile.
+                        onClicked: homeScreen.computerModel.cycleHostProfile(index, 1)
+                    }
+                }
+
                 // ── Central monitor icon (semi-transparent) ───────────────────
                 Image {
                     id: monitorIcon
@@ -834,6 +946,7 @@ FocusScope {
                         spacing: 6
                         Label {
                             anchors.verticalCenter: parent.verticalCenter
+                            visible: !StreamingPreferences.hideHostIps
                             text: {
                                 var ip = model.hasTailscale
                                          ? (model.physicalAddress && model.physicalAddress.length ? model.physicalAddress : model.address)
@@ -846,7 +959,9 @@ FocusScope {
                         }
                         Label {
                             anchors.verticalCenter: parent.verticalCenter
+                            // Only between a visible IP and the GPU.
                             visible: model.gpuModel && model.gpuModel.length > 0
+                                  && !StreamingPreferences.hideHostIps
                             text: " · "
                             font.family: "DM Sans"
                             font.pixelSize: 13
@@ -865,6 +980,7 @@ FocusScope {
                     Label {
                         visible: model.hasTailscale === true
                               && model.tailscaleAddress && model.tailscaleAddress.length > 0
+                              && !StreamingPreferences.hideHostIps
                         text: model.tailscaleAddress || ""
                         font.family: homeScreen._mono
                         font.pixelSize: 13
@@ -903,15 +1019,59 @@ FocusScope {
                 //  rendered as a flat list under the Options button.)
             }
 
-            // ── Options button — below the card ───────────────────────────────
-            // Independently navigable: D-pad Down from card focuses it. Press A
-            // (✕) or click → opens the dropdown list under the button.
+            // ── Profiles button — below the card, left half (side-by-side) ────
+            // D-pad Down from card focuses it; Right moves to Options.
+            // A / click → opens the profiles manager popup.
+            Rectangle {
+                id: profilesBtn
+                anchors.top: pcCard.bottom
+                anchors.left: pcCard.left
+                anchors.right: pcCard.horizontalCenter
+                anchors.topMargin: 4
+                anchors.rightMargin: 3
+                height: 30
+                radius: 6
+                color: pcCard._profilesFocused ? Qt.rgba(0.063, 0.486, 0.063, 0.28)
+                     : pcCard._current         ? Qt.rgba(1,1,1,0.05)
+                     :                           Qt.rgba(1,1,1,0.03)
+                border.color: pcCard._profilesFocused ? homeScreen._green
+                            : pcCard._current         ? Qt.rgba(0.063, 0.486, 0.063, 0.45)
+                            :                           Qt.rgba(1,1,1,0.10)
+                border.width: pcCard._profilesFocused ? 2 : 1
+
+                Label {
+                    anchors.centerIn: parent
+                    text: qsTr("Profiles")
+                    color: homeScreen._text
+                    font.family: "DM Sans"
+                    font.pixelSize: 13
+                    font.bold: true
+                    font.letterSpacing: 0.6
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        pcList.currentIndex = index
+                        pcList.subFocus = 1
+                        pcList.forceActiveFocus()
+                        pcCellWrap.openProfiles()
+                    }
+                }
+            }
+
+            // ── Options button — below the card, right half (side-by-side) ────
+            // D-pad Right from Profiles focuses it. Press A or click → opens the
+            // options tile grid.
             Rectangle {
                 id: optsBtn
                 anchors.top: pcCard.bottom
-                anchors.left: pcCard.left
+                anchors.left: pcCard.horizontalCenter
                 anchors.right: pcCard.right
                 anchors.topMargin: 4
+                anchors.leftMargin: 3
                 height: 30
                 radius: 6
                 color: pcCard._optsFocused ? Qt.rgba(0.063, 0.486, 0.063, 0.28)
@@ -940,7 +1100,7 @@ FocusScope {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         pcList.currentIndex = index
-                        pcList.subFocusOptions = true
+                        pcList.subFocus = 2
                         pcList.forceActiveFocus()
                         pcCellWrap.openCardMenu()
                     }
@@ -953,6 +1113,19 @@ FocusScope {
                 hostName: model.name
                 items: pcCellWrap.menuItems
                 onChosen: function(kind) { pcCellWrap.triggerOption(kind) }
+            }
+
+            // Per-host streaming profiles manager.
+            HostProfilesDialog {
+                id: hostProfilesDialog
+                computerModel: homeScreen.computerModel
+                // Restore gamepad focus to the host grid so navigation keeps working
+                // after the modal closes (otherwise nothing is focused on a handheld).
+                onClosed: {
+                    pcList.currentIndex = index
+                    pcList.subFocus = 1
+                    pcList.forceActiveFocus()
+                }
             }
         }
     }
