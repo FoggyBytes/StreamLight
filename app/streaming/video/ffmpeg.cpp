@@ -2310,6 +2310,15 @@ TelemetryWindowStats FFmpegVideoDecoder::getLastWindowStats() const
         : 0.0f;
     out.bitrateMbps = (float)m_BwTracker.GetAverageMbps();
 
+    // Host frame-processing latency (capture+encode). The host embeds this in each
+    // video frame header (deci-ms); we report it in ms. 0 when the host sent no
+    // timestamps for the window (e.g. an older host that doesn't populate it).
+    if (snap.framesWithHostProcessingLatency > 0) {
+        out.hostLatencyAvgMs = (float)snap.totalHostProcessingLatency / 10.0f
+                               / snap.framesWithHostProcessingLatency;
+        out.hostLatencyMaxMs = (float)snap.maxHostProcessingLatency / 10.0f;
+    }
+
     // lastRtt in the stored window snapshot is always 0 (LiGetEstimatedRttInfo is
     // only called on the dst of addVideoStats, never written into m_ActiveWndVideoStats
     // itself). Read it directly from Limelight at sample time instead.

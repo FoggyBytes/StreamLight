@@ -5,6 +5,16 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 -----------------------------------------------------
+Version 4.0.1 (21/06/2026)
+-----------------------------------------------------
+
+📊 HOST INSIGHT:
+• StreamLight now reports the host's per-frame processing latency (capture +
+  encode) to StreamTweak. StreamTweak 7.4.0+ uses it to grade streaming quality
+  more accurately and shows it as a "Host frame latency" chart in its Logs.
+  Backward compatible — works with any StreamTweak; no effect on streaming.
+
+-----------------------------------------------------
 Version 4.0.0 - The Profiles Update (20/06/2026)
 -----------------------------------------------------
 

@@ -178,7 +178,7 @@ void EGLRenderer::renderOverlay(Overlay::OverlayType type, int viewportWidth, in
             else {
                 // If we can't use GL_UNPACK_ROW_LENGTH, we must allocate a tightly packed buffer
                 // and copy our pixels there.
-                packedPixelData = malloc(newSurface->w * newSurface->h * newSurface->format->BytesPerPixel);
+                packedPixelData = malloc((size_t)newSurface->w * newSurface->h * newSurface->format->BytesPerPixel);
                 if (!packedPixelData) {
                     SDL_FreeSurface(newSurface);
                     return;

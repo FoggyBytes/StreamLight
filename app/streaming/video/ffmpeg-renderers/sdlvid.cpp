@@ -541,7 +541,7 @@ ReadbackRetry:
         }
 
         // Create a buffer to wrap our locked texture buffer
-        m_RgbFrame->buf[0] = av_buffer_create(pixels, m_RgbFrame->height * texturePitch, ffNoopFree, nullptr, 0);
+        m_RgbFrame->buf[0] = av_buffer_create(pixels, (size_t)m_RgbFrame->height * texturePitch, ffNoopFree, nullptr, 0);
         m_RgbFrame->data[0] = pixels;
         m_RgbFrame->linesize[0] = texturePitch;
 

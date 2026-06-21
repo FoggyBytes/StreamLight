@@ -57,11 +57,14 @@ void SessionTelemetrySampler::onSampleTimer()
     s.jitterMax   = s.jitterAvg;    // will be refined across batch as running max
     s.decodeMs    = ws.decodeAvgMs;
     s.bitrateMbps = ws.bitrateMbps;
+    s.hostLatencyAvg = ws.hostLatencyAvgMs;
+    s.hostLatencyMax = ws.hostLatencyMaxMs;
 
     // Track running min/max within the current batch
-    if (s.fpsAvg    < m_BatchFpsMin)    m_BatchFpsMin    = s.fpsAvg;
-    if (s.rttAvg    > m_BatchRttMax)    m_BatchRttMax    = s.rttAvg;
-    if (s.jitterAvg > m_BatchJitterMax) m_BatchJitterMax = s.jitterAvg;
+    if (s.fpsAvg         < m_BatchFpsMin)     m_BatchFpsMin     = s.fpsAvg;
+    if (s.rttAvg         > m_BatchRttMax)     m_BatchRttMax     = s.rttAvg;
+    if (s.jitterAvg      > m_BatchJitterMax)  m_BatchJitterMax  = s.jitterAvg;
+    if (s.hostLatencyMax > m_BatchHostLatMax) m_BatchHostLatMax = s.hostLatencyMax;
 
     m_Samples.append(s);
 
@@ -77,9 +80,10 @@ void SessionTelemetrySampler::flushAndStop()
 
     // Apply batch-level min/max before the final send
     for (auto& s : m_Samples) {
-        s.fpsMin    = m_BatchFpsMin;
-        s.rttMax    = m_BatchRttMax;
-        s.jitterMax = m_BatchJitterMax;
+        s.fpsMin         = m_BatchFpsMin;
+        s.rttMax         = m_BatchRttMax;
+        s.jitterMax      = m_BatchJitterMax;
+        s.hostLatencyMax = m_BatchHostLatMax;
     }
 
     // Use synchronous send: exec() has returned and the Qt event loop is no
@@ -95,18 +99,20 @@ void SessionTelemetrySampler::sendBatch()
 
     // Apply batch-level min/max to each sample's fpsMin, rttMax, jitterMax fields
     for (auto& s : m_Samples) {
-        s.fpsMin    = m_BatchFpsMin;
-        s.rttMax    = m_BatchRttMax;
-        s.jitterMax = m_BatchJitterMax;
+        s.fpsMin         = m_BatchFpsMin;
+        s.rttMax         = m_BatchRttMax;
+        s.jitterMax      = m_BatchJitterMax;
+        s.hostLatencyMax = m_BatchHostLatMax;
     }
 
     QString json = buildBatchJson();
     m_Bridge.sendSessionData(m_HostAddress, json);
 
     m_Samples.clear();
-    m_BatchFpsMin    =  9999.0f;
-    m_BatchRttMax    = -1.0f;
-    m_BatchJitterMax = -1.0f;
+    m_BatchFpsMin     =  9999.0f;
+    m_BatchRttMax     = -1.0f;
+    m_BatchJitterMax  = -1.0f;
+    m_BatchHostLatMax = -1.0f;
 }
 
 QString SessionTelemetrySampler::buildBatchJson() const
@@ -123,6 +129,12 @@ QString SessionTelemetrySampler::buildBatchJson() const
         obj[QStringLiteral("jitter_max")]   = qRound(s.jitterMax * 10) / 10.0;
         obj[QStringLiteral("decode_ms")]    = qRound(s.decodeMs * 10) / 10.0;
         obj[QStringLiteral("bitrate_mbps")] = qRound(s.bitrateMbps * 10) / 10.0;
+        // Host frame-processing latency (capture+encode). Only emitted when the host
+        // actually reported it (>0) so StreamTweak reads N/A, not a spurious 0.
+        if (s.hostLatencyAvg > 0.0f) {
+            obj[QStringLiteral("host_latency_avg")] = qRound(s.hostLatencyAvg * 10) / 10.0;
+            obj[QStringLiteral("host_latency_max")] = qRound(s.hostLatencyMax * 10) / 10.0;
+        }
         samplesArray.append(obj);
     }
 

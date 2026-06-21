@@ -20,6 +20,8 @@ struct TelemetryWindowStats {
     int     jitterMs;    // RTT variance from LiGetEstimatedRttInfo
     float   decodeAvgMs;
     float   bitrateMbps;
+    float   hostLatencyAvgMs;  // host capture+encode latency (avg), 0 if not reported
+    float   hostLatencyMaxMs;  // host capture+encode latency (max), 0 if not reported
 };
 
 class FFmpegVideoDecoder : public IVideoDecoder {

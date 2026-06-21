@@ -49,6 +49,8 @@ private:
         float jitterMax;
         float decodeMs;
         float bitrateMbps;
+        float hostLatencyAvg;
+        float hostLatencyMax;
     };
 
     QString buildBatchJson() const;
@@ -63,7 +65,8 @@ private:
     QList<TelemetrySample> m_Samples;
 
     // Running min/max within the current batch (reset each flush)
-    float m_BatchFpsMin    =  9999.0f;
-    float m_BatchRttMax    = -1.0f;
-    float m_BatchJitterMax = -1.0f;
+    float m_BatchFpsMin     =  9999.0f;
+    float m_BatchRttMax     = -1.0f;
+    float m_BatchJitterMax  = -1.0f;
+    float m_BatchHostLatMax = -1.0f;
 };
