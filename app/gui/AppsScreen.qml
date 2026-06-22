@@ -347,12 +347,12 @@ FocusScope {
             Label {
                 anchors.verticalCenter: parent.verticalCenter
                 text: {
-                    var h = appsRoot._effH
-                    if (h >= 2160) return "4K"
-                    if (h >= 1440) return "1440p"
-                    if (h >= 1080) return "1080p"
-                    if (h >= 720)  return "720p"
-                    return appsRoot._effW + "x" + h
+                    var w = appsRoot._effW, h = appsRoot._effH
+                    if (w === 3840 && h === 2160) return "4K"
+                    if (w === 2560 && h === 1440) return "1440p"
+                    if (w === 1920 && h === 1080) return "1080p"
+                    if (w === 1280 && h === 720)  return "720p"
+                    return w + "×" + h
                 }
                 color: appsRoot._textDim
                 font.family: appsRoot._mono

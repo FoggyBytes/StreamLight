@@ -133,6 +133,22 @@ FocusScope {
         StreamingPreferences.save()
     }
 
+    // Manual resolution entry — opened by the "Custom" pill in the Video tab.
+    CustomResolutionDialog {
+        id: customResDialog
+        onAccepted: function(w, h) {
+            if (StreamingPreferences.width !== w || StreamingPreferences.height !== h) {
+                StreamingPreferences.width  = w
+                StreamingPreferences.height = h
+                if (StreamingPreferences.autoAdjustBitrate) {
+                    StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
+                        w, h, StreamingPreferences.fps, StreamingPreferences.enableYUV444)
+                    bitrateSlider.value = StreamingPreferences.bitrateKbps
+                }
+            }
+        }
+    }
+
     Item {
         id: header
         anchors.top: parent.top
@@ -583,115 +599,132 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
 
-                            SegmentedSelector {
-                                id: resolutionSelector
-                                anchors.right: fpsSelector.left
-                                anchors.rightMargin: 24
-                                anchors.verticalCenter: parent.verticalCenter
-
-                                property var _widths:  [1280, 1920, 2560, 3840]
-                                property var _heights: [720,  1080, 1440, 2160]
-                                property var _presetLabels: ["720p", "1080p", "1440p", "4K"]
-
-                                function _resync() {
-                                    for (var i = 0; i < _widths.length; i++) {
-                                        if (_widths[i] === StreamingPreferences.width
-                                         && _heights[i] === StreamingPreferences.height) {
-                                            currentIndex = i
-                                            return
-                                        }
-                                    }
-                                    // Non-preset → -1 (no pill highlighted). If we are at
-                                    // construction time, prepend a "Custom" pill instead so
-                                    // the user can still see / re-select their saved value.
-                                    currentIndex = -1
-                                }
-
-                                Component.onCompleted: {
-                                    for (var i = 0; i < _widths.length; i++) {
-                                        if (_widths[i] === StreamingPreferences.width
-                                         && _heights[i] === StreamingPreferences.height) {
-                                            labels = _presetLabels
-                                            currentIndex = i
-                                            return
-                                        }
-                                    }
-                                    var custom = qsTr("Custom")
-                                    labels   = [custom].concat(_presetLabels)
-                                    _widths  = [StreamingPreferences.width].concat(_widths)
-                                    _heights = [StreamingPreferences.height].concat(_heights)
-                                    currentIndex = 0
-                                }
-
-                                // Re-sync if width/height change from elsewhere.
-                                Connections {
-                                    target: StreamingPreferences
-                                    function onWidthChanged()  { resolutionSelector._resync() }
-                                    function onHeightChanged() { resolutionSelector._resync() }
-                                }
-
-                                onActivated: function(idx) {
-                                    var w = _widths[idx], h = _heights[idx]
-                                    if (StreamingPreferences.width !== w || StreamingPreferences.height !== h) {
-                                        StreamingPreferences.width  = w
-                                        StreamingPreferences.height = h
-                                        if (StreamingPreferences.autoAdjustBitrate) {
-                                            StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
-                                                w, h, StreamingPreferences.fps, StreamingPreferences.enableYUV444)
-                                            bitrateSlider.value = StreamingPreferences.bitrateKbps
-                                        }
-                                    }
-                                }
-                            }
-
-                            SegmentedSelector {
-                                id: fpsSelector
+                            Row {
+                                id: resFpsRow
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
+                                spacing: 12
 
-                                property var _fps: [30, 60, 90, 120]
-                                property var _presetLabels: ["30", "60", "90", "120"]
+                                SegmentedSelector {
+                                    id: resolutionSelector
+                                    anchors.verticalCenter: parent.verticalCenter
 
-                                function _resync() {
-                                    for (var i = 0; i < _fps.length; i++) {
-                                        if (_fps[i] === StreamingPreferences.fps) {
-                                            currentIndex = i
-                                            return
+                                    property var _widths:  [1280, 1920, 2560, 3840]
+                                    property var _heights: [720,  1080, 1440, 2160]
+                                    labels: ["720p", "1080p", "1440p", "4K"]
+
+                                    // Highlight the matching preset, or -1 (none) when the
+                                    // current resolution is a custom one — the Custom pill
+                                    // then shows the actual value instead.
+                                    function _resync() {
+                                        for (var i = 0; i < _widths.length; i++) {
+                                            if (_widths[i] === StreamingPreferences.width
+                                             && _heights[i] === StreamingPreferences.height) {
+                                                currentIndex = i
+                                                return
+                                            }
+                                        }
+                                        currentIndex = -1
+                                    }
+
+                                    Component.onCompleted: _resync()
+
+                                    // width/height share the displayModeChanged NOTIFY signal.
+                                    Connections {
+                                        target: StreamingPreferences
+                                        function onDisplayModeChanged() { resolutionSelector._resync() }
+                                    }
+
+                                    onActivated: function(idx) {
+                                        var w = _widths[idx], h = _heights[idx]
+                                        if (StreamingPreferences.width !== w || StreamingPreferences.height !== h) {
+                                            StreamingPreferences.width  = w
+                                            StreamingPreferences.height = h
+                                            if (StreamingPreferences.autoAdjustBitrate) {
+                                                StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
+                                                    w, h, StreamingPreferences.fps, StreamingPreferences.enableYUV444)
+                                                bitrateSlider.value = StreamingPreferences.bitrateKbps
+                                            }
                                         }
                                     }
-                                    currentIndex = -1
+
+                                    KeyNavigation.right: customResBtn
                                 }
 
-                                Component.onCompleted: {
-                                    for (var i = 0; i < _fps.length; i++) {
-                                        if (_fps[i] === StreamingPreferences.fps) {
-                                            labels = _presetLabels
-                                            currentIndex = i
-                                            return
+                                // Standalone "Custom" pill — opens the manual-entry dialog.
+                                // Selected (and shows the value) when no preset matches.
+                                PillButton {
+                                    id: customResBtn
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    selected: resolutionSelector.currentIndex < 0
+                                    text: selected ? (StreamingPreferences.width + "×" + StreamingPreferences.height)
+                                                   : qsTr("Custom")
+                                    onClicked: {
+                                        customResDialog.initWidth  = StreamingPreferences.width
+                                        customResDialog.initHeight = StreamingPreferences.height
+                                        customResDialog.open()
+                                    }
+                                    KeyNavigation.left:  resolutionSelector
+                                    KeyNavigation.right: fpsSelector
+                                }
+
+                                // Visual separator between the resolution and frame-rate blocks.
+                                Rectangle {
+                                    width: 1; height: 24
+                                    color: "#3a3a3a"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+
+                                SegmentedSelector {
+                                    id: fpsSelector
+                                    anchors.verticalCenter: parent.verticalCenter
+
+                                    property var _fps: [30, 60, 90, 120]
+                                    property var _presetLabels: ["30", "60", "90", "120"]
+
+                                    function _resync() {
+                                        for (var i = 0; i < _fps.length; i++) {
+                                            if (_fps[i] === StreamingPreferences.fps) {
+                                                currentIndex = i
+                                                return
+                                            }
+                                        }
+                                        currentIndex = -1
+                                    }
+
+                                    Component.onCompleted: {
+                                        for (var i = 0; i < _fps.length; i++) {
+                                            if (_fps[i] === StreamingPreferences.fps) {
+                                                labels = _presetLabels
+                                                currentIndex = i
+                                                return
+                                            }
+                                        }
+                                        labels = [String(StreamingPreferences.fps)].concat(_presetLabels)
+                                        _fps   = [StreamingPreferences.fps].concat(_fps)
+                                        currentIndex = 0
+                                    }
+
+                                    Connections {
+                                        target: StreamingPreferences
+                                        function onFpsChanged() { fpsSelector._resync() }
+                                    }
+
+                                    onActivated: function(idx) {
+                                        var f = _fps[idx]
+                                        if (StreamingPreferences.fps !== f) {
+                                            StreamingPreferences.fps = f
+                                            if (StreamingPreferences.autoAdjustBitrate) {
+                                                StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
+                                                    StreamingPreferences.width, StreamingPreferences.height,
+                                                    f, StreamingPreferences.enableYUV444)
+                                                bitrateSlider.value = StreamingPreferences.bitrateKbps
+                                            }
                                         }
                                     }
-                                    labels = [String(StreamingPreferences.fps)].concat(_presetLabels)
-                                    _fps   = [StreamingPreferences.fps].concat(_fps)
-                                    currentIndex = 0
-                                }
 
-                                Connections {
-                                    target: StreamingPreferences
-                                    function onFpsChanged() { fpsSelector._resync() }
-                                }
-
-                                onActivated: function(idx) {
-                                    var f = _fps[idx]
-                                    if (StreamingPreferences.fps !== f) {
-                                        StreamingPreferences.fps = f
-                                        if (StreamingPreferences.autoAdjustBitrate) {
-                                            StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
-                                                StreamingPreferences.width, StreamingPreferences.height,
-                                                f, StreamingPreferences.enableYUV444)
-                                            bitrateSlider.value = StreamingPreferences.bitrateKbps
-                                        }
-                                    }
+                                    KeyNavigation.left: customResBtn
                                 }
                             }
                         }

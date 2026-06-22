@@ -5,6 +5,23 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 -----------------------------------------------------
+Version 4.1.0 - Custom Resolutions (22/06/2026)
+-----------------------------------------------------
+
+No StreamTweak update required — everything in 4.1.0 is client-side.
+
+✨ NEW FEATURES:
+• Custom resolution — a new "Custom" button next to the 720p / 1080p / 1440p / 4K presets (Settings → Video) opens a popup where you can type any width × height in pixels, for displays that don't match a preset (e.g. the 16:10 1920×1200 panel on an MSI Claw). The button shows the active custom value and stays highlighted while it's in use; pick a preset again to switch back
+• Custom resolution in profiles too — the same "Custom" button is available in per-host profiles and per-game settings, so a docked profile or a specific game can stream at its own exact resolution while everything else inherits the global / profile value
+
+🎨 UI:
+• A subtle separator now divides the resolution block from the frame-rate block in Settings → Video
+• The host header in the app list shows the real resolution (e.g. 1920×1200) for non-standard sizes instead of rounding to the nearest preset label
+
+🙏 THANKS:
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/4) for requesting custom resolution support for 16:10 handheld displays
+
+-----------------------------------------------------
 Version 4.0.1 (21/06/2026)
 -----------------------------------------------------
 

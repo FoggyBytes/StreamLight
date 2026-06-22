@@ -27,5 +27,7 @@
         <file>gui/HostOptionsDialog.qml</file>
         <file>gui/AppSettingsDialog.qml</file>
         <file>gui/HostProfilesDialog.qml</file>
+        <file>gui/PillButton.qml</file>
+        <file>gui/CustomResolutionDialog.qml</file>
     </qresource>
 </RCC>

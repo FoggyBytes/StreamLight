@@ -69,6 +69,13 @@ These features cross the bridge and require both apps. The version next to each 
 - **Remote Windows Update** *(StreamTweak 7.3.0+)* — Options → **Check Windows Update on host…** scans, classifies and installs Windows updates on the host (Security + Defender / All), rebooting only if required, with a backgroundable progress view. The Power… chooser can also **install pending updates before shutting down**, on the host and/or this client, showing where updates are pending
 - **Tailscale, unified into one tile** *(StreamTweak 6.3.0+; single tile in StreamLight 3.3.0)* — after pairing via LAN IP, StreamLight queries the `TAILSCALE` bridge command. If StreamTweak reports a `100.x.y.z` Tailscale address, StreamLight records it on the host's **single** tile, which then tracks both the LAN and Tailscale IPs and shows a `TAILSCALE · AVAILABLE` badge (just `TAILSCALE` when only the Tailscale path is up). Opening the host or *All Apps* uses whichever path is available (LAN locally, Tailscale remotely); a dedicated **Tailscale** option forces the `100.x` endpoint. Combined with the **Auto-start Tailscale on launch** Settings toggle, the round-trip is automatic: open StreamLight → Tailscale comes up → one click streams from anywhere
 
+## ✨ What's New in 4.1.0 — Custom Resolutions
+
+No StreamTweak update required — everything in 4.1.0 is client-side.
+
+- **Custom resolution** — a new **Custom** button beside the 720p / 1080p / 1440p / 4K presets (*Settings → Video*) opens a popup to type any **width × height** in pixels, for displays that don't match a preset (e.g. the 16:10 **1920×1200** panel on an MSI Claw). The button shows the active custom value and stays highlighted while in use; pick a preset to switch back. A subtle separator now divides the resolution block from the frame-rate block.
+- **Custom resolution in profiles** — the same **Custom** button is available in **per-host profiles** and **per-game settings**, so a docked profile or a specific game can stream at its own exact resolution while everything else inherits the global / profile value.
+
 ## ✨ What's New in 4.0.1
 
 - **Reports host frame latency to StreamTweak** — StreamLight now sends the host's per-frame processing latency (capture + encode, already shown in the full performance overlay) to StreamTweak. **StreamTweak 7.4.0+** uses it to grade streaming quality more accurately and plots it as a *Host frame latency* chart in its Logs. Backward compatible — works with any StreamTweak and has no effect on streaming.
@@ -159,7 +166,7 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
 ## 📝 Installation
 
 1. Go to the **Releases** page of this repository.
-2. Download the latest installer (`StreamLight_4.0.1_Installer.exe`) and run it.
+2. Download the latest installer (`StreamLight_4.1.0_Installer.exe`) and run it.
 
 Settings (paired hosts, video / audio / input preferences, client certificate) are stored under `HKCU\Software\Moonlight Game Streaming Project\Moonlight` — the same location used by upstream Moonlight and StreamLight 2.x. Upgrades from 2.x preserve all your hosts and preferences automatically. Box-art cache lives in `%LOCALAPPDATA%\Moonlight Game Streaming Project\Moonlight`.
 

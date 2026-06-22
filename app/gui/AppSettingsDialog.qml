@@ -50,6 +50,9 @@ Popup {
 
     // Bitrate override state (kbps)
     property bool _bitrateOverridden: false
+    // Custom resolution override (0 == none / inheriting or using a preset).
+    property int _customResW: 0
+    property int _customResH: 0
 
     modal: true
     dim: true
@@ -79,7 +82,20 @@ Popup {
     function loadFromModel() {
         if (!appModel || appIndex < 0) return
         var ov = appModel.getAppOverride(appIndex)
-        resSel.currentIndex   = (ov.width !== undefined) ? _idxByVal(_resW, ov.width) : 0
+        // Resolution is tri-state: inherit (0) / preset (>0) / custom (-1 + _customRes*).
+        _customResW = 0; _customResH = 0
+        if (ov.width !== undefined) {
+            var rpi = _resW.indexOf(ov.width)
+            if (rpi > 0 && _resH[rpi] === ov.height) {
+                resSel.currentIndex = rpi
+            } else {
+                resSel.currentIndex = -1
+                _customResW = ov.width
+                _customResH = ov.height
+            }
+        } else {
+            resSel.currentIndex = 0
+        }
         fpsSel.currentIndex   = (ov.fps !== undefined) ? _idxByVal(_fpsVals, ov.fps) : 0
         hdrSel.currentIndex   = (ov.hdr !== undefined) ? (ov.hdr ? 1 : 2) : 0
         codecSel.currentIndex = (ov.codec !== undefined) ? _idxByVal(_codecVals, ov.codec) : 0
@@ -95,7 +111,8 @@ Popup {
     function saveToModel() {
         if (!appModel || appIndex < 0) return
         var m = {}
-        if (resSel.currentIndex > 0)   { m.width = _resW[resSel.currentIndex]; m.height = _resH[resSel.currentIndex] }
+        if (_customResW > 0)              { m.width = _customResW; m.height = _customResH }
+        else if (resSel.currentIndex > 0) { m.width = _resW[resSel.currentIndex]; m.height = _resH[resSel.currentIndex] }
         if (fpsSel.currentIndex > 0)   m.fps = _fpsVals[fpsSel.currentIndex]
         if (_bitrateOverridden && bitrateSlider.value >= bitrateSlider.from)
                                        m.bitrate = Math.round(bitrateSlider.value)
@@ -199,18 +216,38 @@ Popup {
 
                 SettingRow {
                     label: qsTr("Resolution")
-                    SegmentedSelector {
-                        id: resSel; labels: dlg._resLabels
-                        KeyNavigation.up: doneBtn
-                        KeyNavigation.down: fpsSel
-                        onActivated: dlg.saveToModel()
+                    Row {
+                        spacing: 12
+                        SegmentedSelector {
+                            id: resSel; labels: dlg._resLabels
+                            KeyNavigation.up: doneBtn
+                            KeyNavigation.down: resCustomBtn
+                            KeyNavigation.right: resCustomBtn
+                            // Selecting inherit or a preset clears any custom override.
+                            onActivated: { dlg._customResW = 0; dlg._customResH = 0; dlg.saveToModel() }
+                        }
+                        PillButton {
+                            id: resCustomBtn
+                            selected: dlg._customResW > 0
+                            text: selected ? (dlg._customResW + "×" + dlg._customResH) : qsTr("Custom")
+                            onClicked: {
+                                resCustomDialog.initWidth  = dlg._customResW > 0 ? dlg._customResW
+                                    : (resSel.currentIndex > 0 ? dlg._resW[resSel.currentIndex] : StreamingPreferences.width)
+                                resCustomDialog.initHeight = dlg._customResH > 0 ? dlg._customResH
+                                    : (resSel.currentIndex > 0 ? dlg._resH[resSel.currentIndex] : StreamingPreferences.height)
+                                resCustomDialog.open()
+                            }
+                            KeyNavigation.up: resSel
+                            KeyNavigation.down: fpsSel
+                            KeyNavigation.left: resSel
+                        }
                     }
                 }
                 SettingRow {
                     label: qsTr("Frame rate")
                     SegmentedSelector {
                         id: fpsSel; labels: dlg._fpsLabels
-                        KeyNavigation.up: resSel
+                        KeyNavigation.up: resCustomBtn
                         KeyNavigation.down: bitrateGlobalBtn
                         onActivated: dlg.saveToModel()
                     }
@@ -453,6 +490,17 @@ Popup {
                     KeyNavigation.left: doneBtn
                 }
             }
+        }
+    }
+
+    // Manual resolution entry for this game's override.
+    CustomResolutionDialog {
+        id: resCustomDialog
+        onAccepted: function(w, h) {
+            dlg._customResW = w
+            dlg._customResH = h
+            resSel.currentIndex = -1
+            dlg.saveToModel()
         }
     }
 }
