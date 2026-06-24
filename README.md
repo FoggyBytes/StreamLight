@@ -69,6 +69,13 @@ These features cross the bridge and require both apps. The version next to each 
 - **Remote Windows Update** *(StreamTweak 7.3.0+)* — Options → **Check Windows Update on host…** scans, classifies and installs Windows updates on the host (Security + Defender / All), rebooting only if required, with a backgroundable progress view. The Power… chooser can also **install pending updates before shutting down**, on the host and/or this client, showing where updates are pending
 - **Tailscale, unified into one tile** *(StreamTweak 6.3.0+; single tile in StreamLight 3.3.0)* — after pairing via LAN IP, StreamLight queries the `TAILSCALE` bridge command. If StreamTweak reports a `100.x.y.z` Tailscale address, StreamLight records it on the host's **single** tile, which then tracks both the LAN and Tailscale IPs and shows a `TAILSCALE · AVAILABLE` badge (just `TAILSCALE` when only the Tailscale path is up). Opening the host or *All Apps* uses whichever path is available (LAN locally, Tailscale remotely); a dedicated **Tailscale** option forces the `100.x` endpoint. Combined with the **Auto-start Tailscale on launch** Settings toggle, the round-trip is automatic: open StreamLight → Tailscale comes up → one click streams from anywhere
 
+## ✨ What's New in 4.2.0 — Configurable Shortcuts
+
+No StreamTweak update required — everything in 4.2.0 is client-side.
+
+- **Configurable shortcuts** — a new **Settings → Shortcuts** tab lets you rebind every in-stream **keyboard hotkey** (quit, fullscreen, overlay, mouse mode, paste, minimize and more) and both **gamepad combos** (quit, cycle overlay). Record a new key combination, or build a gamepad combo by picking the buttons to hold together; conflicts are flagged and each shortcut can be reset individually or all at once. Handy to avoid clashes with other software, or for **nested streaming** where a shortcut would otherwise be captured by the outer client instead of the machine in the middle.
+- **Controller glyph selector** — choose which button icons appear across the app: **Auto** (follows the connected pad) or force **Xbox / PlayStation / Nintendo** — useful for generic controllers that aren't detected correctly, or simply a personal preference.
+
 ## ✨ What's New in 4.1.0 — Custom Resolutions
 
 No StreamTweak update required — everything in 4.1.0 is client-side.
@@ -166,7 +173,7 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
 ## 📝 Installation
 
 1. Go to the **Releases** page of this repository.
-2. Download the latest installer (`StreamLight_4.1.0_Installer.exe`) and run it.
+2. Download the latest installer (`StreamLight_4.2.0_Installer.exe`) and run it.
 
 Settings (paired hosts, video / audio / input preferences, client certificate) are stored under `HKCU\Software\Moonlight Game Streaming Project\Moonlight` — the same location used by upstream Moonlight and StreamLight 2.x. Upgrades from 2.x preserve all your hosts and preferences automatically. Box-art cache lives in `%LOCALAPPDATA%\Moonlight Game Streaming Project\Moonlight`.
 

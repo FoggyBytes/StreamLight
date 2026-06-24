@@ -1,4 +1,5 @@
 #include "streaming/session.h"
+#include "settings/shortcutmanager.h"
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -169,33 +170,40 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
         return;
     }
 
-    // Check for our special key combos (Ctrl+Alt+Shift+<key>)
-    if ((event->state == SDL_PRESSED) &&
-            (event->keysym.mod & KMOD_CTRL) &&
-            (event->keysym.mod & KMOD_ALT) &&
-            (event->keysym.mod & KMOD_SHIFT)) {
-        // First we test the SDLK combos for matches,
-        // that way we ensure that latin keyboard users
-        // can match to the key they see on their keyboards.
-        // If nothing matches that, we'll then go on to
-        // checking scancodes so non-latin keyboard users
-        // can have working hotkeys (though possibly in
-        // odd positions). We must do all SDLK tests before
-        // any scancode tests to avoid issues in cases
-        // where the SDLK for one shortcut collides with
-        // the scancode of another.
+    // Check for our configurable special key combos. Each binding stores its own
+    // modifier set (default Ctrl+Alt+Shift) so users can rebind to avoid
+    // conflicts — e.g. nested streaming through a middle machine.
+    if (event->state == SDL_PRESSED) {
+        int heldMods = 0;
+        if (event->keysym.mod & KMOD_CTRL)  heldMods |= ShortcutManager::SMOD_CTRL;
+        if (event->keysym.mod & KMOD_ALT)   heldMods |= ShortcutManager::SMOD_ALT;
+        if (event->keysym.mod & KMOD_SHIFT) heldMods |= ShortcutManager::SMOD_SHIFT;
+        if (event->keysym.mod & KMOD_GUI)   heldMods |= ShortcutManager::SMOD_GUI;
 
-        for (int i = 0; i < KeyComboMax; i++) {
-            if (m_SpecialKeyCombos[i].enabled && event->keysym.sym == m_SpecialKeyCombos[i].keyCode) {
-                performSpecialKeyCombo(m_SpecialKeyCombos[i].keyCombo);
-                return;
+        // Require at least one modifier so an unmodified keystroke is never
+        // swallowed as a hotkey while typing on the host.
+        if (heldMods != 0) {
+            // First we test the SDLK combos for matches, so latin keyboard users
+            // match the key printed on their keyboards. Then we fall back to
+            // scancodes for non-latin layouts. All SDLK tests run before any
+            // scancode test so the SDLK of one shortcut can't collide with the
+            // scancode of another.
+            for (int i = 0; i < KeyComboMax; i++) {
+                if (m_SpecialKeyCombos[i].enabled &&
+                        m_SpecialKeyCombos[i].modifiers == heldMods &&
+                        event->keysym.sym == m_SpecialKeyCombos[i].keyCode) {
+                    performSpecialKeyCombo(m_SpecialKeyCombos[i].keyCombo);
+                    return;
+                }
             }
-        }
 
-        for (int i = 0; i < KeyComboMax; i++) {
-            if (m_SpecialKeyCombos[i].enabled && event->keysym.scancode == m_SpecialKeyCombos[i].scanCode) {
-                performSpecialKeyCombo(m_SpecialKeyCombos[i].keyCombo);
-                return;
+            for (int i = 0; i < KeyComboMax; i++) {
+                if (m_SpecialKeyCombos[i].enabled &&
+                        m_SpecialKeyCombos[i].modifiers == heldMods &&
+                        event->keysym.scancode == m_SpecialKeyCombos[i].scanCode) {
+                    performSpecialKeyCombo(m_SpecialKeyCombos[i].keyCombo);
+                    return;
+                }
             }
         }
     }

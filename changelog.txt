@@ -5,6 +5,22 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 -----------------------------------------------------
+Version 4.2.0 - Configurable Shortcuts (22/06/2026)
+-----------------------------------------------------
+
+No StreamTweak update required — everything in 4.2.0 is client-side.
+
+✨ NEW FEATURES:
+• Configurable shortcuts — a new Settings → Shortcuts tab lets you rebind every in-stream keyboard hotkey (quit, fullscreen, overlay, mouse mode, paste, minimize and more) and both gamepad combos (quit, cycle overlay). Rebind a keyboard hotkey by recording a new key combination, or build a gamepad combo by picking the buttons to hold together; conflicts are flagged and each shortcut can be reset individually or all at once. Useful to avoid clashes with other software, or for nested streaming where a shortcut would otherwise be captured by the outer client instead of the machine in the middle
+• Controller glyph selector — choose which button icons appear across the app: Auto (follows the connected pad) or force Xbox, PlayStation or Nintendo, handy for generic controllers that aren't detected correctly or simply a personal preference
+
+🎨 UI:
+• Gamepad combos render with the correct vendor glyphs (Xbox / PlayStation / Nintendo, including the Nintendo A/B and X/Y position swap), with new icons for the D-pad, Start and Guide buttons
+
+🙏 THANKS:
+• Thanks to @ziCk2077 (https://github.com/FoggyBytes/StreamLight/issues/3) for requesting configurable shortcuts and per-machine settings
+
+-----------------------------------------------------
 Version 4.1.0 - Custom Resolutions (22/06/2026)
 -----------------------------------------------------
 

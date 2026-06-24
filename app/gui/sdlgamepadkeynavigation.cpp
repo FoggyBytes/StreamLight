@@ -61,6 +61,24 @@ void SdlGamepadKeyNavigation::simulateKey(int qtKey)
     sendKey(QEvent::Type::KeyRelease, key);
 }
 
+QString SdlGamepadKeyNavigation::controllerType() const
+{
+    // A forced glyph-set preference overrides auto-detection so users with
+    // generic / unrecognised pads (or a personal preference) can pick the
+    // button icons they want. GS_AUTO falls back to the detected family.
+    switch (m_Prefs->glyphSet) {
+    case StreamingPreferences::GS_XBOX:
+        return QStringLiteral("xbox");
+    case StreamingPreferences::GS_PLAYSTATION:
+        return QStringLiteral("ps");
+    case StreamingPreferences::GS_NINTENDO:
+        return QStringLiteral("switch");
+    case StreamingPreferences::GS_AUTO:
+    default:
+        return m_ControllerType;
+    }
+}
+
 void SdlGamepadKeyNavigation::updateControllerType()
 {
     QString newType = QStringLiteral("none");

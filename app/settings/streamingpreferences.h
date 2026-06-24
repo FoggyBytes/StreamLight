@@ -99,6 +99,18 @@ public:
     };
     Q_ENUM(FramePacingMode)
 
+    // Controller glyph set shown across the gamepad-first UI. GS_AUTO uses the
+    // family detected from the connected pad (the historical behaviour); the
+    // others force a specific vendor's button icons regardless of detection.
+    enum GlyphSet
+    {
+        GS_AUTO,
+        GS_XBOX,
+        GS_PLAYSTATION,
+        GS_NINTENDO
+    };
+    Q_ENUM(GlyphSet)
+
     Q_PROPERTY(int width MEMBER width NOTIFY displayModeChanged)
     Q_PROPERTY(int height MEMBER height NOTIFY displayModeChanged)
     Q_PROPERTY(int fps MEMBER fps NOTIFY displayModeChanged)
@@ -139,6 +151,7 @@ public:
     Q_PROPERTY(bool hideHostIps MEMBER hideHostIps NOTIFY hideHostIpsChanged)
     Q_PROPERTY(bool tailscaleAutoStart MEMBER tailscaleAutoStart NOTIFY tailscaleAutoStartChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
+    Q_PROPERTY(GlyphSet glyphSet MEMBER glyphSet NOTIFY glyphSetChanged)
     // Directly accessible members for preferences
     int width;
     int height;
@@ -181,6 +194,7 @@ public:
     WindowMode recommendedFullScreenMode;
     UIDisplayMode uiDisplayMode;
     CaptureSysKeysMode captureSysKeysMode;
+    GlyphSet glyphSet;
 
 signals:
     void displayModeChanged();
@@ -221,6 +235,7 @@ signals:
     void hueSyncIntegrationChanged();
     void hideHostIpsChanged();
     void tailscaleAutoStartChanged();
+    void glyphSetChanged();
 private:
     explicit StreamingPreferences(QQmlEngine *qmlEngine);
 

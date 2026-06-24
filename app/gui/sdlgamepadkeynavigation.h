@@ -45,7 +45,11 @@ public:
     // "Back" produces the same effect as the matching gamepad button.
     Q_INVOKABLE void simulateKey(int qtKey);
 
-    QString controllerType() const { return m_ControllerType; }
+    // Re-emit controllerTypeChanged so the UI re-resolves glyphs after the user
+    // changes the glyph-set preference in Settings.
+    Q_INVOKABLE void refreshGlyphPreference() { emit controllerTypeChanged(); }
+
+    QString controllerType() const;
 
     QString inputMode() const { return m_InputMode; }
 

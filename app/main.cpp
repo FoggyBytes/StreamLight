@@ -53,6 +53,7 @@
 #include "backend/systemproperties.h"
 #include "streaming/session.h"
 #include "settings/streamingpreferences.h"
+#include "settings/shortcutmanager.h"
 #include "gui/sdlgamepadkeynavigation.h"
 #include "XboxTileArtwork.h"
 #include "TailscaleManager.h"
@@ -962,6 +963,11 @@ int main(int argc, char *argv[])
                                                    [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                                        return StreamingPreferences::get(qmlEngine);
                                                    });
+    qmlRegisterSingletonType<ShortcutManager>("ShortcutManager", 1, 0,
+                                              "ShortcutManager",
+                                              [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
+                                                  return ShortcutManager::get(qmlEngine);
+                                              });
 
     // Create the identity manager on the main thread
     IdentityManager::get();

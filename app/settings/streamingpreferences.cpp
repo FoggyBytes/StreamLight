@@ -53,6 +53,7 @@
 #define SER_HUESYNC "huesync"
 #define SER_HIDEHOSTIPS "hidehostips"
 #define SER_TAILSCALE_AUTOSTART "tailscaleautostart"
+#define SER_GLYPHSET "glyphset"
 #define CURRENT_DEFAULT_VER 2
 
 static StreamingPreferences* s_GlobalPrefs;
@@ -150,6 +151,7 @@ StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
     p->recommendedFullScreenMode = recommendedFullScreenMode;
     p->uiDisplayMode = uiDisplayMode;
     p->captureSysKeysMode = captureSysKeysMode;
+    p->glyphSet = glyphSet;
 
     p->setParent(parent);
     return p;
@@ -233,6 +235,8 @@ void StreamingPreferences::reload()
     enableHdr = settings.value(SER_HDR, false).toBool();
     captureSysKeysMode = static_cast<CaptureSysKeysMode>(settings.value(SER_CAPTURESYSKEYS,
                                                          static_cast<int>(CaptureSysKeysMode::CSK_OFF)).toInt());
+    glyphSet = static_cast<GlyphSet>(settings.value(SER_GLYPHSET,
+                                                    static_cast<int>(GlyphSet::GS_AUTO)).toInt());
     audioConfig = static_cast<AudioConfig>(settings.value(SER_AUDIOCFG,
                                                   static_cast<int>(AudioConfig::AC_STEREO)).toInt());
     videoCodecConfig = static_cast<VideoCodecConfig>(settings.value(SER_VIDEOCFG,
@@ -316,6 +320,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_HUESYNC, hueSyncIntegration);
     settings.setValue(SER_HIDEHOSTIPS, hideHostIps);
     settings.setValue(SER_TAILSCALE_AUTOSTART, tailscaleAutoStart);
+    settings.setValue(SER_GLYPHSET, static_cast<int>(glyphSet));
 }
 
 int StreamingPreferences::getDefaultBitrate(int width, int height, int fps, bool yuv444)

@@ -29,5 +29,8 @@
         <file>gui/HostProfilesDialog.qml</file>
         <file>gui/PillButton.qml</file>
         <file>gui/CustomResolutionDialog.qml</file>
+        <file>gui/PadGlyph.qml</file>
+        <file>gui/ShortcutCaptureDialog.qml</file>
+        <file>gui/GamepadCaptureDialog.qml</file>
     </qresource>
 </RCC>

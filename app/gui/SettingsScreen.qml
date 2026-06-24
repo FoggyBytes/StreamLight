@@ -8,6 +8,7 @@ import StreamingPreferences 1.0
 import ComputerManager 1.0
 import SdlGamepadKeyNavigation 1.0
 import SystemProperties 1.0
+import ShortcutManager 1.0
 
 // SettingsScreen — Xbox-style flat settings panel.
 // 6 tabs: Video, Audio, Input, Decoder, Network, Session.
@@ -110,7 +111,8 @@ FocusScope {
             case 4: if (mdnsSwitch)            mdnsSwitch.forceActiveFocus();            break
             case 5: if (gameOptSwitch)         gameOptSwitch.forceActiveFocus();         break
             case 6: if (overlayModeSelector)   overlayModeSelector.forceActiveFocus();   break
-            case 7: if (aboutSlGithubBtn)      aboutSlGithubBtn.forceActiveFocus();      break
+            case 7: if (glyphSetSelector)      glyphSetSelector.forceActiveFocus();      break
+            case 8: if (aboutSlGithubBtn)      aboutSlGithubBtn.forceActiveFocus();      break
         }
     }
 
@@ -388,7 +390,7 @@ FocusScope {
             }
         }
         TabButton {
-            text: qsTr("About")
+            text: qsTr("Shortcuts")
             focusPolicy: Qt.NoFocus
             font.family: "DM Sans"
             font.pixelSize: 15
@@ -409,6 +411,32 @@ FocusScope {
                 text: parent.text
                 font: parent.font
                 color: tabBar.currentIndex === 7 ? settingsScreen._text : settingsScreen._textDim
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
+        TabButton {
+            text: qsTr("About")
+            focusPolicy: Qt.NoFocus
+            font.family: "DM Sans"
+            font.pixelSize: 15
+            font.bold: true
+            font.capitalization: Font.AllUppercase
+            font.letterSpacing: 1.2
+            background: Rectangle {
+                color: "transparent"
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 2
+                    color: tabBar.currentIndex === 8 ? settingsScreen._green : "transparent"
+                }
+            }
+            contentItem: Text {
+                text: parent.text
+                font: parent.font
+                color: tabBar.currentIndex === 8 ? settingsScreen._text : settingsScreen._textDim
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
             }
@@ -530,7 +558,8 @@ FocusScope {
                     case 4: return networkTab.implicitHeight
                     case 5: return sessionTab.implicitHeight
                     case 6: return overlayTab.implicitHeight
-                    case 7: return aboutTab.implicitHeight
+                    case 7: return shortcutsTab.implicitHeight
+                    case 8: return aboutTab.implicitHeight
                 }
                 return 0
             }
@@ -2653,7 +2682,7 @@ FocusScope {
                 id: aboutTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === 7
+                visible: tabBar.currentIndex === 8
                 spacing: 16
 
                 // StreamLight card — title + version + author on the left,
@@ -2780,6 +2809,279 @@ FocusScope {
                     }
                 }
             }
+
+            // ──────────────────────────────────────────────────────────────────
+            //                            SHORTCUTS TAB
+            // ──────────────────────────────────────────────────────────────────
+            Column {
+                id: shortcutsTab
+                anchors.left: parent.left
+                anchors.right: parent.right
+                visible: tabBar.currentIndex === 7
+                spacing: 16
+
+                property var kbModel: ShortcutManager.keyboardModel()
+                property var padModel: ShortcutManager.gamepadModel()
+
+                Connections {
+                    target: ShortcutManager
+                    function onShortcutsChanged() {
+                        shortcutsTab.kbModel = ShortcutManager.keyboardModel()
+                        shortcutsTab.padModel = ShortcutManager.gamepadModel()
+                    }
+                }
+
+                component KeyCap: Rectangle {
+                    property string text: ""
+                    width: kcl.implicitWidth + 16
+                    height: 28
+                    radius: 6
+                    color: "#23262e"
+                    border.color: "#3a3f4a"
+                    border.width: 1
+                    Label {
+                        id: kcl
+                        anchors.centerIn: parent
+                        text: parent.text
+                        color: "#dfe2e8"
+                        font.family: "JetBrains Mono"
+                        font.pixelSize: 12
+                        font.bold: true
+                    }
+                }
+
+                component MiniButton: Button {
+                    property string label: ""
+                    signal triggered()
+                    activeFocusOnTab: true
+                    implicitHeight: 32
+                    onClicked: triggered()
+                    Keys.onReturnPressed: triggered()
+                    Keys.onEnterPressed:  triggered()
+                    Keys.onSpacePressed:  triggered()
+                    background: Rectangle {
+                        radius: 6
+                        color: parent.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.16) : "#1f1f1f"
+                        border.color: parent.activeFocus ? "#00E676" : "#2a2a2a"
+                        border.width: parent.activeFocus ? 2 : 1
+                    }
+                    contentItem: Label {
+                        text: parent.label
+                        color: "#dfe2e8"
+                        font.family: "DM Sans"
+                        font.pixelSize: 12
+                        font.bold: true
+                        leftPadding: 12
+                        rightPadding: 12
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+
+                Label {
+                    width: parent.width
+                    text: qsTr("Rebind in-stream shortcuts to avoid conflicts with other software, or for nested streaming where a shortcut would otherwise be captured by the outer client.")
+                    font.family: "DM Sans"
+                    font.pixelSize: 13
+                    color: settingsScreen._textDim
+                    wrapMode: Text.WordWrap
+                    leftPadding: 14
+                    rightPadding: 14
+                }
+
+                // ── CONTROLLER GLYPHS ─────────────────────────────────────────
+                Label {
+                    text: qsTr("Controller glyphs")
+                    font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
+                    font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut; leftPadding: 14
+                }
+                Rectangle {
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: 8
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: settingsScreen._rowHeightTall
+                    Item {
+                        width: parent.width
+                        height: settingsScreen._rowHeightTall
+                        Column {
+                            anchors.left: parent.left; anchors.leftMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 3
+                            Label {
+                                text: qsTr("Button icon set")
+                                font.family: "DM Sans"; font.pixelSize: 16; font.bold: true
+                                color: settingsScreen._text
+                            }
+                            Label {
+                                text: qsTr("Auto follows the connected pad. Force a vendor for generic controllers.")
+                                font.family: "DM Sans"; font.pixelSize: 13
+                                color: settingsScreen._textDim
+                            }
+                        }
+                        SegmentedSelector {
+                            id: glyphSetSelector
+                            anchors.right: parent.right; anchors.rightMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            labels: [qsTr("Auto"), qsTr("Xbox"), qsTr("PlayStation"), qsTr("Nintendo")]
+                            Binding on currentIndex { value: StreamingPreferences.glyphSet }
+                            onActivated: function(idx) {
+                                StreamingPreferences.glyphSet = idx
+                                SdlGamepadKeyNavigation.refreshGlyphPreference()
+                            }
+                        }
+                    }
+                }
+
+                // ── KEYBOARD ──────────────────────────────────────────────────
+                Label {
+                    text: qsTr("Keyboard")
+                    font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
+                    font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut; leftPadding: 14
+                }
+                Rectangle {
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: 8
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: kbCol.implicitHeight + 8
+                    Column {
+                        id: kbCol
+                        anchors.left: parent.left; anchors.right: parent.right
+                        anchors.top: parent.top; anchors.topMargin: 4
+                        spacing: 0
+                        Repeater {
+                            model: shortcutsTab.kbModel
+                            delegate: Item {
+                                width: kbCol.width
+                                height: 56
+                                property var rd: modelData
+                                Label {
+                                    anchors.left: parent.left; anchors.leftMargin: 16
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width * 0.42
+                                    text: rd.name
+                                    elide: Text.ElideRight
+                                    font.family: "DM Sans"; font.pixelSize: 15
+                                    color: settingsScreen._text
+                                }
+                                Row {
+                                    anchors.right: parent.right; anchors.rightMargin: 16
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 7
+                                    Repeater {
+                                        model: ShortcutManager.modifierLabel(rd.modifiers).split(" + ").concat([rd.label])
+                                        delegate: KeyCap { text: modelData }
+                                    }
+                                    Item { width: 8; height: 1 }
+                                    MiniButton {
+                                        label: qsTr("Rebind")
+                                        onTriggered: {
+                                            kbCaptureDialog.action = rd.action
+                                            kbCaptureDialog.actionName = rd.name
+                                            kbCaptureDialog.open()
+                                        }
+                                    }
+                                    MiniButton {
+                                        label: qsTr("Reset")
+                                        onTriggered: ShortcutManager.resetKeyboard(rd.action)
+                                    }
+                                }
+                                Rectangle {
+                                    anchors.bottom: parent.bottom
+                                    x: 16; width: parent.width - 32; height: 1
+                                    color: settingsScreen._border
+                                    visible: index < shortcutsTab.kbModel.length - 1
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── GAMEPAD ───────────────────────────────────────────────────
+                Label {
+                    text: qsTr("Gamepad")
+                    font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
+                    font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut; leftPadding: 14
+                }
+                Rectangle {
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: 8
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: padCol.implicitHeight + 8
+                    Column {
+                        id: padCol
+                        anchors.left: parent.left; anchors.right: parent.right
+                        anchors.top: parent.top; anchors.topMargin: 4
+                        spacing: 0
+                        Repeater {
+                            model: shortcutsTab.padModel
+                            delegate: Item {
+                                width: padCol.width
+                                height: 56
+                                property var rd: modelData
+                                Label {
+                                    anchors.left: parent.left; anchors.leftMargin: 16
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width * 0.40
+                                    text: rd.name
+                                    elide: Text.ElideRight
+                                    font.family: "DM Sans"; font.pixelSize: 15
+                                    color: settingsScreen._text
+                                }
+                                Row {
+                                    anchors.right: parent.right; anchors.rightMargin: 16
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 6
+                                    Repeater {
+                                        model: rd.buttons
+                                        delegate: PadGlyph {
+                                            buttonKey: modelData.key
+                                            label: modelData.label
+                                            size: 22
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                    }
+                                    Item { width: 8; height: 1 }
+                                    MiniButton {
+                                        label: qsTr("Rebind")
+                                        onTriggered: padCaptureDialog.openFor(rd.action, rd.name, rd.mask)
+                                    }
+                                    MiniButton {
+                                        label: qsTr("Reset")
+                                        onTriggered: ShortcutManager.resetGamepad(rd.action)
+                                    }
+                                }
+                                Rectangle {
+                                    anchors.bottom: parent.bottom
+                                    x: 16; width: parent.width - 32; height: 1
+                                    color: settingsScreen._border
+                                    visible: index < shortcutsTab.padModel.length - 1
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Reset everything ──────────────────────────────────────────
+                Item {
+                    width: parent.width
+                    height: 44
+                    MiniButton {
+                        anchors.right: parent.right; anchors.rightMargin: 0
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: qsTr("Reset all to defaults")
+                        onTriggered: ShortcutManager.resetAll()
+                    }
+                }
+            }
         }
     }
 
@@ -2804,6 +3106,21 @@ FocusScope {
         headerText: qsTr("TAILSCALE")
         text: qsTr("Tailscale will keep running until you close it manually or reboot. StreamLight will no longer start it automatically on future launches.")
         standardButtons: Dialog.Ok
+    }
+
+    // Capture dialogs for the Shortcuts tab. Persist via ShortcutManager, which
+    // emits shortcutsChanged so the rows refresh immediately.
+    ShortcutCaptureDialog {
+        id: kbCaptureDialog
+        onCaptured: function(action, modifiers, sdlKey, sdlScan, label) {
+            ShortcutManager.setKeyboardBinding(action, modifiers, sdlKey, sdlScan, label)
+        }
+    }
+    GamepadCaptureDialog {
+        id: padCaptureDialog
+        onCaptured: function(action, mask) {
+            ShortcutManager.setGamepadBinding(action, mask)
+        }
     }
 
     // Reusable styled link button — opens `url` in the system browser / shell.

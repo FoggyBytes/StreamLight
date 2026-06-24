@@ -226,10 +226,15 @@ private:
 
     struct {
         KeyCombo keyCombo;
+        int modifiers;          // ShortcutManager::Modifier bitmask
         SDL_Keycode keyCode;
         SDL_Scancode scanCode;
         bool enabled;
     } m_SpecialKeyCombos[KeyComboMax];
+
+    // User-configurable gamepad combos (held-button masks). 0 = disabled.
+    int m_PadQuitMask;
+    int m_PadStatsMask;
 
     SDL_TouchFingerEvent m_LastTouchDownEvent;
     SDL_TouchFingerEvent m_LastTouchUpEvent;

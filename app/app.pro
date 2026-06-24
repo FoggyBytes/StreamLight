@@ -178,6 +178,7 @@ SOURCES += \
     settings/mappingfetcher.cpp \
     settings/streamingpreferences.cpp \
     settings/appsettings.cpp \
+    settings/shortcutmanager.cpp \
     streaming/input/abstouch.cpp \
     streaming/input/gamepad.cpp \
     streaming/input/input.cpp \
@@ -227,6 +228,7 @@ HEADERS += \
     cli/startstream.h \
     settings/streamingpreferences.h \
     settings/appsettings.h \
+    settings/shortcutmanager.h \
     streaming/input/input.h \
     streaming/session.h \
     streaming/audio/renderers/renderer.h \

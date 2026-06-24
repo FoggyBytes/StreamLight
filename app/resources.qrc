@@ -40,6 +40,7 @@
         <file>res/pad_xbox_view.svg</file>
         <file>res/pad_ps_options.svg</file>
         <file>res/pad_ps_create.svg</file>
+        <file>res/pad_switch_plus.svg</file>
         <file>res/fonts/DMSans-Regular.ttf</file>
         <file>res/fonts/DMSans-Medium.ttf</file>
         <file>res/fonts/DMSans-SemiBold.ttf</file>
