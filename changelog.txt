@@ -5,6 +5,29 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 -----------------------------------------------------
+Version 4.3.0 - Shortcuts Refinements (25/06/2026)
+-----------------------------------------------------
+
+No StreamTweak update required — everything in 4.3.0 is client-side.
+
+✨ IMPROVEMENTS:
+• Keyboard rebinding redesigned — the Rebind dialog now has three modifier toggles (Ctrl / Alt / Shift, at least two required) plus a single key you press, instead of holding the whole combo live. This removes the random "add a modifier" failures and lets you bind numbers and punctuation together with Shift, on any keyboard layout (the key is bound by its physical position, so it works on QWERTY, AZERTY, QWERTZ and beyond)
+• Controller shortcut combos now require at least 3 buttons, one of them Start / Select / LB / RB, so a combo can't fire by accident during play
+• The Shortcuts tab now puts Controller above Keyboard for easier pad navigation, and each section states its binding rules up front
+
+🐛 FIXES:
+• Shortcuts no longer get stuck when starting a stream directly in exclusive fullscreen with "capture system keys = In Game" — the keyboard grab (and Alt+F4) now follow window focus, so you're never locked out and forced to kill the app from Task Manager
+• The Controller shortcut glyphs now follow the selected icon set (Xbox / PlayStation / Nintendo) instead of always showing Xbox
+• The performance overlay had two keyboard combos at once (a hidden Ctrl+Alt+O plus the configurable one) — the hidden one was removed so there is a single, rebindable overlay shortcut
+
+🎨 UI:
+• "Gamepad" is now called "Controller" throughout the interface, matching the on-screen vendor naming
+• Rebind / Reset buttons restyled to match the rest of Settings; the redundant intro line and the "Reset all" button were removed, and the "Quit session & exit StreamLight" shortcut was dropped
+
+🙏 THANKS:
+• Thanks again to @ziCk2077 (https://github.com/FoggyBytes/StreamLight/issues/3) for thoroughly testing 4.2.0 and surfacing all of these
+
+-----------------------------------------------------
 Version 4.2.0 - Configurable Shortcuts (22/06/2026)
 -----------------------------------------------------
 

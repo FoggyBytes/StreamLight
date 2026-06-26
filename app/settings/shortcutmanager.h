@@ -30,7 +30,6 @@ public:
         KB_MINIMIZE,
         KB_PASTE,
         KB_POINTERLOCK,
-        KB_QUITEXIT,
         KB_COUNT
     };
     Q_ENUM(KbAction)
@@ -77,9 +76,11 @@ public:
     // Full catalogue of bindable digital buttons [{ flag, key, label, system }]
     // for the gamepad combo picker.
     Q_INVOKABLE QVariantList gamepadButtonCatalog();
-    // Translate a Qt::Key (from a QML capture) to SDL codes + a display label.
-    // Returns { ok, sdlKey, sdlScan, label }.
-    Q_INVOKABLE QVariantMap translateQtKey(int qtKey);
+    // Translate a captured key to SDL codes + a display label. qtKey resolves
+    // layout-stable keys (letters/F-keys/arrows/nav); nativeScanCode is the
+    // fallback for digits/punctuation, which Shift mutates into layout-dependent
+    // symbol Qt keys. Returns { ok, sdlKey, sdlScan, label }.
+    Q_INVOKABLE QVariantMap translateQtKey(int qtKey, int nativeScanCode);
     // A pad combo must hold at least one "system" button (Start/Select/LB/RB/
     // Guide) so it never collides with ordinary gameplay input.
     Q_INVOKABLE bool gamepadMaskIsSafe(int mask);

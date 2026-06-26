@@ -274,6 +274,11 @@ void SdlInputHandler::notifyFocusLost()
         setCaptureActive(false);
     }
 
+    // Drop the keyboard grab while we lack focus — even in fullscreen, where the
+    // mouse capture above is intentionally kept. This re-enables Alt+F4 and stops
+    // the "locked out with dead shortcuts" state. Re-applied on focus gain.
+    updateKeyboardGrabState();
+
     // Raise all keys that are currently pressed. If we don't do this, certain keys
     // used in shortcuts that cause focus loss (such as Alt+Tab) may get stuck down.
     raiseAllKeys();
@@ -281,6 +286,10 @@ void SdlInputHandler::notifyFocusLost()
 
 void SdlInputHandler::notifyFocusGained()
 {
+    // Re-assert the keyboard grab now that we have focus again (it is released on
+    // focus loss; see updateKeyboardGrabState). In fullscreen the capture is still
+    // active, so this restores system-key capture after a transient focus blip.
+    updateKeyboardGrabState();
 }
 
 bool SdlInputHandler::isCaptureActive()
@@ -301,6 +310,18 @@ void SdlInputHandler::updateKeyboardGrabState()
 
     bool shouldGrab = isCaptureActive();
     Uint32 windowFlags = SDL_GetWindowFlags(m_Window);
+
+    // Never hold the keyboard grab (and the Alt+F4 block below) while we don't
+    // actually have keyboard focus. In exclusive fullscreen we intentionally keep
+    // the *mouse* capture across a focus loss to avoid breaking the FS transition
+    // (see notifyFocusLost), but keeping the *keyboard* grab in that state would
+    // leave the user locked out — no key events reach our shortcut handler, yet
+    // the grab + disabled Alt+F4 persist, forcing a Task Manager kill. The grab is
+    // re-applied from notifyFocusGained() once focus returns.
+    if (!(windowFlags & SDL_WINDOW_INPUT_FOCUS)) {
+        shouldGrab = false;
+    }
+
     if (m_CaptureSystemKeysMode == StreamingPreferences::CSK_FULLSCREEN &&
             !(windowFlags & SDL_WINDOW_FULLSCREEN)) {
         // Ungrab if it's fullscreen only and we left fullscreen

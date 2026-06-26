@@ -1445,7 +1445,7 @@ FocusScope {
 
                 // ── GAMEPAD section ───────────────────────────────────────────
                 Label {
-                    text: qsTr("Gamepad")
+                    text: qsTr("Controller")
                     font.family: "DM Sans"
                     font.pixelSize: 13
                     font.bold: true
@@ -1482,7 +1482,7 @@ FocusScope {
                                 spacing: 3
 
                                 Label {
-                                    text: qsTr("Swap A/B and X/Y gamepad buttons")
+                                    text: qsTr("Swap A/B and X/Y controller buttons")
                                     font.family: "DM Sans"
                                     font.pixelSize: 16
                                     font.bold: true
@@ -1519,7 +1519,7 @@ FocusScope {
                                 spacing: 3
 
                                 Label {
-                                    text: qsTr("Force gamepad #1 always connected")
+                                    text: qsTr("Force controller #1 always connected")
                                     font.family: "DM Sans"
                                     font.pixelSize: 16
                                     font.bold: true
@@ -1550,7 +1550,7 @@ FocusScope {
                             height: settingsScreen._rowHeight
 
                             Label {
-                                text: qsTr("Mouse control with gamepad (Start)")
+                                text: qsTr("Mouse control with controller (Start)")
                                 font.family: "DM Sans"
                                 font.pixelSize: 16
                                 font.bold: true
@@ -1583,14 +1583,14 @@ FocusScope {
                                 spacing: 3
 
                                 Label {
-                                    text: qsTr("Process gamepad input in background")
+                                    text: qsTr("Process controller input in background")
                                     font.family: "DM Sans"
                                     font.pixelSize: 16
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
-                                    text: qsTr("Captures gamepad input even when the window is not focused")
+                                    text: qsTr("Captures controller input even when the window is not focused")
                                     font.family: "DM Sans"
                                     font.pixelSize: 13
                                     color: settingsScreen._textDim
@@ -2578,7 +2578,7 @@ FocusScope {
                                 Label {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
-                                    text: qsTr("Real-time stats while streaming. The hotkey cycles Off → Minimal → Default → Full: Ctrl+Alt+O (keyboard) or Select + L1 + R1 + X (gamepad).")
+                                    text: qsTr("Real-time stats while streaming. The hotkey cycles Off → Minimal → Default → Full; set the keyboard and controller combos in Settings → Shortcuts.")
                                     font.family: "DM Sans"
                                     font.pixelSize: 13
                                     color: settingsScreen._textDim
@@ -2850,43 +2850,33 @@ FocusScope {
                     }
                 }
 
+                // Styled to match the standalone "Custom" pill button (PillButton):
+                // same container, geometry and colours.
                 component MiniButton: Button {
                     property string label: ""
                     signal triggered()
                     activeFocusOnTab: true
-                    implicitHeight: 32
+                    implicitHeight: 36
                     onClicked: triggered()
                     Keys.onReturnPressed: triggered()
                     Keys.onEnterPressed:  triggered()
                     Keys.onSpacePressed:  triggered()
                     background: Rectangle {
-                        radius: 6
-                        color: parent.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.16) : "#1f1f1f"
+                        radius: 8
+                        color: "#1f2722"
                         border.color: parent.activeFocus ? "#00E676" : "#2a2a2a"
-                        border.width: parent.activeFocus ? 2 : 1
+                        border.width: parent.activeFocus ? 3 : 1
                     }
                     contentItem: Label {
                         text: parent.label
-                        color: "#dfe2e8"
+                        color: "#a0a0a0"
                         font.family: "DM Sans"
-                        font.pixelSize: 12
-                        font.bold: true
-                        leftPadding: 12
-                        rightPadding: 12
+                        font.pixelSize: 13
+                        leftPadding: 16
+                        rightPadding: 16
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
-                }
-
-                Label {
-                    width: parent.width
-                    text: qsTr("Rebind in-stream shortcuts to avoid conflicts with other software, or for nested streaming where a shortcut would otherwise be captured by the outer client.")
-                    font.family: "DM Sans"
-                    font.pixelSize: 13
-                    color: settingsScreen._textDim
-                    wrapMode: Text.WordWrap
-                    leftPadding: 14
-                    rightPadding: 14
                 }
 
                 // ── CONTROLLER GLYPHS ─────────────────────────────────────────
@@ -2935,76 +2925,9 @@ FocusScope {
                     }
                 }
 
-                // ── KEYBOARD ──────────────────────────────────────────────────
-                Label {
-                    text: qsTr("Keyboard")
-                    font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
-                    font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
-                    color: settingsScreen._textMut; leftPadding: 14
-                }
-                Rectangle {
-                    width: parent.width
-                    color: settingsScreen._bg2
-                    radius: 8
-                    border.color: settingsScreen._border
-                    border.width: 1
-                    implicitHeight: kbCol.implicitHeight + 8
-                    Column {
-                        id: kbCol
-                        anchors.left: parent.left; anchors.right: parent.right
-                        anchors.top: parent.top; anchors.topMargin: 4
-                        spacing: 0
-                        Repeater {
-                            model: shortcutsTab.kbModel
-                            delegate: Item {
-                                width: kbCol.width
-                                height: 56
-                                property var rd: modelData
-                                Label {
-                                    anchors.left: parent.left; anchors.leftMargin: 16
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: parent.width * 0.42
-                                    text: rd.name
-                                    elide: Text.ElideRight
-                                    font.family: "DM Sans"; font.pixelSize: 15
-                                    color: settingsScreen._text
-                                }
-                                Row {
-                                    anchors.right: parent.right; anchors.rightMargin: 16
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 7
-                                    Repeater {
-                                        model: ShortcutManager.modifierLabel(rd.modifiers).split(" + ").concat([rd.label])
-                                        delegate: KeyCap { text: modelData }
-                                    }
-                                    Item { width: 8; height: 1 }
-                                    MiniButton {
-                                        label: qsTr("Rebind")
-                                        onTriggered: {
-                                            kbCaptureDialog.action = rd.action
-                                            kbCaptureDialog.actionName = rd.name
-                                            kbCaptureDialog.open()
-                                        }
-                                    }
-                                    MiniButton {
-                                        label: qsTr("Reset")
-                                        onTriggered: ShortcutManager.resetKeyboard(rd.action)
-                                    }
-                                }
-                                Rectangle {
-                                    anchors.bottom: parent.bottom
-                                    x: 16; width: parent.width - 32; height: 1
-                                    color: settingsScreen._border
-                                    visible: index < shortcutsTab.kbModel.length - 1
-                                }
-                            }
-                        }
-                    }
-                }
-
                 // ── GAMEPAD ───────────────────────────────────────────────────
                 Label {
-                    text: qsTr("Gamepad")
+                    text: qsTr("Controller")
                     font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
                     font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
                     color: settingsScreen._textMut; leftPadding: 14
@@ -3021,6 +2944,26 @@ FocusScope {
                         anchors.left: parent.left; anchors.right: parent.right
                         anchors.top: parent.top; anchors.topMargin: 4
                         spacing: 0
+                        // Bind rules for gamepad combos.
+                        Item {
+                            width: padCol.width
+                            implicitHeight: padRules.implicitHeight + 20
+                            Label {
+                                id: padRules
+                                anchors.left: parent.left; anchors.right: parent.right
+                                anchors.leftMargin: 16; anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Hold the listed buttons together. A combo must use at least 3 buttons, one of them Start / Select / LB / RB, so it can't fire during normal play.")
+                                wrapMode: Text.WordWrap
+                                font.family: "DM Sans"; font.pixelSize: 13
+                                color: settingsScreen._textDim
+                            }
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                x: 16; width: parent.width - 32; height: 1
+                                color: settingsScreen._border
+                            }
+                        }
                         Repeater {
                             model: shortcutsTab.padModel
                             delegate: Item {
@@ -3070,15 +3013,90 @@ FocusScope {
                     }
                 }
 
-                // ── Reset everything ──────────────────────────────────────────
-                Item {
+                // ── KEYBOARD ──────────────────────────────────────────────────
+                Label {
+                    text: qsTr("Keyboard")
+                    font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
+                    font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut; leftPadding: 14
+                }
+                Rectangle {
                     width: parent.width
-                    height: 44
-                    MiniButton {
-                        anchors.right: parent.right; anchors.rightMargin: 0
-                        anchors.verticalCenter: parent.verticalCenter
-                        label: qsTr("Reset all to defaults")
-                        onTriggered: ShortcutManager.resetAll()
+                    color: settingsScreen._bg2
+                    radius: 8
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: kbCol.implicitHeight + 8
+                    Column {
+                        id: kbCol
+                        anchors.left: parent.left; anchors.right: parent.right
+                        anchors.top: parent.top; anchors.topMargin: 4
+                        spacing: 0
+                        // Bind rules for keyboard combos.
+                        Item {
+                            width: kbCol.width
+                            implicitHeight: kbRules.implicitHeight + 20
+                            Label {
+                                id: kbRules
+                                anchors.left: parent.left; anchors.right: parent.right
+                                anchors.leftMargin: 16; anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Use at least two of Ctrl / Alt / Shift plus one key. Heavier combos are less likely to clash with software running on the host.")
+                                wrapMode: Text.WordWrap
+                                font.family: "DM Sans"; font.pixelSize: 13
+                                color: settingsScreen._textDim
+                            }
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                x: 16; width: parent.width - 32; height: 1
+                                color: settingsScreen._border
+                            }
+                        }
+                        Repeater {
+                            model: shortcutsTab.kbModel
+                            delegate: Item {
+                                width: kbCol.width
+                                height: 56
+                                property var rd: modelData
+                                Label {
+                                    anchors.left: parent.left; anchors.leftMargin: 16
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width * 0.42
+                                    text: rd.name
+                                    elide: Text.ElideRight
+                                    font.family: "DM Sans"; font.pixelSize: 15
+                                    color: settingsScreen._text
+                                }
+                                Row {
+                                    anchors.right: parent.right; anchors.rightMargin: 16
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 7
+                                    Repeater {
+                                        model: ShortcutManager.modifierLabel(rd.modifiers).split(" + ").concat([rd.label])
+                                        delegate: KeyCap { text: modelData }
+                                    }
+                                    Item { width: 8; height: 1 }
+                                    MiniButton {
+                                        label: qsTr("Rebind")
+                                        onTriggered: {
+                                            kbCaptureDialog.action = rd.action
+                                            kbCaptureDialog.actionName = rd.name
+                                            kbCaptureDialog.open()
+                                        }
+                                    }
+                                    MiniButton {
+                                        label: qsTr("Reset")
+                                        onTriggered: ShortcutManager.resetKeyboard(rd.action)
+                                    }
+                                }
+                                Rectangle {
+                                    anchors.bottom: parent.bottom
+                                    x: 16; width: parent.width - 32; height: 1
+                                    color: settingsScreen._border
+                                    visible: index < shortcutsTab.kbModel.length - 1
+                                }
+                            }
+                        }
                     }
                 }
             }

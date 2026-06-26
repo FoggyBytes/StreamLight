@@ -69,6 +69,15 @@ These features cross the bridge and require both apps. The version next to each 
 - **Remote Windows Update** *(StreamTweak 7.3.0+)* — Options → **Check Windows Update on host…** scans, classifies and installs Windows updates on the host (Security + Defender / All), rebooting only if required, with a backgroundable progress view. The Power… chooser can also **install pending updates before shutting down**, on the host and/or this client, showing where updates are pending
 - **Tailscale, unified into one tile** *(StreamTweak 6.3.0+; single tile in StreamLight 3.3.0)* — after pairing via LAN IP, StreamLight queries the `TAILSCALE` bridge command. If StreamTweak reports a `100.x.y.z` Tailscale address, StreamLight records it on the host's **single** tile, which then tracks both the LAN and Tailscale IPs and shows a `TAILSCALE · AVAILABLE` badge (just `TAILSCALE` when only the Tailscale path is up). Opening the host or *All Apps* uses whichever path is available (LAN locally, Tailscale remotely); a dedicated **Tailscale** option forces the `100.x` endpoint. Combined with the **Auto-start Tailscale on launch** Settings toggle, the round-trip is automatic: open StreamLight → Tailscale comes up → one click streams from anywhere
 
+## ✨ What's New in 4.3.0 — Shortcuts Refinements
+
+No StreamTweak update required — everything in 4.3.0 is client-side.
+
+- **Simpler, layout-proof keyboard rebinding** — the Rebind dialog now uses three modifier toggles (**Ctrl / Alt / Shift**, at least two required) plus a single key you press, instead of holding the whole combo live. No more random failures, and you can finally bind **numbers and punctuation** with Shift on any keyboard layout (the key is bound by its physical position).
+- **Fullscreen lockout fixed** — starting a stream directly in exclusive fullscreen with *capture system keys = In Game* could leave the shortcuts (and Alt+F4) stuck, forcing a Task Manager kill. The keyboard grab now follows window focus, so you're never locked out.
+- **Safer controller combos** — a controller shortcut now needs at least **3 buttons**, one of them Start / Select / LB / RB, so it can't trigger by accident during play.
+- **"Gamepad" → "Controller"** across the interface, the overlay shortcut de-duplicated to a single rebindable combo, and the Shortcuts tab tidied up (Controller above Keyboard, per-section rules).
+
 ## ✨ What's New in 4.2.0 — Configurable Shortcuts
 
 No StreamTweak update required — everything in 4.2.0 is client-side.
@@ -173,7 +182,7 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
 ## 📝 Installation
 
 1. Go to the **Releases** page of this repository.
-2. Download the latest installer (`StreamLight_4.2.0_Installer.exe`) and run it.
+2. Download the latest installer (`StreamLight_4.3.0_Installer.exe`) and run it.
 
 Settings (paired hosts, video / audio / input preferences, client certificate) are stored under `HKCU\Software\Moonlight Game Streaming Project\Moonlight` — the same location used by upstream Moonlight and StreamLight 2.x. Upgrades from 2.x preserve all your hosts and preferences automatically. Box-art cache lives in `%LOCALAPPDATA%\Moonlight Game Streaming Project\Moonlight`.
 

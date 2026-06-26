@@ -41,7 +41,7 @@ Popup {
         spacing: 16
 
         Label {
-            text: qsTr("REBIND GAMEPAD COMBO")
+            text: qsTr("REBIND CONTROLLER COMBO")
             font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
             font.letterSpacing: 1.6; color: "#707070"
             Layout.alignment: Qt.AlignHCenter
@@ -101,23 +101,28 @@ Popup {
                                     :                     "#2a2a2a"
                         border.width: (chip.activeFocus || chip._sel) ? 2 : 1
                     }
-                    contentItem: Column {
-                        spacing: 3
-                        PadGlyph {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            buttonKey: modelData.key
-                            label: modelData.label
-                            size: 22
-                        }
-                        Label {
-                            // Face buttons (A/B/X/Y) carry their symbol in the
-                            // glyph itself and differ per vendor, so a fixed
-                            // Xbox-named caption would mislabel PS/Switch icons.
-                            visible: !["A","B","X","Y"].includes(modelData.key)
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            text: modelData.label
-                            color: chip._sel ? "#4ade80" : "#9aa0a8"
-                            font.family: "DM Sans"; font.pixelSize: 11
+                    contentItem: Item {
+                        // Center the glyph (+ optional caption) block vertically so
+                        // caption-less face buttons aren't top-aligned in the chip.
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 3
+                            PadGlyph {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                buttonKey: modelData.key
+                                label: modelData.label
+                                size: 22
+                            }
+                            Label {
+                                // Face buttons (A/B/X/Y) carry their symbol in the
+                                // glyph itself and differ per vendor, so a fixed
+                                // Xbox-named caption would mislabel PS/Switch icons.
+                                visible: !["A","B","X","Y"].includes(modelData.key)
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: modelData.label
+                                color: chip._sel ? "#4ade80" : "#9aa0a8"
+                                font.family: "DM Sans"; font.pixelSize: 11
+                            }
                         }
                     }
                 }
@@ -125,7 +130,7 @@ Popup {
         }
 
         Label {
-            text: qsTr("Hold at least one of Start / Select / LB / RB / Guide.")
+            text: qsTr("Use at least 3 buttons, including one of Start / Select / LB / RB.")
             visible: pop._mask !== 0 && !pop._safe
             color: "#f5a623"; font.family: "DM Sans"; font.pixelSize: 13
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap

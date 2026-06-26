@@ -83,7 +83,7 @@ ApplicationWindow {
     FontLoader { source: "qrc:/res/fonts/JetBrainsMono-Medium.ttf" }
 
     // ── Design system palette ─────────────────────────────────────────────────
-    readonly property string appDisplayVersion: "4.2.0"
+    readonly property string appDisplayVersion: "4.3.0"
 
     readonly property color clrBg:      "#0d0d0d"
     readonly property color clrBg1:     "#151515"
@@ -378,11 +378,11 @@ ApplicationWindow {
 
     ErrorMessageDialog {
         id: unmappedGamepadDialog
-        headerText: qsTr("UNMAPPED GAMEPAD")
+        headerText: qsTr("UNMAPPED CONTROLLER")
         property string unmappedGamepads : ""
-        text: qsTr("StreamLight detected gamepads without a mapping:") + "\n" + unmappedGamepads
+        text: qsTr("StreamLight detected controllers without a mapping:") + "\n" + unmappedGamepads
         helpTextSeparator: "\n\n"
-        helpText: qsTr("Click the Help button for information on how to map your gamepads.")
+        helpText: qsTr("Click the Help button for information on how to map your controllers.")
         helpUrl: "https://github.com/moonlight-stream/moonlight-docs/wiki/Gamepad-Mapping"
     }
 

@@ -36,7 +36,6 @@ static const KbDefault s_KbDefaults[ShortcutManager::KB_COUNT] = {
     { "Minimize window",                  DEF_MODS, SDLK_d, SDL_SCANCODE_D, "D" },
     { "Paste clipboard text to host",     DEF_MODS, SDLK_v, SDL_SCANCODE_V, "V" },
     { "Lock pointer to window region",    DEF_MODS, SDLK_l, SDL_SCANCODE_L, "L" },
-    { "Quit session & exit StreamLight",  DEF_MODS, SDLK_e, SDL_SCANCODE_E, "E" },
 };
 
 struct PadDefault {
@@ -218,18 +217,22 @@ QVariantList ShortcutManager::gamepadButtonCatalog()
 
 bool ShortcutManager::gamepadMaskIsSafe(int mask)
 {
-    if (mask == 0) {
-        return false;
-    }
+    // A combo must hold at least 3 buttons, with at least one "system" button
+    // (Start/Select/LB/RB). Fewer buttons risk being pressed during normal play.
+    int count = 0;
+    bool hasSystem = false;
     for (int i = 0; i < s_PadButtonCount; i++) {
-        if ((mask & s_PadButtons[i].flag) && s_PadButtons[i].system) {
-            return true;
+        if (mask & s_PadButtons[i].flag) {
+            count++;
+            if (s_PadButtons[i].system) {
+                hasSystem = true;
+            }
         }
     }
-    return false;
+    return count >= 3 && hasSystem;
 }
 
-QVariantMap ShortcutManager::translateQtKey(int qtKey)
+QVariantMap ShortcutManager::translateQtKey(int qtKey, int nativeScanCode)
 {
     QVariantMap r;
     r["ok"] = false;
@@ -271,8 +274,58 @@ QVariantMap ShortcutManager::translateQtKey(int qtKey)
         case Qt::Key_Delete: sdlKey = SDLK_DELETE; scan = SDL_SCANCODE_DELETE; label = QStringLiteral("Delete"); break;
         case Qt::Key_PageUp:   sdlKey = SDLK_PAGEUP;   scan = SDL_SCANCODE_PAGEUP;   label = QStringLiteral("PgUp"); break;
         case Qt::Key_PageDown: sdlKey = SDLK_PAGEDOWN; scan = SDL_SCANCODE_PAGEDOWN; label = QStringLiteral("PgDn"); break;
+        case Qt::Key_Left:  sdlKey = SDLK_LEFT;  scan = SDL_SCANCODE_LEFT;  label = QStringLiteral("←"); break;
+        case Qt::Key_Right: sdlKey = SDLK_RIGHT; scan = SDL_SCANCODE_RIGHT; label = QStringLiteral("→"); break;
+        case Qt::Key_Up:    sdlKey = SDLK_UP;    scan = SDL_SCANCODE_UP;    label = QStringLiteral("↑"); break;
+        case Qt::Key_Down:  sdlKey = SDLK_DOWN;  scan = SDL_SCANCODE_DOWN;  label = QStringLiteral("↓"); break;
+        // Punctuation — bound by physical key (scancode). Shifted variants map to
+        // the same physical key so e.g. "~" records as the grave/backtick key.
+        case Qt::Key_Minus:        sdlKey = SDLK_MINUS;        scan = SDL_SCANCODE_MINUS;        label = QStringLiteral("-"); break;
+        case Qt::Key_Equal:        sdlKey = SDLK_EQUALS;       scan = SDL_SCANCODE_EQUALS;       label = QStringLiteral("="); break;
+        case Qt::Key_BracketLeft:  sdlKey = SDLK_LEFTBRACKET;  scan = SDL_SCANCODE_LEFTBRACKET;  label = QStringLiteral("["); break;
+        case Qt::Key_BracketRight: sdlKey = SDLK_RIGHTBRACKET; scan = SDL_SCANCODE_RIGHTBRACKET; label = QStringLiteral("]"); break;
+        case Qt::Key_Backslash:    sdlKey = SDLK_BACKSLASH;    scan = SDL_SCANCODE_BACKSLASH;    label = QStringLiteral("\\"); break;
+        case Qt::Key_Semicolon:    sdlKey = SDLK_SEMICOLON;    scan = SDL_SCANCODE_SEMICOLON;    label = QStringLiteral(";"); break;
+        case Qt::Key_Apostrophe:   sdlKey = SDLK_QUOTE;        scan = SDL_SCANCODE_APOSTROPHE;   label = QStringLiteral("'"); break;
+        case Qt::Key_Comma:        sdlKey = SDLK_COMMA;        scan = SDL_SCANCODE_COMMA;        label = QStringLiteral(","); break;
+        case Qt::Key_Period:       sdlKey = SDLK_PERIOD;       scan = SDL_SCANCODE_PERIOD;       label = QStringLiteral("."); break;
+        case Qt::Key_Slash:        sdlKey = SDLK_SLASH;        scan = SDL_SCANCODE_SLASH;        label = QStringLiteral("/"); break;
+        case Qt::Key_QuoteLeft:
+        case Qt::Key_AsciiTilde:   sdlKey = SDLK_BACKQUOTE;    scan = SDL_SCANCODE_GRAVE;        label = QStringLiteral("`"); break;
         default:
-            return r; // unsupported
+            // Holding Shift turns digits/punctuation into symbol Qt keys
+            // (Shift+1 -> Key_Exclam, Shift+, -> Key_Less, …) and that symbol↔key
+            // mapping is keyboard-layout dependent, so Qt::Key can't resolve them.
+            // Fall back to the Windows hardware scan code, which is the same
+            // regardless of Shift or layout. The runtime combo match compares
+            // scancodes too, so this binds correctly on any layout (the printed
+            // label uses the US legend for punctuation, but the key is right).
+            switch (nativeScanCode & 0xFF) {
+            case 0x02: sdlKey = SDLK_1; scan = SDL_SCANCODE_1; label = QStringLiteral("1"); break;
+            case 0x03: sdlKey = SDLK_2; scan = SDL_SCANCODE_2; label = QStringLiteral("2"); break;
+            case 0x04: sdlKey = SDLK_3; scan = SDL_SCANCODE_3; label = QStringLiteral("3"); break;
+            case 0x05: sdlKey = SDLK_4; scan = SDL_SCANCODE_4; label = QStringLiteral("4"); break;
+            case 0x06: sdlKey = SDLK_5; scan = SDL_SCANCODE_5; label = QStringLiteral("5"); break;
+            case 0x07: sdlKey = SDLK_6; scan = SDL_SCANCODE_6; label = QStringLiteral("6"); break;
+            case 0x08: sdlKey = SDLK_7; scan = SDL_SCANCODE_7; label = QStringLiteral("7"); break;
+            case 0x09: sdlKey = SDLK_8; scan = SDL_SCANCODE_8; label = QStringLiteral("8"); break;
+            case 0x0A: sdlKey = SDLK_9; scan = SDL_SCANCODE_9; label = QStringLiteral("9"); break;
+            case 0x0B: sdlKey = SDLK_0; scan = SDL_SCANCODE_0; label = QStringLiteral("0"); break;
+            case 0x0C: sdlKey = SDLK_MINUS;        scan = SDL_SCANCODE_MINUS;        label = QStringLiteral("-"); break;
+            case 0x0D: sdlKey = SDLK_EQUALS;       scan = SDL_SCANCODE_EQUALS;       label = QStringLiteral("="); break;
+            case 0x1A: sdlKey = SDLK_LEFTBRACKET;  scan = SDL_SCANCODE_LEFTBRACKET;  label = QStringLiteral("["); break;
+            case 0x1B: sdlKey = SDLK_RIGHTBRACKET; scan = SDL_SCANCODE_RIGHTBRACKET; label = QStringLiteral("]"); break;
+            case 0x27: sdlKey = SDLK_SEMICOLON;    scan = SDL_SCANCODE_SEMICOLON;    label = QStringLiteral(";"); break;
+            case 0x28: sdlKey = SDLK_QUOTE;        scan = SDL_SCANCODE_APOSTROPHE;   label = QStringLiteral("'"); break;
+            case 0x29: sdlKey = SDLK_BACKQUOTE;    scan = SDL_SCANCODE_GRAVE;        label = QStringLiteral("`"); break;
+            case 0x2B: sdlKey = SDLK_BACKSLASH;    scan = SDL_SCANCODE_BACKSLASH;    label = QStringLiteral("\\"); break;
+            case 0x33: sdlKey = SDLK_COMMA;        scan = SDL_SCANCODE_COMMA;        label = QStringLiteral(","); break;
+            case 0x34: sdlKey = SDLK_PERIOD;       scan = SDL_SCANCODE_PERIOD;       label = QStringLiteral("."); break;
+            case 0x35: sdlKey = SDLK_SLASH;        scan = SDL_SCANCODE_SLASH;        label = QStringLiteral("/"); break;
+            default:
+                return r; // genuinely unsupported
+            }
+            break;
         }
     }
 

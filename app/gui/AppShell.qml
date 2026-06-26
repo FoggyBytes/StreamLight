@@ -23,7 +23,7 @@ FocusScope {
     readonly property color _text:     "#f0f0f0"
     readonly property color _textDim:  "#a0a0a0"
     readonly property color _green:    "#00E676"
-    readonly property string _version: "4.2.0"
+    readonly property string _version: "4.3.0"
     readonly property string _mono:    "JetBrains Mono"
 
     // 0 = Home, 1 = Apps, 2 = Settings

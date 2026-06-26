@@ -139,20 +139,6 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
         updatePointerRegionLock();
         break;
 
-    case KeyComboQuitAndExit:
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "Detected quitAndExit key combo");
-
-        // Indicate that we want to exit afterwards
-        Session::get()->setShouldExit(true);
-
-        // Push a quit event to the main loop
-        SDL_Event quitExitEvent;
-        quitExitEvent.type = SDL_QUIT;
-        quitExitEvent.quit.timestamp = SDL_GetTicks();
-        SDL_PushEvent(&quitExitEvent);
-        break;
-
     default:
         Q_UNREACHABLE();
     }
@@ -206,16 +192,6 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
                 }
             }
         }
-    }
-
-    // Additional combo: Ctrl+Alt+O (without Shift) toggles the stats overlay
-    if ((event->state == SDL_PRESSED) &&
-            (event->keysym.mod & KMOD_CTRL) &&
-            (event->keysym.mod & KMOD_ALT) &&
-            !(event->keysym.mod & KMOD_SHIFT) &&
-            (event->keysym.sym == SDLK_o || event->keysym.scancode == SDL_SCANCODE_O)) {
-        performSpecialKeyCombo(KeyComboToggleStatsOverlay);
-        return;
     }
 
     // Set modifier flags
