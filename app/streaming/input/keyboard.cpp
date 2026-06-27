@@ -1,5 +1,6 @@
 #include "streaming/session.h"
 #include "settings/shortcutmanager.h"
+#include "streaming/video/streamsettingsoverlay.h"
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -139,6 +140,15 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
         updatePointerRegionLock();
         break;
 
+    case KeyComboStreamSettings:
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Detected stream settings combo");
+        // Open the live Stream Settings overlay (input captured while open).
+        if (m_StreamSettings != nullptr && !m_StreamSettings->isActive()) {
+            m_StreamSettings->open();
+        }
+        break;
+
     default:
         Q_UNREACHABLE();
     }
@@ -149,6 +159,24 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
     short keyCode;
     char modifiers;
     bool shouldNotConvertToScanCodeOnServer = false;
+
+    // Live "Stream Settings" overlay: while open, arrows/Enter/Escape drive the
+    // panel and no key is forwarded to the host.
+    if (m_StreamSettings != nullptr && m_StreamSettings->isActive()) {
+        if (event->state == SDL_PRESSED && !event->repeat) {
+            switch (event->keysym.sym) {
+            case SDLK_UP:     m_StreamSettings->navUp();    break;
+            case SDLK_DOWN:   m_StreamSettings->navDown();  break;
+            case SDLK_LEFT:   m_StreamSettings->navLeft();  break;
+            case SDLK_RIGHT:  m_StreamSettings->navRight(); break;
+            case SDLK_RETURN: m_StreamSettings->apply();    break;
+            case SDLK_ESCAPE: m_StreamSettings->cancel();   break;
+            case SDLK_s:      m_StreamSettings->save();     break;
+            default: break;
+            }
+        }
+        return;
+    }
 
     if (event->repeat) {
         // Ignore repeat key down events

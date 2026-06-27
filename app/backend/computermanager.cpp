@@ -111,6 +111,26 @@ private:
                 }
             }
 
+            // LAN-preferred recovery: if we came online over the Tailscale endpoint but a
+            // LAN address is known, probe it and switch back when it answers. Tailscale
+            // reaches the host from everywhere (including at home), so the "first address
+            // that answers wins" poller above would otherwise stay pinned to the slower
+            // 100.x path until an app restart. Skipped when the user explicitly forced
+            // Tailscale for this host (Open on Tailscale) or for pinned legacy clones.
+            // Reading the fields without a lock is safe here for the same reason as the
+            // offline check below: we're on the only thread that writes them.
+            if (online && !m_Computer->preferTailscaleAddress && !m_Computer->isAddressPinned &&
+                    !m_Computer->tailscaleAddress.isNull() &&
+                    m_Computer->activeAddress == m_Computer->tailscaleAddress &&
+                    !m_Computer->localAddress.isNull()) {
+                bool lanChanged = false;
+                if (tryPollComputer(&nam, m_Computer->localAddress, lanChanged)) {
+                    stateChanged |= lanChanged;
+                    qInfo() << m_Computer->name << "moved from Tailscale back to LAN at"
+                            << m_Computer->activeAddress.toString();
+                }
+            }
+
             // Check if we failed after all retry attempts
             // Note: we don't need to acquire the read lock here,
             // because we're on the writing thread.

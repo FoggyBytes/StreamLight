@@ -20,6 +20,13 @@ public:
     void setAddress(QHostAddress addr);
 
     bool isNull() const;
+
+    // True if this address falls in a range Tailscale assigns to its tailnet
+    // (IPv4 CGNAT 100.64.0.0/10 or IPv6 ULA fd7a:115c:a1e0::/48). Used to keep
+    // a Tailscale endpoint out of the LAN/remote address slots so route
+    // selection prefers the real LAN when both are reachable.
+    bool isTailscaleRange() const;
+
     QString toString() const;
 
     bool operator==(const NvAddress& other) const

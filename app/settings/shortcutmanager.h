@@ -30,6 +30,7 @@ public:
         KB_MINIMIZE,
         KB_PASTE,
         KB_POINTERLOCK,
+        KB_STREAM_SETTINGS,
         KB_COUNT
     };
     Q_ENUM(KbAction)
@@ -49,6 +50,7 @@ public:
     enum PadAction {
         PAD_QUIT,
         PAD_STATS,
+        PAD_STREAM_SETTINGS,
         PAD_COUNT
     };
     Q_ENUM(PadAction)

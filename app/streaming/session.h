@@ -131,6 +131,11 @@ public:
         return m_OverlayManager;
     }
 
+    // Host and app of this session — used by the live Stream Settings overlay to
+    // resolve which profile layer (per-game / host profile / global) to save to.
+    NvComputer* getComputer() const { return m_Computer; }
+    const NvApp& getApp() const { return m_App; }
+
     // Advance the performance overlay through Off -> Minimal -> Default -> Full
     // -> Off ... — bound to the overlay hotkey (Ctrl+Alt+O / Select+L1+R1+X).
     // This drives the same persisted setting shown in Settings > Overlay, so the
@@ -179,6 +184,19 @@ public:
     // transient no-video failure. The new session resumes since the game session
     // already exists on the host.
     Q_INVOKABLE Session* createRetrySession();
+
+    // --- Live "Stream Settings" reconfigure (4.4.0) ---
+    // Request applying new stream parameters mid-session. Since the bitrate /
+    // resolution / fps / HDR are negotiated only in the start SDP, this is done
+    // host-agnostically by ending the current session and resuming with new
+    // preferences (a brief reconnect "blip"). The params are stored and the
+    // current connection is interrupted; StreamSegue then resumes via
+    // createReconfiguredSession(). Frame pacing alone is client-side and must NOT
+    // come through here (it's applied live without a reconnect).
+    Q_INVOKABLE void requestReconfigure(int width, int height, int fps,
+                                        int bitrateKbps, bool enableHdr, int framePacingMode);
+    Q_INVOKABLE bool hasPendingReconfigure() const { return m_HasPendingReconfigure; }
+    Q_INVOKABLE Session* createReconfiguredSession();
 
 signals:
     void stageStarting(QString stage);
@@ -317,6 +335,10 @@ private:
     QQuickWindow* m_QtWindow;
     bool m_UnexpectedTermination;
     bool m_NoVideoTraffic = false;
+    // Pending live-reconfigure request (4.4.0). Applied via a resume reconnect.
+    bool m_HasPendingReconfigure = false;
+    int m_RcWidth = 0, m_RcHeight = 0, m_RcFps = 0, m_RcBitrateKbps = 0, m_RcFramePacing = 0;
+    bool m_RcEnableHdr = false;
     SdlInputHandler* m_InputHandler;
     int m_MouseEmulationRefCount;
     int m_FlushingWindowEventsRef;

@@ -50,6 +50,25 @@ bool NvAddress::isNull() const
     return m_Address.isEmpty();
 }
 
+bool NvAddress::isTailscaleRange() const
+{
+    if (m_Address.isEmpty()) {
+        return false;
+    }
+
+    QHostAddress addr(m_Address);
+    switch (addr.protocol()) {
+    case QAbstractSocket::IPv4Protocol:
+        // Tailscale assigns CGNAT addresses (100.64.0.0/10) on the tailnet.
+        return addr.isInSubnet(QHostAddress("100.64.0.0"), 10);
+    case QAbstractSocket::IPv6Protocol:
+        // Tailscale's IPv6 ULA prefix.
+        return addr.isInSubnet(QHostAddress("fd7a:115c:a1e0::"), 48);
+    default:
+        return false;
+    }
+}
+
 QString NvAddress::toString() const
 {
     if (m_Address.isEmpty()) {

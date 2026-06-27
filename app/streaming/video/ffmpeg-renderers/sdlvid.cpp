@@ -246,6 +246,14 @@ void SdlRenderer::renderOverlay(Overlay::OverlayType type)
                 m_OverlayRects[type].x = (int)Session::get()->getOverlayManager().getOverlayX(type);
                 m_OverlayRects[type].y = (int)Session::get()->getOverlayManager().getOverlayY(type);
             }
+            else if (type == Overlay::OverlayStreamSettings) {
+                // Top right, inset a few px off the edges
+                const int kEdgeMargin = 12;
+                SDL_Rect viewportRect;
+                SDL_RenderGetViewport(m_Renderer, &viewportRect);
+                m_OverlayRects[type].x = viewportRect.w - newSurface->w - kEdgeMargin;
+                m_OverlayRects[type].y = kEdgeMargin;
+            }
 
             m_OverlayRects[type].w = newSurface->w;
             m_OverlayRects[type].h = newSurface->h;

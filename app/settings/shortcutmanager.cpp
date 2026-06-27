@@ -36,6 +36,7 @@ static const KbDefault s_KbDefaults[ShortcutManager::KB_COUNT] = {
     { "Minimize window",                  DEF_MODS, SDLK_d, SDL_SCANCODE_D, "D" },
     { "Paste clipboard text to host",     DEF_MODS, SDLK_v, SDL_SCANCODE_V, "V" },
     { "Lock pointer to window region",    DEF_MODS, SDLK_l, SDL_SCANCODE_L, "L" },
+    { "Open stream settings",             DEF_MODS, SDLK_o, SDL_SCANCODE_O, "O" },
 };
 
 struct PadDefault {
@@ -44,8 +45,9 @@ struct PadDefault {
 };
 
 static const PadDefault s_PadDefaults[ShortcutManager::PAD_COUNT] = {
-    { "Quit session",             PLAY_FLAG | BACK_FLAG | LB_FLAG | RB_FLAG },
+    { "Quit session",              PLAY_FLAG | BACK_FLAG | LB_FLAG | RB_FLAG },
     { "Cycle performance overlay", BACK_FLAG | LB_FLAG | RB_FLAG | X_FLAG },
+    { "Open stream settings",      BACK_FLAG | LB_FLAG | RB_FLAG | B_FLAG },
 };
 
 // Digital buttons that can take part in a pad combo (analog triggers L2/R2 are

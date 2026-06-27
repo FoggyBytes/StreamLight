@@ -48,6 +48,25 @@ NvComputer::NvComputer(QSettings& settings)
     this->aliasSuffix = settings.value(SER_ALIASSUFFIX).toString();
     this->isAddressPinned = settings.value(SER_ADDRESSPINNED, false).toBool();
 
+    // Migration: older builds could persist a Tailscale-range IP into the LAN/remote/v6
+    // slots (the host reports its Tailscale-interface IP as LocalIP when reached over
+    // Tailscale). Such an address answers from everywhere, so it pinned the poller to the
+    // slow 100.x path and never fell back to the real LAN — surviving restarts and only
+    // fixable by typing the LAN IP by hand. Reclaim any such address into the Tailscale
+    // fallback slot and clear the LAN/remote slot so route selection prefers the LAN again.
+    // Pinned hosts (legacy Tailscale clones) reach the PC only through their manual
+    // address, so leave them untouched.
+    if (!this->isAddressPinned) {
+        for (NvAddress* slot : { &this->localAddress, &this->remoteAddress, &this->ipv6Address }) {
+            if (slot->isTailscaleRange()) {
+                if (this->tailscaleAddress.isNull()) {
+                    this->tailscaleAddress = *slot;
+                }
+                *slot = NvAddress();
+            }
+        }
+    }
+
     int appCount = settings.beginReadArray(SER_APPLIST);
     this->appList.reserve(appCount);
     for (int i = 0; i < appCount; i++) {
@@ -199,6 +218,16 @@ NvComputer::NvComputer(NvHTTP& http, QString serverInfo)
         this->localAddress = NvAddress();
     }
 
+    // When the host is reached over Tailscale it reports its Tailscale-interface IP
+    // as LocalIP. Letting that land in localAddress poisons route selection: the 100.x
+    // endpoint answers from everywhere (including back on the LAN), so the poller would
+    // pin to it and never fall back to the real LAN. Route it to the Tailscale slot
+    // (kept as a last-resort fallback) instead and leave the LAN slot empty.
+    if (this->localAddress.isTailscaleRange()) {
+        this->tailscaleAddress = this->localAddress;
+        this->localAddress = NvAddress();
+    }
+
     QString httpsPort = NvHTTP::getXmlString(serverInfo, "HttpsPort");
     if (httpsPort.isEmpty() || (this->activeHttpsPort = httpsPort.toUShort()) == 0) {
         this->activeHttpsPort = DEFAULT_HTTPS_PORT;
@@ -216,6 +245,15 @@ NvComputer::NvComputer(NvHTTP& http, QString serverInfo)
         this->remoteAddress = NvAddress(remoteAddress, this->externalPort);
     }
     else {
+        this->remoteAddress = NvAddress();
+    }
+
+    // Defensively keep a Tailscale-range address out of the remote slot too (same
+    // reasoning as LocalIP above), funnelling it into the Tailscale fallback.
+    if (this->remoteAddress.isTailscaleRange()) {
+        if (this->tailscaleAddress.isNull()) {
+            this->tailscaleAddress = this->remoteAddress;
+        }
         this->remoteAddress = NvAddress();
     }
 
@@ -611,6 +649,13 @@ bool NvComputer::update(const NvComputer& that)
         ASSIGN_IF_CHANGED_AND_NONNULL(localAddress);
         ASSIGN_IF_CHANGED_AND_NONNULL(remoteAddress);
         ASSIGN_IF_CHANGED_AND_NONNULL(ipv6Address);
+    }
+    // Adopt a Tailscale endpoint discovered from the host's reported addresses
+    // (classified in the serverinfo constructor), but never clobber one already
+    // provided by the StreamTweak bridge — that one is authoritative.
+    if (this->tailscaleAddress.isNull() && !that.tailscaleAddress.isNull()) {
+        this->tailscaleAddress = that.tailscaleAddress;
+        changed = true;
     }
     ASSIGN_IF_CHANGED_AND_NONNULL(manualAddress);
     ASSIGN_IF_CHANGED(activeHttpsPort);

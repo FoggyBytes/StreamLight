@@ -69,6 +69,17 @@ These features cross the bridge and require both apps. The version next to each 
 - **Remote Windows Update** *(StreamTweak 7.3.0+)* — Options → **Check Windows Update on host…** scans, classifies and installs Windows updates on the host (Security + Defender / All), rebooting only if required, with a backgroundable progress view. The Power… chooser can also **install pending updates before shutting down**, on the host and/or this client, showing where updates are pending
 - **Tailscale, unified into one tile** *(StreamTweak 6.3.0+; single tile in StreamLight 3.3.0)* — after pairing via LAN IP, StreamLight queries the `TAILSCALE` bridge command. If StreamTweak reports a `100.x.y.z` Tailscale address, StreamLight records it on the host's **single** tile, which then tracks both the LAN and Tailscale IPs and shows a `TAILSCALE · AVAILABLE` badge (just `TAILSCALE` when only the Tailscale path is up). Opening the host or *All Apps* uses whichever path is available (LAN locally, Tailscale remotely); a dedicated **Tailscale** option forces the `100.x` endpoint. Combined with the **Auto-start Tailscale on launch** Settings toggle, the round-trip is automatic: open StreamLight → Tailscale comes up → one click streams from anywhere
 
+## ✨ What's New in 4.4.0 — Live Stream Settings
+
+No StreamTweak update required — everything in 4.4.0 is client-side and works with any host.
+
+- **Live Stream Settings overlay** — change **resolution, frame rate, bitrate, HDR and frame pacing while streaming**, without returning to the host list. A panel opens **top-right**, fully navigable with the **controller or keyboard**; the new settings are applied with a brief reconnect. Open it with **Ctrl+Alt+Shift+O** (keyboard) or **Select+L1+R1+B** (controller) — both rebindable in *Settings → Shortcuts*.
+- **Custom resolution on the fly** — pick *Custom* on the Resolution row and dial in Width and Height right in the overlay (snapped to even pixels, with a live aspect-ratio hint).
+- **Save to the active profile** — besides applying for the current session (**A**), save the chosen values straight to the profile in use — the per-game override, the active host profile, or Global, shown by name (**Y** on the controller, **S** on the keyboard).
+- **Redesigned in-stream overlays** — the Stream Settings panel is a clean rounded card with the active profile in the header, a green-highlighted selected row, colour-coded values with ‹ › arrows, a live changes status, and real Xbox / PlayStation / Nintendo button glyphs for Apply / Cancel / Save. The performance/stats overlay gets the same rounded-card look, hugs its content (no empty space), and both overlays share one font size and sit a few pixels off the screen edges.
+- The overlay's button prompts follow your **controller glyph set** (Xbox / PlayStation / Nintendo), including the Nintendo A/B swap.
+- **Tailscale routing fix** — hosts no longer get **stuck on their Tailscale (100.x) address at home**. A Tailscale address could be saved as the LAN address and, since it answers from everywhere, the app kept using it (slower) even on your local network — across restarts, until you re-entered the IP by hand. StreamLight now keeps Tailscale addresses out of the LAN slot, cleans up any already saved that way, and switches back to the LAN automatically as soon as it's reachable. The host tile also no longer flickers between its LAN and Tailscale address while you're away, and connecting right after returning to the host list no longer stalls briefly.
+
 ## ✨ What's New in 4.3.0 — Shortcuts Refinements
 
 No StreamTweak update required — everything in 4.3.0 is client-side.
@@ -182,7 +193,7 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
 ## 📝 Installation
 
 1. Go to the **Releases** page of this repository.
-2. Download the latest installer (`StreamLight_4.3.0_Installer.exe`) and run it.
+2. Download the latest installer (`StreamLight_4.4.0_Installer.exe`) and run it.
 
 Settings (paired hosts, video / audio / input preferences, client certificate) are stored under `HKCU\Software\Moonlight Game Streaming Project\Moonlight` — the same location used by upstream Moonlight and StreamLight 2.x. Upgrades from 2.x preserve all your hosts and preferences automatically. Box-art cache lives in `%LOCALAPPDATA%\Moonlight Game Streaming Project\Moonlight`.
 

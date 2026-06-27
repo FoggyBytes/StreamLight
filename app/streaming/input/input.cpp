@@ -3,6 +3,7 @@
 #include "streaming/session.h"
 #include "settings/mappingmanager.h"
 #include "settings/shortcutmanager.h"
+#include "streaming/video/streamsettingsoverlay.h"
 #include "path.h"
 #include "utils.h"
 
@@ -91,6 +92,10 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     // User-configurable gamepad combos.
     m_PadQuitMask = ShortcutManager::loadPad(ShortcutManager::PAD_QUIT).buttonMask;
     m_PadStatsMask = ShortcutManager::loadPad(ShortcutManager::PAD_STATS).buttonMask;
+    m_PadStreamSettingsMask = ShortcutManager::loadPad(ShortcutManager::PAD_STREAM_SETTINGS).buttonMask;
+
+    // Live "Stream Settings" overlay (seeded from the session's preferences).
+    m_StreamSettings = new StreamSettingsOverlay(&prefs);
 
     m_OldIgnoreDevices = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES);
     m_OldIgnoreDevicesExcept = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT);
@@ -175,6 +180,8 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
 
 SdlInputHandler::~SdlInputHandler()
 {
+    delete m_StreamSettings;
+
     for (int i = 0; i < MAX_GAMEPADS; i++) {
         if (m_GamepadState[i].mouseEmulationTimer != 0) {
             Session::get()->notifyMouseEmulationMode(false);

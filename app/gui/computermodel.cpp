@@ -349,14 +349,13 @@ void ComputerModel::clearTailscalePreferences()
                 c->preferTailscaleAddress = false;
                 changed = true;
             }
-            // If the active connection was forced onto Tailscale, revert it to the LAN
-            // endpoint so the poller re-prefers LAN (and the badge flips back to
-            // "AVAILABLE"). If the LAN is actually down the poller falls back to
-            // Tailscale on its own.
-            if (!c->localAddress.isNull() && c->activeAddress == c->tailscaleAddress) {
-                c->activeAddress = c->localAddress;
-                changed = true;
-            }
+            // NOTE: we intentionally do NOT optimistically set activeAddress = localAddress
+            // here. The poller's LAN-preferred re-probe (PcMonitorThread::run) already moves
+            // the active connection back to the LAN within a poll cycle whenever the LAN is
+            // actually reachable. Forcing it here caused a visible flap when away (LAN down):
+            // returning Home set activeAddress to the unreachable LAN IP, the next poll
+            // reverted it to Tailscale, the badge bounced AVAILABLE<->TAILSCALE on every Home
+            // return, and a launch right after Home stalled probing the dead LAN IP first.
         }
         if (changed) {
             emit dataChanged(index(i, 0), index(i, 0));

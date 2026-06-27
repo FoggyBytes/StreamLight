@@ -3,6 +3,7 @@
 #include <Limelight.h>
 #include "SDL_compat.h"
 #include "settings/mappingmanager.h"
+#include "streaming/video/streamsettingsoverlay.h"
 
 #include <QtMath>
 
@@ -266,6 +267,27 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
         return;
     }
 
+    // Live "Stream Settings" overlay: while open, the D-pad / A / B drive the
+    // panel and are NOT forwarded to the host. Use the raw (pre-swap) buttons so
+    // the south button is always Apply regardless of the swap-face-buttons pref.
+    if (m_StreamSettings != nullptr && m_StreamSettings->isActive()) {
+        if (event->state == SDL_PRESSED) {
+            switch (event->button) {
+            case SDL_CONTROLLER_BUTTON_DPAD_UP:    m_StreamSettings->navUp();    break;
+            case SDL_CONTROLLER_BUTTON_DPAD_DOWN:  m_StreamSettings->navDown();  break;
+            case SDL_CONTROLLER_BUTTON_DPAD_LEFT:  m_StreamSettings->navLeft();  break;
+            case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: m_StreamSettings->navRight(); break;
+            case SDL_CONTROLLER_BUTTON_A:          m_StreamSettings->apply();    break;
+            case SDL_CONTROLLER_BUTTON_B:          m_StreamSettings->cancel();   break;
+            case SDL_CONTROLLER_BUTTON_Y:          m_StreamSettings->save();     break;
+            default: break;
+            }
+        }
+        // Don't leave this button set in the state we forward to the host.
+        state->buttons &= ~k_ButtonMap[event->button];
+        return;
+    }
+
     if (m_SwapFaceButtons) {
         switch (event->button) {
         case SDL_CONTROLLER_BUTTON_A:
@@ -387,6 +409,21 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
 
         // Cycle the stats overlay: Off -> Minimal -> Default -> Full -> Off ...
         Session::get()->cycleOverlayMode();
+
+        // Clear buttons down on this gamepad
+        LiSendMultiControllerEvent(state->index, m_GamepadMask,
+                                   0, 0, 0, 0, 0, 0, 0);
+        return;
+    }
+
+    // Handle the configurable stream-settings combo (default Select+L1+R1+B)
+    if (m_PadStreamSettingsMask != 0 && state->buttons == m_PadStreamSettingsMask &&
+            m_StreamSettings != nullptr && !m_StreamSettings->isActive()) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Detected stream settings gamepad combo");
+
+        // Open the live Stream Settings overlay (input is captured while open).
+        m_StreamSettings->open();
 
         // Clear buttons down on this gamepad
         LiSendMultiControllerEvent(state->index, m_GamepadMask,

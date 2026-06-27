@@ -1867,6 +1867,41 @@ Session* Session::createRetrySession()
     return session;
 }
 
+void Session::requestReconfigure(int width, int height, int fps,
+                                 int bitrateKbps, bool enableHdr, int framePacingMode)
+{
+    // Stash the new parameters and tear down the current connection. The QML
+    // segue layer resumes with these via createReconfiguredSession() (one
+    // reconnect "blip" applies the whole batch).
+    m_RcWidth = width;
+    m_RcHeight = height;
+    m_RcFps = fps;
+    m_RcBitrateKbps = bitrateKbps;
+    m_RcEnableHdr = enableHdr;
+    m_RcFramePacing = framePacingMode;
+    m_HasPendingReconfigure = true;
+
+    interrupt();
+}
+
+Session* Session::createReconfiguredSession()
+{
+    // Clone the current (per-game-resolved) preferences and overlay the new
+    // values, then build a fresh resume session — the host still has the active
+    // game session, so it reconnects as a resume.
+    StreamingPreferences* prefs = m_Preferences->clone();
+    prefs->width = m_RcWidth;
+    prefs->height = m_RcHeight;
+    prefs->fps = m_RcFps;
+    prefs->bitrateKbps = m_RcBitrateKbps;
+    prefs->enableHdr = m_RcEnableHdr;
+    prefs->framePacingMode = static_cast<StreamingPreferences::FramePacingMode>(m_RcFramePacing);
+
+    Session* session = new Session(m_Computer, m_App, prefs);
+    prefs->setParent(session);
+    return session;
+}
+
 void Session::interrupt()
 {
     // Stop any connection in progress

@@ -166,6 +166,7 @@ private:
         KeyComboToggleMinimize,
         KeyComboPasteText,
         KeyComboTogglePointerRegionLock,
+        KeyComboStreamSettings,
         KeyComboMax
     };
 
@@ -234,6 +235,11 @@ private:
     // User-configurable gamepad combos (held-button masks). 0 = disabled.
     int m_PadQuitMask;
     int m_PadStatsMask;
+    int m_PadStreamSettingsMask;
+
+    // In-stream live "Stream Settings" overlay (4.4.0). While active, keyboard
+    // and controller input drive the panel instead of being forwarded to the host.
+    class StreamSettingsOverlay* m_StreamSettings;
 
     SDL_TouchFingerEvent m_LastTouchDownEvent;
     SDL_TouchFingerEvent m_LastTouchUpEvent;

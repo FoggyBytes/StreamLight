@@ -5,6 +5,30 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 -----------------------------------------------------
+Version 4.4.0 - Live Stream Settings (27/06/2026)
+-----------------------------------------------------
+
+No StreamTweak update required — everything in 4.4.0 is client-side and works with any host.
+
+✨ NEW FEATURES:
+• Live Stream Settings overlay — change resolution, frame rate, bitrate, HDR and frame pacing while you're streaming, without going back to the host list. A panel opens top-right, fully navigable with the controller or keyboard, and the new settings are applied with a brief reconnect. Open it with Ctrl+Alt+Shift+O (keyboard) or Select+L1+R1+B (controller) — both rebindable in Settings → Shortcuts
+• Custom resolution on the fly — pick "Custom" on the Resolution row and dial in Width and Height right in the overlay (snapped to even pixels, with a live aspect-ratio hint), no need to leave the stream
+• Save to the active profile — besides applying for the current session (A), you can save the chosen values straight to the profile in use: the per-game override, the active host profile, or Global — whichever applies, shown by name so you always know where it lands (Y on the controller, S on the keyboard)
+
+🎨 UI:
+• Redesigned in-stream overlays — the Stream Settings panel is now a clean rounded card with a header showing the profile you're editing, a green highlight on the selected row, colour-coded values with ‹ › arrows, a live "no changes / N changes" status, and real Xbox / PlayStation / Nintendo controller button glyphs for Apply / Cancel / Save
+• The performance/stats overlay got the same rounded-card treatment and now hugs its content instead of stretching to a fixed width, so there's no empty space in the compact view
+• Both overlays now share the same font size and sit a few pixels off the screen edges for a consistent, less cramped look
+• The overlay's on-screen button prompts follow your controller glyph set (Xbox / PlayStation / Nintendo), including the Nintendo A/B position swap
+
+🐛 FIXES:
+• Hosts no longer get stuck on their Tailscale address at home — when a machine was reached over Tailscale its 100.x address could be saved as the LAN address, and since Tailscale answers from everywhere the app kept connecting through it (slower) even back on your local network, surviving restarts until you re-entered the IP by hand; StreamLight now keeps Tailscale addresses out of the LAN slot, cleans up any already saved that way, and switches back to the LAN automatically as soon as it's reachable
+• Host tile no longer flickers between its LAN and Tailscale address (badge bouncing AVAILABLE ↔ TAILSCALE) while you're away, and connecting right after returning to the host list no longer stalls for a couple of seconds
+
+🙏 THANKS:
+• Thanks to @ziCk2077 (https://github.com/FoggyBytes/StreamLight/issues/3) — the on-the-fly bitrate discussion is what grew into this whole live-settings panel, and the report on hosts sticking to their Tailscale IP is what drove the routing fix
+
+-----------------------------------------------------
 Version 4.3.0 - Shortcuts Refinements (25/06/2026)
 -----------------------------------------------------
 

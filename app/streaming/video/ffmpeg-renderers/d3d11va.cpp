@@ -1186,6 +1186,9 @@ bool D3D11VARenderer::createOverlayVertexBuffer(Overlay::OverlayType type, int w
 {
     SDL_FRect renderRect = {};
 
+    // Small inset so the cards don't sit flush against the screen edges.
+    const int kEdgeMargin = 12;
+
     if (type == Overlay::OverlayStatusUpdate) {
         // Bottom-left: in this coord system y=0 is the bottom edge
         renderRect.x = 0;
@@ -1193,8 +1196,13 @@ bool D3D11VARenderer::createOverlayVertexBuffer(Overlay::OverlayType type, int w
     }
     else if (type == Overlay::OverlayDebug) {
         // Top-left: y=0 is bottom, so shift up by the overlay height to reach the top edge
-        renderRect.x = 0;
-        renderRect.y = (float)(m_DisplayHeight - height);
+        renderRect.x = kEdgeMargin;
+        renderRect.y = (float)(m_DisplayHeight - height - kEdgeMargin);
+    }
+    else if (type == Overlay::OverlayStreamSettings) {
+        // Top-right
+        renderRect.x = (float)(m_DisplayWidth - width - kEdgeMargin);
+        renderRect.y = (float)(m_DisplayHeight - height - kEdgeMargin);
     }
 
     renderRect.w = width;

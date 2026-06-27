@@ -76,6 +76,25 @@ Item {
 
     function sessionFinished(portTestResult)
     {
+        // Live "Stream Settings" reconfigure (4.4.0): the user changed resolution/
+        // fps/bitrate/HDR mid-stream, so the session was torn down on purpose to
+        // resume with the new parameters. Build the resume session now (while
+        // `session` is still valid) and re-launch — one brief reconnect blip.
+        if (session && session.hasPendingReconfigure()) {
+            _pendingRetrySession = session.createReconfiguredSession()
+            if (_pendingRetrySession) {
+                SdlGamepadKeyNavigation.enable()
+                streamSegueErrorDialog.text = ""
+                stageText = qsTr("Applying new settings…")
+                stageSpinner.visible = true
+                stageLabel.visible = true
+                window.visible = true
+                reconfigureTimer.start()
+                return
+            }
+            // Couldn't build the reconfigured session — fall through to normal end.
+        }
+
         // Transient "no video from host" on a cold launch: the host's display/
         // encoder is still warming up (common with virtual displays + HDR/AV1).
         // The immediate resume reliably succeeds, so auto-retry once before
@@ -181,6 +200,38 @@ Item {
         stackView.replace(stackView.currentItem, segue)
     }
 
+    // Replace this segue with a fresh resume carrying the reconfigured session
+    // (live "Stream Settings"). Unlike the no-video retry, this is user-initiated
+    // and gets a fresh no-video retry budget.
+    function startReconfigureResume()
+    {
+        var newSession = _pendingRetrySession
+        _pendingRetrySession = null
+        if (!newSession) {
+            streamSegueErrorDialog.text = qsTr("Could not apply the new settings.")
+            streamSegueErrorDialog.open()
+            return
+        }
+
+        var component = Qt.createComponent("StreamSegue.qml")
+        if (component.status !== Component.Ready) {
+            console.warn("StreamSegue.qml not ready for reconfigure:", component.errorString())
+            streamSegueErrorDialog.text = qsTr("Could not apply the new settings.")
+            streamSegueErrorDialog.open()
+            return
+        }
+
+        var segue = component.createObject(stackView, {
+            "appName":        appName,
+            "session":        newSession,
+            "isResume":       true,
+            "quitAfter":      quitAfter,
+            "noVideoRetries": StreamingPreferences.autoReconnectNoVideo ? 1 : 0
+        })
+        if (Window.window) Window.window.markStreamLaunching()
+        stackView.replace(stackView.currentItem, segue)
+    }
+
     StackView.onDeactivating: {
         // (toolbar removed in 3.0 redesign — nothing to restore here)
 
@@ -217,6 +268,14 @@ Item {
         // so this just covers RTSP teardown/settle of the failed session.
         interval: 1500
         onTriggered: startNoVideoRetry()
+    }
+
+    Timer {
+        id: reconfigureTimer
+        // Short settle for the intentional teardown before resuming with the new
+        // stream parameters (live "Stream Settings" reconfigure).
+        interval: 700
+        onTriggered: startReconfigureResume()
     }
 
     Timer {
