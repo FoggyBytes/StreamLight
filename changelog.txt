@@ -5,6 +5,18 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 -----------------------------------------------------
+Version 4.4.1 - Frame Pacing Overlay Fix (10/07/2026)
+-----------------------------------------------------
+
+No StreamTweak update required — everything in 4.4.1 is client-side and works with any host.
+
+🐛 FIXES:
+• Performance overlay no longer reads "Frame pacing: Software" when you set Frame Pacing to Off — in exclusive fullscreen with V-Sync on, the D3D11 renderer still needs software pacing to stay in sync with VBlank, so it's force-enabled regardless of the setting; the overlay now shows "Software (forced by V-Sync)" in that case so the status is no longer misleading (turn V-Sync off, or use borderless/windowed fullscreen, to disable pacing entirely)
+
+🙏 THANKS:
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/6) for spotting the misleading frame pacing status on the ROG Ally X
+
+-----------------------------------------------------
 Version 4.4.0 - Live Stream Settings (27/06/2026)
 -----------------------------------------------------
 

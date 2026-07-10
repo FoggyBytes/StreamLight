@@ -143,6 +143,7 @@ private:
 
     int m_LastFrameNumber;
     int m_StreamFps;
+    int m_FramePacingMode; // user-selected StreamingPreferences::FramePacingMode (for overlay clarity)
     int m_OriginalVideoWidth;
     int m_OriginalVideoHeight;
     int m_VideoFormat;

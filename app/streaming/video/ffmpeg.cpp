@@ -232,6 +232,7 @@ FFmpegVideoDecoder::FFmpegVideoDecoder(bool testOnly)
       m_FramesOut(0),
       m_LastFrameNumber(0),
       m_StreamFps(0),
+      m_FramePacingMode(StreamingPreferences::FP_OFF),
       m_VideoFormat(0),
       m_NeedsSpsFixup(false),
       m_TestOnly(testOnly),
@@ -493,6 +494,10 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
     m_StreamFps = params->frameRate;
     m_VideoFormat = params->videoFormat;
     m_CurrentTestMode = testMode;
+
+    // Remember the user's selected pacing mode so the overlay can distinguish a
+    // deliberate Software choice from pacing that was force-enabled by the renderer.
+    m_FramePacingMode = params->framePacingMode;
 
     // Don't bother initializing Pacer if we're not actually going to render
     if (testMode != TestMode::TestFrameOnly) {
@@ -1084,7 +1089,12 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
             pacingMode = pacingBuf;
         }
         else if (m_Pacer != nullptr && m_Pacer->isActive()) {
-            pacingMode = "Software";
+            // The software Pacer can be force-enabled by a renderer requirement
+            // (fullscreen-exclusive D3D11 with V-Sync) even when the user chose
+            // Off — flag that case so the overlay isn't misleading.
+            pacingMode = (m_FramePacingMode == StreamingPreferences::FP_OFF)
+                    ? "Software (forced by V-Sync)"
+                    : "Software";
         }
 
         ret = snprintf(&output[offset], length - offset,
