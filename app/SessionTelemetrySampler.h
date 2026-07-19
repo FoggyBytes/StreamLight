@@ -27,7 +27,7 @@ public:
      * Begin sampling. Requests the session ID from StreamTweak, then starts
      * the 1s sample timer and the 10s batch timer.
      */
-    void start(const QString& hostAddress, int targetFps);
+    void start(const QString& hostAddress, int targetFps, int targetBitrateKbps);
 
     /**
      * Send any buffered samples as a final batch, then stop all timers.
@@ -61,6 +61,11 @@ private:
 
     QString  m_HostAddress;
     int      m_TargetFps = 0;
+    // Configured bitrate ceiling for this session, in Kbps. Reported to StreamTweak
+    // as target_bitrate_mbps so the host can show delivered-vs-target, which neither
+    // side can tell on its own (the client knows the target, the host measures the
+    // delivered rate).
+    int      m_TargetBitrateKbps = 0;
 
     QList<TelemetrySample> m_Samples;
 

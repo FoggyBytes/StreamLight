@@ -15,10 +15,11 @@ SessionTelemetrySampler::SessionTelemetrySampler(QObject* parent)
     connect(&m_SampleTimer, &QTimer::timeout, this, &SessionTelemetrySampler::onSampleTimer);
 }
 
-void SessionTelemetrySampler::start(const QString& hostAddress, int targetFps)
+void SessionTelemetrySampler::start(const QString& hostAddress, int targetFps, int targetBitrateKbps)
 {
-    m_HostAddress = hostAddress;
-    m_TargetFps   = targetFps;
+    m_HostAddress        = hostAddress;
+    m_TargetFps          = targetFps;
+    m_TargetBitrateKbps  = targetBitrateKbps;
 
     // Start sampling immediately — no session ID negotiation needed.
     // StreamTweak accepts batches whenever a session is active, regardless
@@ -140,6 +141,10 @@ QString SessionTelemetrySampler::buildBatchJson() const
 
     QJsonObject root;
     root[QStringLiteral("target_fps")] = m_TargetFps;
+    // Same unit as the per-sample bitrate_mbps, so the host can compare the two
+    // directly. Additive field: older StreamTweak builds ignore it.
+    root[QStringLiteral("target_bitrate_mbps")] =
+        qRound(m_TargetBitrateKbps / 100.0) / 10.0;
     root[QStringLiteral("samples")]    = samplesArray;
 
     // Compact serialization — no embedded newlines (required by bridge protocol)

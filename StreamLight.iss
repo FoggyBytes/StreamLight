@@ -1,8 +1,8 @@
-; StreamLight 4.4.1 — Moonlight fork with StreamTweak integration.
+; StreamLight 4.5.0 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
-#define AppVersion "4.4.1"
+#define AppVersion "4.5.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -20,8 +20,8 @@ DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 InfoBeforeFile=changelog.txt
 SetupIconFile=installer\resources\streamlight.ico
-WizardSmallImageFile=installer\resources\streamlight.bmp
-WizardImageFile=installer\resources\streamlightinstaller.bmp
+WizardSmallImageFile=installer\resources\streamlight.png
+WizardImageFile=installer\resources\streamlightinstaller.png
 UninstallDisplayIcon={app}\{#AppExeName}
 AllowNoIcons=yes
 DirExistsWarning=no
@@ -33,6 +33,13 @@ OutputBaseFilename=StreamLight_{#AppVersion}_Installer
 WizardStyle=modern
 DisableWelcomePage=no
 MinVersion=10.0
+; 64-bit Setup binary (Inno Setup 7+). StreamLight.exe is x64, so a 32-bit installer
+; bought nothing; this also gets high-entropy ASLR by default. Note this drops
+; Windows 10 on ARM64, which only emulates x86 — but the x64 app could never have
+; run there anyway. Windows 11 on ARM64 emulates x64 and is unaffected.
+SetupArchitecture=x64
+; x64compatible (unlike StreamTweak's x64os): this is the CLIENT, and an ARM64 device
+; running it under x64 emulation is a plausible scenario.
 ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
 
@@ -55,7 +62,7 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; \
     Excludes: "*.log,sl_*.txt,streamlight_pad.log,portable.dat"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceDir}\gamecontrollerdb.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "installer\resources\streamlight.bmp"; Flags: dontcopy
+Source: "installer\resources\streamlight.png"; Flags: dontcopy
 Source: "changelog.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
@@ -63,8 +70,15 @@ Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
 Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
-[Registry]
-Root: HKCU; Subkey: "Software\{#AppPublisher}\{#AppName}"; Flags: uninsdeletekey
+; No [Registry] section on purpose. There used to be an HKCU entry creating
+; Software\FoggyBytes\StreamLight with uninsdeletekey, but nothing ever wrote to that
+; key — the app's settings live under Software\Moonlight Game Streaming Project\Moonlight
+; (see main.cpp; that path is load-bearing and must not change). The empty key also
+; triggered Inno's UsedUserAreasWarning: this installer runs elevated, so HKCU resolves
+; to the elevating account's hive, which may not be the interactive user's — the same
+; trap the [Run] section below avoids with runasoriginaluser.
+; Deliberately NOT re-pointed at the real settings key: deleting it on uninstall would
+; make a reinstall lose paired hosts and preferences.
 
 [Run]
 ; If the user opted in to "Add an icon to the Xbox app's My apps", seed the
@@ -111,12 +125,13 @@ procedure InitializeWizard;
 var
   TmpFileName: String;
 begin
-  ExtractTemporaryFile('streamlight.bmp');
-  TmpFileName := ExpandConstant('{tmp}\streamlight.bmp');
+  ExtractTemporaryFile('streamlight.png');
+  TmpFileName := ExpandConstant('{tmp}\streamlight.png');
 
   LogoImage := TBitmapImage.Create(WizardForm);
   LogoImage.Parent := WizardForm.WelcomePage;
-  LogoImage.Bitmap.LoadFromFile(TmpFileName);
+  // PngImage (not Bitmap) is the loader for .png — see Inno Setup's CodeClasses example.
+  LogoImage.PngImage.LoadFromFile(TmpFileName);
   LogoImage.Left := WizardForm.WelcomeLabel1.Left;
   LogoImage.Top := WizardForm.WelcomeLabel1.Top + WizardForm.WelcomeLabel1.Height + ScaleY(25);
   LogoImage.AutoSize := True;

@@ -69,6 +69,12 @@ These features cross the bridge and require both apps. The version next to each 
 - **Remote Windows Update** *(StreamTweak 7.3.0+)* — Options → **Check Windows Update on host…** scans, classifies and installs Windows updates on the host (Security + Defender / All), rebooting only if required, with a backgroundable progress view. The Power… chooser can also **install pending updates before shutting down**, on the host and/or this client, showing where updates are pending
 - **Tailscale, unified into one tile** *(StreamTweak 6.3.0+; single tile in StreamLight 3.3.0)* — after pairing via LAN IP, StreamLight queries the `TAILSCALE` bridge command. If StreamTweak reports a `100.x.y.z` Tailscale address, StreamLight records it on the host's **single** tile, which then tracks both the LAN and Tailscale IPs and shows a `TAILSCALE · AVAILABLE` badge (just `TAILSCALE` when only the Tailscale path is up). Opening the host or *All Apps* uses whichever path is available (LAN locally, Tailscale remotely); a dedicated **Tailscale** option forces the `100.x` endpoint. Combined with the **Auto-start Tailscale on launch** Settings toggle, the round-trip is automatic: open StreamLight → Tailscale comes up → one click streams from anywhere
 
+## ✨ What's New in 4.5.0 — Bitrate Target Reporting
+
+Works with any host. **StreamTweak 8.0.0+** is needed to see the new figure on the host.
+
+- **Delivered vs target bitrate** — StreamLight now reports the bitrate it was configured to aim for, so StreamTweak's Dashboard can show what's actually going out *against your target* rather than a bare number. Neither side could tell that on its own: the client sets the target, the host measures the delivered rate. Older hosts simply ignore the new value
+
 ## ✨ What's New in 4.4.1 — Frame Pacing Overlay Fix
 
 No StreamTweak update required — everything in 4.4.1 is client-side and works with any host.

@@ -1798,8 +1798,9 @@ bool Session::startConnectionAsync()
     if (m_TelemetrySampler) {
         QString hostAddr = m_Computer->activeAddress.address();
         int fps = m_StreamConfig.fps;
-        QMetaObject::invokeMethod(m_TelemetrySampler, [this, hostAddr, fps]() {
-            m_TelemetrySampler->start(hostAddr, fps);
+        int bitrateKbps = m_StreamConfig.bitrate;
+        QMetaObject::invokeMethod(m_TelemetrySampler, [this, hostAddr, fps, bitrateKbps]() {
+            m_TelemetrySampler->start(hostAddr, fps, bitrateKbps);
         }, Qt::QueuedConnection);
     }
 
