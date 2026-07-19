@@ -20,7 +20,7 @@
 
 Windows 10 and 11. Works as a standalone Moonlight-compatible client against any Sunshine / Apollo / Vibeshine / Vibepollo host, **and** unlocks its full feature set when paired with [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) on the host PC (Tailscale, live NIC speed transitions, host metrics overlay, store badges, session-quality reporting, remote pause, remote host power-off, remote Windows Update).
 
-> 🔐 **Authenticated bridge (3.1.0+).** Every command StreamLight sends to StreamTweak is signed with its existing Moonlight identity certificate; the host approves each client once via a 4-digit PIN confirmation. **Authorization never affects streaming** — without it you can still stream normally, you only lose the StreamTweak integration: host metrics overlay, NIC speed & Streaming Mode, store badges on covers, session quality reports & live charts, Tailscale, remote pause, remote host power-off, and remote Windows Update. Each host card shows its access state (AUTHORIZED / PENDING / DENIED) as a badge. As of StreamTweak 7.2.0 this authentication is mandatory (the host no longer has an option to disable it). Requires **StreamTweak 7.3.0 or later** on the host for the latest features (remote Windows Update, update-and-shut-down) and for the advanced integration in general; update both apps together.
+> 🔐 **Authenticated bridge (3.1.0+).** Every command StreamLight sends to StreamTweak is signed with its existing Moonlight identity certificate; the host approves each client once via a 4-digit PIN confirmation. **Authorization never affects streaming** — without it you can still stream normally, you only lose the StreamTweak integration: host metrics overlay, NIC speed & the Link-speed switch, store badges on covers, session quality reports & live charts, Tailscale, remote pause, remote host power-off, and remote Windows Update. Each host card shows its access state (AUTHORIZED / PENDING / DENIED) as a badge. As of StreamTweak 7.2.0 this authentication is mandatory (the host no longer has an option to disable it). Requires **StreamTweak 7.3.0 or later** on the host for remote Windows Update and update-and-shut-down, and **8.0.0** for the delivered-vs-target bitrate; update both apps together.
 
 > ⚠️ **Not affiliated with or endorsed by the Moonlight project.** StreamLight is an independent fork. For upstream Moonlight support, use the [official client](https://github.com/moonlight-stream/moonlight-qt).
 
@@ -34,7 +34,7 @@ Windows 10 and 11. Works as a standalone Moonlight-compatible client against any
 
 **🏠 Home & App Grid**
 - Portrait host cards with per-host coloured gradient headers and an inline **+ Add Hosts** tile
-- Per-card **Profiles** and **Options** buttons under each tile *(Profiles new in 4.0.0)*. **Options** *(a wide tile grid as of 3.3.0)*: All Apps, Tailscale, Test Network, Rename, Delete, Details, **StreamTweak Streaming Mode**, Power…, Windows Update, Wake
+- Per-card **Profiles** and **Options** buttons under each tile *(Profiles new in 4.0.0)*. **Options** *(a wide tile grid as of 3.3.0)*: All Apps, Tailscale, Test Network, Rename, Delete, Details, **Link-speed switch**, Power…, Windows Update, Wake
 - One-row header in the app grid: `profile · ONLINE · IP · NIC speed · resolution · FPS · bitrate · HDR · codec · audio` *(effective config, reflecting the active host profile; new fields in 4.0.0)*
 - 200×267 covers with store badges and a tight bright-green focus border; the running app's cover gets a thicker, pulsing border
 - App-name tooltip appears **instantly** below the cover, anchored outside the focus frame
@@ -60,13 +60,14 @@ Windows 10 and 11. Works as a standalone Moonlight-compatible client against any
 
 These features cross the bridge and require both apps. The version next to each one is the **minimum** StreamTweak version on the host side.
 
-- **NIC Control from the Client** *(StreamTweak 1.0+)* — Options → **StreamTweak Streaming Mode** sends `PREPARE` to the host before connecting, with a 10-second countdown and 30-second auto-revert if no connection follows. Current host NIC speed is shown on every host card and per-host header, **polled live every 2 seconds** — watch the host transition 2.5 Gbps → 1 Gbps when Streaming Mode kicks in, and back on inactivity
+- **NIC Control from the Client** *(StreamTweak 1.0+)* — Options → **Link-speed switch** sends `PREPARE` to the host before connecting, with a 10-second countdown and 30-second auto-revert if no connection follows. Current host NIC speed is shown on every host card and per-host header, **polled live every 2 seconds** — watch the host transition to its streaming speed when the switch kicks in, and back on inactivity (the target speed is chosen on the host; StreamTweak 8.0.0+ lets you pick it, older versions always use 1 Gbps)
 - **Host Metrics in Overlay** *(StreamTweak 4.4.0+)* — live GPU %, encoder %, GPU temperature, VRAM used/total, CPU %, and network TX in the performance overlay; section hidden entirely when StreamTweak is unreachable
 - **Store Badges on Game Covers** *(StreamTweak 5.0.0+)* — per-game badge overlaid on each cover (Steam, Epic, GOG, Ubisoft, Xbox, Battle.net, EA App), fetched via the `APPSTORES` command
 - **Session Quality Reporting** *(StreamTweak 5.2.0+)* — FPS, drops, RTT, jitter, decode latency, bitrate streamed every second; StreamTweak generates the quality grade and sparkline charts in its Logs tab
 - **Remote Session Pause** *(StreamTweak 6.0.0+)* — Pause button on StreamTweak's Home page terminates the stream on the client side; signal piggybacked on the existing per-second `STATS` channel
 - **Remote Host Power-Off** *(StreamTweak 7.2.0+)* — a **Power…** chooser (Options menu) shuts down the host PC, this client PC, or both; a status-bar **X · Shutdown** shortcut opens it for the highlighted host. Host power-off rides the authenticated bridge and only works on an AUTHORIZED host
 - **Remote Windows Update** *(StreamTweak 7.3.0+)* — Options → **Check Windows Update on host…** scans, classifies and installs Windows updates on the host (Security + Defender / All), rebooting only if required, with a backgroundable progress view. The Power… chooser can also **install pending updates before shutting down**, on the host and/or this client, showing where updates are pending
+- **Delivered vs Target Bitrate** *(StreamTweak 8.0.0+)* — StreamLight reports the bitrate it was configured to aim for, so the host's Dashboard shows the delivered rate *against your target* instead of a bare number. Neither side can work that out alone: the client sets the target, the host measures what actually goes out
 - **Tailscale, unified into one tile** *(StreamTweak 6.3.0+; single tile in StreamLight 3.3.0)* — after pairing via LAN IP, StreamLight queries the `TAILSCALE` bridge command. If StreamTweak reports a `100.x.y.z` Tailscale address, StreamLight records it on the host's **single** tile, which then tracks both the LAN and Tailscale IPs and shows a `TAILSCALE · AVAILABLE` badge (just `TAILSCALE` when only the Tailscale path is up). Opening the host or *All Apps* uses whichever path is available (LAN locally, Tailscale remotely); a dedicated **Tailscale** option forces the `100.x` endpoint. Combined with the **Auto-start Tailscale on launch** Settings toggle, the round-trip is automatic: open StreamLight → Tailscale comes up → one click streams from anywhere
 
 ## ✨ What's New in 4.5.0 — Bitrate Target Reporting
@@ -205,7 +206,7 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
 ## 📝 Installation
 
 1. Go to the **Releases** page of this repository.
-2. Download the latest installer (`StreamLight_4.4.1_Installer.exe`) and run it.
+2. Download the latest installer (`StreamLight_4.5.0_Installer.exe`) and run it.
 
 Settings (paired hosts, video / audio / input preferences, client certificate) are stored under `HKCU\Software\Moonlight Game Streaming Project\Moonlight` — the same location used by upstream Moonlight and StreamLight 2.x. Upgrades from 2.x preserve all your hosts and preferences automatically. Box-art cache lives in `%LOCALAPPDATA%\Moonlight Game Streaming Project\Moonlight`.
 

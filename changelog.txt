@@ -14,6 +14,9 @@ Works with any host. StreamTweak 8.0.0 or later is needed to see the new figure 
 • StreamLight now tells the host which bitrate it was configured to aim for, so StreamTweak's Dashboard can show the delivered rate against your target instead of a bare number — neither side could work that out alone, since the client sets the target and the host measures what actually goes out. Everything else about telemetry is unchanged, and older hosts simply ignore the new value
 • The installer is now a 64-bit build with crisper artwork and is about 0.9 MB lighter, with no change to what gets installed
 
+🎨 UI:
+• The host Options tile "Streaming Mode" is now "Link-speed switch", matching what the same feature is called on the host in StreamTweak 8.0.0 — same behaviour, only the name changed
+
 -----------------------------------------------------
 Version 4.4.1 - Frame Pacing Overlay Fix (10/07/2026)
 -----------------------------------------------------

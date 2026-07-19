@@ -519,7 +519,7 @@ FocusScope {
                 items.push({ kind: "rename",             icon: "✏️", label: qsTr("Rename") })
                 items.push({ kind: "delete",             icon: "🗑️", label: qsTr("Delete"), danger: true })
                 items.push({ kind: "viewDetails",        icon: "ℹ️", label: qsTr("Details") })
-                if (model.online && model.paired)        items.push({ kind: "prepareStreamTweak", icon: "🚀", label: qsTr("Streaming Mode") })
+                if (model.online && model.paired)        items.push({ kind: "prepareStreamTweak", icon: "🚀", label: qsTr("Link-speed switch") })
                 if (model.online && model.paired)        items.push({ kind: "power",              icon: "🔌", label: qsTr("Power") })
                 if (model.online && model.paired && pcCard.streamTweakAuth === "authorized")
                                                          items.push({ kind: "updateHost",         icon: "🪟", label: qsTr("Windows Update") })
