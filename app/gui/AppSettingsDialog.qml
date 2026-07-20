@@ -428,8 +428,15 @@ Popup {
                         onActivated: dlg.saveToModel()
                     }
                 }
+                // Locked when V-Sync is off — the mode would be ignored at runtime
+                // (Session forces FP_OFF without V-Sync). V-Sync is a global-only
+                // preference, so there is nothing to override here to make it apply.
+                // Qt's KeyNavigation skips disabled items, so the chain still works.
                 SettingRow {
-                    label: qsTr("Frame pacing")
+                    label: StreamingPreferences.enableVsync ? qsTr("Frame pacing")
+                                                            : qsTr("Frame pacing (needs V-Sync)")
+                    enabled: StreamingPreferences.enableVsync
+                    opacity: enabled ? 1.0 : 0.4
                     SegmentedSelector {
                         id: fpSel; labels: dlg._fpLabels
                         KeyNavigation.up: codecSel

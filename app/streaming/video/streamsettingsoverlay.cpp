@@ -72,6 +72,10 @@ void StreamSettingsOverlay::rebuildRows()
     m_Rows.append(ROW_PACING);
     if (m_Focus >= m_Rows.size()) m_Focus = m_Rows.size() - 1;
     if (m_Focus < 0) m_Focus = 0;
+
+    // Leaving Custom drops two rows, so the clamp above can land the cursor on
+    // the last row — which may be the locked pacing row. Walk back to a usable one.
+    while (m_Focus > 0 && isRowLocked(m_Rows[m_Focus])) m_Focus--;
 }
 
 void StreamSettingsOverlay::open()
@@ -126,18 +130,40 @@ void StreamSettingsOverlay::close()
     Session::get()->getOverlayManager().setOverlayState(Overlay::OverlayStreamSettings, false);
 }
 
+bool StreamSettingsOverlay::isRowLocked(int rowId) const
+{
+    // Frame pacing does nothing without V-Sync — Session passes FP_OFF to the
+    // decoder whenever V-Sync is disabled, and both pacing paths (DXGI sync
+    // interval, software Pacer) are gated on it. V-Sync is a global preference
+    // that can't be changed from here, so the row is shown read-only instead of
+    // advertising a mode that would be silently ignored.
+    return rowId == ROW_PACING && !m_Prefs->enableVsync;
+}
+
+void StreamSettingsOverlay::moveFocus(int delta)
+{
+    const int n = m_Rows.size();
+    if (n <= 0) return;
+
+    // Skip locked rows. Bounded by the row count so an all-locked list (which
+    // can't happen today) can't spin.
+    for (int i = 0; i < n; i++) {
+        m_Focus = (m_Focus + delta + n) % n;
+        if (!isRowLocked(m_Rows[m_Focus])) break;
+    }
+    render();
+}
+
 void StreamSettingsOverlay::navUp()
 {
     if (!m_Active) return;
-    m_Focus = (m_Focus - 1 + m_Rows.size()) % m_Rows.size();
-    render();
+    moveFocus(-1);
 }
 
 void StreamSettingsOverlay::navDown()
 {
     if (!m_Active) return;
-    m_Focus = (m_Focus + 1) % m_Rows.size();
-    render();
+    moveFocus(1);
 }
 
 void StreamSettingsOverlay::navLeft()
@@ -163,6 +189,8 @@ static int clampEven(int v)
 void StreamSettingsOverlay::changeFocused(int delta)
 {
     int row = m_Rows[m_Focus];
+    if (isRowLocked(row)) return;
+
     switch (row) {
     case ROW_RES:
         m_ResIndex = (m_ResIndex + delta + s_ResCount) % s_ResCount;
@@ -200,6 +228,17 @@ void StreamSettingsOverlay::apply()
 
     if (changeCount() > 0) {
         // Keep the current frame pacing; only res/fps/bitrate/HDR change here.
+        //
+        // Do NOT "simplify" this to FP_OFF when V-Sync is off. The value passed
+        // here lands in the cloned prefs of the resumed session, which is what
+        // seeds this overlay next time it opens — and Save (Y) writes whatever
+        // is seeded straight into the per-game override / host profile / global.
+        // Passing FP_OFF would therefore erase the user's stored mode the first
+        // time they save anything else (e.g. a bitrate change), permanently and
+        // silently. Round-tripping their own value keeps that Save a no-op.
+        // The decoder ignores the mode without V-Sync anyway (chooseDecoder
+        // forces FP_OFF), and the locked row already displays "Off", so nothing
+        // here is misreported.
         Session::get()->requestReconfigure(effectiveWidth(), effectiveHeight(),
                                            s_FpsPresets[m_FpsIndex], m_BitrateKbps,
                                            m_Hdr, static_cast<int>(s_PacingValues[m_PacingIndex]));
@@ -399,13 +438,17 @@ void StreamSettingsOverlay::render()
 
     auto addRow = [&](int rowId, const QString& label, const QString& value,
                       const QString& hint = QString(), bool indent = false) {
+        const bool locked = isRowLocked(rowId);
         Overlay::OverlayRow r;
         r.label = label;
         r.value = value;
         r.hint = hint;
-        r.showArrows = true;
+        // A locked row can't be changed, so it gets no ‹ › affordance and is
+        // never drawn as the selection (navigation skips it).
+        r.showArrows = !locked;
+        r.dimmed = locked;
         r.indent = indent;
-        r.selected = (m_Rows[m_Focus] == rowId);
+        r.selected = !locked && (m_Rows[m_Focus] == rowId);
         panel.rows.append(r);
     };
 
@@ -441,8 +484,14 @@ void StreamSettingsOverlay::render()
                    m_Hdr ? QStringLiteral("On") : QStringLiteral("Off"));
             break;
         case ROW_PACING:
-            addRow(ROW_PACING, QStringLiteral("Frame pacing"),
-                   QString::fromLatin1(s_PacingLabels[m_PacingIndex]));
+            if (isRowLocked(ROW_PACING)) {
+                addRow(ROW_PACING, QStringLiteral("Frame pacing"),
+                       QStringLiteral("Off"), QStringLiteral("V-Sync off"));
+            }
+            else {
+                addRow(ROW_PACING, QStringLiteral("Frame pacing"),
+                       QString::fromLatin1(s_PacingLabels[m_PacingIndex]));
+            }
             break;
         }
     }

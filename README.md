@@ -70,6 +70,12 @@ These features cross the bridge and require both apps. The version next to each 
 - **Delivered vs Target Bitrate** *(StreamTweak 8.0.0+)* — StreamLight reports the bitrate it was configured to aim for, so the host's Dashboard shows the delivered rate *against your target* instead of a bare number. Neither side can work that out alone: the client sets the target, the host measures what actually goes out
 - **Tailscale, unified into one tile** *(StreamTweak 6.3.0+; single tile in StreamLight 3.3.0)* — after pairing via LAN IP, StreamLight queries the `TAILSCALE` bridge command. If StreamTweak reports a `100.x.y.z` Tailscale address, StreamLight records it on the host's **single** tile, which then tracks both the LAN and Tailscale IPs and shows a `TAILSCALE · AVAILABLE` badge (just `TAILSCALE` when only the Tailscale path is up). Opening the host or *All Apps* uses whichever path is available (LAN locally, Tailscale remotely); a dedicated **Tailscale** option forces the `100.x` endpoint. Combined with the **Auto-start Tailscale on launch** Settings toggle, the round-trip is automatic: open StreamLight → Tailscale comes up → one click streams from anywhere
 
+## ✨ What's New in 4.5.1 — Frame Pacing Lock
+
+No StreamTweak update required — everything in 4.5.1 is client-side and works with any host.
+
+- **Frame Pacing is locked when V-Sync is off** — in *Settings*, in the **per-game overrides** and in the in-stream **Stream Settings** overlay. Without V-Sync the stream renders as fast as it can and pacing is ignored, so the control no longer offers a mode that has no effect. Your chosen mode is **kept** and applies again as soon as V-Sync is turned back on. Thanks to [@Soladus](https://github.com/FoggyBytes/StreamLight/issues/8) for the report.
+
 ## ✨ What's New in 4.5.0 — Bitrate Target Reporting
 
 Works with any host. **StreamTweak 8.0.0+** is needed to see the new figure on the host.
@@ -206,7 +212,7 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
 ## 📝 Installation
 
 1. Go to the **Releases** page of this repository.
-2. Download the latest installer (`StreamLight_4.5.0_Installer.exe`) and run it.
+2. Download the latest installer (`StreamLight_4.5.1_Installer.exe`) and run it.
 
 Settings (paired hosts, video / audio / input preferences, client certificate) are stored under `HKCU\Software\Moonlight Game Streaming Project\Moonlight` — the same location used by upstream Moonlight and StreamLight 2.x. Upgrades from 2.x preserve all your hosts and preferences automatically. Box-art cache lives in `%LOCALAPPDATA%\Moonlight Game Streaming Project\Moonlight`.
 

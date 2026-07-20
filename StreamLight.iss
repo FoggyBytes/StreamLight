@@ -1,8 +1,8 @@
-; StreamLight 4.5.0 — Moonlight fork with StreamTweak integration.
+; StreamLight 4.5.1 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
-#define AppVersion "4.5.0"
+#define AppVersion "4.5.1"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -178,11 +178,15 @@ begin
   StreamTweakBulletsLabel.Top := StreamTweakIntroLabel.Top + StreamTweakIntroLabel.Height + ScaleY(14);
   StreamTweakBulletsLabel.AutoSize := True;
   StreamTweakBulletsLabel.Caption :=
-    '•  Adaptive NIC throttling — eliminates UDP bufferbloat and latency spikes' + #13#10 +
+    // NB: this label has no WordWrap, so every bullet must stay on one line —
+    // keep them at or under ~76 characters or they get clipped on the right.
+    '•  Link-speed switch — sets the host NIC speed to eliminate UDP bufferbloat' + #13#10 +
     '•  Live host metrics overlay (GPU, encoder, VRAM, temperature, CPU, network)' + #13#10 +
+    '•  NVIDIA Sentinel — protects your driver profile from NVIDIA App resets' + #13#10 +
     '•  Auto HDR toggle + spatial audio (Dolby Atmos / Windows Sonic)' + #13#10 +
     '•  Game library sync with store badges (Steam, Epic, GOG, Xbox, …)' + #13#10 +
     '•  Session quality grading and per-stream telemetry' + #13#10 +
+    '•  Live bitrate shown against your configured target on the host dashboard' + #13#10 +
     '•  Remote host power-off and Windows Update' + #13#10 +
     '•  Tailscale presence for remote streaming over the internet';
 

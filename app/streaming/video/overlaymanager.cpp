@@ -533,7 +533,12 @@ SDL_Surface* OverlayManager::buildPanelSurface(OverlayType type)
             fillRoundedRect(surf, 8, y + 5, 3, rowH - 10, 1, cSelBar);
         }
 
-        SDL_Color lc = r.selected ? cLabelSel : (r.labelColor.a ? r.labelColor : cLabel);
+        // A dimmed row is read-only (e.g. frame pacing while V-Sync is off):
+        // label and value are drawn in the muted hint colour so it reads as
+        // information rather than as something the user failed to select.
+        SDL_Color lc = r.dimmed ? cHint
+                     : r.selected ? cLabelSel
+                     : (r.labelColor.a ? r.labelColor : cLabel);
         textSeg(main, r.label, lc, surf, labelStartX(r), rowCentre);
 
         SDL_Color ac = r.selected ? cArrowSel : cArrow;
@@ -550,7 +555,9 @@ SDL_Surface* OverlayManager::buildPanelSurface(OverlayType type)
             curRight -= arrowW + arrowGap;
         }
         int vw = measMain(r.value);
-        SDL_Color vc = r.valueColor.a ? r.valueColor : SDL_Color{0xF0, 0xF0, 0xF0, 0xFF};
+        SDL_Color vc = r.dimmed ? cHint
+                     : r.valueColor.a ? r.valueColor
+                     : SDL_Color{0xF0, 0xF0, 0xF0, 0xFF};
         textSeg(main, r.value, vc, surf, curRight - vw, rowCentre);
         curRight -= vw;
         if (r.showArrows) {

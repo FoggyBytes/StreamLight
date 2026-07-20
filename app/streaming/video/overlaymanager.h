@@ -28,6 +28,7 @@ struct OverlayRow {
     SDL_Color trailingColor = {0x80, 0x80, 0x80, 0xFF};
     bool selected = false;
     bool indent = false;
+    bool dimmed = false;                       // read-only row: greyed, no arrows
 };
 
 // A footer action hint, e.g. a green "A" controller button + "Apply".

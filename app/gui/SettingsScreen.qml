@@ -998,7 +998,14 @@ FocusScope {
                         Item {
                             width: parent.width
                             height: Math.max(settingsScreen._rowHeightTall, fpCol.implicitHeight + 16)
+                            // Frame pacing has no effect without V-Sync: Session passes
+                            // FP_OFF to the decoder whenever V-Sync is disabled, and both
+                            // pacing paths (DXGI sync interval, software Pacer) are gated
+                            // on it. Lock the control instead of letting it show a value
+                            // that is silently ignored. The stored mode is deliberately
+                            // left untouched, so re-enabling V-Sync restores the choice.
                             enabled: !settingsScreen._lockFramePacing
+                                     && StreamingPreferences.enableVsync
                             opacity: enabled ? 1.0 : 0.4
 
                             Column {
@@ -1020,7 +1027,9 @@ FocusScope {
                                 Label {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
-                                    text: qsTr("Removes judder on high-refresh displays. Software paces every frame; Hardware locks the GPU cadence for a multiple-refresh display (e.g. 120 Hz / 60 FPS = 2×, 240 Hz / 60 FPS = 4×).")
+                                    text: StreamingPreferences.enableVsync
+                                          ? qsTr("Removes judder on high-refresh displays. Software paces every frame; Hardware locks the GPU cadence for a multiple-refresh display (e.g. 120 Hz / 60 FPS = 2×, 240 Hz / 60 FPS = 4×).")
+                                          : qsTr("Requires V-Sync. With V-Sync off the stream renders as fast as it can, so frame pacing is ignored — your selection is kept and applies again when V-Sync is turned back on.")
                                     font.family: "DM Sans"
                                     font.pixelSize: 13
                                     color: settingsScreen._textDim

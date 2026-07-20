@@ -12,9 +12,9 @@
 // panel itself is rendered through the existing text-overlay path
 // (OverlayManager / OverlayStreamSettings), matching the stats overlay look.
 //
-// Frame pacing is intentionally NOT here yet — it's set at decoder/renderer init
-// (not live-changeable without render-thread reconfig), and the rule is that
-// changing it alone must not reconnect.
+// Frame pacing is set at decoder/renderer init, so it rides the same reconnect
+// as the other rows rather than changing live. It is shown read-only when V-Sync
+// is off, since the decoder ignores the mode entirely in that case.
 class StreamSettingsOverlay
 {
 public:
@@ -53,6 +53,8 @@ private:
     };
 
     void rebuildRows();
+    bool isRowLocked(int rowId) const;
+    void moveFocus(int delta);
     void changeFocused(int delta);
     void render();
     bool isCustom() const;
