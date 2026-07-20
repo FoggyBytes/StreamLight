@@ -58,8 +58,13 @@ Name: "xboxtile"; Description: "Add an icon to the Xbox app's 'My apps' section"
 ; portable.dat excluded: it would force Qt to write settings/cache to {app}
 ; (= Program Files), where standard users can't write. Default Qt storage
 ; (HKCU + %LOCALAPPDATA%) is user-writable and used instead.
+; cache\* excluded: the app writes an auto-updated gamecontrollerdb.txt there at
+; runtime, so a dev machine that ran the deployed build before packaging would
+; otherwise ship its own stale copy (the pristine one is installed from the root,
+; two lines below). Runtime folders must never be swept into the installer —
+; StreamTweak shipped a WebView2 cache this way for six releases.
 Source: "{#SourceDir}\*"; DestDir: "{app}"; \
-    Excludes: "*.log,sl_*.txt,streamlight_pad.log,portable.dat"; \
+    Excludes: "*.log,sl_*.txt,streamlight_pad.log,portable.dat,cache\*"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceDir}\gamecontrollerdb.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "installer\resources\streamlight.png"; Flags: dontcopy

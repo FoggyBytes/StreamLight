@@ -1029,7 +1029,7 @@ FocusScope {
                                     wrapMode: Text.WordWrap
                                     text: StreamingPreferences.enableVsync
                                           ? qsTr("Removes judder on high-refresh displays. Software paces every frame; Hardware locks the GPU cadence for a multiple-refresh display (e.g. 120 Hz / 60 FPS = 2×, 240 Hz / 60 FPS = 4×).")
-                                          : qsTr("Requires V-Sync. With V-Sync off the stream renders as fast as it can, so frame pacing is ignored — your selection is kept and applies again when V-Sync is turned back on.")
+                                          : qsTr("Requires V-Sync — with it off the stream renders as fast as it can, so nothing is paced. Your saved mode is kept and comes back as soon as you re-enable V-Sync.")
                                     font.family: "DM Sans"
                                     font.pixelSize: 13
                                     color: settingsScreen._textDim
@@ -1052,6 +1052,16 @@ FocusScope {
 
                                 Binding on currentIndex {
                                     value: {
+                                        // With V-Sync off nothing is pacing, so show Off (index 0)
+                                        // rather than the saved mode: the user reads the selector as
+                                        // "what is happening", and a greyed "Automatic" just invites
+                                        // the question "why isn't it?".
+                                        //
+                                        // This changes the display ONLY — the stored preference is
+                                        // untouched and reappears here as soon as V-Sync is back on.
+                                        // Safe because onActivated fires on user interaction, not on
+                                        // this binding, and the row is disabled in that state.
+                                        if (!StreamingPreferences.enableVsync) return 0
                                         var v = StreamingPreferences.framePacingMode
                                         for (var i = 0; i < framePacingSelector._values.length; i++) {
                                             if (framePacingSelector._values[i] === v) return i

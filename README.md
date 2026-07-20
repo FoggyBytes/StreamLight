@@ -74,7 +74,7 @@ These features cross the bridge and require both apps. The version next to each 
 
 No StreamTweak update required — everything in 4.5.1 is client-side and works with any host.
 
-- **Frame Pacing is locked when V-Sync is off** — in *Settings*, in the **per-game overrides** and in the in-stream **Stream Settings** overlay. Without V-Sync the stream renders as fast as it can and pacing is ignored, so the control no longer offers a mode that has no effect. Your chosen mode is **kept** and applies again as soon as V-Sync is turned back on. Thanks to [@Soladus](https://github.com/FoggyBytes/StreamLight/issues/8) for the report.
+- **Frame Pacing is locked when V-Sync is off** — in *Settings*, in the **per-game overrides** and in the in-stream **Stream Settings** overlay. Without V-Sync the stream renders as fast as it can and nothing is paced, so the control no longer offers a mode that has no effect: in Settings and in the overlay it now reads **"Off"**, showing what is actually happening, while the per-game override editor keeps showing the override you saved, marked as needing V-Sync. Your saved mode is **never discarded** and comes back as soon as V-Sync is re-enabled. Thanks to [@Soladus](https://github.com/FoggyBytes/StreamLight/issues/8) for the report and for helping settle how it should read.
 
 ## ✨ What's New in 4.5.0 — Bitrate Target Reporting
 

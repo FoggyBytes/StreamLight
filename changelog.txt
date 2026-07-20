@@ -10,11 +10,11 @@ Version 4.5.1 - Frame Pacing Lock (20/07/2026)
 
 No StreamTweak update required — everything in 4.5.1 is client-side and works with any host.
 
-🎨 UI:
-• Frame Pacing is now locked when V-Sync is off, in Settings, in the per-game overrides and in the in-stream Stream Settings overlay — without V-Sync the stream renders as fast as it can and pacing is ignored, so the control no longer offers a mode that has no effect. Your chosen mode is kept and applies again as soon as you turn V-Sync back on
+🐛 FIXES:
+• Frame Pacing is now locked when V-Sync is off — without V-Sync the stream renders as fast as it can and nothing is paced, so the control no longer offers a mode that has no effect. In Settings and in the in-stream Stream Settings overlay it now reads "Off", showing what is actually happening; the per-game overrides keep showing the override you saved, marked as needing V-Sync. Your saved mode is never discarded and comes back as soon as you re-enable V-Sync
 
 🙏 THANKS:
-• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/8) for pointing out that the frame pacing control stayed available with V-Sync disabled
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/8) for spotting that the frame pacing control stayed available with V-Sync disabled, and for helping settle how it should read once locked
 
 -----------------------------------------------------
 Version 4.5.0 - Bitrate Target Reporting (18/07/2026)
