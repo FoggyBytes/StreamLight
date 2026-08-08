@@ -132,6 +132,8 @@ public:
     Q_PROPERTY(bool gamepadMouse MEMBER gamepadMouse NOTIFY gamepadMouseChanged)
     Q_PROPERTY(bool detectNetworkBlocking MEMBER detectNetworkBlocking NOTIFY detectNetworkBlockingChanged)
     Q_PROPERTY(bool autoReconnectNoVideo MEMBER autoReconnectNoVideo NOTIFY autoReconnectNoVideoChanged)
+    Q_PROPERTY(bool matchHostLinkSpeed MEMBER matchHostLinkSpeed NOTIFY matchHostLinkSpeedChanged)
+    Q_PROPERTY(bool waitForGameOnScreen MEMBER waitForGameOnScreen NOTIFY waitForGameOnScreenChanged)
     Q_PROPERTY(OverlayMode overlayMode MEMBER overlayMode NOTIFY overlayModeChanged)
     Q_PROPERTY(AudioConfig audioConfig MEMBER audioConfig NOTIFY audioConfigChanged)
     Q_PROPERTY(VideoCodecConfig videoCodecConfig MEMBER videoCodecConfig NOTIFY videoCodecConfigChanged)
@@ -174,6 +176,12 @@ public:
     bool gamepadMouse;
     bool detectNetworkBlocking;
     bool autoReconnectNoVideo;
+    // Ask the host to match its wired link speed to this device before connecting.
+    bool matchHostLinkSpeed;
+    // Hold the launch screen until the host reports the game is on screen, instead of showing
+    // the stream as soon as there is a picture. Off by default — the opt-in is the wait, not
+    // the other way round. Overridable per host profile and per game.
+    bool waitForGameOnScreen;
     OverlayMode overlayMode;
     bool swapMouseButtons;
     bool muteOnFocusLoss;
@@ -224,6 +232,8 @@ signals:
     void gamepadMouseChanged();
     void detectNetworkBlockingChanged();
     void autoReconnectNoVideoChanged();
+    void matchHostLinkSpeedChanged();
+    void waitForGameOnScreenChanged();
     void overlayModeChanged();
     void mouseButtonsChanged();
     void muteOnFocusLossChanged();

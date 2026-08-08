@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 import QtQuick.Layouts 1.3
@@ -14,7 +15,7 @@ Popup {
     // ── Public API ────────────────────────────────────────────────────────────
     property int    pcIndex: -1
     property string hostName: ""
-    // StreamTweak access state of the host, mirrors HomeScreen's pcCard.streamTweakAuth.
+    // StreamTweak access state of the host, mirrors HomeScreen's currentHost.auth.
     // Host/Both targets need an approved ("authorized") host; Client is always allowed.
     property string authState: "none"
     readonly property bool hostAllowed: authState === "authorized"
@@ -94,7 +95,7 @@ Popup {
         return ""
     }
     function _pillColor(state) {
-        return state === "pending" ? "#f59e0b" : state === "none" ? "#00E676" : "#909090"
+        return state === "pending" ? "#f59e0b" : state === "none" ? Theme.accent : "#909090"
     }
 
     contentItem: ColumnLayout {
@@ -209,8 +210,8 @@ Popup {
                 implicitHeight: 20
                 radius: 4
                 y: updatesCheck.height / 2 - height / 2
-                color: updatesCheck.checked ? "#00E676" : "transparent"
-                border.color: (updatesCheck.activeFocus || updatesCheck.checked) ? "#00E676" : "#3a3a3a"
+                color: updatesCheck.checked ? Theme.accent : "transparent"
+                border.color: (updatesCheck.activeFocus || updatesCheck.checked) ? Theme.accent : "#3a3a3a"
                 border.width: updatesCheck.activeFocus ? 2 : 1
                 Label {
                     anchors.centerIn: parent
@@ -267,17 +268,17 @@ Popup {
                     implicitWidth: 140
                     implicitHeight: 42
                     radius: 8
-                    color: confirmBtn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.20)
+                    color: confirmBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : confirmBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
                          :                          "#1f1f1f"
-                    border.color: confirmBtn.activeFocus ? "#00E676"
+                    border.color: confirmBtn.activeFocus ? Theme.accent
                                 : confirmBtn.hovered     ? "#3a3a3a"
                                 :                          "#2a2a2a"
                     border.width: confirmBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: confirmBtn.text
-                    color: "#00E676"
+                    color: Theme.accent
                     font.family: "DM Sans"
                     font.pixelSize: 15
                     font.bold: true
@@ -301,10 +302,10 @@ Popup {
                     implicitWidth: 140
                     implicitHeight: 42
                     radius: 8
-                    color: cancelBtn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.20)
+                    color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : cancelBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
                          :                         "#1f1f1f"
-                    border.color: cancelBtn.activeFocus ? "#00E676"
+                    border.color: cancelBtn.activeFocus ? Theme.accent
                                 : cancelBtn.hovered     ? "#3a3a3a"
                                 :                         "#2a2a2a"
                     border.width: cancelBtn.activeFocus ? 2 : 1

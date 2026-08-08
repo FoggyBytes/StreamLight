@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 
@@ -21,11 +22,18 @@ FocusScope {
         return false
     }
 
-    readonly property color _accent:    "#00E676"
-    readonly property color _bgPill:    "#1f2722"
-    readonly property color _border:    "#2a2a2a"
-    readonly property color _textOn:    "#0d1410"
-    readonly property color _textOff:   "#a0a0a0"
+    readonly property color _accent:    Theme.accent
+    // The container carries a trace of the accent, the same way the page background does, so
+    // the control belongs to the palette instead of sitting on it as a grey box.
+    readonly property color _bgPill:    Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
+                                                                    Theme.accent.b, 0.07))
+    readonly property color _border:    Theme.line
+    // Was a hardcoded near-black green. That was only ever legible because the accent was
+    // green too: on an amber or lime accent it is dark green on yellow, and on a deep blue one
+    // it is black on navy. Theme decides this from the accent's luminance, which is the whole
+    // reason a user-chosen accent can be allowed at all.
+    readonly property color _textOn:    Theme.onAccent
+    readonly property color _textOff:   Theme.text2
     readonly property int   _pillPadX:  14
 
     activeFocusOnTab: true
@@ -67,10 +75,10 @@ FocusScope {
                     id: pillLabel
                     anchors.centerIn: parent
                     text: modelData
-                    color: pill._disabled ? "#555555"
+                    color: pill._disabled ? Theme.offline
                          : pill._selected ? selector._textOn
                          :                  selector._textOff
-                    font.family: "DM Sans"
+                    font.family: Theme.family
                     font.pixelSize: 13
                     font.bold: pill._selected
                 }

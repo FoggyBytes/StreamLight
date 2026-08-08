@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QAtomicInt>
 #include <QSemaphore>
 #include <QQuickWindow>
 
@@ -11,6 +12,9 @@
 #include "audio/renderers/renderer.h"
 #include "video/overlaymanager.h"
 #include "../HostMetricsPoller.h"
+#include "../backend/linkmatcher.h"
+#include "../backend/launchgate.h"
+#include "launchcurtain.h"
 #include "../SessionTelemetrySampler.h"
 #include "../HueSyncManager.h"
 
@@ -96,11 +100,31 @@ class Session : public QObject
 {
     Q_OBJECT
 
+    /**
+     * Everything the launch curtain shows. QML binds to it for the whole launch: the stream
+     * window stays hidden until the game is on screen, so there is only ever one curtain.
+     */
+    Q_PROPERTY(LaunchCurtain* curtain READ curtain CONSTANT)
+
+    /**
+     * Is this launch actually holding the stream back until the game is on screen?
+     *
+     * The EFFECTIVE value — the cascade lands in this session's own preferences, so a per-game
+     * or per-profile override is already in it; reading the singleton would read the bottom of
+     * the cascade. The launch screen needs it to know whether "press B to see the host now"
+     * means anything: with the wait off the window is revealed on the first frame regardless,
+     * and the prompt was advertising an escape from something nobody was being held by.
+     */
+    Q_PROPERTY(bool waitsForGame READ waitsForGame CONSTANT)
+
     friend class SdlInputHandler;
     friend class DeferredSessionCleanupTask;
     friend class AsyncConnectionStartThread;
 
 public:
+    LaunchCurtain* curtain() { return &m_Curtain; }
+    bool waitsForGame() const { return !m_UnlockMode && m_Preferences->waitForGameOnScreen; }
+
     explicit Session(NvComputer* computer, NvApp& app, StreamingPreferences *preferences = nullptr);
     virtual ~Session();
 
@@ -198,7 +222,97 @@ public:
     Q_INVOKABLE bool hasPendingReconfigure() const { return m_HasPendingReconfigure; }
     Q_INVOKABLE Session* createReconfiguredSession();
 
+    /**
+     * Asks the host to match its wired link speed to this device, before we connect.
+     * Lives on Session because every launch path — app grid, next app, CLI, quit-and-
+     * relaunch, and the 4.4.0 resume flows — builds a Session and hands it to StreamSegue,
+     * so hooking it here means no path can silently skip it.
+     *
+     * Always emits linkMatchFinished exactly once, including on every failure: the launch
+     * must never be blocked by a tuning feature. Call it before initialize()/start().
+     */
+    Q_INVOKABLE void beginLinkMatch();
+
+    /**
+     * Brings the stream window on screen. It is created hidden and stays that way for the
+     * whole launch, so that the curtain covering the wait is the QML one and only that one —
+     * there is no handover between two renderings of the same screen, and therefore nothing
+     * to keep aligned across resolutions, DPI settings and scaling factors.
+     *
+     * <p>Safe to call from any thread and before the window exists: it only records the
+     * request and hands it to the SDL loop, which does the work at the top of an iteration
+     * rather than re-entrantly from inside a message dispatch.</p>
+     */
+    /// @param onDemand the user asked for it (B / Esc), so show the window whether or not any
+    ///        picture has arrived. The gate's own reveal waits for the first frame instead —
+    ///        see revealWindowNow() — but "show me now" has to mean now, including when the
+    ///        answer is a black screen, because that is exactly when it gets pressed.
+    Q_INVOKABLE void revealStreamWindow(bool onDemand = false);
+
+    /// Called by whichever decoder path is live when the first frame of a session arrives.
+    /// ⚠️ There are two, and both must call it: a pull renderer (the FFmpeg decoder, i.e. the
+    /// normal path on Windows) never goes through Session::drSubmitDecodeUnit at all.
+    static void notifyFirstFrame();
+
+    // --- Remote PIN unlock ---
+    //
+    // This session exists only to type a PIN into the host's logon screen, and its window
+    // must never appear: the user is looking at the QML pad, and behind it is a lock screen
+    // they explicitly said they never want to see. Setting this before initialize() also
+    // skips the link match (renegotiating the adapter before the host has even logged in
+    // would black out the link for a session lasting as long as a PIN), the launch gate
+    // (which exists to reveal the window, the one thing we must not do) and telemetry
+    // (nothing here is worth recording).
+    Q_INVOKABLE void setUnlockMode(bool on) { m_UnlockMode = on; }
+    Q_INVOKABLE bool isUnlockMode() const   { return m_UnlockMode; }
+
+    /**
+     * A left click, to dismiss the lock-screen shade. Deliberately not a keystroke: if the
+     * PIN field happens to be showing already, a key would land in it as a stray digit and
+     * burn an attempt, whereas a click is inert either way.
+     */
+    Q_INVOKABLE void unlockClick();
+
+    /**
+     * The PIN is buffered here and not sent digit by digit, so a mistake can be taken back
+     * with unlockBackspace() instead of becoming a failed attempt. It lives in a plain byte
+     * buffer that is wiped after use — never in a QString or a QML property, which we could
+     * neither pin down nor overwrite. QML is told the count and nothing else.
+     */
+    Q_INVOKABLE void unlockDigit(int digit);
+    Q_INVOKABLE void unlockBackspace();
+    Q_INVOKABLE void unlockClearPin();
+    Q_INVOKABLE int  unlockPinLength() const { return m_UnlockPinLen; }
+
+    /** Sends the buffered digits, then wipes the buffer. Windows Hello submits on its own
+     *  once the PIN reaches its configured length, so there is no Enter to press. */
+    Q_INVOKABLE void unlockSubmitPin();
+
 signals:
+    /**
+     * The stream window is now on screen, so whoever is still showing the curtain should
+     * stop. Emitted on the SDL/main thread, after the window is up — never before, or the
+     * desktop would show through in between.
+     */
+    void streamWindowRevealed();
+
+    /** Progress line for the launch screen while the host's link is being switched. */
+    void linkMatchStage(QString text);
+
+    /** @param warning non-empty when the attempt failed; show it and carry on regardless. */
+    void linkMatchFinished(bool changed, QString warning);
+
+    /**
+     * The host's view of the launch, from the moment the stream starts until the game is on
+     * screen. This is the part of the wait the client cannot see for itself: everything on
+     * this side is already done, and what the stream carries meanwhile is the host's desktop
+     * reconfiguring itself.
+     */
+    void launchPhaseChanged(int phase, QString foreground, qint64 elapsedMs);
+
+    /** The curtain must come down. Always emitted once per session that raised it. */
+    void launchGateFinished(int finalPhase);
+
     void stageStarting(QString stage);
 
     void stageFailed(QString stage, int errorCode, QString failingPorts);
@@ -241,6 +355,9 @@ private:
                              int& width, int& height);
 
     void toggleFullscreen();
+
+    /** Does the actual reveal. SDL loop only — never call it from a Qt callback. */
+    void revealWindowNow();
 
     void notifyMouseEmulationMode(bool enabled);
 
@@ -327,6 +444,18 @@ private:
     NvComputer* m_Computer;
     NvApp m_App;
     SDL_Window* m_Window;
+
+    // The window is created hidden and revealed when the launch is over. Both flags belong
+    // to the SDL loop and are only touched there; m_RevealRequested is the one crossing over
+    // from the Qt side, so it is the only one that has to be atomic.
+    QAtomicInt m_RevealRequested { 0 };
+    // Set by the decode thread on the first unit in, read by the SDL loop.
+    QAtomicInt m_FirstFrameSeen { 0 };
+    // The user pressed B/Esc, so the wait for a first frame no longer applies.
+    bool m_RevealOnDemand = false;
+    bool m_WindowRevealed = false;
+    bool m_CaptureOnReveal = false;
+
     IVideoDecoder* m_VideoDecoder;
     SDL_mutex* m_DecoderLock;
     bool m_AudioDisabled;
@@ -362,8 +491,19 @@ private:
 
     Overlay::OverlayManager m_OverlayManager;
     HostMetricsPoller*       m_HostMetricsPoller      = nullptr;
+    LinkMatcher*             m_LinkMatcher            = nullptr;
+    LaunchGate*              m_LaunchGate             = nullptr;
+    LaunchCurtain            m_Curtain;
     SessionTelemetrySampler* m_TelemetrySampler       = nullptr;
     HueSyncManager*          m_HueSyncManager         = nullptr;
+
+    // Remote PIN unlock. The buffer is fixed and small: a Windows Hello PIN is a handful of
+    // digits, and a fixed array is something we can actually overwrite afterwards.
+    bool m_UnlockMode = false;
+    static constexpr int MaxUnlockPinDigits = 16;
+    char m_UnlockPin[MaxUnlockPinDigits] = {};
+    int  m_UnlockPinLen = 0;
+    void wipeUnlockPin();
 
     static CONNECTION_LISTENER_CALLBACKS k_ConnCallbacks;
     static Session* s_ActiveSession;

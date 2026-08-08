@@ -27,6 +27,17 @@ public:
     // selection prefers the real LAN when both are reachable.
     bool isTailscaleRange() const;
 
+    /**
+     * Loopback — 127.0.0.0/8 or ::1.
+     *
+     * An address that names whoever is asking, not the host. It reaches a record when
+     * StreamLight runs on the machine that is also the host: the server answers over
+     * loopback and reports the interface it was reached on, exactly as it does with the
+     * Tailscale interface. Unlike a Tailscale address this one is not reclaimed anywhere —
+     * it identifies no host and is useful to nobody.
+     */
+    bool isLoopback() const;
+
     QString toString() const;
 
     bool operator==(const NvAddress& other) const

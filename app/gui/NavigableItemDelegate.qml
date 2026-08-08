@@ -3,12 +3,17 @@ import QtQuick.Controls 2.2
 
 import SdlGamepadKeyNavigation 1.0
 
-// Navigation is handled by the parent GridView (Qt Quick's default arrow-key
-// behavior or, in StreamLight 3.0, AppsScreen's sub-focus handler). The
-// delegate itself must NOT consume Left/Right/Up/Down or sub-focus would be
-// bypassed and the cursor would always jump cell-to-cell.
+// Navigation is handled by the parent view (Qt Quick's own arrow-key behaviour).
+// The delegate itself must NOT consume Left/Right/Up/Down, or that navigation
+// would be bypassed.
+//
+// ⚠️ The property is a ListView, not a GridView, and the name is historical: the
+// library became a vertical list of titles in 5.0.0 and a ListView cannot be
+// assigned to a GridView-typed property — they are siblings under Flickable, not
+// relatives. Left as GridView it fails the type check at delegate creation, which
+// takes the whole row down with it.
 ItemDelegate {
-    property GridView grid
+    property ListView grid
 
     readonly property bool keyboardFocused: grid.activeFocus && grid.currentItem === this
     readonly property bool pointerFocused: hovered

@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 import QtQuick.Layouts 1.3
@@ -81,13 +82,13 @@ Popup {
         Keys.onSpacePressed:  flip()
         background: Rectangle {
             radius: 8
-            color: mt.on ? Qt.rgba(0, 0.9, 0.46, 0.16) : "#15171c"
-            border.color: mt.activeFocus ? "#00E676" : mt.on ? "#1aa856" : "#2a2a2a"
+            color: mt.on ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16) : "#15171c"
+            border.color: mt.activeFocus ? Theme.accent : mt.on ? Qt.darker(Theme.accent, 1.55) : "#2a2a2a"
             border.width: (mt.activeFocus || mt.on) ? 2 : 1
         }
         contentItem: Label {
             text: mt.lbl
-            color: mt.on ? "#4ade80" : "#9aa0a8"
+            color: mt.on ? Theme.accent : "#9aa0a8"
             font.family: "DM Sans"; font.pixelSize: 15; font.bold: mt.on
             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
         }
@@ -164,8 +165,8 @@ Popup {
 
             background: Rectangle {
                 radius: 10
-                color: pop._keyListening ? Qt.rgba(0, 0.9, 0.46, 0.12) : "#0f0f0f"
-                border.color: (pop._keyListening || keyBtn.activeFocus) ? "#00E676" : "#2a2a2a"
+                color: pop._keyListening ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12) : "#0f0f0f"
+                border.color: (pop._keyListening || keyBtn.activeFocus) ? Theme.accent : "#2a2a2a"
                 border.width: (pop._keyListening || keyBtn.activeFocus) ? 2 : 1
             }
             contentItem: Item {
@@ -173,14 +174,14 @@ Popup {
                     visible: pop._keyListening
                     anchors.centerIn: parent
                     text: qsTr("Press the key…")
-                    color: "#00E676"; font.family: "DM Sans"; font.pixelSize: 16; font.bold: true
+                    color: Theme.accent; font.family: "DM Sans"; font.pixelSize: 16; font.bold: true
                 }
                 Label {
                     visible: !pop._keyListening
                     anchors.centerIn: parent
                     text: pop._haveKey ? pop._label : qsTr("Click or press to set")
                     color: pop._haveKey ? "#dfe2e8" : "#808080"
-                    font.family: pop._haveKey ? "JetBrains Mono" : "DM Sans"
+                    font.family: "DM Sans"
                     font.pixelSize: pop._haveKey ? 18 : 15
                     font.bold: pop._haveKey
                 }
@@ -206,7 +207,7 @@ Popup {
                     color: "#23262e"; border.color: "#3a3f4a"; border.width: 1
                     Label {
                         id: pvl; anchors.centerIn: parent; text: modelData
-                        color: "#dfe2e8"; font.family: "JetBrains Mono"; font.pixelSize: 13; font.bold: true
+                        color: "#dfe2e8"; font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
                     }
                 }
             }
@@ -251,12 +252,12 @@ Popup {
                 Keys.onRightPressed:  cancelBtn.forceActiveFocus()
                 background: Rectangle {
                     implicitWidth: 140; implicitHeight: 42; radius: 8
-                    color: saveBtn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.20) : "#1f1f1f"
-                    border.color: saveBtn.activeFocus ? "#00E676" : "#2a2a2a"
+                    color: saveBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20) : "#1f1f1f"
+                    border.color: saveBtn.activeFocus ? Theme.accent : "#2a2a2a"
                     border.width: saveBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
-                    text: saveBtn.text; color: "#00E676"
+                    text: saveBtn.text; color: Theme.accent
                     font.family: "DM Sans"; font.pixelSize: 15; font.bold: true
                     horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 }
@@ -272,8 +273,8 @@ Popup {
                 Keys.onLeftPressed:   saveBtn.forceActiveFocus()
                 background: Rectangle {
                     implicitWidth: 140; implicitHeight: 42; radius: 8
-                    color: cancelBtn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.20) : "#1f1f1f"
-                    border.color: cancelBtn.activeFocus ? "#00E676" : "#2a2a2a"
+                    color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20) : "#1f1f1f"
+                    border.color: cancelBtn.activeFocus ? Theme.accent : "#2a2a2a"
                     border.width: cancelBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {

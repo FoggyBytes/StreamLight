@@ -26,6 +26,10 @@
 #define SER_ADDRESSPINNED "addresspinned"
 #define SER_TAILSCALEADDR "tailscaleaddress"
 #define SER_TAILSCALEPORT "tailscaleport"
+#define SER_STAGEIMAGE "stageimage"
+#define SER_STAGESEED "stageseed"
+#define SER_STAGEFROM "stagefrom"
+#define SER_STAGETO "stageto"
 
 NvComputer::NvComputer(QSettings& settings)
 {
@@ -47,6 +51,10 @@ NvComputer::NvComputer(QSettings& settings)
     this->isNvidiaServerSoftware = settings.value(SER_NVIDIASOFTWARE).toBool();
     this->aliasSuffix = settings.value(SER_ALIASSUFFIX).toString();
     this->isAddressPinned = settings.value(SER_ADDRESSPINNED, false).toBool();
+    this->stageImagePath = settings.value(SER_STAGEIMAGE).toString();
+    this->stageSeedColor = settings.value(SER_STAGESEED).toString();
+    this->stageColorFrom = settings.value(SER_STAGEFROM).toString();
+    this->stageColorTo   = settings.value(SER_STAGETO).toString();
 
     // Migration: older builds could persist a Tailscale-range IP into the LAN/remote/v6
     // slots (the host reports its Tailscale-interface IP as LocalIP when reached over
@@ -56,6 +64,19 @@ NvComputer::NvComputer(QSettings& settings)
     // fallback slot and clear the LAN/remote slot so route selection prefers the LAN again.
     // Pinned hosts (legacy Tailscale clones) reach the PC only through their manual
     // address, so leave them untouched.
+    //
+    // Loopback gets the same treatment but is DISCARDED rather than reclaimed: unlike a
+    // Tailscale address it names the machine doing the asking, so it identifies no host.
+    // Fresh serverinfo already rejects it, but a record written by an older build can still
+    // carry one — which is precisely what a migration is for.
+    //
+    // `migratedOnLoad` is what makes any of this reach the disk. Without it the repair was
+    // applied in memory and then immediately declared already-saved, because the loader
+    // snapshots each host into m_LastSerializedHosts *after* this constructor has run: the
+    // comparison that decides whether to write compared the healed value against itself and
+    // always matched. The config stayed broken through every launch while the running app
+    // looked correct — and a migration nobody can see finish is one that gets deleted as
+    // "done" while the records it was meant to fix are all still out there.
     if (!this->isAddressPinned) {
         for (NvAddress* slot : { &this->localAddress, &this->remoteAddress, &this->ipv6Address }) {
             if (slot->isTailscaleRange()) {
@@ -63,6 +84,11 @@ NvComputer::NvComputer(QSettings& settings)
                     this->tailscaleAddress = *slot;
                 }
                 *slot = NvAddress();
+                this->migratedOnLoad = true;
+            }
+            else if (slot->isLoopback()) {
+                *slot = NvAddress();
+                this->migratedOnLoad = true;
             }
         }
     }
@@ -123,6 +149,10 @@ void NvComputer::serialize(QSettings& settings, bool serializeApps) const
     settings.setValue(SER_NVIDIASOFTWARE, isNvidiaServerSoftware);
     settings.setValue(SER_ALIASSUFFIX, aliasSuffix);
     settings.setValue(SER_ADDRESSPINNED, isAddressPinned);
+    settings.setValue(SER_STAGEIMAGE, stageImagePath);
+    settings.setValue(SER_STAGESEED, stageSeedColor);
+    settings.setValue(SER_STAGEFROM, stageColorFrom);
+    settings.setValue(SER_STAGETO, stageColorTo);
 
     // Avoid deleting an existing applist if we couldn't get one
     if (!appList.isEmpty() && serializeApps) {
@@ -151,6 +181,10 @@ bool NvComputer::isEqualSerialized(const NvComputer &that) const
            this->isNvidiaServerSoftware == that.isNvidiaServerSoftware &&
            this->aliasSuffix == that.aliasSuffix &&
            this->isAddressPinned == that.isAddressPinned &&
+           this->stageImagePath == that.stageImagePath &&
+           this->stageSeedColor == that.stageSeedColor &&
+           this->stageColorFrom == that.stageColorFrom &&
+           this->stageColorTo == that.stageColorTo &&
            this->appList == that.appList;
 }
 
@@ -214,7 +248,11 @@ NvComputer::NvComputer(NvHTTP& http, QString serverInfo)
 
     // We can get an IPv4 loopback address if we're using the GS IPv6 Forwarder
     this->localAddress = NvAddress(NvHTTP::getXmlString(serverInfo, "LocalIP"), http.httpPort());
-    if (this->localAddress.address().startsWith("127.")) {
+    // Reached over loopback — which happens whenever StreamLight runs on the machine that is
+    // also the host — the server reports 127.0.0.1 as its LocalIP, the same way it reports
+    // its Tailscale IP when reached over Tailscale. Was a `startsWith("127.")` string test,
+    // which is blind to ::1.
+    if (this->localAddress.isLoopback()) {
         this->localAddress = NvAddress();
     }
 

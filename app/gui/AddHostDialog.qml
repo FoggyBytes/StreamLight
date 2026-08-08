@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 import QtQuick.Layouts 1.3
@@ -58,9 +59,9 @@ Popup {
             Layout.preferredWidth: 360
             implicitHeight: 48
             color: "#f0f0f0"
-            selectionColor: Qt.rgba(0, 0.9, 0.46, 0.30)
-            selectedTextColor: "#0d1410"
-            font.family: "JetBrains Mono"
+            selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
+            selectedTextColor: Theme.onAccent
+            font.family: "DM Sans"
             font.pixelSize: 20
             font.bold: true
             horizontalAlignment: TextInput.AlignHCenter
@@ -69,7 +70,7 @@ Popup {
             background: Rectangle {
                 color: "#0f0f0f"
                 radius: 8
-                border.color: ipField.activeFocus ? "#00E676" : "#2a2a2a"
+                border.color: ipField.activeFocus ? Theme.accent : "#2a2a2a"
                 border.width: ipField.activeFocus ? 2 : 1
             }
 
@@ -99,17 +100,17 @@ Popup {
                     implicitWidth: 140
                     implicitHeight: 42
                     radius: 8
-                    color: okBtn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.20)
+                    color: okBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : okBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
                          :                     "#1f1f1f"
-                    border.color: okBtn.activeFocus ? "#00E676"
+                    border.color: okBtn.activeFocus ? Theme.accent
                                 : okBtn.hovered     ? "#3a3a3a"
                                 :                     "#2a2a2a"
                     border.width: okBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: okBtn.text
-                    color: "#00E676"
+                    color: Theme.accent
                     font.family: "DM Sans"
                     font.pixelSize: 15
                     font.bold: true
@@ -133,10 +134,10 @@ Popup {
                     implicitWidth: 140
                     implicitHeight: 42
                     radius: 8
-                    color: cancelBtn.activeFocus ? Qt.rgba(0, 0.9, 0.46, 0.20)
+                    color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : cancelBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
                          :                         "#1f1f1f"
-                    border.color: cancelBtn.activeFocus ? "#00E676"
+                    border.color: cancelBtn.activeFocus ? Theme.accent
                                 : cancelBtn.hovered     ? "#3a3a3a"
                                 :                         "#2a2a2a"
                     border.width: cancelBtn.activeFocus ? 2 : 1

@@ -31,6 +31,11 @@ public:
 
     Q_INVOKABLE Session* createSessionForApp(int appIndex);
 
+    // Index of a visible app by name, or -1. Used by the remote-unlock flow to find the
+    // Desktop app, which is the only thing worth launching on a host where nobody has
+    // logged in yet.
+    Q_INVOKABLE int indexOfAppNamed(const QString& name) const;
+
     Q_INVOKABLE int getDirectLaunchAppIndex();
 
     Q_INVOKABLE int getRunningAppId();
@@ -72,9 +77,12 @@ private:
 
     bool isAppCurrentlyVisible(const NvApp& app);
 
-    NvComputer* m_Computer;
+    // Both were uninitialised until 04/08/2026 and read as garbage before initialize() ran.
+    // Harmless while nothing looked at them first — and then the re-initialise guard in
+    // initialize() did exactly that, and crashed on whatever the pointer happened to be.
+    NvComputer* m_Computer = nullptr;
     BoxArtManager m_BoxArtManager;
-    ComputerManager* m_ComputerManager;
+    ComputerManager* m_ComputerManager = nullptr;
     QVector<NvApp> m_VisibleApps, m_AllApps;
     int m_CurrentGameId;
     bool m_ShowHiddenGames;

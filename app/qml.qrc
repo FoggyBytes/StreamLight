@@ -3,9 +3,15 @@
         <file>gui/main.qml</file>
         <file>gui/AppShell.qml</file>
         <file>gui/HomeScreen.qml</file>
+        <file>gui/HostStage.qml</file>
+        <file>gui/StageBackgroundDialog.qml</file>
         <file>gui/AppsScreen.qml</file>
         <file>gui/SettingsScreen.qml</file>
         <file>gui/StreamSegue.qml</file>
+        <file>gui/AmbientBackground.qml</file>
+        <file>gui/UnlockPad.qml</file>
+        <file>gui/WakeDialog.qml</file>
+        <file>gui/LinkRestoreDialog.qml</file>
         <file>gui/GamepadMapper.qml</file>
         <file>gui/QuitSegue.qml</file>
         <file>gui/NavigableItemDelegate.qml</file>
@@ -14,13 +20,11 @@
         <file>gui/ErrorMessageDialog.qml</file>
         <file>gui/NavigableMessageDialog.qml</file>
         <file>gui/NavigableDialog.qml</file>
-        <file>gui/CenteredGridView.qml</file>
         <file>gui/CliPair.qml</file>
         <file>gui/SegmentedSelector.qml</file>
         <file>gui/STSwitch.qml</file>
         <file>gui/PairDialog.qml</file>
         <file>gui/AddHostDialog.qml</file>
-        <file>gui/PrepareCountdownDialog.qml</file>
         <file>gui/PowerDialog.qml</file>
         <file>gui/DialogButton.qml</file>
         <file>gui/UpdateDialog.qml</file>
@@ -30,6 +34,7 @@
         <file>gui/PillButton.qml</file>
         <file>gui/CustomResolutionDialog.qml</file>
         <file>gui/PadGlyph.qml</file>
+        <file>gui/ActionHint.qml</file>
         <file>gui/ShortcutCaptureDialog.qml</file>
         <file>gui/GamepadCaptureDialog.qml</file>
     </qresource>

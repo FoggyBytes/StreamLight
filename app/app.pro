@@ -1,4 +1,8 @@
-QT += core quick network quickcontrols2 svg
+# quickdialogs2 is here for one thing: the native file picker used to choose a per-host
+# stage background. It is part of the base MSVC kit, so it costs nothing to have available,
+# but note that it adds QtQuick/Dialogs to the deployed QML module set — a build that skips
+# windeployqt will start and then fail to load the Home screen.
+QT += core quick network quickcontrols2 svg quickdialogs2
 CONFIG += c++17
 
 unix:!macx {
@@ -46,7 +50,7 @@ win32 {
     }
 
     INCLUDEPATH += $$PWD/../libs/windows/include
-    LIBS += ws2_32.lib winmm.lib dxva2.lib ole32.lib gdi32.lib user32.lib d3d9.lib dwmapi.lib dbghelp.lib
+    LIBS += ws2_32.lib winmm.lib dxva2.lib ole32.lib gdi32.lib user32.lib d3d9.lib dwmapi.lib dbghelp.lib iphlpapi.lib
 }
 macx:!disable-prebuilts {
     INCLUDEPATH += $$PWD/../libs/mac/include $$PWD/../libs/mac/include/SDL2
@@ -159,6 +163,11 @@ macx {
 
 SOURCES += \
     backend/nvaddress.cpp \
+    backend/coverpalette.cpp \
+    backend/linkspeed.cpp \
+    backend/linkmatcher.cpp \
+    backend/launchgate.cpp \
+    streaming/launchcurtain.cpp \
     backend/nvapp.cpp \
     cli/pair.cpp \
     main.cpp \
@@ -176,6 +185,8 @@ SOURCES += \
     cli/startstream.cpp \
     settings/compatfetcher.cpp \
     settings/mappingfetcher.cpp \
+    settings/theme.cpp \
+    settings/inputhints.cpp \
     settings/streamingpreferences.cpp \
     settings/appsettings.cpp \
     settings/shortcutmanager.cpp \
@@ -210,6 +221,11 @@ SOURCES += \
 HEADERS += \
     SDL_compat.h \
     backend/nvaddress.h \
+    backend/coverpalette.h \
+    backend/linkspeed.h \
+    backend/linkmatcher.h \
+    backend/launchgate.h \
+    streaming/launchcurtain.h \
     backend/nvapp.h \
     cli/pair.h \
     settings/compatfetcher.h \
@@ -227,6 +243,8 @@ HEADERS += \
     cli/listapps.h \
     cli/quitstream.h \
     cli/startstream.h \
+    settings/theme.h \
+    settings/inputhints.h \
     settings/streamingpreferences.h \
     settings/appsettings.h \
     settings/shortcutmanager.h \

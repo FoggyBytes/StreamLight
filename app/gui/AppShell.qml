@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.9
 import QtQuick.Controls 2.2
 
@@ -22,9 +23,9 @@ FocusScope {
     readonly property color _bg2:      "#1a1a1a"
     readonly property color _text:     "#f0f0f0"
     readonly property color _textDim:  "#a0a0a0"
-    readonly property color _green:    "#00E676"
-    readonly property string _version: "4.5.1"
-    readonly property string _mono:    "JetBrains Mono"
+    readonly property color _green:    Theme.accent
+    readonly property string _version: "5.0.0"
+    readonly property string _mono:    "DM Sans"
 
     // 0 = Home, 1 = Apps, 2 = Settings
     property int currentPage: 0
@@ -41,12 +42,36 @@ FocusScope {
     // Where to return when leaving Settings (Home or Apps).
     property int    _settingsReturnPage: 0
 
+    // What the status bar sits on. Transparent by default — see the note on statusBar.color.
+    property color  statusBarFloor: "transparent"
+
     // ── Remote "Update host" job (state owned by HomeScreen; mirrored for the
     //    global status-bar chip + Select reopen shortcut) ─────────────────────────
     readonly property bool   _updateActive:  homeLoader.item ? homeLoader.item.updateJobActive  : false
     readonly property string _updateHost:    homeLoader.item ? homeLoader.item.updateJobHostName : ""
     readonly property string _updatePhase:   homeLoader.item ? homeLoader.item.updateJobPhase    : "IDLE"
     readonly property int    _updatePercent: homeLoader.item ? homeLoader.item.updateJobPercent  : -1
+
+    // ── Host link restore watch (state owned by HomeScreen, mirrored for the chip) ──
+    // The host-link state is read by whoever is showing that host — the card on Home, the
+    // header on the host page — so the shell no longer mirrors it into the status bar.
+    // Read by the host page's header, for the case where the user answers the prompt and then
+    // walks straight into the host. The card on Home says it too, from its own state.
+    readonly property bool   _linkRestoreActive: homeLoader.item ? homeLoader.item.linkRestoreVisible : false
+    readonly property bool   _linkRestoreDone:   homeLoader.item ? homeLoader.item.linkRestoreDone   : false
+
+    // For the host page's own header: the host currently selected on Home is the one being
+    // browsed, so its record already carries what the header needs.
+    readonly property bool _hostLinkChanging:
+        (homeLoader.item && homeLoader.item.currentHost
+         && homeLoader.item.currentHost.linkChanging === true) || false
+
+    // Called from the Apps screen after any end of a stream, to remember that this host may
+    // have a link to put back. Nothing happens now: the host holds the speed, and the question
+    // is asked on the way back to the host list.
+    function noteStreamEnded(idx, hostName) {
+        if (homeLoader.item) homeLoader.item.noteStreamEnded(idx, hostName)
+    }
 
     function reopenUpdateDialog() {
         if (!homeLoader.item || !homeLoader.item.updateJobActive) return
@@ -81,13 +106,19 @@ FocusScope {
         }
         return false
     }
-    Keys.onEscapePressed: { event.accepted = _goBack() }
-    Keys.onBackPressed:   { event.accepted = _goBack() }
+    Keys.onEscapePressed: function(event) { event.accepted = _goBack() }
+    Keys.onBackPressed:   function(event) { event.accepted = _goBack() }
 
-    // On Home: LB/RB (PageUp/PageDown) switch the focused host's active streaming
-    // profile (no-ops with ≤ 1 profile). Select (Key_F13) reopens the running
-    // "Update host" view when a host update job is active.
-    Keys.onPressed: {
+    // On Home, two pairs that must not be confused — the legends on the card name both:
+    //
+    //   host    LT/RT  (Key_F14/F15)   ·  keyboard PgUp/PgDn
+    //   profile LB/RB  (Key_F16/F17)   ·  keyboard Q/E, handled in HomeScreen
+    //
+    // The shoulders carry their own inert keys precisely so they cannot land in the host
+    // handler the way they did when they still sent PageUp/PageDown — see the note in
+    // sdlgamepadkeynavigation.cpp. Select (Key_F13) reopens the running "Update host" view
+    // when a host update job is active.
+    Keys.onPressed: function(event) {
         if (currentPage !== 0)
             return
         if (event.key === Qt.Key_F13) {
@@ -96,20 +127,27 @@ FocusScope {
                 event.accepted = true
             }
         } else if (event.key === Qt.Key_PageDown) {
-            if (homeLoader.item && homeLoader.item.focusedProfileCount > 1) {
-                homeLoader.item.cycleFocusedProfile(1)
-                event.accepted = true
-            }
+            if (homeLoader.item) { homeLoader.item.cycleHostTab(1);  event.accepted = true }
         } else if (event.key === Qt.Key_PageUp) {
-            if (homeLoader.item && homeLoader.item.focusedProfileCount > 1) {
-                homeLoader.item.cycleFocusedProfile(-1)
-                event.accepted = true
-            }
+            if (homeLoader.item) { homeLoader.item.cycleHostTab(-1); event.accepted = true }
+        } else if (event.key === Qt.Key_F17) {
+            if (homeLoader.item) { homeLoader.item.cycleFocusedProfile(1);  event.accepted = true }
+        } else if (event.key === Qt.Key_F16) {
+            if (homeLoader.item) { homeLoader.item.cycleFocusedProfile(-1); event.accepted = true }
         }
     }
 
     function showHome() {
         currentPage = 0
+    }
+
+    // Ctrl+N. main.qml looks for this on stackView.currentItem, which is this shell — so the
+    // shortcut has been reaching nothing since the shell was introduced, because the function
+    // it wants has always lived on HomeScreen. Forwarding it costs four lines and makes an
+    // advertised shortcut work again.
+    function openAddPc() {
+        currentPage = 0
+        if (homeLoader.item && homeLoader.item.openAddPc) homeLoader.item.openAddPc()
     }
 
     function showApps(computerIndex, computerModel, showAll, hostName, hostAddress, hostGpu, isTailscaleClone) {
@@ -180,19 +218,6 @@ FocusScope {
         case "cardMenu":
             SdlGamepadKeyNavigation.simulateKey(Qt.Key_Menu)
             break
-        case "launchApp":
-            SdlGamepadKeyNavigation.simulateKey(Qt.Key_Return)
-            break
-        case "stopApp":
-            if (appsLoader.item && appsLoader.item.stopFocusedApp) {
-                appsLoader.item.stopFocusedApp()
-            }
-            break
-        case "customize":
-            if (appsLoader.item && appsLoader.item.openCustomizeForFocused) {
-                appsLoader.item.openCustomizeForFocused()
-            }
-            break
         case "change":
             SdlGamepadKeyNavigation.simulateKey(Qt.Key_Space)
             break
@@ -202,14 +227,6 @@ FocusScope {
         case "nextTab":
             SdlGamepadKeyNavigation.simulateKey(Qt.Key_PageDown)
             break
-        case "prevProfile":
-            if (homeLoader.item && homeLoader.item.cycleFocusedProfile)
-                homeLoader.item.cycleFocusedProfile(-1)
-            break
-        case "nextProfile":
-            if (homeLoader.item && homeLoader.item.cycleFocusedProfile)
-                homeLoader.item.cycleFocusedProfile(1)
-            break
         case "defaultBitrate":
             if (settingsLoader.item && settingsLoader.item.resetBitrateToDefault) {
                 settingsLoader.item.resetBitrateToDefault()
@@ -218,29 +235,44 @@ FocusScope {
         }
     }
 
+    // Which page we came from. The link-restore prompt is only ever offered on the way back
+    // from a host page — that is the trip that follows a session, and asking anywhere else
+    // (landing on Home at startup, stepping out of Settings) would be asking out of nowhere.
+    property int _prevPage: 0
+
     onCurrentPageChanged: {
+        var cameFromApps = (_prevPage === 1)
+        _prevPage = currentPage
+
         if      (currentPage === 0 && homeLoader.item)     homeLoader.item.forceActiveFocus()
         else if (currentPage === 1 && appsLoader.item)     appsLoader.item.forceActiveFocus()
         else if (currentPage === 2 && settingsLoader.item) settingsLoader.item.forceActiveFocus()
 
-        // Back on the host list: drop any "force Tailscale" session pin.
-        if (currentPage === 0 && homeLoader.item && homeLoader.item.clearTailscalePreferences)
-            homeLoader.item.clearTailscalePreferences()
+        // Back on the host list: drop any "force Tailscale" session pin, and ask the host for
+        // its last session again — the most likely reason we are landing here is that one just
+        // ended, and the card would otherwise still be describing the one before it.
+        if (currentPage === 0 && homeLoader.item) {
+            if (homeLoader.item.clearTailscalePreferences)
+                homeLoader.item.clearTailscalePreferences()
+            if (homeLoader.item.refreshLastSession)
+                homeLoader.item.refreshLastSession()
+            if (cameFromApps && homeLoader.item.maybeAskLinkRestore)
+                homeLoader.item.maybeAskLinkRestore()
+        }
     }
 
-    // Ambient vertical gradient — charcoal top → deep green bottom.
-    Rectangle {
+    // Ambient vertical gradient — charcoal top → accent-washed bottom.
+    //
+    // It runs the FULL height, behind the status bar as well. Stopping it at the bar's top
+    // edge is what made the bar read as a separate slab: the wash faded up to a line and then
+    // a flat dark rectangle started, and the seam was the most visible edge on the screen.
+    // The bar itself is transparent and carries no rule, so the floor of the app is one
+    // uninterrupted surface from the content down to the button prompts.
+    // The wash lives in AmbientBackground now, so the screens that cover this one whole — the
+    // quit screen, the PIN pad — can stand on exactly the same ground instead of a copy of it.
+    AmbientBackground {
         id: ambientBackground
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.bottom: statusBar.top
         z: -1
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: "#151515" }
-            GradientStop { position: 0.7; color: "#13231B" }
-            GradientStop { position: 1.0; color: "#0A3B22" }
-        }
     }
 
     FocusScope {
@@ -308,15 +340,18 @@ FocusScope {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         height: 44
-        color: appShell._bg1
+        // Normally transparent, so the page's own ambient gradient runs behind it unbroken.
+        //
+        // A page that paints its own floor has to say so, though: the host page ends in
+        // near-black under its blurred artwork while the shell's gradient ends accent-tinted,
+        // and where the two met there was a visible step across the foot of the screen. So
+        // the page sets this to whatever it ends in and the bar borrows it.
+        color: appShell.statusBarFloor
 
-        Rectangle {
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            height: 1
-            color: appShell._border
-        }
+        // No rule along the top. There was one, and once the ambient gradient ran the full
+        // height behind it the line was the only thing left drawing a border where there is
+        // no longer an edge — the prompts sit on the same surface as everything above them,
+        // and the row of glyphs is enough to say where they live.
 
         readonly property bool _padIsPs: SdlGamepadKeyNavigation.controllerType === "ps"
         readonly property bool _padIsSwitch: SdlGamepadKeyNavigation.controllerType === "switch"
@@ -332,47 +367,44 @@ FocusScope {
         readonly property string _iconR: _padIsPs ? "qrc:/res/pad_ps_r1.svg"       : _padIsSwitch ? "qrc:/res/pad_switch_r.svg" : "qrc:/res/pad_xbox_rb.svg"
         // Select / Back / View / Create / − button.
         readonly property string _iconSelect: _padIsPs ? "qrc:/res/pad_ps_create.svg" : _padIsSwitch ? "qrc:/res/pad_switch_minus.svg" : "qrc:/res/pad_xbox_view.svg"
+        // (The trigger glyphs used to be resolved here too, for the "Prev/Next host" prompts.
+        //  Those moved onto the host strip itself, which resolves its own — see HomeScreen.)
 
-        // LB/RB "Prev/Next profile" appear only when the focused host has >1 profile.
-        readonly property int _homeProfileCount:
-            (currentPage === 0 && homeLoader.item && homeLoader.item.focusedProfileCount !== undefined)
-                ? homeLoader.item.focusedProfileCount : 0
-        property var _hintsHome: {
-            var base = [
-                { icon: _iconA, act: qsTr("Open"),     sh: false, kind: "openCard" },
-                { icon: _iconX, act: qsTr("Shutdown"), sh: false, kind: "shutdownHost" },
-                { icon: _iconY, act: qsTr("Settings"), sh: false, kind: "settings" },
-                { icon: _iconB, act: qsTr("Exit"),     sh: false, kind: "back" }
-            ]
-            if (statusBar._homeProfileCount > 1) {
-                base.push(
-                    { icon: _iconL, act: qsTr("Prev profile"), sh: true, kind: "prevProfile" },
-                    { icon: _iconR, act: qsTr("Next profile"), sh: true, kind: "nextProfile" })
-            }
-            return base
-        }
-        // Apps prompts swap to Resume/Stop when the focused app is the running one.
-        readonly property bool _focusedAppRunning:
-            currentPage === 1
-            && appsLoader.item
-            && appsLoader.item.focusedAppIsRunning === true
-        property var _hintsApps: {
-            if (statusBar._focusedAppRunning) {
-                return [
-                    { icon: _iconA, act: qsTr("Resume"),    sh: false, kind: "launchApp" },
-                    { icon: _iconX, act: qsTr("Stop"),      sh: false, kind: "stopApp" },
-                    { icon: _iconB, act: qsTr("Back"),      sh: false, kind: "back" },
-                    { icon: _iconY, act: qsTr("Settings"),  sh: false, kind: "settings" },
-                    { icon: _iconSelect, act: qsTr("Customize"), sh: true,  kind: "customize" }
-                ]
-            }
-            return [
-                { icon: _iconA, act: qsTr("Launch"),    sh: false, kind: "launchApp" },
-                { icon: _iconB, act: qsTr("Back"),      sh: false, kind: "back" },
-                { icon: _iconY, act: qsTr("Settings"),  sh: false, kind: "settings" },
-                { icon: _iconSelect, act: qsTr("Customize"), sh: true,  kind: "customize" }
-            ]
-        }
+        /*
+         * A is absent: its glyph is drawn on the stage's focused button, where the word for
+         * what it will do sits next to it. The bar cannot follow the focus and name the
+         * target at the same time, so saying it twice is how the two came to disagree.
+         *
+         * The triggers and the shoulders are absent for a different reason — they were moved
+         * to where what they move actually is: LT/RT to the end of the host strip, LB/RB onto
+         * the host card beside its buttons. A legend attached to the thing it controls costs
+         * nothing to find; the same legend in a row at the foot of the screen has to be
+         * connected back to it.
+         *
+         * X stays here. It is the one shortcut that works from anywhere on this screen and
+         * belongs to no single control, which is exactly what this row is for — and keeping
+         * the destructive one in the same place on every screen is worth more than symmetry.
+         */
+        // btn = the controller button, key = the keyboard equivalent. Both travel together and
+        // ActionHint picks; a prompt with no key stays on the glyph.
+        readonly property var _hintsHome: [
+            { btn: "X", key: "P",   act: qsTr("Shutdown"), kind: "shutdownHost" },
+            { btn: "Y", key: "S",   act: qsTr("Settings"), kind: "settings" },
+            { btn: "B", key: "Esc", act: qsTr("Exit"),     kind: "back" }
+        ]
+        // Same as Home, and for the same reason: A, X and Select are drawn on the host
+        // page's own buttons, next to the words for what they do, so the bar does not say it
+        // a second time. A prompt row that repeats what a button already carries is the
+        // arrangement that let the two disagree.
+        //
+        // What is left is what has no button to sit on: Y opens a screen that is not on this
+        // page, and B leaves it. "Hosts", not "Back" — B always lands in the same place from
+        // here, and naming the destination is the one thing the removed corner button did
+        // that the bar could not. "Back" says you are leaving, "Hosts" says where you arrive.
+        readonly property var _hintsApps: [
+            { btn: "Y", key: "S",   act: qsTr("Settings"), kind: "settings" },
+            { btn: "B", key: "Esc", act: qsTr("Hosts"),    kind: "back" }
+        ]
         // Settings prompts add "X · Default" when the bitrate differs from recommended.
         readonly property bool _showDefaultHint:
             currentPage === 2
@@ -380,13 +412,13 @@ FocusScope {
             && settingsLoader.item.bitrateNonDefault === true
         property var _hintsSettings: {
             var base = [
-                { icon: _iconA, act: qsTr("Change"),   sh: false, kind: "change" },
-                { icon: _iconL, act: qsTr("Prev tab"), sh: true,  kind: "prevTab" },
-                { icon: _iconR, act: qsTr("Next tab"), sh: true,  kind: "nextTab" },
-                { icon: _iconB, act: qsTr("Back"),     sh: false, kind: "back" }
+                { btn: "A",  key: "Enter", act: qsTr("Change"),   kind: "change" },
+                { btn: "LB", key: "PgUp",  act: qsTr("Prev tab"), kind: "prevTab" },
+                { btn: "RB", key: "PgDn",  act: qsTr("Next tab"), kind: "nextTab" },
+                { btn: "B",  key: "Esc",   act: qsTr("Back"),     kind: "back" }
             ]
             if (statusBar._showDefaultHint) {
-                base.splice(1, 0, { icon: _iconX, act: qsTr("Default"), sh: false, kind: "defaultBitrate" })
+                base.splice(1, 0, { btn: "X", key: "D", act: qsTr("Default"), kind: "defaultBitrate" })
             }
             return base
         }
@@ -416,16 +448,14 @@ FocusScope {
                         anchors.centerIn: parent
                         spacing: 9
 
-                        // ABXY circle 26×26, LB/RB rounded rect 40×24.
-                        Image {
+                        // ABXY circle 26×26, LB/RB rounded rect 40×24 — the sizes ActionHint
+                        // and PadGlyph now share, so a prompt here and a combo in Settings are
+                        // the same button at the same size.
+                        ActionHint {
                             anchors.verticalCenter: parent.verticalCenter
-                            source: modelData.icon
-                            width:  modelData.sh ? 40 : 26
-                            height: modelData.sh ? 24 : 26
-                            sourceSize.width:  modelData.sh ? 80 : 52
-                            sourceSize.height: modelData.sh ? 48 : 52
-                            fillMode: Image.PreserveAspectFit
-                            smooth: true
+                            buttonKey: modelData.btn
+                            keyLabel:  modelData.key
+                            size: 26
                         }
 
                         Text {
@@ -462,6 +492,11 @@ FocusScope {
             anchors.rightMargin: 16
             anchors.verticalCenter: parent.verticalCenter
             spacing: 22
+
+            // (The host-link chip used to live here. It was in the status bar because there was
+            //  nowhere else to put it; now the host card says it on Home and the header says it
+            //  on the host page — both attached to the host they are talking about, instead of
+            //  a line in the corner that had to name it.)
 
             // Global "Update host" chip: visible whenever a remote update job is
             // running, on any page. Shows host + phase + a mini progress bar; RB (or a

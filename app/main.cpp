@@ -54,6 +54,8 @@
 #include "streaming/session.h"
 #include "settings/streamingpreferences.h"
 #include "settings/shortcutmanager.h"
+#include "settings/theme.h"
+#include "settings/inputhints.h"
 #include "gui/sdlgamepadkeynavigation.h"
 #include "XboxTileArtwork.h"
 #include "TailscaleManager.h"
@@ -943,6 +945,8 @@ int main(int argc, char *argv[])
     qmlRegisterType<ComputerModel>("ComputerModel", 1, 0, "ComputerModel");
     qmlRegisterType<AppModel>("AppModel", 1, 0, "AppModel");
     qmlRegisterUncreatableType<Session>("Session", 1, 0, "Session", "Session cannot be created from QML");
+    qmlRegisterUncreatableType<LaunchCurtain>("LaunchCurtain", 1, 0, "LaunchCurtain",
+                                              "LaunchCurtain is owned by the Session");
     qmlRegisterSingletonType<ComputerManager>("ComputerManager", 1, 0,
                                               "ComputerManager",
                                               [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
@@ -968,6 +972,16 @@ int main(int argc, char *argv[])
                                               [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                                   return ShortcutManager::get(qmlEngine);
                                               });
+    qmlRegisterSingletonType<Theme>("Theme", 1, 0,
+                                    "Theme",
+                                    [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
+                                        return Theme::get(qmlEngine);
+                                    });
+    qmlRegisterSingletonType<InputHints>("InputHints", 1, 0,
+                                         "InputHints",
+                                         [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
+                                             return InputHints::get(qmlEngine);
+                                         });
 
     // Create the identity manager on the main thread
     IdentityManager::get();

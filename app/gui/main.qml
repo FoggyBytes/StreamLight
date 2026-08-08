@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.9
 import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.3
@@ -67,6 +68,40 @@ ApplicationWindow {
         }
     }
 
+    // Hiding and re-showing the window around a stream session is not symmetric under a shell
+    // that hands out exclusive full screen — the Xbox full screen experience on handhelds. The
+    // stream window takes that slot for the length of the session and the Qt window's
+    // composition binding does not survive it: on return Qt keeps presenting at full rate,
+    // exposed, foreground, not cloaked and correctly sized, while nothing reaches the display.
+    // It reads as a grey page with perfectly clean logs. That binding belongs to the HWND,
+    // which is why show(), raise(), requestActivate() and leaving and re-entering full screen
+    // all change nothing — every one of them keeps the same HWND. Rebuilding the native window
+    // is what fixes it; measured on an Ally, 03/08/2026. Full-screen path only.
+    //
+    // NB: showNormal() + showFullScreen() below is redundant in theory, since
+    // recreateNativeWindow() re-applies the visibility itself — but this is the sequence that
+    // was verified on hardware, so dropping it needs another runtime test, not a reading.
+    property int _preStreamVisibility: Window.Windowed
+
+    function hideForStream() {
+        _preStreamVisibility = window.visibility
+        window.visible = false
+    }
+
+    function restoreAfterStream() {
+        window.visible = true
+
+        if (_preStreamVisibility === Window.FullScreen) {
+            window.showNormal()
+            // Deferred by one event-loop tick on purpose: applied in the same tick, Qt
+            // coalesces the two state changes into one.
+            Qt.callLater(function() {
+                window.showFullScreen()
+                SystemProperties.recreateNativeWindow()
+            })
+        }
+    }
+
     id: window
     width: 1280
     height: 720
@@ -83,7 +118,7 @@ ApplicationWindow {
     FontLoader { source: "qrc:/res/fonts/JetBrainsMono-Medium.ttf" }
 
     // ── Design system palette ─────────────────────────────────────────────────
-    readonly property string appDisplayVersion: "4.5.1"
+    readonly property string appDisplayVersion: "5.0.0"
 
     readonly property color clrBg:      "#0d0d0d"
     readonly property color clrBg1:     "#151515"
@@ -98,14 +133,36 @@ ApplicationWindow {
     readonly property color clrTextDim: "#a0a0a0"
     readonly property color clrTextMut: "#707070"
     readonly property color clrTextDis: "#555555"
-    readonly property color clrGreen:   "#00E676"
-    readonly property color clrGreenH:  "#00C853"
-    readonly property color clrGreenP:  "#00A040"
-    readonly property color clrGreenLk: "#00E676"
+    readonly property color clrGreen:   Theme.accent
+    readonly property color clrGreenH:  Qt.darker(Theme.accent, 1.15)   // hover: a shade down from the accent
+    readonly property color clrGreenP:  Qt.darker(Theme.accent, 1.45)   // pressed: two shades down
+    readonly property color clrGreenLk: Theme.accent
     readonly property color clrRed:     "#C42B1C"
     readonly property color clrBlue:    "#3a96dd"
     readonly property string monoFont:  "JetBrains Mono"
     // ─────────────────────────────────────────────────────────────────────────
+
+    /*
+     * Material's accent, pushed onto the WINDOW.
+     *
+     * ⚠️ This function has to live here, on the root, and every caller has to go through it.
+     * `Material.accent` is an attached property, and which object it attaches to is decided
+     * by the *scope* of the code doing the assignment — so the same line written inside a
+     * `Connections` block attaches to the Connections object, which is not in the item tree
+     * and propagates to nothing. It fails completely silently: the assignment succeeds, the
+     * theme never hears about it.
+     *
+     * That is exactly what happened. Everything the app paints itself followed the new accent
+     * while everything the Material style paints — the switches, the TabBar indicator, the
+     * sliders — kept the colour the app had started with. Note the TabBar case in particular:
+     * the underline under the current tab is drawn by Material's own contentItem
+     * (`color: control.Material.accentColor`), not by the per-tab background this app
+     * overrides, which is why overriding the backgrounds did not cover it.
+     */
+    function applyAccentToMaterial() {
+        Material.accent = Theme.accent
+        Material.primary = Theme.accent
+    }
 
     // This function runs prior to creation of the initial StackView item
     function doEarlyInit() {
@@ -113,10 +170,16 @@ ApplicationWindow {
         Material.background = "#151515"
 
         Material.theme = Material.Dark
-        Material.accent = "#00E676"
-        Material.primary = "#00E676"
+        window.applyAccentToMaterial()
 
         SdlGamepadKeyNavigation.enable()
+    }
+
+    // Re-assigned rather than bound: attached properties set from a function are a one-time
+    // copy that never hears about a later change.
+    Connections {
+        target: Theme
+        function onChanged() { window.applyAccentToMaterial() }
     }
 
     Component.onCompleted: {

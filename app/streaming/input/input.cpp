@@ -42,7 +42,8 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     }
 
     // Allow gamepad input when the app doesn't have focus if requested
-    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, prefs.backgroundGamepad ? "1" : "0");
+    m_BackgroundGamepad = prefs.backgroundGamepad;
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, m_BackgroundGamepad ? "1" : "0");
 
 #if !SDL_VERSION_ATLEAST(2, 0, 15)
     // For older versions of SDL (2.0.14 and earlier), use SDL_HINT_GRAB_KEYBOARD
@@ -373,6 +374,22 @@ bool SdlInputHandler::isSystemKeyCaptureActive()
     }
 
     return true;
+}
+
+void SdlInputHandler::setStreamWindowHidden(bool hidden)
+{
+    m_StreamWindowHidden = hidden;
+
+    // While the curtain is up the pad has to be polled even though nothing of ours holds the
+    // focus — the Qt window does. Put the user's own setting back afterwards rather than
+    // leaving it on, or alt-tabbing away mid-stream would keep driving the game.
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,
+                (hidden || m_BackgroundGamepad) ? "1" : "0");
+}
+
+void SdlInputHandler::setUnlockMode(bool on)
+{
+    m_UnlockMode = on;
 }
 
 void SdlInputHandler::setCaptureActive(bool active)

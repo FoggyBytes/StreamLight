@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
@@ -24,7 +25,7 @@ Popup {
     // to the grid behind it.
     signal closedByUser()
 
-    readonly property color _accent: "#00E676"
+    readonly property color _accent: Theme.accent
     readonly property color _text:   "#ECECEC"
     readonly property color _dim:    "#9A9A9A"
     readonly property color _line:   "#242424"
@@ -102,6 +103,7 @@ Popup {
         fpSel.currentIndex    = (ov.framepacing !== undefined) ? _idxByVal(_fpVals, ov.framepacing) : 0
         audSel.currentIndex   = (ov.audio !== undefined) ? _idxByVal(_audVals, ov.audio) : 0
         hueSel.currentIndex   = (ov.hue !== undefined) ? (ov.hue ? 1 : 2) : 0
+        waitGameSel.currentIndex = (ov.waitgame !== undefined) ? (ov.waitgame ? 1 : 2) : 0
 
         _bitrateOverridden = (ov.bitrate !== undefined && ov.bitrate >= bitrateSlider.from)
         bitrateSlider.value = _bitrateOverridden ? ov.bitrate
@@ -121,6 +123,7 @@ Popup {
         if (fpSel.currentIndex > 0)    m.framepacing = _fpVals[fpSel.currentIndex]
         if (audSel.currentIndex > 0)   m.audio = _audVals[audSel.currentIndex]
         if (hueSel.currentIndex > 0)   m.hue = (hueSel.currentIndex === 1)
+        if (waitGameSel.currentIndex > 0) m.waitgame = (waitGameSel.currentIndex === 1)
         appModel.setAppOverride(appIndex, m)
     }
 
@@ -284,7 +287,7 @@ Popup {
                             Rectangle {
                                 anchors.fill: parent
                                 radius: 8
-                                color: "#1f2722"
+                                color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
                                 border.color: bitrateGlobalBtn.activeFocus ? dlg._accent : "#2a2a2a"
                                 border.width: bitrateGlobalBtn.activeFocus ? 3 : 1
                             }
@@ -302,7 +305,7 @@ Popup {
                                     id: gLabel
                                     anchors.centerIn: parent
                                     text: dlg._inheritLabel
-                                    color: bitrateGlobalBtn.selected ? "#0d1410" : "#a0a0a0"
+                                    color: bitrateGlobalBtn.selected ? Theme.onAccent : Theme.text2
                                     font.family: "DM Sans"; font.pixelSize: 13
                                     font.bold: bitrateGlobalBtn.selected
                                 }
@@ -400,7 +403,7 @@ Popup {
                             width: 78
                             text: (bitrateSlider.value / 1000).toFixed(0) + qsTr(" Mbps")
                             color: dlg._accent
-                            font.family: "JetBrains Mono"; font.pixelSize: 13; font.bold: true
+                            font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
                             horizontalAlignment: Text.AlignRight
                         }
                     }
@@ -458,6 +461,19 @@ Popup {
                     SegmentedSelector {
                         id: hueSel; labels: dlg._hdrLabels
                         KeyNavigation.up: audSel
+                        KeyNavigation.down: waitGameSel
+                        onActivated: dlg.saveToModel()
+                    }
+                }
+                // Turn it off for a game that opens its own launcher: no game window ever
+                // reaches the host's screen, so the wait has nothing to end on and sits there
+                // until the user presses B. Per game, because only the person who owns the
+                // game knows it behaves that way.
+                SettingRow {
+                    label: qsTr("Wait for the game to appear")
+                    SegmentedSelector {
+                        id: waitGameSel; labels: dlg._hdrLabels
+                        KeyNavigation.up: hueSel
                         KeyNavigation.down: doneBtn
                         onActivated: dlg.saveToModel()
                     }
@@ -484,7 +500,7 @@ Popup {
                     fontSize: 13
                     width: 76; height: 36
                     onActivated: dlg.close()
-                    KeyNavigation.up: hueSel
+                    KeyNavigation.up: waitGameSel
                     KeyNavigation.right: resetBtn
                 }
                 DialogButton {
@@ -493,7 +509,7 @@ Popup {
                     fontSize: 13
                     width: 128; height: 36
                     onActivated: dlg.resetAll()
-                    KeyNavigation.up: hueSel
+                    KeyNavigation.up: waitGameSel
                     KeyNavigation.left: doneBtn
                 }
             }

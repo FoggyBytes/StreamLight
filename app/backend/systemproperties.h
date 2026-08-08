@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QRect>
+#include <QVariantMap>
 
 #include "SDL_compat.h"
 
@@ -58,6 +59,22 @@ public:
     // the user in the Power dialog. Like the host side, a false result does not
     // guarantee there is nothing to install — see WindowsUpdateState on the host.
     Q_INVOKABLE bool updatesPending();
+
+    // This device's wired connection, for Settings — which has no host in context.
+    // Returns {usable, mbps, adapter, reason, status}. Host-specific screens must use
+    // ComputerModel::probeLocalLink() instead: a given host can still be reached over
+    // Wi-Fi or Tailscale while the default route is a perfectly good cable.
+    Q_INVOKABLE QVariantMap localLinkInfo();
+
+    // Destroys and rebuilds the native window behind our top-level QWindow, preserving
+    // geometry and visibility. Used on return from a stream under the Xbox full screen
+    // experience, where Qt keeps presenting frames at full rate (frameSwapped climbs,
+    // isExposed() is true, the window is foreground and not cloaked) yet nothing reaches
+    // the display — the window's composition binding did not survive the stream window
+    // taking exclusive full screen. Showing, raising and re-entering full screen all leave
+    // the same HWND in place and change nothing; only a new HWND gets a new swap chain and
+    // a fresh binding. Windows-only in effect, harmless elsewhere.
+    Q_INVOKABLE void recreateNativeWindow();
 
 signals:
     void unmappedGamepadsChanged();

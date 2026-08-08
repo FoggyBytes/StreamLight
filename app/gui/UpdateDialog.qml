@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 import QtQuick.Layouts 1.3
@@ -228,7 +229,7 @@ Popup {
                     : pop.phase === "NO_UPDATES" ? "✓ " + pop.message
                     : "⚠ " + pop.message
                 font.family: "DM Sans"; font.pixelSize: 17
-                color: pop.phase === "ERROR" ? "#ef4444" : "#00E676"
+                color: pop.phase === "ERROR" ? "#ef4444" : Theme.accent
                 Layout.alignment: Qt.AlignHCenter
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; Layout.fillWidth: true
             }

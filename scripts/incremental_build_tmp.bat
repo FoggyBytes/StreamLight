@@ -5,7 +5,7 @@ REM Activate MSVC environment
 call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
 
 REM Add Qt and 7-Zip to PATH
-set "PATH=C:\Qt\6.7.3\msvc2022_64\bin;C:\Program Files\7-Zip;%PATH%"
+set "PATH=C:\Qt\6.8.3\msvc2022_64\bin;C:\Program Files\7-Zip;%PATH%"
 
 REM Verify tools
 echo --- PRE-CHECK ---

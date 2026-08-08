@@ -146,6 +146,24 @@ public:
 
     void setCaptureActive(bool active);
 
+    /**
+     * Tells the handler the stream window is hidden behind the launch curtain, so nothing
+     * the user does should reach the host — a stray press would land in a game that is still
+     * loading, or in a launcher's dialog — and B means "show me the host now" instead.
+     *
+     * <p>While hidden it also forces background controller events on: no SDL window has the
+     * focus during the curtain, so without this the pad is not polled at all and B could
+     * never arrive. The user's own preference is restored when the window comes up.</p>
+     */
+    void setStreamWindowHidden(bool hidden);
+
+    // Remote PIN unlock: the hidden window is showing a QML pad, not a launch curtain, so the
+    // controller has to drive that pad instead of being dropped. Re-enabling
+    // SdlGamepadKeyNavigation is not an option — it polls SDL on its own timer and would fight
+    // the session's own pump for one event queue — so the buttons are translated here into Qt
+    // key events and posted to the Qt window, which is the one on screen.
+    void setUnlockMode(bool on);
+
     bool isMouseInVideoRegion(int mouseX, int mouseY, int windowWidth = -1, int windowHeight = -1);
 
     void updateKeyboardGrabState();
@@ -208,6 +226,13 @@ private:
     bool m_SwapMouseButtons;
     bool m_ReverseScrollDirection;
     bool m_SwapFaceButtons;
+
+    // The launch curtain is up and the stream window is hidden behind it. Remembered
+    // alongside the user's background-gamepad preference, because the curtain overrides it
+    // for its duration and has to put it back.
+    bool m_StreamWindowHidden = false;
+    bool m_UnlockMode = false;
+    bool m_BackgroundGamepad = false;
 
     bool m_MouseWasInVideoRegion;
     bool m_PendingMouseButtonsAllUpOnVideoRegionLeave;

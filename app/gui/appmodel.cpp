@@ -12,6 +12,14 @@ AppModel::AppModel(QObject *parent)
 
 void AppModel::initialize(ComputerManager* computerManager, int computerIndex, bool showHiddenGames)
 {
+    // Re-initialising is legitimate (the unlock flow reuses one model across wakes) and used
+    // to stack a second connection on top of the first, so every state change was handled
+    // twice. AppsScreen never hit it because it builds a fresh model each time.
+    if (m_ComputerManager != nullptr) {
+        disconnect(m_ComputerManager, &ComputerManager::computerStateChanged,
+                   this, &AppModel::handleComputerStateChanged);
+    }
+
     m_ComputerManager = computerManager;
     connect(m_ComputerManager, &ComputerManager::computerStateChanged,
             this, &AppModel::handleComputerStateChanged);
@@ -42,6 +50,16 @@ QString AppModel::getRunningAppName()
     return nullptr;
 }
 
+int AppModel::indexOfAppNamed(const QString& name) const
+{
+    for (int i = 0; i < m_VisibleApps.count(); i++) {
+        if (m_VisibleApps.at(i).name.compare(name, Qt::CaseInsensitive) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 Session* AppModel::createSessionForApp(int appIndex)
 {
     Q_ASSERT(appIndex < m_VisibleApps.count());
@@ -63,15 +81,13 @@ QVariantMap AppModel::getAppOverride(int appIndex)
     if (appIndex < 0 || appIndex >= m_VisibleApps.count()) {
         return m;
     }
-    AppOverride ov = AppSettingsManager::get()->getOverride(m_Computer->uuid, m_VisibleApps.at(appIndex).id);
-    if (ov.hasResolution)  { m["width"] = ov.width; m["height"] = ov.height; }
-    if (ov.hasFps)         m["fps"] = ov.fps;
-    if (ov.hasBitrate)     m["bitrate"] = ov.bitrateKbps;
-    if (ov.hasHdr)         m["hdr"] = ov.enableHdr;
-    if (ov.hasCodec)       m["codec"] = ov.videoCodecConfig;
-    if (ov.hasFramePacing) m["framepacing"] = ov.framePacingMode;
-    if (ov.hasAudio)       m["audio"] = ov.audioConfig;
-    return m;
+    // ⚠️ Through the shared helpers, never a copy of them. These two functions used to
+    // convert by hand and had fallen a release behind: "hue" was missing from both, so the
+    // dialog's Philips Hue row wrote a key nobody read and always came back reading Global.
+    // A per-game override is stored, cascaded and displayed by three different call sites,
+    // and a fourth private idea of which keys exist is how one of them quietly stops working.
+    return appOverrideToMap(
+        AppSettingsManager::get()->getOverride(m_Computer->uuid, m_VisibleApps.at(appIndex).id));
 }
 
 void AppModel::setAppOverride(int appIndex, const QVariantMap& src)
@@ -79,20 +95,11 @@ void AppModel::setAppOverride(int appIndex, const QVariantMap& src)
     if (appIndex < 0 || appIndex >= m_VisibleApps.count()) {
         return;
     }
-    AppOverride ov;
-    if (src.contains("width") && src.contains("height")) {
-        ov.hasResolution = true;
-        ov.width = src.value("width").toInt();
-        ov.height = src.value("height").toInt();
-    }
-    if (src.contains("fps"))         { ov.hasFps = true;         ov.fps = src.value("fps").toInt(); }
-    if (src.contains("bitrate"))     { ov.hasBitrate = true;     ov.bitrateKbps = src.value("bitrate").toInt(); }
-    if (src.contains("hdr"))         { ov.hasHdr = true;         ov.enableHdr = src.value("hdr").toBool(); }
-    if (src.contains("codec"))       { ov.hasCodec = true;       ov.videoCodecConfig = src.value("codec").toInt(); }
-    if (src.contains("framepacing")) { ov.hasFramePacing = true; ov.framePacingMode = src.value("framepacing").toInt(); }
-    if (src.contains("audio"))       { ov.hasAudio = true;       ov.audioConfig = src.value("audio").toInt(); }
-
-    AppSettingsManager::get()->setOverride(m_Computer->uuid, m_VisibleApps.at(appIndex).id, ov);
+    // Same shared helpers as the read above. The caller rebuilds the whole map from its
+    // controls on every change, so a key it does not offer is an override being dropped —
+    // which is correct here, because the per-game dialog is the only thing that writes this.
+    AppSettingsManager::get()->setOverride(m_Computer->uuid, m_VisibleApps.at(appIndex).id,
+                                           appOverrideFromMap(src));
     QModelIndex idx = index(appIndex, 0);
     emit dataChanged(idx, idx, { OverriddenRole });
 }

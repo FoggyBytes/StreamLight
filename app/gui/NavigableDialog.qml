@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.0
 import QtQuick.Controls 2.5
 import QtQuick.Layouts 1.3
@@ -47,9 +48,9 @@ Dialog {
             readonly property bool isAffirmative: role === DialogButtonBox.AcceptRole
                                                   || role === DialogButtonBox.YesRole
             readonly property bool isDanger: isAffirmative && navDialog.affirmativeIsDanger
-            readonly property color accentBase:  isDanger ? "#ef4444"                            : "#00E676"
-            readonly property color accentHover: isDanger ? Qt.rgba(0.937, 0.267, 0.267, 0.20)   : Qt.rgba(0, 0.9, 0.46, 0.20)
-            readonly property color accentIdle:  isDanger ? Qt.rgba(0.937, 0.267, 0.267, 0.12)   : Qt.rgba(0, 0.9, 0.46, 0.12)
+            readonly property color accentBase:  isDanger ? "#ef4444"                            : Theme.accent
+            readonly property color accentHover: isDanger ? Qt.rgba(0.937, 0.267, 0.267, 0.20)   : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
+            readonly property color accentIdle:  isDanger ? Qt.rgba(0.937, 0.267, 0.267, 0.12)   : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12)
 
             Keys.onReturnPressed: clicked()
             Keys.onEnterPressed:  clicked()

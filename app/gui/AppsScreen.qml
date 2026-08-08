@@ -2,14 +2,30 @@ import QtQuick 2.12
 import QtQuick.Controls 2.2
 import QtQuick.Controls.Material 2.2
 import QtQuick.Window 2.2
+import QtQuick.Effects
 
 import AppModel 1.0
+import Theme 1.0
 import ComputerManager 1.0
 import StreamingPreferences 1.0
 import SdlGamepadKeyNavigation 1.0
 
-// Root is FocusScope (not Item) — required for activeFocus propagation from
-// the Loader above us down into appGrid. Plain Items do not propagate.
+/*
+ * The host page — the showcase.
+ *
+ * Same grammar as Home: one thing in the spotlight and everything else in a strip, two
+ * navigation zones, and the action row saying what A will do. There the spotlight is the
+ * host, here it is the game — so moving between the two screens does not mean learning a
+ * second way of reading.
+ *
+ * What the grid of covers could never show, because there was nowhere to put it: which
+ * store a game comes from in words rather than a 16px badge, whether it is running right
+ * now, whether it carries settings of its own, and the right verb on the button — Resume
+ * for a session already up, Play for one that isn't.
+ *
+ * Root is FocusScope (not Item) — required for activeFocus propagation from the Loader
+ * above us down into the two zones. Plain Items do not propagate.
+ */
 FocusScope {
     id: appsRoot
     anchors.fill: parent
@@ -43,47 +59,104 @@ FocusScope {
     function _codecLabel(c) { return c === 1 ? "H.264" : c === 2 ? "HEVC" : c === 4 ? "AV1" : qsTr("Auto codec") }
     function _audioLabel(a) { return a === 1 ? "5.1" : a === 2 ? "7.1" : qsTr("Stereo") }
 
-    // ── Local design tokens ──────────────────────────────────────────────────
-    readonly property color _text:    "#f0f0f0"
-    readonly property color _textDim: "#a0a0a0"
-    readonly property color _textMut: "#707070"
-    readonly property color _greenLk: "#00E676"
-    readonly property color _amber:   "#f59e0b"
-    readonly property string _mono:   "JetBrains Mono"
-
-    // Same palette as HomeScreen so the colour of the card we came from
-    // matches the colour of the header we see here.
-    function hostColorPair(name) {
-        if (!name || name.length === 0) return ["#1c1c1c", "#0d0d0d"]
-        var h = 0
-        for (var i = 0; i < name.length; i++) {
-            h = ((h << 5) - h) + name.charCodeAt(i)
-            h |= 0
-        }
-        var palette = [
-            ["#1a3a5c", "#0a1a2e"],
-            ["#3a1a4c", "#1a0a26"],
-            ["#4a1e1a", "#260a08"],
-            ["#1a4c2e", "#0a2618"],
-            ["#4c3a0e", "#261c06"],
-            ["#0e3a4c", "#061c26"]
-        ]
-        return palette[Math.abs(h) % palette.length]
+    function _resLabel() {
+        var w = appsRoot._effW, h = appsRoot._effH
+        if (w === 3840 && h === 2160) return "4K"
+        if (w === 2560 && h === 1440) return "1440p"
+        if (w === 1920 && h === 1080) return "1080p"
+        if (w === 1280 && h === 720)  return "720p"
+        return w + "×" + h
     }
 
-    // Y → Settings; X (Menu) → stop running app if focused; RB → Customize.
+    // ── Scale ────────────────────────────────────────────────────────────────
+    // Same reference and the same reasoning as HostStage — see the note there. Both screens
+    // must use the same divisor or a host and its games would be drawn at two different
+    // sizes, which is the one thing a shared grammar cannot survive.
+    readonly property real _u: Math.max(0.62, Math.min(1.60, width / 1330))
+    function _px(n) { return Math.round(n * _u) }
+
+    // ── Focus ────────────────────────────────────────────────────────────────
+    /*
+     * One zone: the library. Nothing else on this page can be reached with the pad.
+     *
+     * The hero's buttons used to be a second zone above the list, and Up only left the list
+     * from row 0 — so from the twentieth game the buttons were twenty presses away. The fix
+     * is not a shorter path to them: it is that there is nothing to reach. Every action on
+     * this page already has a face button of its own (A plays, Select opens the per-game
+     * settings, X stops the session), so the buttons exist for the mouse and are drawn with
+     * their glyph on them. Zones belong where they earn their keep — on Home the host has
+     * four actions and only Shutdown has a button of its own, so there the second zone is
+     * the only way to reach the other three and it stays.
+     */
+    function focusLibrary() { appGrid.forceActiveFocus() }
+
+    // ── Pad glyphs ───────────────────────────────────────────────────────────
+    // Resolved exactly as the status bar does, by SDL button POSITION — Nintendo swaps A/B
+    // and X/Y relative to Xbox, so the Switch glyph for the south button is the one labeled
+    // "B". Real artwork rather than a printed letter because Select is not a letter: it is
+    // View on Xbox, Create on PlayStation and − on Switch, and a badge saying "Select" would
+    // be wrong on two pads out of three.
+    // (Resolved by ActionHint now — vendor, size and the keyboard alternative in one place.)
+
+    // ── The game in the spotlight ────────────────────────────────────────────
+    readonly property string focusedAppName:
+        (appGrid && appGrid.currentItem) ? appGrid.currentItem._appName : ""
+    readonly property string focusedBoxArt:
+        (appGrid && appGrid.currentItem) ? appGrid.currentItem._boxArt : ""
+    readonly property bool focusedOverridden:
+        (appGrid && appGrid.currentItem) ? appGrid.currentItem._overridden === true : false
+    readonly property string focusedStore:
+        (appGrid && appGrid.storeMap && focusedAppName.length > 0)
+            ? (appGrid.storeMap[focusedAppName] || "") : ""
+
+    // Bound to delegate._running (a property — reactive) so the status-bar prompts and the
+    // hero's verb update when the host-side session ends.
+    property bool focusedAppIsRunning:
+        (appGrid && appGrid.currentItem) ? appGrid.currentItem._running === true : false
+
+    // "Desktop" is not a game and "Play Desktop" reads wrong; it is the one entry where the
+    // honest verb is Open.
+    readonly property string focusedVerb:
+        focusedAppIsRunning ? qsTr("Resume")
+      : focusedAppName === "Desktop" ? qsTr("Open")
+      : qsTr("Play")
+
+    // No `focusedActionLabel` exported any more: the status bar no longer prints A on this
+    // page, because the verb is written on the button that carries the A glyph. The bar
+    // keeps only Y and B, which have no button to sit on — the same division as Home.
+
+    // Y → Settings; X (Menu) → stop the running app; Select → per-game settings.
+    //
+    // All three live on the root rather than on the list, because they are the page's
+    // shortcuts and not the list's: they have to work wherever the focus happens to be, and
+    // an unhandled key travels up the focus chain to get here. Select is mapped to Key_F13
+    // (Key_Select would be treated as an activation key and launch the app).
     Keys.onHangupPressed: { if (appShell) appShell.openSettings() }
-    Keys.onMenuPressed: {
+    Keys.onMenuPressed: function(event) {
         if (focusedAppIsRunning) {
             stopFocusedApp()
         }
         event.accepted = true
     }
-
-    // Bound to delegate._running (a property — reactive) so the status-bar
-    // prompts update when the host-side session ends.
-    property bool focusedAppIsRunning:
-        (appGrid && appGrid.currentItem) ? appGrid.currentItem._running === true : false
+    // ⚠️ Page-level, not global Shortcuts: the focused item sees the key first, so typing in
+    // a dialog on top of this page cannot trigger any of them.
+    Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_F13) {
+            openCustomizeForFocused()
+            event.accepted = true
+        }
+        // Keyboard equivalents of the prompts drawn on this page's buttons.
+        else if (event.key === Qt.Key_G) {
+            openCustomizeForFocused()
+            event.accepted = true
+        } else if (event.key === Qt.Key_S) {
+            if (appShell) appShell.openSettings()
+            event.accepted = true
+        } else if (event.key === Qt.Key_X && focusedAppIsRunning) {
+            stopFocusedApp()
+            event.accepted = true
+        }
+    }
 
     function resumeFocusedApp() {
         if (appGrid && appGrid.currentItem && appGrid.currentItem.launchOrResumeSelectedApp) {
@@ -110,6 +183,22 @@ FocusScope {
         }
     }
 
+    // The store's mark, for the spotlight's meta line. Lives on the root rather than on the
+    // list because the spotlight is what draws it now: it used to belong to the badge on the
+    // cover tiles, which went away when the library became a list of titles, and the function
+    // sat here unused ever since. Empty string for a store we have no artwork for — and for
+    // Desktop and Steam Big Picture, which have no store at all.
+    function storeIconSource(store) {
+        if (store === "Steam")           return "qrc:/res/store_steam.svg"
+        if (store === "Epic Games")      return "qrc:/res/store_epic.svg"
+        if (store === "GOG")             return "qrc:/res/store_gog.svg"
+        if (store === "Ubisoft Connect") return "qrc:/res/store_ubisoft.svg"
+        if (store === "Xbox")            return "qrc:/res/store_xbox.svg"
+        if (store === "Battle.net")      return "qrc:/res/store_battlenet.svg"
+        if (store === "EA App")          return "qrc:/res/store_ea.svg"
+        return ""
+    }
+
     function _formatNicSpeed(raw) {
         if (raw === "" || raw === null) return qsTr("N/A")
         var mbps = parseInt(raw)
@@ -121,13 +210,51 @@ FocusScope {
         return mbps + " Mbps"
     }
 
+    // This page paints its own floor — the ambient artwork under a veil that reaches full
+    // opacity at the bottom — so the shell's status bar has to sit on the same near-black
+    // instead of on the shell's own accent-tinted gradient, which left a step across the
+    // bottom of the screen. Cleared on the way out so every other page keeps the gradient.
+    //
+    // ⚠️ On `appShellChanged`, NOT on `Component.onCompleted`: the Loader assigns `appShell`
+    // after the item is constructed, so at completion it is still null and the assignment
+    // was silently skipped — which is why the bar kept the shell's lighter gradient. Same
+    // ordering trap as the host properties below.
+    onAppShellChanged:       if (appShell) appShell.statusBarFloor = "#05080a"
+    Component.onDestruction: if (appShell) appShell.statusBarFloor = "transparent"
+
     // Loader sets host properties AFTER Component.onCompleted → init here.
     onHostComputerModelChanged: _initFromHost()
     onComputerIndexChanged:    _initFromHost()
 
+    // Host link matching (4.6.0) — same three facts the host stage uses. This is the last
+    // screen before Launch, so it's where the upcoming change is most worth stating.
+    property int  _localMbps: 0
+    property int  _hostMbps: 0
+    property bool _hostAllowsLink: false
+
+    // ⚠️ The EFFECTIVE setting: a per-host profile can turn link matching off, and reading the
+    // global toggle straight made the header announce a change that would then not happen.
+    readonly property bool _effMatchLink:
+        (hostOverride && hostOverride.matchlink !== undefined)
+            ? hostOverride.matchlink === true
+            : StreamingPreferences.matchHostLinkSpeed
+
+    readonly property bool _willSwitchLink:
+        _effMatchLink
+        && _hostAllowsLink
+        && _localMbps > 0
+        && _hostMbps > _localMbps
+
+    function _fmtMbps(m) {
+        return m >= 1000 ? (m / 1000) + " Gbps" : m + " Mbps"
+    }
+
     function _initFromHost() {
         if (!hostComputerModel || computerIndex < 0) return
         hostComputerModel.requestStreamTweakStatus(computerIndex)
+        var link = hostComputerModel.probeLocalLink(computerIndex)
+        _localMbps = link.usable === true ? link.mbps : 0
+        hostComputerModel.requestHostNetInfo(computerIndex)
         hostProfileName = (hostComputerModel.hostActiveProfile(computerIndex) >= 0)
                           ? hostComputerModel.hostActiveProfileName(computerIndex) : ""
         hostOverride = hostComputerModel.hostActiveOverride(computerIndex)
@@ -142,6 +269,13 @@ FocusScope {
         function onStreamTweakStatusReceived(idx, status) {
             if (idx === appsRoot.computerIndex) {
                 appsRoot.hostNicSpeed = appsRoot._formatNicSpeed(status)
+                var m = parseInt(status)
+                appsRoot._hostMbps = isNaN(m) ? 0 : m
+            }
+        }
+        function onHostNetInfoReceived(idx, info) {
+            if (idx === appsRoot.computerIndex) {
+                appsRoot._hostAllowsLink = info.allowsLinkControl === true
             }
         }
         function onAppStoresReceived(idx, stores) {
@@ -151,329 +285,701 @@ FocusScope {
         }
     }
 
-    // Compact one-row header: hostname · ONLINE · IP · NIC · resolution · FPS.
+    // ═════════════════════════════════════════════════════════════════════════
+    // Ambient backdrop — the focused cover, blurred, behind everything
+    // ═════════════════════════════════════════════════════════════════════════
+    /*
+     * The single effect that changes the character of the screen more than any rearrangement
+     * of boxes. It is also the most expensive one, so it is built to cost nothing when
+     * nothing is happening: Qt Quick only repaints on change, so a still blurred image is
+     * drawn once and then sits there. The cost lands on the focus moving, which is exactly
+     * when the user is asking for it.
+     *
+     * The swap is a fade down and back up rather than a cut, and the new source is set at
+     * the bottom of the fade — a straight source change would pop, and a pop on every D-pad
+     * press is worse than no effect at all.
+     */
+    property string _ambientSource: ""
+    property string _ambientPending: ""
+
+    onFocusedBoxArtChanged: {
+        if (Theme.reduceAnimations) { _ambientSource = focusedBoxArt; return }
+        if (_ambientSource === "") { _ambientSource = focusedBoxArt; return }
+        if (focusedBoxArt === _ambientSource) return
+        _ambientPending = focusedBoxArt
+        ambientSwap.restart()
+    }
+
+    SequentialAnimation {
+        id: ambientSwap
+        NumberAnimation { target: ambientLayer; property: "opacity"; to: 0; duration: 140 }
+        ScriptAction { script: appsRoot._ambientSource = appsRoot._ambientPending }
+        NumberAnimation { target: ambientLayer; property: "opacity"; to: 0.5; duration: 260 }
+    }
+
+    Item {
+        id: ambientLayer
+        anchors.fill: parent
+        // Overscanned so the blur has material to sample at the edges instead of smearing
+        // the border of the picture across the screen.
+        anchors.margins: -appsRoot._px(60)
+        z: -2
+        opacity: 0.5
+        visible: !Theme.reduceAnimations && appsRoot._ambientSource !== ""
+
+        Image {
+            id: ambientImage
+            anchors.fill: parent
+            source: appsRoot._ambientSource
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            // Hidden because MultiEffect draws it: the Image is only here as a texture
+            // provider. Leaving it visible would paint the sharp copy under the blurred one.
+            visible: false
+        }
+
+        MultiEffect {
+            anchors.fill: parent
+            source: ambientImage
+            blurEnabled: true
+            blur: 1.0
+            blurMax: 48
+            saturation: 0.25
+            autoPaddingEnabled: false
+        }
+    }
+
+    // The veil. Without it the text sits on whatever the artwork happens to be, and loses.
     Rectangle {
+        anchors.fill: parent
+        z: -1
+        visible: ambientLayer.visible
+        gradient: Gradient {
+            // Fully opaque by the bottom edge, not 93%. The ambient artwork is clipped to the
+            // content area while the page background continues behind the status bar, so any
+            // residual transparency here left the blurred image ending on a hard horizontal
+            // line — read on screen as a solid band across the foot of the page.
+            GradientStop { position: 0.0;  color: "#d005080a" }
+            GradientStop { position: 0.44; color: "#bb05080a" }
+            GradientStop { position: 0.88; color: "#f205080a" }
+            GradientStop { position: 1.0;  color: "#ff05080a" }
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Header
+    // ═════════════════════════════════════════════════════════════════════════
+    // No "back" button here on purpose: the status bar's B prompt is already clickable and
+    // is how every other screen is left, so a second control would be a duplicate that only
+    // exists on this page.
+    Item {
         id: appsHeader
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.topMargin: 24
-        anchors.leftMargin: 30
-        anchors.rightMargin: 30
-        height: 56
-        radius: 10
-        clip: true
-
-        property var _colors: appsRoot.hostColorPair(appsRoot.hostName)
-
-        gradient: Gradient {
-            orientation: Gradient.Horizontal
-            GradientStop { position: 0.0; color: appsHeader._colors[0] }
-            GradientStop { position: 1.0; color: appsHeader._colors[1] }
-        }
-
-        Canvas {
-            anchors.fill: parent
-            opacity: 0.06
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.clearRect(0, 0, width, height)
-                ctx.strokeStyle = "#ffffff"
-                ctx.lineWidth = 1
-                var step = 14
-                for (var x = -height; x < width; x += step) {
-                    ctx.beginPath()
-                    ctx.moveTo(x, 0)
-                    ctx.lineTo(x + height, height)
-                    ctx.stroke()
-                }
-            }
-        }
+        anchors.topMargin: appsRoot._px(24)
+        anchors.leftMargin: appsRoot._px(44)
+        anchors.rightMargin: appsRoot._px(44)
+        height: appsRoot._px(40)
 
         Row {
-            id: headerRow
             anchors.left: parent.left
-            anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            anchors.leftMargin: 20
-            anchors.rightMargin: 20
-            spacing: 12
+            spacing: appsRoot._px(16)
+
+            Image {
+                anchors.verticalCenter: parent.verticalCenter
+                source: "qrc:/streamlight.ico"
+                width: appsRoot._px(40); height: width
+                sourceSize.width:  40 * Screen.devicePixelRatio
+                sourceSize.height: 40 * Screen.devicePixelRatio
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                mipmap: true
+            }
 
             Label {
                 anchors.verticalCenter: parent.verticalCenter
                 text: appsRoot.hostName
-                color: appsRoot._text
-                font.family: "DM Sans"
-                font.pixelSize: 20
+                color: Theme.text
+                font.family: Theme.family
+                font.pixelSize: appsRoot._px(30)
                 font.bold: true
+                font.letterSpacing: -appsRoot._u * 0.45
                 elide: Label.ElideRight
             }
+        }
 
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "·"
-                color: appsRoot._textMut
-                font.pixelSize: 16
-            }
+        // Chips, right-aligned — the same vocabulary as the host stage, so a host reads the
+        // same on both screens.
+        Row {
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: appsRoot._px(8)
 
-            Rectangle {
-                anchors.verticalCenter: parent.verticalCenter
-                width: onlineRow.implicitWidth + 14
-                height: 22
-                radius: 3
-                color: Qt.rgba(0, 0, 0, 0.35)
-                border.color: appsRoot._greenLk
-                border.width: 1
+            Repeater {
+                model: {
+                    var c = [{ text: qsTr("Online"), dot: Theme.online }]
+                    if (appsRoot.hostProfileName.length > 0)
+                        c.push({ text: appsRoot.hostProfileName, dot: Theme.accent })
+                    if (appsRoot.isTailscaleClone)
+                        c.push({ text: qsTr("Tailscale"), dot: Theme.text2 })
+                    // ⚠️ Same words as the host card on Home, in the same order of precedence.
+                    // These are the same three states seen from a different screen, and they
+                    // used to have a vocabulary each — "Link changing" here against "Matching"
+                    // there, "Link restored" against "Link back to 2.5 Gbps" — so moving between
+                    // the two screens during one renegotiation read as two different events.
+                    //
+                    // A restore takes precedence over the bare "the adapter is moving", because
+                    // during a restore both are true and only one of them says why.
+                    if (appsRoot.appShell && appsRoot.appShell._linkRestoreActive)
+                        c.push({ text: appsRoot.appShell._linkRestoreDone
+                                       ? qsTr("Link back") : qsTr("Restoring"),
+                                 dot: appsRoot.appShell._linkRestoreDone ? Theme.online : Theme.warning,
+                                 fg:  appsRoot.appShell._linkRestoreDone ? Theme.online : Theme.warning })
+                    else if (appsRoot.appShell && appsRoot.appShell._hostLinkChanging)
+                        c.push({ text: qsTr("Matching"), dot: Theme.warning, fg: Theme.warning })
+                    else if (appsRoot._willSwitchLink)
+                        c.push({ text: qsTr("On launch → %1").arg(appsRoot._fmtMbps(appsRoot._localMbps)),
+                                 dot: Theme.warning, fg: Theme.warning })
+                    return c
+                }
 
-                Row {
-                    id: onlineRow
-                    anchors.centerIn: parent
-                    spacing: 6
-                    Label {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("ONLINE")
-                        color: appsRoot._greenLk
-                        font.family: "DM Sans"
-                        font.pixelSize: 10
-                        font.bold: true
-                        font.letterSpacing: 1.2
+                delegate: Rectangle {
+                    height: appsRoot._px(30)
+                    width: chipRow.implicitWidth + appsRoot._px(26)
+                    radius: appsRoot._px(6)
+                    color: "transparent"
+                    border.color: Theme.line
+                    border.width: 1
+
+                    Row {
+                        id: chipRow
+                        anchors.centerIn: parent
+                        spacing: appsRoot._px(7)
+
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: appsRoot._px(8); height: width
+                            radius: width / 2
+                            color: modelData.dot
+                        }
+                        Label {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData.text.toUpperCase()
+                            color: modelData.fg !== undefined ? modelData.fg : Theme.text2
+                            font.family: Theme.family
+                            font.pixelSize: appsRoot._px(14)
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: appsRoot._u
+                        }
                     }
                 }
-            }
-
-            // Active profile badge — shown only when a per-host profile is active.
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: appsRoot.hostProfileName.length > 0
-                text: "·"
-                color: appsRoot._textMut
-                font.pixelSize: 16
-            }
-            Rectangle {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: appsRoot.hostProfileName.length > 0
-                width: profileBadgeLabel.implicitWidth + 14
-                height: 22
-                radius: 3
-                color: Qt.rgba(0, 0, 0, 0.35)
-                border.color: "#ffffff"
-                border.width: 1
-
-                Label {
-                    id: profileBadgeLabel
-                    anchors.centerIn: parent
-                    text: appsRoot.hostProfileName.toUpperCase()
-                    color: "#ffffff"
-                    font.family: "DM Sans"
-                    font.pixelSize: 10
-                    font.bold: true
-                    font.letterSpacing: 1.2
-                }
-            }
-
-            // TAILSCALE badge — mirrors the one on the HomeScreen tile.
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: appsRoot.isTailscaleClone
-                text: "·"
-                color: appsRoot._textMut
-                font.pixelSize: 16
-            }
-            Rectangle {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: appsRoot.isTailscaleClone
-                width: tailscaleBadgeLabel.implicitWidth + 14
-                height: 22
-                radius: 3
-                color: Qt.rgba(0, 0, 0, 0.35)
-                border.color: "#ffffff"
-                border.width: 1
-
-                Label {
-                    id: tailscaleBadgeLabel
-                    anchors.centerIn: parent
-                    text: qsTr("TAILSCALE")
-                    color: "#ffffff"
-                    font.family: "DM Sans"
-                    font.pixelSize: 10
-                    font.bold: true
-                    font.letterSpacing: 1.2
-                }
-            }
-
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: !StreamingPreferences.hideHostIps
-                text: "·"
-                color: appsRoot._textMut
-                font.pixelSize: 16
-            }
-
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: !StreamingPreferences.hideHostIps
-                text: (appsRoot.hostAddress && appsRoot.hostAddress.length > 0)
-                      ? appsRoot.hostAddress : qsTr("N/A")
-                color: appsRoot._textDim
-                font.family: appsRoot._mono
-                font.pixelSize: 14
-            }
-
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: appsRoot.hostNicSpeed.length > 0
-                      && appsRoot.hostNicSpeed !== qsTr("N/A")
-                text: "·"
-                color: appsRoot._textMut
-                font.pixelSize: 16
-            }
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: appsRoot.hostNicSpeed.length > 0
-                      && appsRoot.hostNicSpeed !== qsTr("N/A")
-                text: appsRoot.hostNicSpeed
-                color: appsRoot._greenLk
-                font.family: appsRoot._mono
-                font.pixelSize: 14
-            }
-
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "·"
-                color: appsRoot._textMut
-                font.pixelSize: 16
-            }
-
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: {
-                    var w = appsRoot._effW, h = appsRoot._effH
-                    if (w === 3840 && h === 2160) return "4K"
-                    if (w === 2560 && h === 1440) return "1440p"
-                    if (w === 1920 && h === 1080) return "1080p"
-                    if (w === 1280 && h === 720)  return "720p"
-                    return w + "×" + h
-                }
-                color: appsRoot._textDim
-                font.family: appsRoot._mono
-                font.pixelSize: 14
-            }
-
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "·"
-                color: appsRoot._textMut
-                font.pixelSize: 16
-            }
-
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: appsRoot._effFps + " FPS"
-                color: appsRoot._textDim
-                font.family: appsRoot._mono
-                font.pixelSize: 14
-            }
-
-            // ── Bitrate ───────────────────────────────────────────────────
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "·"
-                color: appsRoot._textMut
-                font.pixelSize: 16
-            }
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: (appsRoot._effBitrate / 1000).toFixed(0) + " Mbps"
-                color: appsRoot._textDim
-                font.family: appsRoot._mono
-                font.pixelSize: 14
-            }
-
-            // ── HDR (only when effectively ON) ────────────────────────────
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: appsRoot._effHdr
-                text: "·"
-                color: appsRoot._textMut
-                font.pixelSize: 16
-            }
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: appsRoot._effHdr
-                text: "HDR"
-                color: appsRoot._greenLk
-                font.family: appsRoot._mono
-                font.pixelSize: 14
-                font.bold: true
-            }
-
-            // ── Video codec ───────────────────────────────────────────────
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "·"
-                color: appsRoot._textMut
-                font.pixelSize: 16
-            }
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: appsRoot._codecLabel(appsRoot._effCodec)
-                color: appsRoot._textDim
-                font.family: appsRoot._mono
-                font.pixelSize: 14
-            }
-
-            // ── Audio ─────────────────────────────────────────────────────
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "·"
-                color: appsRoot._textMut
-                font.pixelSize: 16
-            }
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: appsRoot._audioLabel(appsRoot._effAudio)
-                color: appsRoot._textDim
-                font.family: appsRoot._mono
-                font.pixelSize: 14
             }
         }
     }
 
-    // ── Section caption ───────────────────────────────────────────────────────
-    Label {
-        id: appsSectionLabel
+    // ── The configuration line ────────────────────────────────────────────────
+    /*
+     * Everything that decides what the next launch looks like, on one line, because the
+     * answer to "why does this look wrong" is always somewhere in it.
+     *
+     * Each value now sits in its own outlined box under a group label — Host, then Stream —
+     * instead of being a run of words separated by spaces. Boxes turn the line into
+     * something the eye scans rather than reads: the eye finds "120 FPS" by shape and
+     * position, where a sentence has to be parsed to the end.
+     *
+     * Nothing on this line is green. HDR used to be the one green value out of six, which
+     * made the other five look switched off — green in this interface means "live and
+     * healthy", and none of these is reporting health. The link speed is not green either:
+     * it is a fact about the wire, and the same reasoning applies to it. The one colour left
+     * on this screen is the amber of a link change that has not happened yet.
+     */
+    Row {
+        id: cfgLine
         anchors.top: appsHeader.bottom
         anchors.left: parent.left
-        anchors.leftMargin: 30
-        anchors.topMargin: 24
-        text: qsTr("Apps & games")
-        color: appsRoot._text
-        font.family: "DM Sans"
-        font.pixelSize: 26
-        font.bold: true
+        anchors.right: parent.right
+        anchors.topMargin: appsRoot._px(13)
+        anchors.leftMargin: appsRoot._px(44)
+        anchors.rightMargin: appsRoot._px(44)
+        spacing: appsRoot._px(9)
+
+        readonly property int _rowH: appsRoot._px(33)
+
+        Repeater {
+            // "g" = group label · "b" = value badge · "s" = separator.
+            model: {
+                var m = []
+                var showAddr  = !StreamingPreferences.hideHostIps
+                var showSpeed = appsRoot.hostNicSpeed.length > 0
+                                && appsRoot.hostNicSpeed !== qsTr("N/A")
+
+                if (showAddr || showSpeed) {
+                    m.push({ t: "g", text: qsTr("Host") })
+                    if (showAddr)
+                        m.push({ t: "b", text: (appsRoot.hostAddress && appsRoot.hostAddress.length > 0)
+                                               ? appsRoot.hostAddress : qsTr("N/A") })
+                    if (showSpeed)
+                        m.push({ t: "b", text: appsRoot.hostNicSpeed })
+                    m.push({ t: "s", text: "" })
+                }
+
+                m.push({ t: "g", text: qsTr("Stream") })
+                m.push({ t: "b", text: appsRoot._resLabel() })
+                m.push({ t: "b", text: appsRoot._effFps + " FPS" })
+                m.push({ t: "b", text: (appsRoot._effBitrate / 1000).toFixed(0) + " Mbps" })
+                if (appsRoot._effHdr)
+                    m.push({ t: "b", text: "HDR" })
+                m.push({ t: "b", text: appsRoot._codecLabel(appsRoot._effCodec) })
+                m.push({ t: "b", text: appsRoot._audioLabel(appsRoot._effAudio) })
+                return m
+            }
+
+            delegate: Rectangle {
+                id: cfgChip
+                readonly property bool _isSep: modelData.t === "s"
+                readonly property bool _isGrp: modelData.t === "g"
+
+                height: cfgLine._rowH
+                width: _isSep ? appsRoot._px(13)
+                              : cfgText.implicitWidth + appsRoot._px(_isGrp ? 4 : 26)
+                radius: (_isGrp || _isSep) ? 0 : appsRoot._px(7)
+                color: (_isGrp || _isSep) ? "transparent" : "#0affffff"
+                border.width: (_isGrp || _isSep) ? 0 : 1
+                border.color: Theme.lineHigh
+
+                // A hairline, centred in its own slot, rather than the delegate itself being
+                // one pixel wide — that way the gap on either side comes from the rule and
+                // not from the Row's spacing doing double duty.
+                Rectangle {
+                    anchors.centerIn: parent
+                    visible: cfgChip._isSep
+                    width: 1
+                    height: appsRoot._px(22)
+                    color: Theme.line
+                }
+
+                Label {
+                    id: cfgText
+                    anchors.centerIn: parent
+                    visible: !cfgChip._isSep
+                    text: cfgChip._isGrp ? String(modelData.text).toUpperCase() : String(modelData.text)
+                    color: cfgChip._isGrp ? Theme.text3 : Theme.text
+                    font.family: Theme.family
+                    font.pixelSize: appsRoot._px(cfgChip._isGrp ? 14 : 16)
+                    font.weight: cfgChip._isGrp ? Font.Normal : Font.DemiBold
+                    font.letterSpacing: cfgChip._isGrp ? appsRoot._u * 1.2 : 0
+                }
+            }
+        }
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //                                APP GRID
-    // ══════════════════════════════════════════════════════════════════════════
-    GridView {
+    // ═════════════════════════════════════════════════════════════════════════
+    // Hero cover regeneration — a workaround, and labelled as one
+    // ═════════════════════════════════════════════════════════════════════════
+    /*
+     * Coming back from a stream, the spotlight cover sometimes comes out oversized and
+     * stretched, overflowing onto the ALL APPS caption. It only happens to Desktop and Steam
+     * Big Picture — the only two entries whose artwork is not 2:3 (they are 600x800; every
+     * real cover is 600x900, i.e. the (2/3) fallback above to the pixel), so they are the
+     * only two whose box actually resizes once the image has loaded. Moving the focus to
+     * another cover and back clears it every time.
+     *
+     * What is NOT established is why it sticks. The suspect is the full-screen return path:
+     * restoreAfterStream() calls SystemProperties.recreateNativeWindow(), which destroys the
+     * top-level window and with it the whole scene graph, so every effect texture is rebuilt
+     * — and the MultiEffect below draws through a mask texture and an auto-padded rect that
+     * both have to come back in step. Suspected, not measured. The clean fix, if it is ever
+     * wanted, is to stop drawing this cover through an effect at all.
+     *
+     * So this does not prevent the corruption, it repairs it: it reproduces the one thing
+     * known to clear it — a genuine source reload — at the moment the window comes back.
+     */
+    property bool _coverRegenerating: false
+
+    function regenerateHeroCover() {
+        if (appsRoot.focusedBoxArt === "") return
+        coverRegenTimer.restart()
+    }
+
+    // The window is back before its scene graph has been rebuilt and presented, so the
+    // reload is held for a couple of frames. This delay is a hedge, not a measurement — if
+    // the workaround ever misses, this is the number to look at first.
+    Timer {
+        id: coverRegenTimer
+        interval: 150
+        repeat: false
+        onTriggered: {
+            appsRoot._coverRegenerating = true
+            // ⚠️ source is BOUND to focusedBoxArt. Clearing it imperatively drops that
+            // binding for good, so it has to go back as a binding and not as a value —
+            // otherwise the cover silently stops following the selected game from here on.
+            heroArt.source = ""
+            heroArt.source = Qt.binding(function() { return appsRoot.focusedBoxArt })
+            coverRegenGuard.restart()
+        }
+    }
+
+    // If the reload never resolves, the cover must not stay invisible forever.
+    Timer {
+        id: coverRegenGuard
+        interval: 3000
+        repeat: false
+        onTriggered: appsRoot._coverRegenerating = false
+    }
+
+    // The window is hidden for the length of a session and shown again on return, so its
+    // own visibility is the signal — no call has to be threaded down from main.qml through
+    // AppShell. appsLoader stays active throughout the stream, so this screen is here to
+    // hear it.
+    Connections {
+        target: Window.window
+        function onVisibleChanged() {
+            if (Window.window && Window.window.visible)
+                appsRoot.regenerateHeroCover()
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // The spotlight
+    // ═════════════════════════════════════════════════════════════════════════
+    Item {
+        id: hero
+        anchors.top: cfgLine.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.topMargin: appsRoot._px(16)
+        anchors.leftMargin: appsRoot._px(44)
+        anchors.rightMargin: appsRoot._px(44)
+        // The cover sets the height, and it came down from 290: the block above the list has
+        // to earn its space, and everything it says fits in the height of a readable cover.
+        // What it gives back goes to the library, which is what the screen is for.
+        height: appsRoot._px(150)
+        visible: appGrid.count > 0
+
+        // ── The big cover ────────────────────────────────────────────────────
+        Item {
+            id: heroArtHolder
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+
+            // The box takes the artwork's own shape instead of imposing one.
+            //
+            // It used to be a fixed 3:4 with PreserveAspectCrop, which quietly cut the edges
+            // off anything that isn't 3:4 — and most of a real library isn't: Steam ships
+            // 600x900, a 2:3. Deriving the width from sourceSize means the cover is shown
+            // whole at whatever ratio it happens to have, and the mask and shadow below follow
+            // the same box. The 2:3 fallback covers the moment before the image has loaded and
+            // sourceSize is still zero.
+            readonly property real _ratio:
+                (heroArt.sourceSize.width > 0 && heroArt.sourceSize.height > 0)
+                    ? heroArt.sourceSize.width / heroArt.sourceSize.height : (2 / 3)
+            width: Math.round(height * _ratio)
+
+            // Hidden across a regeneration. The reload drops sourceSize to zero, so _ratio
+            // falls back to (2/3) and returns — two width changes the user has no reason to
+            // watch, and which would read as a wobble on every return from a stream.
+            opacity: appsRoot._coverRegenerating ? 0 : 1
+
+            Behavior on width {
+                // Off during a regeneration: with the box invisible there is nothing to
+                // ease, and animating it would only drag those two changes out over 280 ms.
+                enabled: !Theme.reduceAnimations && !appsRoot._coverRegenerating
+                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+            }
+
+            Image {
+                id: heroArt
+                anchors.fill: parent
+                source: appsRoot.focusedBoxArt
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+                smooth: true
+                mipmap: true
+                visible: false
+
+                // Deferred by a tick on purpose: sourceSize and status settle together, and
+                // clearing the flag in the same tick would re-enable the Behavior in time to
+                // animate the last width change in full view — the wobble this avoids.
+                onStatusChanged: {
+                    if (appsRoot._coverRegenerating
+                            && (status === Image.Ready || status === Image.Error)) {
+                        Qt.callLater(function() {
+                            appsRoot._coverRegenerating = false
+                            coverRegenGuard.stop()
+                        })
+                    }
+                }
+            }
+
+            // Rounded corners plus a static drop shadow. Static is the point: it is drawn
+            // once and never again, which is why it is the one effect that can be on
+            // permanently without costing anything per frame.
+            MultiEffect {
+                anchors.fill: parent
+                source: heroArt
+                maskEnabled: true
+                maskSource: heroArtMask
+                shadowEnabled: !Theme.reduceAnimations
+                shadowColor: "#000000"
+                shadowBlur: 0.9
+                shadowVerticalOffset: appsRoot._px(8)
+                shadowOpacity: 0.65
+                blurMax: 40
+            }
+
+            Item {
+                id: heroArtMask
+                anchors.fill: parent
+                layer.enabled: true
+                visible: false
+                Rectangle {
+                    anchors.fill: parent
+                    radius: appsRoot._px(8)
+                }
+            }
+
+            // Placeholder box art carries no title, so the name has to be drawn over it or
+            // the spotlight shows an anonymous rectangle.
+            Label {
+                anchors.fill: parent
+                anchors.margins: appsRoot._px(10)
+                visible: appsRoot.focusedBoxArt === "" || heroArt.status === Image.Error
+                text: appsRoot.focusedAppName
+                color: Theme.text2
+                font.family: Theme.family
+                font.pixelSize: appsRoot._px(16)
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                wrapMode: Text.Wrap
+                elide: Text.ElideRight
+            }
+        }
+
+        // ── Name, meta, actions ──────────────────────────────────────────────
+        Item {
+            anchors.left: heroArtHolder.right
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: appsRoot._px(24)
+
+            Column {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 0
+
+                Label {
+                    width: parent.width
+                    text: appsRoot.focusedAppName
+                    color: Theme.text
+                    font.family: Theme.family
+                    // Down from 54 while everything around it went up — the host name from
+                    // 24 to 30, the setting values from 14 to 16, the list rows from 76 to
+                    // 84. It was never too small: it was out of proportion with the rest,
+                    // and shrinking the one that was shouting was half of fixing that.
+                    font.pixelSize: appsRoot._px(44)
+                    font.bold: true
+                    font.letterSpacing: -appsRoot._u * 0.9
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
+                }
+
+                Item { width: 1; height: appsRoot._px(4) }
+
+                // The store — its mark and its name — whether the game is running, and whether
+                // it carries settings of its own: three facts the cover grid had no room for.
+                // The mark earns its place by being recognisable before the word is read, which
+                // is the whole reason storefronts have one.
+                Row {
+                    width: parent.width
+                    spacing: appsRoot._px(8)
+
+                    Image {
+                        id: heroStoreIcon
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: source != ""
+                        source: appsRoot.storeIconSource(appsRoot.focusedStore)
+                        width: appsRoot._px(19); height: width
+                        sourceSize.width: 38; sourceSize.height: 38
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                    }
+
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+                        // Sized from what the icon leaves, so a long line still elides against
+                        // the panel edge instead of running under the last-session block.
+                        width: parent.width - (heroStoreIcon.visible
+                                               ? heroStoreIcon.width + parent.spacing : 0)
+                        text: {
+                            var parts = []
+                            if (appsRoot.focusedStore.length > 0) parts.push(appsRoot.focusedStore)
+                            if (appsRoot.focusedAppIsRunning)     parts.push(qsTr("running now"))
+                            if (appsRoot.focusedOverridden)       parts.push(qsTr("custom settings"))
+                            return parts.join(" · ")
+                        }
+                        color: appsRoot.focusedAppIsRunning ? Theme.online : Theme.text2
+                        font.family: Theme.family
+                        font.pixelSize: appsRoot._px(17)
+                        elide: Text.ElideRight
+                        maximumLineCount: 1
+                    }
+                }
+
+                Item { width: 1; height: appsRoot._px(14) }
+
+                // ── Action row ───────────────────────────────────────────────
+                /*
+                 * Drawn, clickable, and deliberately outside the focus chain.
+                 *
+                 * Every one of these already has a face button — A plays, Select opens the
+                 * per-game settings, X stops — so the pad has nothing to walk to and the
+                 * glyph on each button says so. They stay on screen because the mouse has no
+                 * face buttons, and because a legend that names its key is worth more than a
+                 * round icon left to be guessed at.
+                 *
+                 * None of them is filled with the accent: in this interface an accent fill
+                 * means "the focus is here", and painting it on a button the pad can never
+                 * reach would be the interface lying about itself.
+                 */
+                Row {
+                    id: heroActions
+                    spacing: appsRoot._px(10)
+
+                    readonly property var actions: {
+                        var a = [{ kind: "launch", label: appsRoot.focusedVerb,
+                                   btn: "A", key: "Enter", danger: false }]
+                        a.push({ kind: "customize", label: qsTr("Per-game settings"),
+                                 btn: "SELECT", key: "G", danger: false })
+                        // "Stop", not "Quit game": the entry holding the session is sometimes
+                        // the Desktop, and "quit" is the wrong word for it. It appears
+                        // whenever the thing in the spotlight is the one currently streaming.
+                        if (appsRoot.focusedAppIsRunning)
+                            a.push({ kind: "quit", label: qsTr("Stop"),
+                                     btn: "X", key: "X", danger: true })
+                        return a
+                    }
+
+                    function run(kind) {
+                        switch (kind) {
+                        case "launch":    appsRoot.resumeFocusedApp();        break
+                        case "customize": appsRoot.openCustomizeForFocused(); break
+                        case "quit":      appsRoot.stopFocusedApp();          break
+                        }
+                    }
+
+                    Repeater {
+                        model: heroActions.actions
+
+                        delegate: Rectangle {
+                            id: heroBtn
+
+                            readonly property bool _hovered: heroBtnMouse.containsMouse
+
+                            height: appsRoot._px(44)
+                            width: heroBtnRow.implicitWidth + appsRoot._px(40)
+                            radius: appsRoot._px(9)
+
+                            color: _hovered ? "#1fffffff" : "#0dffffff"
+                            border.width: 1
+                            border.color: _hovered ? Theme.accent : Theme.lineHigh
+
+                            Behavior on color {
+                                enabled: !Theme.reduceAnimations
+                                ColorAnimation { duration: 110 }
+                            }
+
+                            Row {
+                                id: heroBtnRow
+                                anchors.centerIn: parent
+                                spacing: appsRoot._px(9)
+
+                                // The last prompts that still drew a fixed controller glyph.
+                                // ActionHint handles vendor, size and the keyboard alternative,
+                                // so these follow the device in hand like everything else.
+                                ActionHint {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    buttonKey: modelData.btn
+                                    keyLabel:  modelData.key
+                                    size: appsRoot._px(24)
+                                }
+
+                                Label {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: modelData.label
+                                    color: modelData.danger ? Theme.danger : Theme.text
+                                    font.family: Theme.family
+                                    font.pixelSize: appsRoot._px(18)
+                                    // The launch verb carries a shade more weight — it is the
+                                    // primary action — without an accent fill, which would
+                                    // read as focus on a button the pad cannot reach.
+                                    font.weight: modelData.kind === "launch" ? Font.DemiBold : Font.Normal
+                                }
+                            }
+
+                            MouseArea {
+                                id: heroBtnMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: heroActions.run(modelData.kind)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Rail caption ──────────────────────────────────────────────────────────
+    Label {
+        id: railLabel
+        anchors.top: hero.visible ? hero.bottom : cfgLine.bottom
+        anchors.left: parent.left
+        anchors.leftMargin: appsRoot._px(44)
+        anchors.topMargin: appsRoot._px(16)
+        text: qsTr("ALL APPS")
+        color: Theme.text3
+        font.family: Theme.family
+        font.pixelSize: appsRoot._px(13)
+        font.letterSpacing: appsRoot._u * 1.6
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // The library — the only zone
+    // ═════════════════════════════════════════════════════════════════════════
+    /*
+     * A vertical list of titles, not a wall of covers.
+     *
+     * The cover already has a place — the spotlight above, at a size worth looking at — so
+     * repeating it forty times small was showing the same thing twice and reading neither
+     * well. A list gives every game its name in full, which a 200px cover cannot, and one
+     * axis to move along instead of two: on a pad that is the difference between arriving at
+     * a game and hunting for it.
+     */
+    ListView {
         id: appGrid
-        anchors.top: appsSectionLabel.bottom
+        anchors.top: railLabel.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        anchors.topMargin: 12
-        anchors.bottomMargin: 12
+        anchors.topMargin: appsRoot._px(6)
+        anchors.leftMargin: appsRoot._px(44)
+        anchors.rightMargin: appsRoot._px(44)
+        anchors.bottomMargin: appsRoot._px(10)
 
-        // Prevent app covers from drawing over the header while scrolling.
+        // Rows must not draw over the hero while the list scrolls.
         clip: true
-
-        // Left-aligned grid: covers always start from top-left, matching the
-        // header's left/right padding. (Was CenteredGridView before — covers
-        // looked isolated when only Desktop + Steam Big Picture were present.)
-        leftMargin: 30
-        rightMargin: 30
         boundsBehavior: Flickable.OvershootBounds
+        // Keeps the focused row off the edges while walking with the pad, so the next title
+        // is always already visible rather than appearing as you reach it.
+        highlightRangeMode: ListView.ApplyRange
+        preferredHighlightBegin: appsRoot._px(60)
+        preferredHighlightEnd: height - appsRoot._px(60)
+        highlightMoveDuration: Theme.reduceAnimations ? 0 : 160
 
         property AppModel appModel: createModel()
         property bool activated
@@ -482,14 +988,9 @@ FocusScope {
 
         focus: true
         activeFocusOnTab: true
-        topMargin: 4
-        bottomMargin: 4
-        // Cover 200×267 (StreamLight 2.3.1 / Moonlight ratio 3:4).
-        // 230 px columns: same compact layout as 2.3.1, fits 5+ at 1280p.
-        // Row height 350 px reserves ~60 px below each cover so the inline
-        // name tooltip (see appDelegate) can render in its own band without
-        // ever overlapping the row beneath.
-        cellWidth: 230; cellHeight: 350
+
+        readonly property int _rowH: appsRoot._px(84)
+        readonly property int _gap:  appsRoot._px(6)
 
         Component.onCompleted: {
             currentIndex = 0
@@ -515,32 +1016,14 @@ FocusScope {
             if (appsRoot.appShell) appsRoot.appShell.showHome()
         }
 
-        Keys.onReturnPressed: { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
-        Keys.onEnterPressed:  { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
-        Keys.onSpacePressed:  { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
+        Keys.onReturnPressed: function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
+        Keys.onEnterPressed:  function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
+        Keys.onSpacePressed:  function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
 
-        // Select (View/Create/−) → Customize the focused app. The Select button
-        // is mapped to Key_F13 (Key_Select would be treated as an activation key
-        // and launch the app instead).
-        Keys.onPressed: {
-            if (event.key === Qt.Key_F13) {
-                appsRoot.openCustomizeForFocused()
-                event.accepted = true
-            }
-        }
-
-        function storeIconSource(store) {
-            if (store === "Steam")           return "qrc:/res/store_steam.svg"
-            if (store === "Epic Games")      return "qrc:/res/store_epic.svg"
-            if (store === "GOG")             return "qrc:/res/store_gog.svg"
-            if (store === "Ubisoft Connect") return "qrc:/res/store_ubisoft.svg"
-            if (store === "Xbox")            return "qrc:/res/store_xbox.svg"
-            if (store === "Battle.net")      return "qrc:/res/store_battlenet.svg"
-            if (store === "EA App")          return "qrc:/res/store_ea.svg"
-            return ""
-        }
-
-        // (handleAppStoresReceived moved to appsRoot's Connections block)
+        // No Up handler: Up is the ListView's own, and at the first row it does nothing
+        // because there is nowhere above to go. That is the whole point of the single zone —
+        // the boundary test that used to live here existed only to hand the focus to the
+        // buttons, and the buttons are no longer a stop.
 
         function createModel() {
             var model = Qt.createQmlObject('import AppModel 1.0; AppModel {}', parent, '')
@@ -550,299 +1033,251 @@ FocusScope {
 
         model: appModel
 
-    delegate: NavigableItemDelegate {
-        id: appDelegate
-        // 4 px gutter inside the cell; bottom band reserved for the name tooltip.
-        width: 222; height: 342
-        grid: appGrid
+        delegate: NavigableItemDelegate {
+            id: appDelegate
+            width: appGrid.width
+            height: appGrid._rowH
+            grid: appGrid
 
-        property alias appNameText: appNameTextLoader.item
+            // Exposed to appsRoot for the hero and the status-bar prompts.
+            property int    _appId:      model.appid
+            property string _appName:    model.name
+            property bool   _running:    model.running
+            property string _boxArt:     model.boxart
+            property bool   _overridden: model.overridden
 
-        // Exposed to appsRoot for the Resume/Stop status-bar swap.
-        property int    _appId:   model.appid
-        property string _appName: model.name
-        property bool   _running: model.running
+            opacity: model.hidden ? 0.45 : 1.0
 
-        opacity: model.hidden ? 0.4 : 1.0
+            // Selected is not the same as focused: a dialog on top of the page takes the
+            // focus away while the spotlight still shows the selected game, so the row keeps
+            // a quiet marker in that case and only lights up when the list itself has it.
+            readonly property bool _selected: appGrid.currentIndex === index
+            readonly property bool _lit:
+                appDelegate.inputFocused || (_selected && appGrid.activeFocus)
 
-        // Disable Material's default focus highlight; coverFocusBorder draws ours.
-        background: Item { anchors.fill: parent }
+            // Disable Material's default focus highlight; the row draws its own.
+            background: Item { anchors.fill: parent }
 
-        Image {
-            property bool isPlaceholder: false
-
-            id: appIcon
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: 10
-            source: model.boxart
-
-            onSourceSizeChanged: {
-                if (!model.isAppCollectorGame &&
-                    ((sourceSize.width === 130 && sourceSize.height === 180) ||
-                     (sourceSize.width === 628 && sourceSize.height === 888) ||
-                     (sourceSize.width === 200 && sourceSize.height === 266)))
-                {
-                    isPlaceholder = true
-                } else {
-                    isPlaceholder = false
-                }
-
-                // 200×267 — Moonlight historic 3:4 cover ratio.
-                width  = 200
-                height = 267
-            }
-        }
-
-        // Focus border hugging the cover. Thicker (6 px) + always pulsing for
-        // the running streaming session (so the pulse is visible even when
-        // the D-pad cursor is on the running app); thin (3 px) solid for
-        // regular D-pad / mouse focus on any other cover.
-        Rectangle {
-            id: coverFocusBorder
-            anchors.fill: appIcon
-            anchors.margins: -3
-            color: "transparent"
-            radius: 8
-            z: 2
-
-            readonly property bool _focused: appDelegate.inputFocused
-            readonly property bool _running: appDelegate._running
-
-            visible: _focused || _running
-            border.color: appsRoot._greenLk
-            border.width: (_focused || _running) ? 3 : 0
-
-            SequentialAnimation on opacity {
-                running: coverFocusBorder._running
-                loops: Animation.Infinite
-                alwaysRunToEnd: true
-                NumberAnimation { to: 0.35; duration: 900; easing.type: Easing.InOutSine }
-                NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutSine }
-            }
-            Binding on opacity { when: !coverFocusBorder._running; value: 1.0 }
-        }
-
-        // Per-game settings ("tune") affordance, top-right of the cover. Green
-        // when this game has overrides, subtle otherwise. Tap to customize.
-        Rectangle {
-            id: tuneBadge
-            anchors.right: appIcon.right
-            anchors.top: appIcon.top
-            anchors.margins: 6
-            width: 36; height: 36; radius: 18
-            z: 4
-            color: model.overridden ? "#E600C853" : "#A0000000"
-            border.color: model.overridden ? "#00E676" : "#60FFFFFF"
-            border.width: 1
-            Image {
-                anchors.centerIn: parent
-                source: "qrc:/res/tune.svg"
-                sourceSize.width: 20; sourceSize.height: 20
-            }
-            MouseArea {
+            Rectangle {
+                id: row
                 anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: appsRoot.openCustomize(index, model.name)
-            }
-        }
+                anchors.bottomMargin: appGrid._gap
+                radius: appsRoot._px(10)
 
-        // Instant name pill below the focus border (no hover delay).
-        Rectangle {
-            id: nameTooltip
-            anchors.top: coverFocusBorder.bottom
-            anchors.topMargin: 8
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.min(appIcon.width, nameTooltipLabel.implicitWidth + 16)
-            height: nameTooltipLabel.implicitHeight + 8
-            color: "#202020"
-            border.color: "#3a3a3a"
-            border.width: 1
-            radius: 4
-            visible: appDelegate.inputFocused
-            z: 5
+                color: appDelegate._lit     ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16)
+                     : appDelegate._selected ? "#14ffffff"
+                     :                         "transparent"
+                border.width: appDelegate._lit ? 2 : (appDelegate._selected ? 1 : 0)
+                border.color: appDelegate._lit ? Theme.accent : Theme.line
 
-            Label {
-                id: nameTooltipLabel
-                anchors.centerIn: parent
-                width: parent.width - 16
-                text: model.name
-                font.family: "DM Sans"
-                font.pixelSize: 12
-                color: "#f0f0f0"
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.Wrap
-                maximumLineCount: 2
-                elide: Text.ElideRight
-            }
-        }
+                Behavior on color { enabled: !Theme.reduceAnimations; ColorAnimation { duration: 120 } }
 
-        // "STREAMING" badge on the running app's cover — centered horizontally,
-        // placed in the upper portion of the cover (about 18% from the top) so
-        // it sits above the box-art's central artwork without crowding the top edge.
-        Rectangle {
-            id: streamingBadge
-            visible: appDelegate._running
-            anchors.horizontalCenter: appIcon.horizontalCenter
-            anchors.top: appIcon.top
-            anchors.topMargin: Math.round(appIcon.height * 0.18)
-            color: "#CC0A1A12"
-            border.color: appsRoot._greenLk
-            border.width: 1
-            radius: 4
-            width:  streamingBadgeLabel.implicitWidth + 18
-            height: streamingBadgeLabel.implicitHeight + 8
-            z: 3
-
-            Label {
-                id: streamingBadgeLabel
-                anchors.centerIn: parent
-                text: qsTr("STREAMING")
-                color: appsRoot._greenLk
-                font.family: "DM Sans"
-                font.pixelSize: 14
-                font.bold: true
-                font.letterSpacing: 1.5
-            }
-        }
-
-        Rectangle {
-            id: storeBadge
-
-            property string store: appGrid.storeMap[model.name] || ""
-
-            visible: store !== ""
-            anchors.right: appIcon.right
-            anchors.bottom: appIcon.bottom
-            anchors.rightMargin: 5
-            anchors.bottomMargin: 5
-            color: "#CC000000"
-            radius: 3
-            width:  storeBadgeRow.implicitWidth + 10
-            height: storeBadgeRow.implicitHeight + 6
-
-            Row {
-                id: storeBadgeRow
-                anchors.centerIn: parent
-                spacing: 5
-
-                Image {
-                    source: appGrid.storeIconSource(storeBadge.store)
-                    width: 16; height: 16
-                    sourceSize.width: 48
-                    sourceSize.height: 48
+                // ── Thumbnail ────────────────────────────────────────────────
+                // Fixed box, PreserveAspectFit, no cropping. Box art is not one shape:
+                // Steam ships 600x900 (2:3) while Moonlight's own placeholders are 3:4, so a
+                // box that forces either ratio cuts the edges off half the library. The box is
+                // cut for the taller of the two and the shorter one letterboxes by a few
+                // pixels — which is invisible, where a crop through the artwork is not.
+                Item {
+                    id: thumbBox
+                    anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                    mipmap: true
+                    anchors.leftMargin: appsRoot._px(14)
+                    height: parent.height - appsRoot._px(16)
+                    width: Math.round(height * 2 / 3)
+
+                    Image {
+                        id: cover
+                        anchors.fill: parent
+                        source: model.boxart
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        smooth: true
+                        mipmap: true
+                    }
+
+                    // Placeholder art carries no title, and at this size neither would a
+                    // failed load — the name is already beside it, so a plain frame is enough.
+                    Rectangle {
+                        anchors.fill: parent
+                        visible: cover.status !== Image.Ready
+                        color: "#18ffffff"
+                        radius: appsRoot._px(4)
+                    }
                 }
 
-                Label {
-                    text: storeBadge.store
-                    font.pointSize: 8
-                    color: "white"
+                // ── Title, and the store under it ────────────────────────────
+                Column {
+                    anchors.left: thumbBox.right
+                    anchors.right: runTag.visible ? runTag.left : parent.right
                     anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: appsRoot._px(16)
+                    anchors.rightMargin: appsRoot._px(16)
+                    spacing: appsRoot._px(3)
+
+                    Label {
+                        width: parent.width
+                        text: model.name
+                        color: Theme.text
+                        font.family: Theme.family
+                        font.pixelSize: appsRoot._px(23)
+                        font.weight: appDelegate._lit ? Font.DemiBold : Font.Normal
+                        elide: Text.ElideRight
+                        maximumLineCount: 1
+                    }
+
+                    Label {
+                        property string store: appGrid.storeMap[model.name] || ""
+                        width: parent.width
+                        visible: store.length > 0 || model.overridden
+                        text: {
+                            var parts = []
+                            if (store.length > 0)   parts.push(store)
+                            if (model.overridden)   parts.push(qsTr("custom settings"))
+                            return parts.join("  ·  ")
+                        }
+                        color: Theme.text3
+                        font.family: Theme.family
+                        font.pixelSize: appsRoot._px(15)
+                        elide: Text.ElideRight
+                        maximumLineCount: 1
+                    }
                 }
-            }
-        }
 
-        // (Play/Stop overlay removed in 3.0 — actions live in the status bar.)
+                // ── The running session ──────────────────────────────────────
+                // Marked on the row itself and not only in the spotlight: the session may be
+                // held by a game far down the list, and "what is running right now" is the one
+                // thing that has to be findable without walking the whole library.
+                Rectangle {
+                    id: runTag
+                    visible: appDelegate._running
+                    anchors.right: parent.right
+                    anchors.rightMargin: appsRoot._px(16)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: runTagLabel.implicitWidth + appsRoot._px(22)
+                    height: appsRoot._px(30)
+                    radius: appsRoot._px(6)
+                    color: Theme.accent
 
-        Loader {
-            id: appNameTextLoader
-            active: appIcon.isPlaceholder
+                    SequentialAnimation on opacity {
+                        running: runTag.visible && !Theme.reduceAnimations
+                        loops: Animation.Infinite
+                        alwaysRunToEnd: true
+                        NumberAnimation { to: 0.45; duration: 900; easing.type: Easing.InOutSine }
+                        NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutSine }
+                    }
 
-            width: appIcon.width
-            // Previously shortened to 175 px to leave room for the Play/Stop
-            // overlay — that overlay is gone now, so use the full cover.
-            height: appIcon.height
-
-            anchors.left:   appIcon.left
-            anchors.right:  appIcon.right
-            anchors.bottom: appIcon.bottom
-
-            sourceComponent: Label {
-                id: appNameText
-                text: model.name
-                font.pointSize: 22
-                leftPadding: 20
-                rightPadding: 20
-                verticalAlignment: Text.AlignVCenter
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.Wrap
-                elide: Text.ElideRight
-            }
-        }
-
-        function launchOrResumeSelectedApp(quitExistingApp) {
-            // Drop stale events that arrive after a stream session pops.
-            if (Window.window && Window.window._streamJustEnded === true) {
-                return
-            }
-            // Drop a second push when one is already in flight: a double-tap
-            // on A (very easy with a Bluetooth pad) would otherwise queue a
-            // second Session that auto-fires when the first one ends.
-            if (Window.window && Window.window._streamLaunching === true) {
-                return
-            }
-
-            // Must use appGrid.appModel — bare appModel is not in scope.
-            var m = appGrid.appModel
-            var runningId = m.getRunningAppId()
-            if (runningId !== 0 && runningId !== model.appid) {
-                if (quitExistingApp) {
-                    quitAppDialog.appName = m.getRunningAppName()
-                    quitAppDialog.segueToStream = true
-                    quitAppDialog.nextAppName = model.name
-                    quitAppDialog.nextAppIndex = index
-                    quitAppDialog.open()
+                    Label {
+                        id: runTagLabel
+                        anchors.centerIn: parent
+                        text: qsTr("STREAMING")
+                        color: Theme.onAccent
+                        font.family: Theme.family
+                        font.pixelSize: appsRoot._px(13)
+                        font.bold: true
+                        font.letterSpacing: appsRoot._u
+                    }
                 }
-                return
+
+                // (A round tune button used to sit here, at the end of every row. It was a
+                //  mouse target dressed up as information: it said nothing the subtitle does
+                //  not already say — "custom settings" is written there in words — and the
+                //  mouse reaches the same dialog from the Per-game settings button above.)
             }
 
-            var component = Qt.createComponent("StreamSegue.qml")
-            if (component.status !== Component.Ready) {
-                console.warn("StreamSegue.qml not ready:", component.errorString())
-                return
+            function launchOrResumeSelectedApp(quitExistingApp) {
+                // Drop stale events that arrive after a stream session pops.
+                if (Window.window && Window.window._streamJustEnded === true) {
+                    return
+                }
+                // Drop a second push when one is already in flight: a double-tap on A (very
+                // easy with a Bluetooth pad) would otherwise queue a second Session that
+                // auto-fires when the first one ends.
+                if (Window.window && Window.window._streamLaunching === true) {
+                    return
+                }
+
+                // Must use appGrid.appModel — bare appModel is not in scope.
+                var m = appGrid.appModel
+                var runningId = m.getRunningAppId()
+                if (runningId !== 0 && runningId !== model.appid) {
+                    if (quitExistingApp) {
+                        quitAppDialog.appName = m.getRunningAppName()
+                        quitAppDialog.segueToStream = true
+                        quitAppDialog.nextAppName = model.name
+                        // Captured here and not in quitApp(): this is the delegate, the only
+                        // scope where `model` exists. The dialog is a sibling of the list and
+                        // has nothing but the index to go on.
+                        quitAppDialog.nextBoxArt = model.boxart
+                        quitAppDialog.nextAppIndex = index
+                        quitAppDialog.open()
+                    }
+                    return
+                }
+
+                var component = Qt.createComponent("StreamSegue.qml")
+                if (component.status !== Component.Ready) {
+                    console.warn("StreamSegue.qml not ready:", component.errorString())
+                    return
+                }
+                var segue = component.createObject(stackView, {
+                    "appName":   model.name,
+                    // The curtain wants the box art, and this is the only place that has it:
+                    // it comes from the app model, while NvApp carries no artwork at all.
+                    "boxArt":    model.boxart,
+                    "session":   m.createSessionForApp(index),
+                    "isResume":  runningId === model.appid,
+                    // Every way a stream can end — including the game closing itself, which is
+                    // the common one — lands here. Nothing happens to the link now: the host
+                    // holds the streaming speed, and this only records that there is something
+                    // to ask about when we get back to the host list.
+                    "onSessionEndedFn": function() {
+                        if (appsRoot.appShell)
+                            appsRoot.appShell.noteStreamEnded(appsRoot.computerIndex, appsRoot.hostName)
+                    }
+                })
+                if (Window.window) Window.window.markStreamLaunching()
+                stackView.push(segue)
             }
-            var segue = component.createObject(stackView, {
-                "appName":   model.name,
-                "session":   m.createSessionForApp(index),
-                "isResume":  runningId === model.appid
-            })
-            if (Window.window) Window.window.markStreamLaunching()
-            stackView.push(segue)
+
+            onClicked: {
+                appGrid.currentIndex = index
+                appsRoot.focusLibrary()
+                launchOrResumeSelectedApp(true)
+            }
+            Keys.onReturnPressed: launchOrResumeSelectedApp(true)
+            Keys.onEnterPressed:  launchOrResumeSelectedApp(true)
+
+            function doQuitGame() {
+                quitAppDialog.appName = appGrid.appModel.getRunningAppName()
+                quitAppDialog.segueToStream = false
+                quitAppDialog.open()
+            }
         }
 
-        onClicked:            launchOrResumeSelectedApp(true)
-        Keys.onReturnPressed: launchOrResumeSelectedApp(true)
-        Keys.onEnterPressed:  launchOrResumeSelectedApp(true)
-
-        function doQuitGame() {
-            quitAppDialog.appName = appGrid.appModel.getRunningAppName()
-            quitAppDialog.segueToStream = false
-            quitAppDialog.open()
-        }
-
+        ScrollBar.vertical: ScrollBar {}
     }
 
-    Row {
+    // ── Empty state ───────────────────────────────────────────────────────────
+    Label {
         anchors.centerIn: parent
-        spacing: 5
+        width: parent.width * 0.6
         visible: appGrid.count === 0
-
-        Label {
-            text: qsTr("This computer doesn't seem to have any applications or some applications are hidden")
-            font.pointSize: 20
-            verticalAlignment: Text.AlignVCenter
-            wrapMode: Text.Wrap
-        }
+        text: qsTr("This computer doesn't seem to have any applications or some applications are hidden")
+        color: Theme.text2
+        font.family: Theme.family
+        font.pixelSize: appsRoot._px(20)
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.Wrap
     }
 
+    // ── Dialogs ───────────────────────────────────────────────────────────────
     NavigableMessageDialog {
         id: quitAppDialog
         property string appName: ""
         property bool segueToStream: false
         property string nextAppName: ""
+        property string nextBoxArt: ""
         property int nextAppIndex: 0
         text: qsTr("Are you sure you want to quit %1? Any unsaved progress will be lost.").arg(appName)
         standardButtons: Dialog.Yes | Dialog.No
@@ -851,11 +1286,26 @@ FocusScope {
             var component = Qt.createComponent("QuitSegue.qml")
             var params = {
                 "appName": appName,
-                "quitRunningAppFn": function() { appGrid.appModel.quitRunningApp() }
+                "quitRunningAppFn": function() { appGrid.appModel.quitRunningApp() },
+                // A deliberate stop no longer puts the link back by itself — the question is
+                // put once, on returning to the host list.
+                "onQuitSucceededFn": function() {
+                    if (appsRoot.appShell)
+                        appsRoot.appShell.noteStreamEnded(appsRoot.computerIndex, appsRoot.hostName)
+                }
             }
             if (segueToStream) {
                 params.nextAppName = nextAppName
+                params.nextBoxArt  = nextBoxArt
                 params.nextSession = appGrid.appModel.createSessionForApp(nextAppIndex)
+                // The same record the direct-launch path keeps. onQuitSucceededFn above is
+                // deliberately not fired when a game follows — that is a swap, not the end of
+                // the evening — so without this the session we are about to start would end
+                // with nothing having noted that this host has a link to put back.
+                params.nextSessionEndedFn = function() {
+                    if (appsRoot.appShell)
+                        appsRoot.appShell.noteStreamEnded(appsRoot.computerIndex, appsRoot.hostName)
+                }
             } else {
                 params.nextAppName = null
                 params.nextSession = null
@@ -864,13 +1314,11 @@ FocusScope {
         }
 
         onAccepted: quitApp()
+        onClosed: appsRoot.focusLibrary()
     }
-
-    ScrollBar.vertical: ScrollBar {}
-    }   // end GridView (appGrid)
 
     AppSettingsDialog {
         id: appSettingsDialog
-        onClosedByUser: appGrid.forceActiveFocus()
+        onClosedByUser: appsRoot.focusLibrary()
     }
-}       // end Item (appsRoot)
+}

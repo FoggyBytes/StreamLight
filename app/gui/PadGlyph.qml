@@ -11,10 +11,20 @@ Item {
     property string buttonKey: ""   // "A","B","X","Y","LB","RB","START","SELECT"
     property string label: ""        // text fallback
     property string glyphSet: SdlGamepadKeyNavigation.controllerType // "xbox"/"ps"/"switch"/...
-    property int size: 22
+    // Height of a face button. Shoulders and the Select/Start pills are wider than they are
+    // tall, so they derive from it rather than being squeezed into a square.
+    property int size: 26
 
-    implicitWidth: size
-    implicitHeight: size
+    // ⚠️ Same geometry as the status bar: face buttons 26×26, the pill-shaped ones 40×24.
+    // Drawing every glyph into a `size`×`size` box let PreserveAspectFit shrink a 40×24 pill
+    // to 22×13 — which is why the same LB in Settings looked half the size of the LB in the
+    // bar underneath it. One button, two sizes, on the same screen.
+    readonly property bool _wide: buttonKey === "LB" || buttonKey === "RB"
+                                  || buttonKey === "LT" || buttonKey === "RT"
+                                  || buttonKey === "SELECT" || buttonKey === "START"
+
+    implicitWidth:  _wide ? Math.round(size * 40 / 26) : size
+    implicitHeight: _wide ? Math.round(size * 24 / 26) : size
 
     readonly property bool _ps: glyphSet === "ps"
     readonly property bool _sw: glyphSet === "switch"
@@ -30,18 +40,20 @@ Item {
         : buttonKey === "Y"      ? (_ps ? "qrc:/res/pad_ps_triangle.svg" : _sw ? "qrc:/res/pad_switch_x.svg"     : "qrc:/res/pad_xbox_y.svg")
         : buttonKey === "LB"     ? (_ps ? "qrc:/res/pad_ps_l1.svg"       : _sw ? "qrc:/res/pad_switch_l.svg"     : "qrc:/res/pad_xbox_lb.svg")
         : buttonKey === "RB"     ? (_ps ? "qrc:/res/pad_ps_r1.svg"       : _sw ? "qrc:/res/pad_switch_r.svg"     : "qrc:/res/pad_xbox_rb.svg")
+        : buttonKey === "LT"     ? (_ps ? "qrc:/res/pad_ps_l2.svg"       : _sw ? "qrc:/res/pad_switch_zl.svg"    : "qrc:/res/pad_xbox_lt.svg")
+        : buttonKey === "RT"     ? (_ps ? "qrc:/res/pad_ps_r2.svg"       : _sw ? "qrc:/res/pad_switch_zr.svg"    : "qrc:/res/pad_xbox_rt.svg")
         : buttonKey === "SELECT" ? (_ps ? "qrc:/res/pad_ps_create.svg"   : _sw ? "qrc:/res/pad_switch_minus.svg" : "qrc:/res/pad_xbox_view.svg")
         : buttonKey === "START"  ? (_ps ? "qrc:/res/pad_ps_options.svg"  : _sw ? "qrc:/res/pad_switch_plus.svg"  : "qrc:/res/pad_xbox_start.svg")
         : ""
 
     Image {
         visible: glyph._resolved !== ""
-        anchors.centerIn: parent
-        width: glyph.size
-        height: glyph.size
+        anchors.fill: parent
         source: glyph._resolved
-        sourceSize.width: glyph.size
-        sourceSize.height: glyph.size
+        // Twice the drawn size, like the status bar: these are SVGs rasterised once at
+        // sourceSize, so asking for the exact pixel size leaves them soft on a scaled display.
+        sourceSize.width:  glyph.implicitWidth  * 2
+        sourceSize.height: glyph.implicitHeight * 2
         fillMode: Image.PreserveAspectFit
         mipmap: true
     }

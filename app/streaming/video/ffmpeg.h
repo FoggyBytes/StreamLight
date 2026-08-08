@@ -68,7 +68,10 @@ private:
                                 TestMode testMode,
                                 bool useAlternateFrontend);
 
-    void stringifyVideoStats(VIDEO_STATS& stats, char* output, int length);
+    // forceFullDetail ignores the user's overlay verbosity and always emits the
+    // full set of metrics. Used by the log summary, which must not depend on how
+    // the on-screen overlay happens to be configured.
+    void stringifyVideoStats(VIDEO_STATS& stats, char* output, int length, bool forceFullDetail = false);
 
     void logVideoStats(VIDEO_STATS& stats, const char* title);
 

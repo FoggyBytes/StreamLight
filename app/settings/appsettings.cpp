@@ -23,6 +23,8 @@ static AppOverride readOverrideGroup(const QSettings& s)
     if (s.contains("framepacing")) { ov.hasFramePacing = true; ov.framePacingMode = s.value("framepacing").toInt(); }
     if (s.contains("audio"))       { ov.hasAudio = true;       ov.audioConfig = s.value("audio").toInt(); }
     if (s.contains("hue"))         { ov.hasHue = true;         ov.hueSync = s.value("hue").toBool(); }
+    if (s.contains("matchlink"))   { ov.hasMatchLink = true;   ov.matchLinkSpeed = s.value("matchlink").toBool(); }
+    if (s.contains("waitgame"))      { ov.hasWaitForGame = true; ov.waitForGame = s.value("waitgame").toBool(); }
     return ov;
 }
 
@@ -36,6 +38,8 @@ static void writeOverrideGroup(QSettings& s, const AppOverride& ov)
     if (ov.hasFramePacing) s.setValue("framepacing", ov.framePacingMode);
     if (ov.hasAudio)       s.setValue("audio", ov.audioConfig);
     if (ov.hasHue)         s.setValue("hue", ov.hueSync);
+    if (ov.hasMatchLink)   s.setValue("matchlink", ov.matchLinkSpeed);
+    if (ov.hasWaitForGame) s.setValue("waitgame", ov.waitForGame);
 }
 
 QVariantMap appOverrideToMap(const AppOverride& ov)
@@ -49,6 +53,8 @@ QVariantMap appOverrideToMap(const AppOverride& ov)
     if (ov.hasFramePacing) m["framepacing"] = ov.framePacingMode;
     if (ov.hasAudio)       m["audio"] = ov.audioConfig;
     if (ov.hasHue)         m["hue"] = ov.hueSync;
+    if (ov.hasMatchLink)   m["matchlink"] = ov.matchLinkSpeed;
+    if (ov.hasWaitForGame) m["waitgame"] = ov.waitForGame;
     return m;
 }
 
@@ -67,6 +73,8 @@ AppOverride appOverrideFromMap(const QVariantMap& m)
     if (m.contains("framepacing")) { ov.hasFramePacing = true; ov.framePacingMode = m.value("framepacing").toInt(); }
     if (m.contains("audio"))       { ov.hasAudio = true;       ov.audioConfig = m.value("audio").toInt(); }
     if (m.contains("hue"))         { ov.hasHue = true;         ov.hueSync = m.value("hue").toBool(); }
+    if (m.contains("matchlink"))   { ov.hasMatchLink = true;   ov.matchLinkSpeed = m.value("matchlink").toBool(); }
+    if (m.contains("waitgame"))      { ov.hasWaitForGame = true; ov.waitForGame = m.value("waitgame").toBool(); }
     return ov;
 }
 
@@ -80,6 +88,8 @@ void applyAppOverride(StreamingPreferences* p, const AppOverride& ov)
     if (ov.hasFramePacing) p->framePacingMode = (StreamingPreferences::FramePacingMode)ov.framePacingMode;
     if (ov.hasAudio)       p->audioConfig = (StreamingPreferences::AudioConfig)ov.audioConfig;
     if (ov.hasHue)         p->hueSyncIntegration = ov.hueSync;
+    if (ov.hasMatchLink)   p->matchHostLinkSpeed = ov.matchLinkSpeed;
+    if (ov.hasWaitForGame) p->waitForGameOnScreen = ov.waitForGame;
 }
 
 // ── AppSettingsManager (per-game) ────────────────────────────────────────────
@@ -149,6 +159,39 @@ HostProfileManager* HostProfileManager::get()
     return &instance;
 }
 
+void AppSettingsManager::forgetHost(const QString& hostUuid)
+{
+    if (hostUuid.isEmpty()) {
+        return;
+    }
+
+    // Per-game overrides are flat keys, not a group, so they have to be found by prefix.
+    // Collected first and removed afterwards: removing while iterating the same QSettings
+    // is not something to rely on.
+    QSettings settings;
+    const QString prefix = QStringLiteral(GAME_PREFIX) + hostUuid + QStringLiteral("_");
+    QStringList doomed;
+    for (const QString& key : settings.allKeys()) {
+        if (key.startsWith(prefix)) {
+            doomed.append(key);
+        }
+    }
+    for (const QString& key : doomed) {
+        settings.remove(key);
+    }
+}
+
+void HostProfileManager::forgetHost(const QString& uuid)
+{
+    if (uuid.isEmpty()) {
+        return;
+    }
+
+    // Profiles DO live under a group of their own, so one remove takes the lot.
+    QSettings settings;
+    settings.remove(grp(uuid));
+}
+
 QString HostProfileManager::grp(const QString& uuid)
 {
     return QStringLiteral(HOST_PREFIX) + uuid;
@@ -196,13 +239,18 @@ void HostProfileManager::setActive(const QString& uuid, int slot)
 
 void HostProfileManager::cycle(const QString& uuid, int dir)
 {
+    // Global is one of the stops, not the state you leave by configuring a profile. Without it
+    // there was no way back to the unmodified settings from the pad, and a host with exactly one
+    // profile could not cycle at all — the shoulders did nothing at all in the commonest setup.
+    //
+    // Positions run -1 (Global), 0 … c-1, so a host with one profile has two stops.
     int c = count(uuid);
-    if (c <= 1) {
-        return;
+    if (c <= 0) {
+        return;   // nothing configured: Global is the only state there is
     }
-    int a = active(uuid);
-    a = ((a + dir) % c + c) % c;
-    setActive(uuid, a);
+    int pos = active(uuid) + 1;                       // -1 → 0
+    pos = ((pos + dir) % (c + 1) + (c + 1)) % (c + 1);
+    setActive(uuid, pos - 1);
 }
 
 QString HostProfileManager::name(const QString& uuid, int slot) const

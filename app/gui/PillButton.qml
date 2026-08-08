@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 
@@ -12,7 +13,11 @@ FocusScope {
     property bool   selected: false
     signal clicked()
 
-    readonly property color _accent: "#00E676"
+    readonly property color _accent: Theme.accent
+    // Same tokens as one SegmentedSelector pill — the two are meant to be indistinguishable,
+    // so they have to derive their colours the same way rather than each hardcoding them.
+    readonly property color _bgPill: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
+                                                                 Theme.accent.b, 0.07))
 
     activeFocusOnTab: true
     implicitHeight: 36
@@ -23,8 +28,8 @@ FocusScope {
     Rectangle {
         anchors.fill: parent
         radius: 8
-        color: "#1f2722"
-        border.color: btn.activeFocus ? btn._accent : "#2a2a2a"
+        color: btn._bgPill
+        border.color: btn.activeFocus ? btn._accent : Theme.line
         border.width: btn.activeFocus ? 3 : 1
     }
 
@@ -43,8 +48,8 @@ FocusScope {
             id: lbl
             anchors.centerIn: parent
             text: btn.text
-            color: btn.selected ? "#0d1410" : "#a0a0a0"
-            font.family: "DM Sans"; font.pixelSize: 13
+            color: btn.selected ? Theme.onAccent : Theme.text2
+            font.family: Theme.family; font.pixelSize: 13
             font.bold: btn.selected
         }
     }

@@ -276,6 +276,19 @@ void FFmpegVideoDecoder::reset()
         m_DecoderThread = nullptr;
     }
 
+    // Log the global stats now, while the Pacer and the renderers are still
+    // alive. stringifyVideoStats() reads the frame pacing mechanism in effect
+    // from both of them, so logging after they're torn down made the summary
+    // always claim "Frame pacing: Off" regardless of what was actually running.
+    // The decoder thread is already joined above, so the counters are final.
+    if (m_CurrentTestMode != TestMode::TestFrameOnly) {
+        logVideoStats(m_GlobalVideoStats, "Global video stats");
+    }
+    else {
+        // Test-only decoders can't have any frames submitted
+        SDL_assert(m_GlobalVideoStats.totalFrames == 0);
+    }
+
     m_FramesIn = m_FramesOut = 0;
     m_FrameInfoQueue.clear();
 
@@ -301,14 +314,6 @@ void FFmpegVideoDecoder::reset()
     delete m_BackendRenderer;
 
     m_FrontendRenderer = m_BackendRenderer = nullptr;
-
-    if (m_CurrentTestMode != TestMode::TestFrameOnly) {
-        logVideoStats(m_GlobalVideoStats, "Global video stats");
-    }
-    else {
-        // Test-only decoders can't have any frames submitted
-        SDL_assert(m_GlobalVideoStats.totalFrames == 0);
-    }
 }
 
 bool FFmpegVideoDecoder::initializeRendererInternal(IFFmpegRenderer* renderer, PDECODER_PARAMETERS params)
@@ -829,7 +834,7 @@ void FFmpegVideoDecoder::addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst)
     dst.renderedFps     = (double)dst.renderedFrames / timeDiffSecs;
 }
 
-void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, int length)
+void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, int length, bool forceFullDetail)
 {
     int offset = 0;
     const char* codecString;
@@ -842,7 +847,13 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
     // cycled live by the overlay hotkey (Off -> Minimal -> Default -> Full).
     // When the profile is Off the OverlayDebug layer is disabled and this is
     // never called; guard anyway.
-    const StreamingPreferences::OverlayMode mode = StreamingPreferences::get()->overlayMode;
+    // The log summary passes forceFullDetail, because a diagnostic log that
+    // silently empties itself when the user has the overlay off — the default —
+    // is worse than useless: the people least likely to run the overlay are the
+    // ones we ask for logs.
+    const StreamingPreferences::OverlayMode mode = forceFullDetail
+            ? StreamingPreferences::OM_FULL
+            : StreamingPreferences::get()->overlayMode;
     if (mode == StreamingPreferences::OM_OFF) {
         return;
     }
@@ -1163,8 +1174,11 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
 void FFmpegVideoDecoder::logVideoStats(VIDEO_STATS& stats, const char* title)
 {
     if (stats.renderedFps > 0 || stats.renderedFrames != 0) {
-        char videoStatsStr[768];
-        stringifyVideoStats(stats, videoStatsStr, sizeof(videoStatsStr));
+        // Same size as the overlay's own text buffer (OverlayManager), which
+        // holds this exact string at full detail. 768 was sized for the shorter
+        // profiles and would now truncate silently.
+        char videoStatsStr[1024];
+        stringifyVideoStats(stats, videoStatsStr, sizeof(videoStatsStr), true);
 
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "\n%s\n------------------\n%s",
@@ -2176,6 +2190,11 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
     int err;
 
     SDL_assert(m_CurrentTestMode != TestMode::TestFrameOnly);
+
+    // This decoder is a pull renderer, so Session::drSubmitDecodeUnit is never called for it —
+    // this is the only place that sees a frame arrive on the normal Windows path, and the
+    // launch curtain waits for exactly that before uncovering the stream.
+    Session::notifyFirstFrame();
 
     // If this is the first frame, reject anything that's not an IDR frame
     if (m_FramesIn == 0 && du->frameType != FRAME_TYPE_IDR) {

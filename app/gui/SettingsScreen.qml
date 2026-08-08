@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.2
 import QtQuick.Controls.Material 2.2
@@ -30,12 +31,41 @@ FocusScope {
     readonly property color _textDim:   "#a0a0a0"
     readonly property color _textMut:   "#707070"
     // Bright-green accent used everywhere (_green/_greenLk kept as aliases).
-    readonly property color _green:     "#00E676"
-    readonly property color _greenLk:   "#00E676"
-    readonly property color _focus:     "#00E676"
+    readonly property color _green:     Theme.accent
+    readonly property color _greenLk:   Theme.accent
+    readonly property color _focus:     Theme.accent
     readonly property int   _focusBd:   3
     readonly property int   _rowHeight: 58
     readonly property int   _rowHeightTall: 76
+
+    // ── Host link speed (4.6.0) ───────────────────────────────────────────────
+    // Filled from SystemProperties.localLinkInfo() when the screen opens. Read once:
+    // the cable doesn't change while you're reading a settings page, and re-probing on
+    // a timer would be motion for its own sake.
+    property string _linkDetail: qsTr("Checking this device's connection…")
+    property string _linkPill:   qsTr("Checking…")
+    property bool   _linkUsable: false
+
+    function _refreshLocalLink() {
+        var info = SystemProperties.localLinkInfo()
+        _linkUsable = info.usable === true
+
+        if (_linkUsable) {
+            var speed = info.mbps >= 1000 ? (info.mbps / 1000) + " Gbps" : info.mbps + " Mbps"
+            _linkPill = speed
+            _linkDetail = StreamingPreferences.matchHostLinkSpeed
+                ? qsTr("Reaching the network over %1 at %2.").arg(info.adapter).arg(speed)
+                : qsTr("Reaching the network over %1 at %2. Hosts are left as they are.").arg(info.adapter).arg(speed)
+            return
+        }
+
+        // The reason comes from the probe itself, so the wording always matches the
+        // actual cause rather than a guess made here.
+        _linkPill = qsTr("Not available")
+        _linkDetail = info.reason && info.reason.length > 0
+            ? info.reason.charAt(0).toUpperCase() + info.reason.slice(1) + "."
+            : qsTr("This device's wired connection could not be identified.")
+    }
     readonly property int   _gapY:      24
 
     // Read by AppShell to show the "X · Default" status-bar prompt.
@@ -57,6 +87,8 @@ FocusScope {
     readonly property bool _lockFramePacing: activeProfileOverride && activeProfileOverride.framepacing !== undefined
     readonly property bool _lockAudio:       activeProfileOverride && activeProfileOverride.audio !== undefined
     readonly property bool _lockHue:         activeProfileOverride && activeProfileOverride.hue !== undefined
+    readonly property bool _lockMatchLink:   activeProfileOverride && activeProfileOverride.matchlink !== undefined
+    readonly property bool _lockWaitForGame: activeProfileOverride && activeProfileOverride.waitgame !== undefined
 
     // Latest-release tags fetched once per Settings open from the GitHub API.
     property string streamLightLatest: ""
@@ -88,14 +120,21 @@ FocusScope {
     }
 
     // LB/RB cycle tabs; X (Menu) resets the bitrate when non-default.
-    Keys.onPressed: {
-        if (event.key === Qt.Key_PageUp) {
+    Keys.onPressed: function(event) {
+        // Two pairs, one meaning here: the shoulders now send their own F16/F17 (they used
+        // to send PageUp/PageDown, which collided with the host cycle on Home — see
+        // sdlgamepadkeynavigation.cpp), while PgUp/PgDn stay for the keyboard and for the
+        // status-bar tab arrows, which drive this through simulateKey.
+        if (event.key === Qt.Key_PageUp || event.key === Qt.Key_F16) {
             if (tabBar.currentIndex > 0) tabBar.currentIndex--
             event.accepted = true
-        } else if (event.key === Qt.Key_PageDown) {
+        } else if (event.key === Qt.Key_PageDown || event.key === Qt.Key_F17) {
             if (tabBar.currentIndex < tabBar.count - 1) tabBar.currentIndex++
             event.accepted = true
-        } else if (event.key === Qt.Key_Menu && settingsScreen.bitrateNonDefault) {
+        } else if ((event.key === Qt.Key_Menu || event.key === Qt.Key_D)
+                   && settingsScreen.bitrateNonDefault) {
+            // D is the keyboard half of the same prompt. The status bar was already offering
+            // it while nothing listened for it — a prompt naming a key that did nothing.
             settingsScreen.resetBitrateToDefault()
             event.accepted = true
         }
@@ -128,6 +167,7 @@ FocusScope {
         Qt.callLater(function() { focusFirstControl(tabBar.currentIndex) })
         _fetchLatestTag("StreamLight",  function(t) { settingsScreen.streamLightLatest  = t })
         _fetchLatestTag("StreamTweak",  function(t) { settingsScreen.streamTweakLatest  = t })
+        _refreshLocalLink()
     }
 
     Component.onDestruction: {
@@ -890,7 +930,7 @@ FocusScope {
                                 anchors.rightMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: (StreamingPreferences.bitrateKbps / 1000).toFixed(0) + " Mbps"
-                                font.family: "JetBrains Mono"
+                                font.family: "DM Sans"
                                 font.pixelSize: 13
                                 font.bold: true
                                 color: settingsScreen._green
@@ -2018,7 +2058,10 @@ FocusScope {
                             }
 
                             FocusFrame { anchors.fill: autoReconnectSwitch; anchors.margins: -3; target: autoReconnectSwitch }
-                            Switch {
+                            // STSwitch like every other row in this screen. It was the one plain
+                            // Switch left, so it rendered in Material's default look while its
+                            // twenty-six neighbours used the app's.
+                            STSwitch {
                                 id: autoReconnectSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
@@ -2081,6 +2124,161 @@ FocusScope {
                                             tailscaleStopNoticeDialog.open()
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── HOST LINK SPEED ───────────────────────────────────────────
+                Label {
+                    text: qsTr("Host link speed")
+                    font.family: "DM Sans"
+                    font.pixelSize: 13
+                    font.bold: true
+                    font.letterSpacing: 1.4
+                    font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    color: settingsScreen._bg2
+                    radius: 8
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: linkCol.implicitHeight + 8
+
+                    Column {
+                        id: linkCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: 4
+                        spacing: 0
+
+                        ProfileLockNotice { active: settingsScreen._lockMatchLink }
+
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeight + 18
+                            enabled: !settingsScreen._lockMatchLink
+                            opacity: enabled ? 1.0 : 0.4
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 16
+                                anchors.right: linkSwitch.left
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+
+                                Label {
+                                    text: qsTr("Match host link speed to this device")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 16
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Before connecting, ask the host to run its wired link at this device's speed. Fixes the packet loss caused by a faster host link feeding a slower one.")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 13
+                                    color: settingsScreen._textDim
+                                    wrapMode: Text.Wrap
+                                    width: parent.width
+                                }
+                                // The host half of the feature lives in StreamTweak: without it
+                                // there is nothing on the other end to ask, and the client simply
+                                // connects as it always did.
+                                Label {
+                                    text: qsTr("Requires StreamTweak 8.1.0 or later on the host, with client control allowed. Hosts without it are unaffected.")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 13
+                                    color: settingsScreen._textDim
+                                    wrapMode: Text.Wrap
+                                    width: parent.width
+                                }
+                            }
+
+                            FocusFrame { anchors.fill: linkSwitch; anchors.margins: -3; target: linkSwitch }
+                            STSwitch {
+                                id: linkSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.matchHostLinkSpeed
+                                onCheckedChanged: {
+                                    if (StreamingPreferences.matchHostLinkSpeed !== checked) {
+                                        StreamingPreferences.matchHostLinkSpeed = checked
+                                        // Persist now rather than leaving it to this screen's
+                                        // Component.onDestruction: a session that ends by killing
+                                        // the app never runs that, and the setting silently
+                                        // reverts to its default on the next launch.
+                                        StreamingPreferences.save()
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
+
+                        // Never inert in silence: when the feature can't act, this row says
+                        // why — Wi-Fi, a tunnel, or an adapter that reports no rate. Reads the
+                        // default route, which answers "what is this device's wired link";
+                        // a specific host may still be reached another way, and the host tile
+                        // shows that case.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeight + 8
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 16
+                                anchors.right: linkPill.left
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+
+                                Label {
+                                    text: qsTr("This device")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 16
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: settingsScreen._linkDetail
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 13
+                                    color: settingsScreen._textDim
+                                    wrapMode: Text.Wrap
+                                    width: parent.width
+                                }
+                            }
+
+                            Rectangle {
+                                id: linkPill
+                                anchors.right: parent.right
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: linkPillText.implicitWidth + 20
+                                height: 26
+                                radius: 5
+                                // Matches a selected SegmentedSelector pill: solid accent with dark
+                                // text, so a live value reads the same everywhere in Settings.
+                                color: settingsScreen._linkUsable ? Theme.accent : "#1AA0A0A0"
+                                border.width: settingsScreen._linkUsable ? 0 : 1
+                                border.color: "#3a3a3a"
+
+                                Label {
+                                    id: linkPillText
+                                    anchors.centerIn: parent
+                                    text: settingsScreen._linkPill
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    color: settingsScreen._linkUsable ? Theme.onAccent : settingsScreen._textMut
                                 }
                             }
                         }
@@ -2190,6 +2388,65 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.quitAppAfter
                                 onCheckedChanged: { StreamingPreferences.quitAppAfter = checked }
+                            }
+                        }
+                        Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
+
+                        // ── Wait for the game to appear ───────────────────────
+                        // Here rather than under Network, where it first landed next to
+                        // auto-reconnect because the two answer the same moment. By subject it
+                        // belongs with the row above: both are about what happens around a
+                        // session rather than about the network. It is the bottom of its own
+                        // cascade — a host profile, then a per-game override, replace it.
+                        ProfileLockNotice { active: settingsScreen._lockWaitForGame }
+
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+                            enabled: !settingsScreen._lockWaitForGame
+                            opacity: enabled ? 1.0 : 0.4
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 16
+                                anchors.right: waitForGameSwitch.left
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+
+                                Label {
+                                    text: qsTr("Wait for the game to appear")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 16
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Keep the launch screen up until the host reports the game is on screen, instead of showing the stream as soon as it starts. Games that open their own launcher never get there — turn it off for those in their per-game settings.")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 13
+                                    color: settingsScreen._textDim
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+
+                            FocusFrame { anchors.fill: waitForGameSwitch; anchors.margins: -3; target: waitForGameSwitch }
+                            STSwitch {
+                                id: waitForGameSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.waitForGameOnScreen
+                                onCheckedChanged: {
+                                    if (StreamingPreferences.waitForGameOnScreen !== checked) {
+                                        StreamingPreferences.waitForGameOnScreen = checked
+                                        // Persisted on the toggle, not at this screen's
+                                        // Component.onDestruction: an app killed rather than
+                                        // closed never runs that, and the setting would revert.
+                                        StreamingPreferences.save()
+                                    }
+                                }
                             }
                         }
                     }
@@ -2476,6 +2733,183 @@ FocusScope {
                                 onCheckedChanged: { StreamingPreferences.hideHostIps = checked }
                             }
                         }
+                        Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
+
+                        // ── Accent colour ─────────────────────────────────────
+                        // One colour drives the whole interface: the focus ring, the primary
+                        // button, the active tab, the mark in the header. Semantic colours are
+                        // deliberately NOT included — online stays green, a warning stays amber —
+                        // or a red accent would make "online" read as an alarm.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+
+                                Label {
+                                    text: qsTr("Accent colour")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 16
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Used wherever the interface highlights something — status colours don't change")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 13
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            // Presets and a free field, side by side. The presets are for the
+                            // pad — typing a hex code with a thumbstick is not a thing anyone
+                            // should have to do — and the field is for everyone who already
+                            // knows the colour they want.
+                            Row {
+                                anchors.right: parent.right
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 10
+
+                                SegmentedSelector {
+                                    id: accentSelector
+                                    anchors.verticalCenter: parent.verticalCenter
+
+                                    // Ion first, because it is the default (see theme.cpp) and the
+                                    // first pill is where anyone looks for it. Signal — the green
+                                    // the app wore until 5.0.0 — sits next to it.
+                                    //
+                                    // ⚠️ The two arrays are parallel and indexed together by both
+                                    // the Binding below and onActivated: reordering one without
+                                    // the other silently assigns the wrong colour to every name.
+                                    labels: [qsTr("Ion"), qsTr("Signal"), qsTr("Ember"), qsTr("Amber"), qsTr("Ultra")]
+                                    readonly property var _hexes: ["#00d3f2", "#00e676", "#ff6a3d", "#ffb300", "#c060ff"]
+
+                                    // -1, not 0, when the colour matches no preset: a typed
+                                    // colour must leave every pill unlit rather than light up
+                                    // "Signal" and claim the accent is green when it isn't.
+                                    Binding on currentIndex {
+                                        value: {
+                                            var cur = Theme.accent.toString().toLowerCase()
+                                            for (var i = 0; i < accentSelector._hexes.length; i++) {
+                                                if (accentSelector._hexes[i] === cur) return i
+                                            }
+                                            return -1
+                                        }
+                                    }
+                                    onActivated: function(idx) { Theme.accent = _hexes[idx] }
+                                    // At its right edge the selector leaves the key unhandled
+                                    // on purpose, so this hands the focus on to the field.
+                                    KeyNavigation.right: accentHexField
+                                }
+
+                                // Live swatch. It is the answer to "is this the colour I meant"
+                                // before the rest of the screen repaints.
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 28; height: 28
+                                    radius: 6
+                                    color: Theme.accent
+                                    border.color: Theme.lineHigh
+                                    border.width: 1
+                                }
+
+                                TextField {
+                                    id: accentHexField
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 110
+                                    implicitHeight: 36
+                                    activeFocusOnTab: true
+                                    KeyNavigation.left: accentSelector
+
+                                    // Six hex digits with an optional leading #. Anything the
+                                    // validator rejects never reaches Theme, so there is no
+                                    // path from this field to an unreadable interface.
+                                    validator: RegularExpressionValidator {
+                                        regularExpression: /#?[0-9A-Fa-f]{0,6}/
+                                    }
+                                    maximumLength: 7
+                                    horizontalAlignment: TextInput.AlignHCenter
+                                    color: Theme.text
+                                    selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
+                                    selectedTextColor: Theme.onAccent
+                                    font.family: Theme.family
+                                    font.pixelSize: 14
+                                    font.bold: true
+
+                                    background: Rectangle {
+                                        color: "#0f0f0f"
+                                        radius: 8
+                                        border.color: accentHexField.activeFocus ? Theme.accent : Theme.line
+                                        border.width: accentHexField.activeFocus ? 2 : 1
+                                    }
+
+                                    // Follows Theme while the user is elsewhere, so picking a
+                                    // preset updates the field — but never while it has the
+                                    // focus, or every keystroke would be overwritten mid-typing.
+                                    Binding on text {
+                                        when: !accentHexField.activeFocus
+                                        value: Theme.accent.toString()
+                                    }
+
+                                    function commit() {
+                                        var t = text.trim()
+                                        if (t.length > 0 && t.charAt(0) !== "#") t = "#" + t
+                                        // Six digits exactly: Qt would happily accept "#abc"
+                                        // and expand it, which is a different colour from the
+                                        // one a half-typed code was heading towards.
+                                        if (/^#[0-9A-Fa-f]{6}$/.test(t)) Theme.accent = t
+                                        text = Theme.accent.toString()
+                                    }
+
+                                    onEditingFinished: commit()
+                                    Keys.onReturnPressed: { commit(); event.accepted = true }
+                                    Keys.onEnterPressed:  { commit(); event.accepted = true }
+                                }
+                            }
+                        }
+                        Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
+
+                        // ── Reduce animations ─────────────────────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+
+                                Label {
+                                    text: qsTr("Reduce animations")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 16
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Turns off movement and glow outside the stream — worth it on battery")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 13
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            FocusFrame { anchors.fill: reduceAnimSwitch; anchors.margins: -3; target: reduceAnimSwitch }
+                            STSwitch {
+                                id: reduceAnimSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: Theme.reduceAnimations
+                                onCheckedChanged: { Theme.reduceAnimations = checked }
+                            }
+                        }
                     }
                 }
             }
@@ -2657,8 +3091,10 @@ FocusScope {
                                     wrapMode: Text.WordWrap
                                 }
 
-                                // The dark stats box, styled like the real in-stream overlay
-                                // (RobotoMono there, JetBrains Mono here — the loaded app mono).
+                                // The dark stats box, styled like the real in-stream overlay.
+                                // The overlay itself still draws in RobotoMono through SDL_ttf;
+                                // this preview follows the app's own face, which since 5.0.0 is
+                                // DM Sans everywhere.
                                 Rectangle {
                                     id: previewBox
                                     width: parent.width
@@ -2682,7 +3118,7 @@ FocusScope {
                                                 wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                                                 text: modelData.t
                                                 color: modelData.dim ? "#8a8a8a" : "#e8e8e8"
-                                                font.family: "JetBrains Mono"
+                                                font.family: "DM Sans"
                                                 font.pixelSize: 12
                                             }
                                         }
@@ -2732,7 +3168,7 @@ FocusScope {
                             text: settingsScreen.streamLightLatest.length > 0
                                   ? settingsScreen.streamLightLatest
                                   : qsTr("checking…")
-                            font.family: "JetBrains Mono"
+                            font.family: "DM Sans"
                             font.pixelSize: 14
                             color: settingsScreen._greenLk
                         }
@@ -2802,7 +3238,7 @@ FocusScope {
                             text: settingsScreen.streamTweakLatest.length > 0
                                   ? settingsScreen.streamTweakLatest
                                   : qsTr("checking…")
-                            font.family: "JetBrains Mono"
+                            font.family: "DM Sans"
                             font.pixelSize: 14
                             color: settingsScreen._greenLk
                         }
@@ -2863,7 +3299,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: parent.text
                         color: "#dfe2e8"
-                        font.family: "JetBrains Mono"
+                        font.family: "DM Sans"
                         font.pixelSize: 12
                         font.bold: true
                     }
@@ -2882,8 +3318,8 @@ FocusScope {
                     Keys.onSpacePressed:  triggered()
                     background: Rectangle {
                         radius: 8
-                        color: "#1f2722"
-                        border.color: parent.activeFocus ? "#00E676" : "#2a2a2a"
+                        color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
+                        border.color: parent.activeFocus ? Theme.accent : "#2a2a2a"
                         border.width: parent.activeFocus ? 3 : 1
                     }
                     contentItem: Label {
@@ -3004,10 +3440,13 @@ FocusScope {
                                     spacing: 6
                                     Repeater {
                                         model: rd.buttons
+                                        // 26 = the status bar's face-button size, so a combo
+                                        // shown here and a prompt shown there are the same button
+                                        // at the same size.
                                         delegate: PadGlyph {
                                             buttonKey: modelData.key
                                             label: modelData.label
-                                            size: 22
+                                            size: 26
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
                                     }
@@ -3181,7 +3620,7 @@ FocusScope {
             implicitWidth:  170
             implicitHeight: 36
             radius: 6
-            color: btn._keyFocused   ? Qt.rgba(0, 0.9, 0.46, 0.12)
+            color: btn._keyFocused   ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12)
                  : btn._hoverVisible ? "#262626"
                  :                     "#1f1f1f"
             border.color: (btn._keyFocused || btn._hoverVisible)

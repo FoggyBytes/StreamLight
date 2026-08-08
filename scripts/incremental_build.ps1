@@ -2,7 +2,7 @@ param([switch]$CopyOnly)
 
 $ErrorActionPreference = 'Stop'
 
-$env:PATH = 'C:\Qt\6.7.3\msvc2022_64\bin;C:\Program Files\7-Zip;' + $env:PATH
+$env:PATH = 'C:\Qt\6.8.3\msvc2022_64\bin;C:\Program Files\7-Zip;' + $env:PATH
 
 $vcvars = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat'
 

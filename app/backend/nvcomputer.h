@@ -141,7 +141,25 @@ public:
     // addresses (used by Tailscale clones so the poller cannot collapse them
     // back onto the parent's LAN endpoint). Persisted to QSettings.
     bool isAddressPinned = false;
+    // The stage backdrop for this host, in the order it is resolved: a picture the user
+    // picked, else a colour they picked, else nothing (and the Home screen falls back to a
+    // hash of the host name). The derived pair is stored alongside the source so the
+    // gradient does not have to be re-extracted from a JPEG on every launch — and so it
+    // survives the picture being moved or deleted.
+    //
+    // It lives on the host and not on a profile deliberately: "docked" and "handheld" are
+    // two ways of using the SAME host and must look the same. Same reasoning, and the same
+    // storage, as tailscaleAddress above.
+    QString stageImagePath;
+    QString stageSeedColor;    // "#rrggbb", empty when the source is a picture or unset
+    QString stageColorFrom;    // derived, "#rrggbb"
+    QString stageColorTo;      // derived, "#rrggbb"
     // Remember to update isEqualSerialized() when adding fields here!
+
+    // Set when the QSettings constructor had to repair persisted addresses. Deliberately
+    // NOT serialized and NOT part of isEqualSerialized(): it is not a trait of the host, it
+    // is a message to the loader saying "the copy on disk is stale, write this one out".
+    bool migratedOnLoad = false;
 
     // Synchronization
     mutable CopySafeReadWriteLock lock;

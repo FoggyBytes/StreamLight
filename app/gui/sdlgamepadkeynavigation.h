@@ -81,6 +81,10 @@ private:
     bool m_FirstPoll;
     bool m_HasFocus;
     Uint32 m_LastAxisNavigationEventTime;
+    // Triggers are edge-detected, not fed through the stick repeat timer above:
+    // pulling LT/RT is one discrete "previous/next host", not a direction you hold.
+    bool m_LeftTriggerDown;
+    bool m_RightTriggerDown;
     QString m_ControllerType;
     QString m_InputMode;
     QPoint m_LastMousePos;

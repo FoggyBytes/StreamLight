@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
@@ -19,7 +20,7 @@ Popup {
     property int pcIndex: -1
     property string hostName: ""
 
-    readonly property color _accent: "#00E676"
+    readonly property color _accent: Theme.accent
     readonly property color _danger: "#ef4444"
     readonly property color _text:   "#ECECEC"
     readonly property color _dim:    "#9A9A9A"
@@ -135,6 +136,8 @@ Popup {
         fpSel.currentIndex    = (ov.framepacing !== undefined) ? _idxByVal(_fpVals, ov.framepacing) : 0
         audSel.currentIndex   = (ov.audio !== undefined) ? _idxByVal(_audVals, ov.audio) : 0
         hueSel.currentIndex   = (ov.hue !== undefined) ? (ov.hue ? 1 : 2) : 0
+        linkSel.currentIndex  = (ov.matchlink !== undefined) ? (ov.matchlink ? 1 : 2) : 0
+        waitGameSel.currentIndex = (ov.waitgame !== undefined) ? (ov.waitgame ? 1 : 2) : 0
         _bitrateOverridden = (ov.bitrate !== undefined && ov.bitrate >= bitrateSlider.from)
         bitrateSlider.value = _bitrateOverridden ? ov.bitrate
                             : Math.max(bitrateSlider.from, StreamingPreferences.bitrateKbps)
@@ -154,6 +157,8 @@ Popup {
         if (fpSel.currentIndex > 0)    m.framepacing = _fpVals[fpSel.currentIndex]
         if (audSel.currentIndex > 0)   m.audio = _audVals[audSel.currentIndex]
         if (hueSel.currentIndex > 0)   m.hue = (hueSel.currentIndex === 1)
+        if (linkSel.currentIndex > 0)  m.matchlink = (linkSel.currentIndex === 1)
+        if (waitGameSel.currentIndex > 0) m.waitgame = (waitGameSel.currentIndex === 1)
         computerModel.setHostProfileSettings(pcIndex, editingSlot, m)
     }
 
@@ -280,7 +285,7 @@ Popup {
                     Rectangle {
                         anchors.fill: parent
                         radius: 8
-                        color: "#1f2722"
+                        color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
                         border.color: offBtn.activeFocus ? dlg._accent : "#2a2a2a"
                         border.width: offBtn.activeFocus ? 3 : 1
                     }
@@ -298,7 +303,7 @@ Popup {
                             id: offLabel
                             anchors.centerIn: parent
                             text: qsTr("Off")
-                            color: offBtn.selected ? "#0d1410" : "#a0a0a0"
+                            color: offBtn.selected ? Theme.onAccent : Theme.text2
                             font.family: "DM Sans"; font.pixelSize: 13; font.bold: offBtn.selected
                         }
                     }
@@ -339,7 +344,7 @@ Popup {
                                 width: ptLabel.implicitWidth + 28
                                 height: dlg._tabH
                                 radius: 8
-                                color: "#1f2722"
+                                color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
                                 property bool _active: index === dlg.editingSlot
                                 property bool _cursor: profileTabs.activeFocus && index === profileTabs.currentIndex
                                 border.color: _cursor ? dlg._accent : "#2a2a2a"
@@ -352,7 +357,7 @@ Popup {
                                     id: ptLabel
                                     anchors.centerIn: parent
                                     text: modelData
-                                    color: ptTile._active ? "#0d1410" : "#a0a0a0"
+                                    color: ptTile._active ? Theme.onAccent : Theme.text2
                                     font.family: "DM Sans"; font.pixelSize: 13; font.bold: ptTile._active
                                 }
                                 MouseArea {
@@ -401,7 +406,7 @@ Popup {
                     Rectangle {
                         anchors.fill: parent
                         radius: 8
-                        color: "#1f2722"
+                        color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
                         border.color: addBtn.activeFocus ? dlg._accent : "#2a2a2a"
                         border.width: addBtn.activeFocus ? 3 : 1
                     }
@@ -622,7 +627,7 @@ Popup {
                             Rectangle {
                                 anchors.fill: parent
                                 radius: 8
-                                color: "#1f2722"
+                                color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
                                 border.color: bitrateGlobalBtn.activeFocus ? dlg._accent : "#2a2a2a"
                                 border.width: bitrateGlobalBtn.activeFocus ? 3 : 1
                             }
@@ -640,7 +645,7 @@ Popup {
                                     id: gLabel
                                     anchors.centerIn: parent
                                     text: qsTr("Global")
-                                    color: bitrateGlobalBtn.selected ? "#0d1410" : "#a0a0a0"
+                                    color: bitrateGlobalBtn.selected ? Theme.onAccent : Theme.text2
                                     font.family: "DM Sans"; font.pixelSize: 13
                                     font.bold: bitrateGlobalBtn.selected
                                 }
@@ -736,7 +741,7 @@ Popup {
                             width: 78
                             text: (bitrateSlider.value / 1000).toFixed(0) + qsTr(" Mbps")
                             color: dlg._accent
-                            font.family: "JetBrains Mono"; font.pixelSize: 13; font.bold: true
+                            font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
                             horizontalAlignment: Text.AlignRight
                         }
                     }
@@ -787,6 +792,32 @@ Popup {
                     SegmentedSelector {
                         id: hueSel; labels: dlg._hdrLabels
                         KeyNavigation.up: audSel
+                        KeyNavigation.down: linkSel
+                        onActivated: dlg.saveOverride()
+                    }
+                }
+                // A profile describes a situation, not just a picture quality: "docked" and
+                // "handheld" want different answers here as much as they want different
+                // resolutions. Global = follow the setting in Settings → Network.
+                SettingRow {
+                    label: qsTr("Match host link speed")
+                    SegmentedSelector {
+                        id: linkSel; labels: dlg._hdrLabels
+                        KeyNavigation.up: hueSel
+                        KeyNavigation.down: waitGameSel
+                        onActivated: dlg.saveOverride()
+                    }
+                }
+                // Same reason as the row above: it belongs to a situation. A profile used at the
+                // desk, where the host is an arm's length away, has little to gain from the
+                // wait; one used on a TV in another room does, because the alternative is
+                // looking at that host's desktop rearranging itself.
+                // Global = follow the setting in Settings → Session.
+                SettingRow {
+                    label: qsTr("Wait for the game to appear")
+                    SegmentedSelector {
+                        id: waitGameSel; labels: dlg._hdrLabels
+                        KeyNavigation.up: linkSel
                         KeyNavigation.down: removeBtn
                         onActivated: dlg.saveOverride()
                     }
@@ -811,7 +842,7 @@ Popup {
                 fontSize: 13
                 width: 84; height: 36
                 onActivated: dlg.removeProfile()
-                KeyNavigation.up: dlg._editing ? hueSel : addBtn
+                KeyNavigation.up: dlg._editing ? waitGameSel : addBtn
                 KeyNavigation.right: doneBtn
             }
 
@@ -827,7 +858,7 @@ Popup {
                     fontSize: 13
                     width: 76; height: 36
                     onActivated: dlg.close()
-                    KeyNavigation.up: dlg._editing ? hueSel : addBtn
+                    KeyNavigation.up: dlg._editing ? waitGameSel : addBtn
                     KeyNavigation.left: dlg._editing ? removeBtn : null
                     KeyNavigation.right: dlg._editing ? resetBtn : null
                 }
@@ -838,7 +869,7 @@ Popup {
                     fontSize: 13
                     width: 128; height: 36
                     onActivated: dlg.resetAll()
-                    KeyNavigation.up: hueSel
+                    KeyNavigation.up: waitGameSel
                     KeyNavigation.left: doneBtn
                 }
             }

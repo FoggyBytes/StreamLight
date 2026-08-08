@@ -1,8 +1,8 @@
-; StreamLight 4.5.1 — Moonlight fork with StreamTweak integration.
+; StreamLight 5.0.0 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
-#define AppVersion "4.5.1"
+#define AppVersion "5.0.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -101,6 +101,58 @@ Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; \
     Flags: nowait postinstall skipifsilent
 
 [Code]
+// ── Stop Windows from maximising the wizard ──────────────────────────────────
+// On a handheld — the ROG Ally is where this shows up — the wizard opens filling
+// the whole screen, with the layout still drawn for a small window: the artwork
+// at its natural size in the top-left corner and a large empty area around it.
+// That is the signature of a window MAXIMISED after its layout was computed, not
+// of a wizard computed too large (which would stretch the artwork to full height).
+// It is not the Inno Setup version: it did the same under Inno Setup 6.
+//
+// Windows only auto-maximises windows that can be maximised, so the fix is to say
+// this one cannot: take the sizing frame and the maximise box off it. Setup's
+// wizard is not meant to be resized anyway — Inno Setup 7 dropped WizardResizable
+// for exactly that reason, which makes this a no-op there and a fix everywhere else.
+//
+// ⚠️ SetWindowLongW, not SetWindowLongPtrW. Both are exported by user32 on 64-bit,
+// but the Ptr variant takes a LONG_PTR (8 bytes) and we build a 64-bit installer
+// (SetupArchitecture=x64), so handing it a 32-bit value is the argument-size
+// mismatch Inno Setup 7's release notes warn about. Window styles are 32-bit, so
+// the plain variant is the correct one for GWL_STYLE on any architecture.
+const
+  GWL_STYLE        = -16;
+  WS_MAXIMIZEBOX   = $00010000;
+  WS_THICKFRAME    = $00040000;
+  SWP_NOSIZE       = $0001;
+  SWP_NOMOVE       = $0002;
+  SWP_NOZORDER     = $0004;
+  SWP_NOACTIVATE   = $0010;
+  SWP_FRAMECHANGED = $0020;
+
+function GetWindowLong(hWnd: HWND; nIndex: Integer): LongInt;
+  external 'GetWindowLongW@user32.dll stdcall';
+function SetWindowLong(hWnd: HWND; nIndex: Integer; dwNewLong: LongInt): LongInt;
+  external 'SetWindowLongW@user32.dll stdcall';
+function SetWindowPos(hWnd: HWND; hWndInsertAfter: HWND; X, Y, cx, cy: Integer; uFlags: Cardinal): LongInt;
+  external 'SetWindowPos@user32.dll stdcall';
+
+procedure MakeWizardFixedSize;
+begin
+  SetWindowLong(WizardForm.Handle, GWL_STYLE,
+    GetWindowLong(WizardForm.Handle, GWL_STYLE) and not (WS_MAXIMIZEBOX or WS_THICKFRAME));
+
+  // Required after any style change: SetWindowLong alters the style bits but leaves the
+  // cached non-client frame alone, so the window keeps the client area computed for the old
+  // styles until Windows is asked to recompute it. SetWindowLong's own documentation
+  // prescribes this call.
+  //
+  // ⚠️ It is NOT the fix for the check boxes being clipped on their left edge — that was my
+  // first theory and hardware disproved it. That symptom appears only on the Ally and is
+  // unexplained; see §28. This call stays because it is correct on its own terms.
+  SetWindowPos(WizardForm.Handle, 0, 0, 0, 0, 0,
+    SWP_NOMOVE or SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE or SWP_FRAMECHANGED);
+end;
+
 var
   LogoImage: TBitmapImage;
   DevelopedByLabel: TNewStaticText;
@@ -130,6 +182,9 @@ procedure InitializeWizard;
 var
   TmpFileName: String;
 begin
+  // Before anything is laid out: the window exists by now, but has not been shown.
+  MakeWizardFixedSize;
+
   ExtractTemporaryFile('streamlight.png');
   TmpFileName := ExpandConstant('{tmp}\streamlight.png');
 
@@ -139,7 +194,20 @@ begin
   LogoImage.PngImage.LoadFromFile(TmpFileName);
   LogoImage.Left := WizardForm.WelcomeLabel1.Left;
   LogoImage.Top := WizardForm.WelcomeLabel1.Top + WizardForm.WelcomeLabel1.Height + ScaleY(25);
-  LogoImage.AutoSize := True;
+  // Sized explicitly, NOT with AutoSize.
+  //
+  // AutoSize draws the PNG at its native pixel size, so the artwork's own resolution silently
+  // becomes the layout. That held while the file happened to be 96x96; the moment it was
+  // replaced with a 672x672 master the logo rendered seven times too big and bled across the
+  // welcome page. Stretch scales whatever it is given into the box below, so the asset can be
+  // any resolution — and a higher one is now the better choice, since it downscales cleanly.
+  //
+  // ScaleX/ScaleY where AutoSize gave raw pixels: the rest of this layout is already
+  // DPI-scaled, so the logo was the one element that shrank on a high-DPI display.
+  LogoImage.AutoSize := False;
+  LogoImage.Stretch := True;
+  LogoImage.Width := ScaleX(96);
+  LogoImage.Height := ScaleY(96);
 
   DevelopedByLabel := TNewStaticText.Create(WizardForm);
   DevelopedByLabel.Parent := WizardForm.WelcomePage;
@@ -185,12 +253,14 @@ begin
   StreamTweakBulletsLabel.Caption :=
     // NB: this label has no WordWrap, so every bullet must stay on one line —
     // keep them at or under ~76 characters or they get clipped on the right.
-    '•  Link-speed switch — sets the host NIC speed to eliminate UDP bufferbloat' + #13#10 +
+    '•  Link-speed matching — the host follows this device, no bufferbloat' + #13#10 +
+    '•  Seamless launch — optionally wait for the game to appear' + #13#10 +
+    '•  Wake the host and sign in with its PIN, from the sofa, on the pad' + #13#10 +
     '•  Live host metrics overlay (GPU, encoder, VRAM, temperature, CPU, network)' + #13#10 +
     '•  NVIDIA Sentinel — protects your driver profile from NVIDIA App resets' + #13#10 +
     '•  Auto HDR toggle + spatial audio (Dolby Atmos / Windows Sonic)' + #13#10 +
     '•  Game library sync with store badges (Steam, Epic, GOG, Xbox, …)' + #13#10 +
-    '•  Session quality grading and per-stream telemetry' + #13#10 +
+    '•  Session quality grading, and the host''s last session on your Home' + #13#10 +
     '•  Live bitrate shown against your configured target on the host dashboard' + #13#10 +
     '•  Remote host power-off and Windows Update' + #13#10 +
     '•  Tailscale presence for remote streaming over the internet';

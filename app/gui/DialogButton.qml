@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 
@@ -23,21 +24,30 @@ Button {
         implicitWidth: 150
         implicitHeight: 42
         radius: 8
-        color: btn.activeFocus ? (btn.danger ? Qt.rgba(0.93, 0.27, 0.27, 0.20)
-                                             : Qt.rgba(0, 0.9, 0.46, 0.20))
+        color: btn.activeFocus ? (btn.danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.20)
+                                             : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20))
              : btn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
-             :                   "#1f1f1f"
-        border.color: btn.activeFocus ? (btn.danger ? "#ef4444" : "#00E676")
-                    : btn.hovered     ? "#3a3a3a"
-                    :                   "#2a2a2a"
+             :                   "#14ffffff"
+        border.color: btn.activeFocus ? (btn.danger ? Theme.danger : Theme.accent)
+                    : btn.hovered     ? Theme.lineHigh
+                    :                   Theme.line
         border.width: btn.activeFocus ? 2 : 1
+
+        // The same snap the action rows on Home and the host page use. The colour grammar
+        // here stays as §22 defined it — accent as a border and a tint, not a fill — but the
+        // motion is shared, so focus moves the same way everywhere.
+        Behavior on scale {
+            enabled: !Theme.reduceAnimations
+            NumberAnimation { duration: 130; easing.type: Easing.OutBack; easing.overshoot: 2.2 }
+        }
+        scale: btn.activeFocus && !Theme.reduceAnimations ? 1.03 : 1.0
     }
     contentItem: Label {
         text: btn.text
-        color: btn.danger      ? "#ef4444"
-             : btn.affirmative ? "#00E676"
-             :                   "#f0f0f0"
-        font.family: "DM Sans"; font.pixelSize: btn.fontSize; font.bold: true
+        color: btn.danger      ? Theme.danger
+             : btn.affirmative ? Theme.accent
+             :                   Theme.text
+        font.family: Theme.family; font.pixelSize: btn.fontSize; font.bold: true
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
     }

@@ -6,6 +6,10 @@
 #include "streaming/video/streamsettingsoverlay.h"
 
 #include <QtMath>
+#include <QCoreApplication>
+#include <QGuiApplication>
+#include <QKeyEvent>
+#include <QWindow>
 
 // How long the Start button must be pressed to toggle mouse emulation
 #define MOUSE_EMULATION_LONG_PRESS_TIME 750
@@ -54,6 +58,15 @@ SdlInputHandler::findStateForGamepad(SDL_JoystickID id)
 
 void SdlInputHandler::sendGamepadState(GamepadState* state)
 {
+    // Nothing reaches the host while the stream window is hidden behind the launch curtain.
+    // The game is still loading and a launcher may be sitting on a dialog, so a press landing
+    // over there is at best wasted and at worst answers a question the user never saw. One
+    // guard here rather than at each call site: buttons, axes and sensors all end up through
+    // this function.
+    if (m_StreamWindowHidden) {
+        return;
+    }
+
     SDL_assert(m_GamepadMask == 0x1 || m_MultiController);
 
     // Handle Select+PS as the clickpad button on PS4/5 controllers without a clickpad mapping
@@ -428,6 +441,55 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
         // Clear buttons down on this gamepad
         LiSendMultiControllerEvent(state->index, m_GamepadMask,
                                    0, 0, 0, 0, 0, 0, 0);
+        return;
+    }
+
+    // Launch curtain: B ends the wait and shows the host, whatever the host says it is
+    // doing. It is the answer to a launch that stalls on something we cannot see — a game's
+    // own launcher asking to update, a dialog behind the splash — where the alternative is
+    // staring at the curtain until the 90-second cap runs out.
+    //
+    // Read after the face-button swap on purpose: the swap exists so that the button the
+    // user's controller calls B is the one the app calls B, on every vendor.
+    if (m_StreamWindowHidden) {
+        // Remote unlock: the hidden window is behind a QML PIN pad, and the pad is the whole
+        // point — so the controller drives it rather than being dropped. Translated to the
+        // same Qt keys a keyboard would send, so the pad needs no separate controller path.
+        if (m_UnlockMode) {
+            if (event->state == SDL_PRESSED) {
+                int key = 0;
+                switch (event->button) {
+                case SDL_CONTROLLER_BUTTON_DPAD_UP:    key = Qt::Key_Up;     break;
+                case SDL_CONTROLLER_BUTTON_DPAD_DOWN:  key = Qt::Key_Down;   break;
+                case SDL_CONTROLLER_BUTTON_DPAD_LEFT:  key = Qt::Key_Left;   break;
+                case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: key = Qt::Key_Right;  break;
+                case SDL_CONTROLLER_BUTTON_A:          key = Qt::Key_Return; break;
+                case SDL_CONTROLLER_BUTTON_B:          key = Qt::Key_Escape; break;
+                default: break;
+                }
+                if (key != 0) {
+                    // The Qt window is the one on screen — the stream window is hidden and has
+                    // no focus. postEvent is thread-safe, which matters: we are on SDL's pump.
+                    QWindow* w = QGuiApplication::focusWindow();
+                    if (w == nullptr && !QGuiApplication::topLevelWindows().isEmpty()) {
+                        w = QGuiApplication::topLevelWindows().first();
+                    }
+                    if (w != nullptr) {
+                        QCoreApplication::postEvent(
+                            w, new QKeyEvent(QEvent::KeyPress, key, Qt::NoModifier));
+                        QCoreApplication::postEvent(
+                            w, new QKeyEvent(QEvent::KeyRelease, key, Qt::NoModifier));
+                    }
+                }
+            }
+            return;
+        }
+
+        if (event->state == SDL_PRESSED && event->button == SDL_CONTROLLER_BUTTON_B) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "B pressed behind the launch curtain: showing the host now");
+            Session::get()->revealStreamWindow(true);
+        }
         return;
     }
 

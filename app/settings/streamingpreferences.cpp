@@ -41,6 +41,8 @@
 #define SER_PACKETSIZE "packetsize"
 #define SER_DETECTNETBLOCKING "detectnetblocking"
 #define SER_AUTORECONNECTNOVIDEO "autoreconnectnovideo"
+#define SER_MATCHHOSTLINKSPEED "matchhostlinkspeed"
+#define SER_WAITFORGAME "waitforgame"
 #define SER_SHOWPERFOVERLAY "showperfoverlay"
 #define SER_OVERLAYMODE "overlaymode"
 #define SER_SWAPMOUSEBUTTONS "swapmousebuttons"
@@ -131,6 +133,8 @@ StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
     p->gamepadMouse = gamepadMouse;
     p->detectNetworkBlocking = detectNetworkBlocking;
     p->autoReconnectNoVideo = autoReconnectNoVideo;
+    p->matchHostLinkSpeed = matchHostLinkSpeed;
+    p->waitForGameOnScreen = waitForGameOnScreen;
     p->overlayMode = overlayMode;
     p->swapMouseButtons = swapMouseButtons;
     p->muteOnFocusLoss = muteOnFocusLoss;
@@ -210,6 +214,15 @@ void StreamingPreferences::reload()
     gamepadMouse = settings.value(SER_GAMEPADMOUSE, true).toBool();
     detectNetworkBlocking = settings.value(SER_DETECTNETBLOCKING, true).toBool();
     autoReconnectNoVideo = settings.value(SER_AUTORECONNECTNOVIDEO, true).toBool();
+    // On by default: once both sides are updated the pair just works, and the whole
+    // handshake is skipped when the host is already at the right speed — which is the
+    // common case, and costs nothing.
+    matchHostLinkSpeed = settings.value(SER_MATCHHOSTLINKSPEED, true).toBool();
+    // Off by default: without it StreamLight behaves as it always did, showing the stream as
+    // soon as the session is up. Holding the launch screen until the host says the game is on
+    // screen is the opt-in, because it is the answer to a problem not everyone has — and a
+    // title that opens its own launcher never satisfies it at all.
+    waitForGameOnScreen = settings.value(SER_WAITFORGAME, false).toBool();
     // Overlay verbosity. New 4-state setting (Off/Minimal/Default/Full). Migrate
     // from the old boolean: an enabled legacy overlay showed everything, so it
     // maps to OM_FULL; a disabled one maps to OM_OFF.
@@ -301,6 +314,8 @@ void StreamingPreferences::save()
     settings.setValue(SER_PACKETSIZE, packetSize);
     settings.setValue(SER_DETECTNETBLOCKING, detectNetworkBlocking);
     settings.setValue(SER_AUTORECONNECTNOVIDEO, autoReconnectNoVideo);
+    settings.setValue(SER_MATCHHOSTLINKSPEED, matchHostLinkSpeed);
+    settings.setValue(SER_WAITFORGAME, waitForGameOnScreen);
     settings.setValue(SER_OVERLAYMODE, static_cast<int>(overlayMode));
     settings.setValue(SER_AUDIOCFG, static_cast<int>(audioConfig));
     settings.setValue(SER_HDR, enableHdr);

@@ -13,12 +13,8 @@
  * Sends one-shot TCP commands to StreamTweak on the host PC (port 47998).
  *
  * Commands:
- *   PREPARE  — sent from the PC context menu before the user launches the stream.
- *              StreamTweak sets the NIC to 1 Gbps pre-emptively so no disconnect
- *              occurs during the session.
- *   RESTORE  — sent after the session ends as an explicit fallback.
- *              StreamTweak's log monitor handles the normal case; this covers
- *              edge cases where the log event is delayed or missed.
+ *   NETINFO / SETSPEED — host link-speed matching (StreamTweak 8.1.0+); see below.
+ *              They replace PREPARE, which applied a target the host itself configured.
  *   SHUTDOWN — asks the host to power off. Destructive; StreamTweak only honours
  *              it from an approved client (verified AUTH1 signature). Fire-and-forget.
  *   SHUTDOWN_UPDATE — like SHUTDOWN, but the host installs any pending Windows
@@ -33,9 +29,9 @@
  *              object, e.g. {"gpu":45,"gpu_enc":80,"gpu_temp":72,"vram_used":4200,
  *              "cpu":30,"net_tx":18}, or "STATS_UNAVAILABLE".
  *
- * PREPARE/RESTORE are fire-and-forget. The query commands (STATUS, STATS,
- * APPSTORES, SESSIONID, TAILSCALE) take a per-call completion callback that
- * receives the trimmed response line, or an empty string on error/timeout.
+ * The query commands (STATUS, STATS, NETINFO, APPSTORES, TAILSCALE, UPDATESTATE)
+ * take a per-call completion callback that receives the trimmed response line, or an
+ * empty string on error/timeout.
  *
  * Each query owns its own socket and its own callback, so concurrent requests
  * never cross-talk. Responses are buffered until the protocol's '\n' terminator
@@ -53,8 +49,6 @@ public:
 
     explicit StreamTweakBridge(QObject* parent = nullptr);
 
-    void sendPrepare(const QString& hostAddress);
-    void sendRestore(const QString& hostAddress);
     // installUpdates: send SHUTDOWN_UPDATE ("Update and shut down") instead of SHUTDOWN.
     void sendShutdown(const QString& hostAddress, bool installUpdates = false);
 
@@ -69,6 +63,14 @@ public:
      * Invokes onResult with a JSON payload on success, or "" on error/timeout.
      */
     void requestStats(const QString& hostAddress, ResponseCallback onResult);
+
+    /**
+     * Asks how far along the launch is on the host: whether the game's window has appeared,
+     * whether something else is holding the screen, or whether there is nothing to wait for.
+     * Invokes onResult with a JSON payload, or "" on error/timeout / a host that predates
+     * the command — which the caller must read as "no curtain", never as "keep waiting".
+     */
+    void requestGameState(const QString& hostAddress, ResponseCallback onResult);
 
     /**
      * Asynchronously requests the store map for all managed apps from StreamTweak.
@@ -87,6 +89,23 @@ public:
     void requestUpdateState(const QString& hostAddress, ResponseCallback onResult);
 
     /**
+     * Remote PIN unlock (StreamTweak 8.1.0+).
+     *
+     *  - requestLockState: is a lock or logon screen up on the host? Replies
+     *    {"v":1,"locked":true|false}, or "" / "ERR" on a host that predates the verb —
+     *    which the caller must read as "no unlock flow available", never as "not locked".
+     *
+     *  - sendUnlockBegin / sendUnlockEnd: tell the host that the session we are about to
+     *    open is plumbing for a PIN unlock, so it stays out of the session history and
+     *    skips the side effects of a real session (spatial audio, managed apps, game
+     *    capture). The host cannot tell such a session apart by looking at it — only we
+     *    know why we opened it. Fire-and-forget.
+     */
+    void requestLockState(const QString& hostAddress, ResponseCallback onResult);
+    void sendUnlockBegin(const QString& hostAddress);
+    void sendUnlockEnd(const QString& hostAddress);
+
+    /**
      * Remote "Update host" feature (drives Windows Update Agent on the host).
      *  - sendUpdateCheck: start an async scan. Fire-and-forget ("OK" discarded).
      *  - sendUpdateNow:   install the scanned updates for the given scope ("SEC"/"ALL")
@@ -99,11 +118,42 @@ public:
     void requestUpdateProgress(const QString& hostAddress, ResponseCallback onResult);
 
     /**
-     * Asynchronously requests the active session ID from StreamTweak.
-     * Invokes onResult with the ID string, "NONE" if no session is active,
-     * or "" on error/timeout.
+     * Host link-speed matching (StreamTweak 8.1.0+).
+     *
+     *  - requestNetInfo: describes the host's managed wired adapter — current speed,
+     *    the speeds it supports (in Mbps, each with the driver's display string as an
+     *    opaque key), whether client control is permitted, and whether a session is
+     *    already running. Replies "" / "ERR" on hosts older than 8.1.0, which is how
+     *    the client detects that the feature is unavailable.
+     *
+     *  - sendSetSpeed: asks the host to run at `mbps` before we connect. The reply is
+     *    an acknowledgement, not a completion: the change takes seconds (the adapter
+     *    renegotiates), so poll requestNetInfo until `state` is "idle" at the requested
+     *    speed. Replies OK / ERR_NOT_ALLOWED / ERR_UNSUPPORTED / ERR_BUSY /
+     *    ERR_NOT_LAN / ERR_NO_ADAPTER.
+     *
+     * Never block a launch on either of these: a tuning feature that prevents
+     * streaming is worse than no tuning feature.
      */
-    void requestSessionId(const QString& hostAddress, ResponseCallback onResult);
+    void requestNetInfo(const QString& hostAddress, ResponseCallback onResult);
+    void sendRestore(const QString& hostAddress, ResponseCallback onResult);
+    void sendSetSpeed(const QString& hostAddress, quint64 mbps, ResponseCallback onResult);
+
+    /**
+     * The host's most recent finished session (StreamTweak 8.1.0+), as JSON:
+     * {"v":1,"has":true,"ago":"3d ago","duration":"1m 1s","grade":"Excellent",
+     *  "grade_color":"#4ade80","rtt_ms":1,"rtt_peak_ms":3,"host_latency_ms":1.3,
+     *  "drops_pct":0.6,"games":[{"name":…,"cover":"<base64 png>"}]}
+     *
+     * Note this is the HOST's last session and not necessarily one of ours — StreamTweak
+     * logs whatever streamed and does not record which client it belonged to.
+     *
+     * Replies "" / "ERR" on older hosts, which is how the client detects the feature is
+     * unavailable and simply draws nothing. The reply carries thumbnail images and is by
+     * far the largest one the bridge produces; sendRawRequest accumulates until the '\n'
+     * terminator, so it is already segment-safe.
+     */
+    void requestLastSession(const QString& hostAddress, ResponseCallback onResult);
 
     /**
      * Asynchronously asks the host whether Tailscale is installed and active.

@@ -1,8 +1,10 @@
 #include "systemproperties.h"
+#include "linkspeed.h"
 #include "utils.h"
 
 #include <QCoreApplication>
 #include <QGuiApplication>
+#include <QWindow>
 #include <QLibraryInfo>
 #include <QProcess>
 #include <QStringList>
@@ -363,6 +365,51 @@ void SystemProperties::shutdownClient(bool installUpdates)
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "SystemProperties: shutdownClient is only supported on Windows");
 #endif
+}
+
+void SystemProperties::recreateNativeWindow()
+{
+    const auto windows = QGuiApplication::topLevelWindows();
+    for (QWindow* win : windows) {
+        if (win == nullptr || win->handle() == nullptr || !win->isVisible()) {
+            continue;
+        }
+
+        // Captured before the teardown: destroy() drops the platform window, and with it
+        // everything Windows knew about this one.
+        const QWindow::Visibility visibility = win->visibility();
+        const QRect geometry = win->geometry();
+
+        // Releases the HWND and the graphics resources hanging off it, the stale swap chain
+        // included. Qt Quick handles losing the platform window here and rebuilds the scene
+        // graph against the new one.
+        win->destroy();
+
+        win->setGeometry(geometry);
+        // Recreates the platform window and re-applies the state in one step, so a
+        // full-screen window comes back full screen rather than windowed.
+        win->setVisibility(visibility);
+        win->requestActivate();
+
+        // One top-level window is ours; anything else Qt owns (popups, tooltips) must not
+        // be dragged through this.
+        break;
+    }
+}
+
+QVariantMap SystemProperties::localLinkInfo()
+{
+    LinkSpeed::Info info = LinkSpeed::probeDefaultRoute();
+
+    static const char* const kStatus[] = { "wired", "wireless", "virtual", "nolinkspeed", "unavailable" };
+
+    QVariantMap out;
+    out[QStringLiteral("status")]  = QString::fromLatin1(kStatus[static_cast<int>(info.status)]);
+    out[QStringLiteral("mbps")]    = static_cast<qulonglong>(info.mbps);
+    out[QStringLiteral("adapter")] = info.adapterName;
+    out[QStringLiteral("reason")]  = info.reason;
+    out[QStringLiteral("usable")]  = info.usable();
+    return out;
 }
 
 bool SystemProperties::updatesPending()

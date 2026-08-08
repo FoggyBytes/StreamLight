@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 
@@ -26,8 +27,8 @@ Popup {
     padding: 28
 
     background: Rectangle {
-        color: "#1a1a1a"
-        border.color: "#2a2a2a"
+        color: Theme.card
+        border.color: Theme.line
         border.width: 1
         radius: 12
     }
@@ -38,8 +39,8 @@ Popup {
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("OPTIONS") + (dlg.hostName.length ? "  ·  " + dlg.hostName : "")
-            font.family: "DM Sans"; font.pixelSize: 13; font.bold: true; font.letterSpacing: 1.6
-            color: "#707070"
+            font.family: Theme.family; font.pixelSize: 13; font.bold: true; font.letterSpacing: 1.6
+            color: Theme.text3
         }
 
         GridView {
@@ -80,12 +81,19 @@ Popup {
                     anchors.margins: 8
                     radius: 10
                     opacity: _disabled ? 0.4 : 1.0
-                    color: _sel ? (_danger ? Qt.rgba(0.94, 0.27, 0.27, 0.18)
-                                           : Qt.rgba(0, 0.9, 0.46, 0.16))
+                    color: _sel ? (_danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.18)
+                                           : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16))
                                 : Qt.rgba(1, 1, 1, 0.04)
-                    border.color: _sel ? (_danger ? "#ef4444" : "#00E676")
-                                       : Qt.rgba(1, 1, 1, 0.10)
+                    border.color: _sel ? (_danger ? Theme.danger : Theme.accent)
+                                       : Theme.line
                     border.width: _sel ? 2 : 1
+
+                    // Same snap as every other focusable thing in the app.
+                    Behavior on scale {
+                        enabled: !Theme.reduceAnimations
+                        NumberAnimation { duration: 130; easing.type: Easing.OutBack; easing.overshoot: 2.0 }
+                    }
+                    scale: _sel && !Theme.reduceAnimations ? 1.04 : 1.0
 
                     Column {
                         anchors.centerIn: parent
@@ -114,8 +122,22 @@ Popup {
                             anchors.horizontalCenter: parent.horizontalCenter
                             width: grid.cellWidth - 28
                             text: modelData.label
-                            color: (_danger && _sel) ? "#fca5a5" : "#f0f0f0"
-                            font.family: "DM Sans"; font.pixelSize: 14; font.bold: _sel
+                            color: (_danger && _sel) ? Qt.lighter(Theme.danger, 1.25) : Theme.text
+                            font.family: Theme.family; font.pixelSize: 14; font.bold: _sel
+                            horizontalAlignment: Text.AlignHCenter
+                            elide: Text.ElideRight
+                        }
+                        // Why a greyed tile is greyed. Two or three words — the tile is small and
+                        // the question is only "is this worth going to fix?", not "what is it".
+                        // Without it a disabled tile is a dead end: the app says why everywhere
+                        // else it withholds something, and this dialog was the exception.
+                        Label {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: grid.cellWidth - 28
+                            visible: _disabled && text.length > 0
+                            text: modelData.reason || ""
+                            color: Theme.text3
+                            font.family: Theme.family; font.pixelSize: 11
                             horizontalAlignment: Text.AlignHCenter
                             elide: Text.ElideRight
                         }

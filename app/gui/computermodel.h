@@ -29,7 +29,11 @@ class ComputerModel : public QAbstractListModel
         TailscaleActiveRole,
         ProfileCountRole,
         ActiveProfileSlotRole,
-        ActiveProfileNameRole
+        ActiveProfileNameRole,
+        StageColorFromRole,
+        StageColorToRole,
+        StageImageRole,
+        StageSeedRole
     };
 
 public:
@@ -58,7 +62,6 @@ public:
 
     Q_INVOKABLE Session* createSessionForCurrentGame(int computerIndex);
 
-    Q_INVOKABLE void prepareStreamTweak(int computerIndex);
 
     // Asks the host (via StreamTweak) to power off. Requires the host to have
     // approved this client; fire-and-forget over the authenticated bridge.
@@ -73,6 +76,40 @@ public:
      * (pending=false on legacy/unreachable hosts). Drives the Power dialog hint.
      */
     Q_INVOKABLE void requestUpdateState(int computerIndex);
+
+    /**
+     * Remote PIN unlock.
+     *
+     * requestLockState asks whether a lock or logon screen is up; the answer arrives as
+     * lockStateReceived(index, supported, locked). `supported` is separate on purpose: a
+     * host that predates the command answers nothing, and reading that as "not locked"
+     * would send us straight past the PIN pad into a session nobody can drive.
+     *
+     * markUnlockSession declares the session we are about to open as unlock plumbing, so
+     * the host keeps it out of its history and skips its session-start side effects.
+     */
+    Q_INVOKABLE void requestLockState(int computerIndex);
+    Q_INVOKABLE void markUnlockSession(int computerIndex, bool begin);
+
+    /**
+     * Runs the link-speed match on its own, with no session behind it. Used right after a
+     * remote unlock: the speed cannot be matched before the host has logged in — the adapter
+     * would go down for a session lasting as long as typing a PIN — so it is done here, and
+     * the host card only calls itself ready once this finishes.
+     *
+     * Emits linkMatchProgress(index, true, detail) while it runs and (index, false, "") when
+     * it ends, whatever the outcome: like every other path through LinkMatcher, failure is
+     * reported and then ignored.
+     */
+    Q_INVOKABLE void matchHostLinkSpeed(int computerIndex);
+
+    /**
+     * Whether this host has ever answered as a StreamTweak host, remembered across runs.
+     * The wake flow uses it to decide how long to wait for StreamTweak to come up — and it
+     * must be persisted, because an in-memory flag reads "no" on every fresh start, which is
+     * "I have not asked yet", not "this host has none".
+     */
+    Q_INVOKABLE bool hostEverHadStreamTweak(int computerIndex);
 
     /**
      * Remote "Update host" feature. startUpdateCheck kicks off an async scan;
@@ -116,6 +153,40 @@ public:
      */
     Q_INVOKABLE void refreshTailscale(int computerIndex);
 
+    /**
+     * Sets this host's stage backdrop. Pass a picture path, OR a "#rrggbb" seed, OR neither
+     * to clear it and fall back to the colours derived from the host name.
+     *
+     * The gradient pair is worked out once, here, and stored on the host — not recomputed
+     * when the stage is drawn, which happens every time the user changes tab.
+     */
+    Q_INVOKABLE void setHostStageBackground(int computerIndex, const QString& imagePath,
+                                            const QString& seedColor);
+
+    // Wired link speed of the interface that actually routes to this host — the value the
+    // host is asked to match. Returns {status, mbps, adapter, reason, usable}; `usable` is
+    // false whenever the path is Wi-Fi, a tunnel, or the adapter reports no rate, and
+    // `reason` is written for the UI so the feature is never inert without saying why.
+    Q_INVOKABLE QVariantMap probeLocalLink(int computerIndex);
+
+    // One-shot NETINFO so the host card can say whether a switch is coming. Cached by the
+    // caller: the permission rarely changes, and the current speed is already kept live by
+    // the 2 s STATUS poll. Emits hostNetInfoReceived; silently does nothing on hosts older
+    // than StreamTweak 8.1.0.
+    Q_INVOKABLE void requestHostNetInfo(int computerIndex);
+
+    // The host's last finished session, for the panel on the host card. One-shot, fired when
+    // a host becomes authorized: it describes something that already happened, so polling it
+    // would ask the same question over and over. Emits lastSessionReceived with {has:false}
+    // on hosts older than StreamTweak 8.1.0.
+    Q_INVOKABLE void requestLastSession(int computerIndex);
+
+    /// Asks the host to put its link speed back. The host never decides this for itself — it
+    /// holds the streaming speed until told — so this is the only thing that ends a switch,
+    /// sent when the user answers the prompt on returning to the host list, or picks the
+    /// Options tile.
+    Q_INVOKABLE void restoreHostLink(int computerIndex);
+
     /** True if Tailscale is installed on THIS (client) PC (so the host's Tailscale
      *  endpoint is actually usable from here). Drives the greyed "Tailscale" option. */
     Q_INVOKABLE bool clientHasTailscale() const;
@@ -152,8 +223,20 @@ signals:
     void connectionTestCompleted(int result, QString blockedPorts);
     void streamTweakStatusReceived(int computerIndex, QString status);
     void streamTweakAuthReceived(int computerIndex, QString state, QString pin);
+
+    /** @param info {allowsLinkControl, currentMbps} — empty map on hosts without NETINFO. */
+    void hostNetInfoReceived(int computerIndex, QVariantMap info);
+
+    /** @param s {has, ago, duration, grade, gradeColor, rttMs, rttPeakMs, hostLatMs,
+     *            dropsPct, games:[{name, cover}]} — {has:false} when there is nothing to
+     *            show or the host does not know the command. */
+    void lastSessionReceived(int computerIndex, QVariantMap s);
     void appStoresReceived(int computerIndex, QVariantMap stores);
     void updateStateReceived(int computerIndex, bool pending);
+    /** supported=false means the host does not know LOCKSTATE — not that it is unlocked. */
+    void lockStateReceived(int computerIndex, bool supported, bool locked);
+    /** detail is the change being made ("2.5 Gbps → 1 Gbps"), empty once finished. */
+    void linkMatchProgress(int computerIndex, bool running, QString detail);
     void updateProgressReceived(int computerIndex, QVariantMap state);
 
 private slots:
@@ -162,6 +245,8 @@ private slots:
     void handlePairingCompleted(NvComputer* computer, QString error);
 
 private:
+    static void rememberStreamTweakSeen(const QString& uuid);
+
     QVector<NvComputer*> m_Computers;
     ComputerManager* m_ComputerManager;
     StreamTweakBridge m_streamTweakBridge;

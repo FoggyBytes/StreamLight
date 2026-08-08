@@ -1,27 +1,125 @@
-import QtQuick 2.0
-import QtQuick.Controls 2.2
+// 2.15 rather than the 2.0 this declared: Qt 6 still enforces the declared version per
+// property, so anything added after 2.0 — activeFocusOnTab, function-style Connections
+// handlers — fails to load the whole type rather than just that line. The unlock mode below
+// uses both.
+import QtQuick 2.15
+import QtQuick.Controls 2.5
 import QtQuick.Window 2.2
 
 import SdlGamepadKeyNavigation 1.0
 import Session 1.0
+import ShortcutManager 1.0
 import SystemProperties 1.0
 import StreamingPreferences 1.0
 
 Item {
     id: streamSegue
 
+    // So Esc reaches us: it is the keyboard half of "show me the host now", the other half
+    // being B on the pad. Nothing else on this screen takes focus.
+    focus: true
+    Keys.onEscapePressed: {
+        // In unlock mode there is nothing to reveal — uncovering the logon screen is the one
+        // thing that must never happen here — but there has to be a way out. Until the pad
+        // appears this screen is the only thing on top of a launch that may never answer: the
+        // host was shut down mid-session on 07/08, came back locked, and its /launch never
+        // returned, leaving "Connecting…" with no exit at all.
+        if (!session) return
+        if (unlockMode) _unlockFinish(false)
+        else            session.revealStreamWindow(true)
+    }
+
     property Session session
     property string appName
-    property string stageText : isResume ? qsTr("Resuming %1...").arg(appName) :
-                                           qsTr("Starting %1...").arg(appName)
+    property url boxArt
+    property string stageText : unlockMode ? qsTr("Connecting…") :
+                                isResume   ? qsTr("Resuming %1...").arg(appName) :
+                                             qsTr("Starting %1...").arg(appName)
     property bool isResume : false
     property bool quitAfter : false
+
+    // ── Remote PIN unlock ─────────────────────────────────────────────────────
+    // The session behind this screen exists only to type a PIN into the host's logon
+    // screen and is never revealed. The caller sets unlockMode plus the model and index
+    // needed to ask the host whether it is still locked, and gets the outcome back
+    // through onUnlockResultFn(ok).
+    property bool unlockMode : false
+    property var  computerModel : null
+    property int  pcIndex : -1
+    property string hostName : ""
+    property var  onUnlockResultFn : null
+
+    property int  _unlockAttempt : 0
+    property int  _unlockPolls : 0
+    property bool _unlockFinished : false
+
+    function _unlockFinish(ok) {
+        if (_unlockFinished) return
+        _unlockFinished = true
+        lockPollTimer.stop()
+
+        // Tidy up the host's pending declaration. Safe at any point: it clears only the
+        // mark waiting to be consumed, never the suppression of a session already running.
+        if (computerModel && pcIndex >= 0) computerModel.markUnlockSession(pcIndex, false)
+        if (onUnlockResultFn) onUnlockResultFn(ok)
+        if (session) session.interrupt()
+    }
+
+    // Host link-speed matching (4.6.0). While the host renegotiates, linkMatchDetail holds
+    // the change ("2.5 Gbps → 1 Gbps") and the main line says what's happening; afterwards
+    // it is cleared, and linkWarning — if the attempt failed — is shown in its place while
+    // the launch carries on regardless.
+    property string linkMatchDetail : ""
+    property string linkWarning : ""
+
+    // A launch that is past the usual span without the host reporting a game on screen —
+    // the shape of a title that opens its own launcher, where no game window is ever coming.
+    // Set by launchSlowTimer, cleared by anything that ends the wait.
+    property bool _launchSlow : false
+
+    // Is this launch holding the stream back at all? Everything that talks about the wait —
+    // the B prompt, the "taking longer than usual" line — is silent when it isn't, or it
+    // describes a wait that is not happening.
+    readonly property bool _waiting : session ? session.waitsForGame : false
+
+    // ── The way out, and when it is worth offering ────────────────────────────
+    // Set once the loader knows whether a controller is attached; drives which of the two
+    // hint rows is used. Bindings rather than imperative visible= assignments, because in
+    // unlock mode the hint has to disappear by itself the moment the PIN pad takes over.
+    property bool _hasPad   : false
+    property bool _revealed : false
+
+    readonly property bool _exitHintOn:
+        !_revealed && (unlockMode ? !unlockPad.visible : _waiting)
+
+    // Unlock mode goes back to the host list; a normal launch shows the host it is hiding.
+    readonly property string _exitHintTail:
+        unlockMode ? qsTr("to go back") : qsTr("to see the host now")
+
+    function linkMatchStage(detail)
+    {
+        linkMatchDetail = detail
+    }
+
+    function linkMatchFinished(changed, warning)
+    {
+        linkMatchDetail = ""
+        linkWarning = warning
+        // Only now does anything touch the network: the adapter has settled (or we gave up),
+        // so the launch can't be cut off by a renegotiation half-way through.
+        streamLoader.active = true
+    }
 
     // How many transparent auto-retries remain for a transient "no video from
     // host" failure (host display/encoder still warming up on a cold start).
     // Gated by the user setting; the retry segue passes an explicit decremented
     // value so the cap is honoured regardless of the preference.
     property int noVideoRetries : StreamingPreferences.autoReconnectNoVideo ? 1 : 0
+
+    // Called once, when a stream ends for real. Distinct from the deliberate-stop hook in
+    // QuitSegue: this one also covers the game closing itself on the host, which is the
+    // case where the host restores its link with nothing on the client to say so.
+    property var onSessionEndedFn : null
 
     // Resume session captured during sessionFinished (while `session` is still
     // valid) and consumed by the delayed retry. `session` is nulled by
@@ -32,10 +130,25 @@ Item {
     {
         // Update the spinner text
         stageText = qsTr("Starting %1...").arg(stage)
+
+        // Something moved, so the host is alive: give it another full window before
+        // complaining. A slow-but-progressing connection must never be called stalled.
+        hostSlowTimer.restart()
+    }
+
+    // Every way the wait can end: revealed, failed, over. Kept in one place so a path added
+    // later cannot leave the hint on screen behind whatever comes next.
+    function _endLaunchWait()
+    {
+        launchSlowTimer.stop()
+        _launchSlow = false
     }
 
     function stageFailed(stage, errorCode, failingPorts)
     {
+        hostSlowTimer.stop()
+        _endLaunchWait()
+
         // Display the error dialog after Session::exec() returns
         streamSegueErrorDialog.text = qsTr("Starting %1 failed: Error %2").arg(stage).arg(errorCode)
 
@@ -46,19 +159,49 @@ Item {
 
     function connectionStarted()
     {
-        // Hide the UI contents so the user doesn't
-        // see them briefly when we pop off the StackView
+        hostSlowTimer.stop()
+
+        // The stream is up, but the host is still painting its logon screen. Give it a beat,
+        // then knock the shade away and hand over to the pad.
+        if (unlockMode) {
+            // Now the session exists and its own handler turns pad buttons into Qt keys, so
+            // GUI navigation can step aside — see the note in the loader above.
+            SdlGamepadKeyNavigation.disable()
+            unlockArmTimer.start()
+            return
+        }
+
+        // Nothing is hidden here any more. The stream has begun, but the host is still
+        // opening the game and what it is sending meanwhile is a desktop mid-reconfiguration
+        // — so this screen stays exactly as it is, and the stream window (created hidden)
+        // waits behind it. streamWindowRevealed() is what ends this screen.
+        //
+        // Only armed when this launch is actually waiting: with the wait off the reveal comes
+        // on the first frame, and "taking longer than usual" would be describing a wait that
+        // isn't happening — it would only ever appear on a host that has failed to send a
+        // picture at all, where it points at the wrong thing.
+        if (_waiting) launchSlowTimer.start()
+    }
+
+    function streamWindowRevealed()
+    {
+        _endLaunchWait()
+
+        // The stream window is already up and in front of us, so this happens unseen. Hide
+        // the contents first for the same reason the old code did: they must not flash back
+        // into view when the StackView pops.
         stageSpinner.visible = false
         stageLabel.visible = false
-        hintTextKb.visible = false
-        hintRow.visible    = false
+        _revealed = true
 
-        // Hide the window now that streaming has begun
-        window.visible = false
+        window.hideForStream()
     }
 
     function displayLaunchError(text)
     {
+        hostSlowTimer.stop()
+        _endLaunchWait()
+
         // Display the error dialog after Session::exec() returns
         streamSegueErrorDialog.text = text
         console.error(text)
@@ -66,16 +209,30 @@ Item {
 
     function quitStarting()
     {
-        // Avoid the push transition animation
+        // ⚠️ Hand the session-end hook over. This screen is *replaced*, so its own
+        // onSessionEndedFn will never run — and the QuitSegue built here used to carry nothing,
+        // which meant quitting from inside the stream (the common way to stop) recorded nothing
+        // at all. That is why the "put the host's link back?" prompt never appeared: it is armed
+        // by a session having ended, and this path never said one had.
         var component = Qt.createComponent("QuitSegue.qml")
-        stackView.replace(stackView.currentItem, component.createObject(stackView, {"appName": appName}), StackView.Immediate)
+        // Avoid the push transition animation
+        stackView.replace(stackView.currentItem,
+                          component.createObject(stackView, {
+                              "appName":           appName,
+                              "onQuitSucceededFn": onSessionEndedFn
+                          }),
+                          StackView.Immediate)
 
         // Show the Qt window again to show quit segue
-        window.visible = true
+        window.restoreAfterStream()
     }
 
     function sessionFinished(portTestResult)
     {
+        // Before the early returns below: the reconfigure and no-video branches keep this
+        // screen alive with a different message, and the hint must not outlive its launch.
+        _endLaunchWait()
+
         // Live "Stream Settings" reconfigure (4.4.0): the user changed resolution/
         // fps/bitrate/HDR mid-stream, so the session was torn down on purpose to
         // resume with the new parameters. Build the resume session now (while
@@ -88,7 +245,7 @@ Item {
                 stageText = qsTr("Applying new settings…")
                 stageSpinner.visible = true
                 stageLabel.visible = true
-                window.visible = true
+                window.restoreAfterStream()
                 reconfigureTimer.start()
                 return
             }
@@ -109,11 +266,14 @@ Item {
                 // Suppress the "No video received" error that was queued.
                 streamSegueErrorDialog.text = ""
 
-                // Show a brief "reconnecting" spinner while the host settles.
-                stageText = qsTr("Host is starting up — reconnecting…")
+                // ⚠️ The wording does not change. This retry exists to make one launch succeed,
+                // so from the user's side it is still that launch — announcing "reconnecting"
+                // told them about a failure they were never meant to see, and turned one smooth
+                // wait into two visibly different ones. The line simply stays as it was, and
+                // the replacement segue is seeded with it below so nothing flickers.
                 stageSpinner.visible = true
                 stageLabel.visible = true
-                window.visible = true
+                window.restoreAfterStream()
 
                 noVideoRetryTimer.start()
                 return
@@ -124,6 +284,23 @@ Item {
 
         if (portTestResult !== 0 && portTestResult !== -1 && streamSegueErrorDialog.text) {
             streamSegueErrorDialog.text += "\n\n" + qsTr("This PC's Internet connection is blocking StreamLight. Streaming over the Internet may not work while connected to this network.")
+        }
+
+        // An unlock session that ends without the pad having decided anything — the launch
+        // failed, the host dropped us, the app was quit from over there. Report it now, or the
+        // wake flow waits on a callback that is never coming. No interrupt(): we are already
+        // inside the end of that session.
+        if (unlockMode && !_unlockFinished) {
+            _unlockFinished = true
+            lockPollTimer.stop()
+            if (computerModel && pcIndex >= 0) computerModel.markUnlockSession(pcIndex, false)
+            if (onUnlockResultFn) onUnlockResultFn(false)
+        }
+
+        // Past every early return above, so this is a genuine end — not a live-settings
+        // reconfigure and not a no-video retry, both of which come straight back.
+        if (onSessionEndedFn) {
+            onSessionEndedFn()
         }
 
         // Re-enable GUI gamepad usage now
@@ -144,8 +321,10 @@ Item {
             Qt.quit()
         }
         else {
-            // Show the Qt window again after streaming
-            window.visible = true
+            // Show the Qt window again after streaming. Not in unlock mode: the window was
+            // never hidden there (nothing was ever revealed), and restoreAfterStream()
+            // recreates the native window — a visible flicker for no reason.
+            if (!unlockMode) window.restoreAfterStream()
 
             // Display any launch errors. We do this after
             // the Qt UI is visible again to prevent losing
@@ -191,6 +370,16 @@ Item {
 
         var segue = component.createObject(stackView, {
             "appName":        appName,
+            // Carried across, all three. This screen is replaced rather than reused, so
+            // anything not handed over is simply lost: without the artwork the retry drew a
+            // coverless curtain on the neutral default colours — a visibly different screen
+            // for the same launch — without the callback nothing was left to notice the host
+            // putting its link speed back when the session finally ended, and without the line
+            // of text the wait restarted from "Resuming…" for a launch the user only ever
+            // asked to start once.
+            "boxArt":           boxArt,
+            "onSessionEndedFn": onSessionEndedFn,
+            "stageText":        stageText,
             "session":        newSession,
             "isResume":       true,
             "quitAfter":      quitAfter,
@@ -223,6 +412,9 @@ Item {
 
         var segue = component.createObject(stackView, {
             "appName":        appName,
+            // Same hand-over as the retry above, for the same reason.
+            "boxArt":           boxArt,
+            "onSessionEndedFn": onSessionEndedFn,
             "session":        newSession,
             "isResume":       true,
             "quitAfter":      quitAfter,
@@ -246,18 +438,87 @@ Item {
         session.stageStarting.connect(stageStarting)
         session.stageFailed.connect(stageFailed)
         session.connectionStarted.connect(connectionStarted)
+        session.streamWindowRevealed.connect(streamWindowRevealed)
         session.displayLaunchError.connect(displayLaunchError)
         session.quitStarting.connect(quitStarting)
         session.sessionFinished.connect(sessionFinished)
         session.readyForDeletion.connect(sessionReadyForDeletion)
+        session.linkMatchStage.connect(linkMatchStage)
+        session.linkMatchFinished.connect(linkMatchFinished)
 
         // Ensure the SystemProperties async thread is finished,
         // since it may currently be using the SDL video subsystem
         SystemProperties.waitForAsyncLoad()
 
-        // Kick off the stream
         spinnerTimer.start()
-        streamLoader.active = true
+
+        // Hand the curtain the artwork before anything else has a chance to draw: the two
+        // colours behind everything are derived from it, once, right here.
+        if (session.curtain && boxArt.toString() !== "") {
+            session.curtain.setCover(boxArt)
+        }
+
+        // Ask the host to match its link speed to ours *before* the loader runs, because
+        // that's what calls session.initialize()/start(). Changing the adapter afterwards
+        // would drop the link mid-handshake — the mistake the whole 4.6.0/8.1.0 pair exists
+        // to undo. linkMatchFinished() sets streamLoader.active, and it always fires: on a
+        // host that doesn't support it, on Wi-Fi, on failure, immediately when nothing is
+        // needed. Connected above, so a synchronous "nothing to do" still gets through.
+        session.beginLinkMatch()
+    }
+
+    Timer {
+        id: unlockArmTimer
+        interval: 1200
+        onTriggered: {
+            if (!session) return
+            session.unlockClick()          // dismiss the shade
+            // Made visible and nothing else: the pad puts the focus on its first key itself,
+            // and forcing focus onto the pad's root afterwards would take it straight back
+            // off that key — leaving the arrows with nothing to move.
+            unlockPad.visible = true
+            stageSpinner.visible = false
+            stageLabel.visible = false
+        }
+    }
+
+    Timer {
+        id: lockPollTimer
+
+        // Fast enough that a correct PIN feels immediate, and eight of them cover the few
+        // seconds Windows takes to tear the logon screen down.
+        interval: 700
+        repeat: true
+        onTriggered: {
+            if (!computerModel || pcIndex < 0) return
+            _unlockPolls++
+            if (_unlockPolls > 8) {
+                lockPollTimer.stop()
+                _unlockAttempt++
+                unlockPad.attempt = _unlockAttempt
+                if (_unlockAttempt >= unlockPad.maxAttempts) {
+                    unlockPad.state_ = "blocked"
+                }
+                else {
+                    unlockPad.state_ = "wrong"
+                    unlockPad.pinLength = 0
+                    if (session) session.unlockClearPin()
+                }
+                return
+            }
+            computerModel.requestLockState(pcIndex)
+        }
+    }
+
+    Connections {
+        target: unlockMode && computerModel ? computerModel : null
+
+        function onLockStateReceived(index, supported, locked) {
+            if (index !== pcIndex || !lockPollTimer.running) return
+            // supported=false here means the host stopped answering mid-check — treat it as
+            // "not yet", never as success: unlocking is the one thing we must be sure of.
+            if (supported && !locked) _unlockFinish(true)
+        }
     }
 
     Timer {
@@ -276,6 +537,31 @@ Item {
         // stream parameters (live "Stream Settings" reconfigure).
         interval: 700
         onTriggered: startReconfigureResume()
+    }
+
+    Timer {
+        id: hostSlowTimer
+
+        // The /launch request has a two-minute timeout and, until now, said nothing while
+        // it ran: a host that accepts the request and then stalls — Sunshine wedging in its
+        // virtual-display setup, seen on 27/07 for 55 s — left the spinner on "Starting …"
+        // with no indication that anything was wrong. Restarted on every stage, so this only
+        // speaks up when nothing has moved at all.
+        interval: 30000
+        onTriggered: stageText = qsTr("Still waiting for the host to answer…")
+    }
+
+    Timer {
+        id: launchSlowTimer
+
+        // From connectionStarted, because that is when the host begins opening the game —
+        // the question this answers is "is the game coming?", and counting from anything
+        // earlier would expire before it could be asked. Every healthy launch measured
+        // reaches the host's "ready" between 9 and 27 s and reveals itself, and the host
+        // gives up at 90 s, so this lands after a normal launch is already gone and long
+        // before the wait ends on its own.
+        interval: 20000
+        onTriggered: streamSegue._launchSlow = true
     }
 
     Timer {
@@ -308,21 +594,33 @@ Item {
         active: false
         asynchronous: true
 
-        onLoaded: {
-            // Disconnect-combo hint: with a gamepad we show the four icons of
-            // the actual combination (Xbox or PlayStation glyphs picked from
-            // the detected controller); otherwise the keyboard shortcut.
-            if (SdlGamepadKeyNavigation.getConnectedGamepads() > 0) {
-                hintRow.visible = true
-                hintTextKb.visible = false
-            } else {
-                hintRow.visible = false
-                hintTextKb.visible = true
-                hintTextKb.text = qsTr("Tip:") + " " + qsTr("Press %1 to disconnect your session").arg(qsTr("Ctrl+Alt+Shift+Q"))
-            }
+        // Arming the watchdog here, rather than at the one call site that first sets
+        // active, covers every path that starts a session: the initial launch, the
+        // no-video retry and the live-settings resume.
+        onActiveChanged: active ? hostSlowTimer.restart() : hostSlowTimer.stop()
 
-            // Stop GUI gamepad usage now
-            SdlGamepadKeyNavigation.disable()
+        onLoaded: {
+            // How to stop waiting, in whichever vocabulary the user has to hand: the glyph
+            // row with a controller, Esc without one. Not rebindable, and deliberately so —
+            // it is an escape hatch, and an escape hatch nobody can find is not one.
+            // Not in unlock mode: there is nothing to reveal there, and the pad draws its
+            // own footer.
+            //
+            // ⚠️ Nor when this launch isn't waiting for anything. With the wait off — the
+            // default — the window is revealed on the first frame regardless, so the prompt
+            // was offering an escape from something nobody was being held by, flashing up on
+            // every launch for the third of a second before the stream appeared.
+            streamSegue._hasPad = SdlGamepadKeyNavigation.getConnectedGamepads() > 0
+
+            // Stop GUI gamepad usage now.
+            //
+            // ⚠️ Except in unlock mode, where it is deferred to connectionStarted(). Between
+            // here and there the session does not exist yet, so nothing translates the pad
+            // into Qt keys — disabling GUI navigation now leaves the pad dead for the whole
+            // wait. That is precisely the state the 07/08 hang landed in: a /launch that never
+            // answered, "Connecting…" on screen, and B doing nothing because both halves of
+            // the pad handling were switched off. The session takes over the moment it starts.
+            if (!streamSegue.unlockMode) SdlGamepadKeyNavigation.disable()
 
             // Initialize the session and probe for host/client capabilities
             if (!session.initialize(window)) {
@@ -361,112 +659,287 @@ Item {
         sourceComponent: Item {}
     }
 
-    Row {
-        anchors.centerIn: parent
-        spacing: 5
+    // ── The launch curtain ────────────────────────────────────────────────────
+    // Everything below reads Session.curtain and computes nothing of its own. This is the
+    // whole curtain: the stream window is created hidden and only appears once the host says
+    // the game is on screen, so nothing else ever draws this wait.
+    //
+    // Sizes are fractions of the window height so the same layout holds from a handheld to
+    // a 4K TV without a table of exceptions.
+    readonly property var    _c: streamSegue.session ? streamSegue.session.curtain : null
+    readonly property real   _h: height > 0 ? height : 1080
 
-        BusyIndicator {
-            id: stageSpinner
-            running: visible
-            visible: false
+    // ⚠️ Read from this screen's own boxArt, not from the curtain's coverUrl. The curtain
+    // belongs to the Session, and the Session is released while this screen is still up: a
+    // no-video retry holds it here for another second and a half showing "reconnecting", and
+    // readyForDeletion lands in the middle of that. Bound to the curtain, the cover vanished
+    // and the background dropped to the neutral default at exactly that moment — the same
+    // launch, suddenly wearing a different face.
+    readonly property bool   _hasCover: boxArt.toString() !== ""
+
+    // Latched for the same reason: these are computed in C++ from the artwork, so they can
+    // only come from the curtain — but they must outlive it. The defaults are the neutral
+    // pair the gradient used to fall back to, so a launch with no artwork looks unchanged.
+    property color _bgAccent : Qt.rgba(0.27, 0.35, 0.43, 1.0)
+    property color _bgDeep   : Qt.rgba(0.08, 0.09, 0.13, 1.0)
+    // Same treatment for the brightness the cover has reached: bound to the curtain it fell
+    // back to zero when the session went, dimming the artwork just as the retry appeared.
+    property real  _bgProgress : 0.0
+
+    function _latchCurtainColours() {
+        if (!_c) return
+        _bgAccent   = _c.accent
+        _bgDeep     = _c.deep
+        _bgProgress = _c.progress
+    }
+
+    Connections {
+        target: streamSegue._c
+        function onChanged() { streamSegue._latchCurtainColours() }
+    }
+
+    // Background built from the box art. A near-black ground with the accent laid over it
+    // at low opacity — a wash, not a tint. Darkening the accent instead (which is what this
+    // did first) produces a colour that is technically correct and visually black: the hue
+    // survives the maths and dies on the screen.
+    // In unlock mode there is no cover to draw colours from, and the pad should look like part
+    // of the app rather than like a launch that lost its artwork — so it stands on the app's
+    // own floor, the same one Home and the quit screen use.
+    AmbientBackground {
+        visible: streamSegue.unlockMode
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: "#07070b"
+        visible: !streamSegue.unlockMode
+
+        Rectangle {
+            anchors.fill: parent
+            gradient: Gradient {
+                GradientStop {
+                    position: 0.0
+                    color: Qt.rgba(streamSegue._bgAccent.r, streamSegue._bgAccent.g,
+                                   streamSegue._bgAccent.b, 0.40)
+                }
+                GradientStop {
+                    position: 0.45
+                    color: Qt.rgba(streamSegue._bgDeep.r, streamSegue._bgDeep.g,
+                                   streamSegue._bgDeep.b, 0.85)
+                }
+                GradientStop { position: 1.0; color: "transparent" }
+            }
+        }
+    }
+
+    // Four things and nothing else: what is starting, a picture of it, one line saying what
+    // is happening now and one saying what that means. The step-by-step checklist that used
+    // to sit here — ticks, elapsed seconds, the limit each one would be given — was an
+    // engineer's view of a wait the user only needs one sentence about, and B now answers
+    // the question it existed for ("how much longer before I can look?").
+    Column {
+        anchors.centerIn: parent
+        width: parent.width * 0.8
+        spacing: _h * 0.030
+        // In unlock mode there is no game and no cover: the pad takes this space.
+        visible: !streamSegue.unlockMode
+
+        // Cover art. It brightens as the launch advances, which is the progress indicator:
+        // a percentage would have to be invented, since nothing can know how long a game
+        // takes to load. True desaturation would read better, but QtQuick.Effects isn't in
+        // the deployed Qt, so this fades and lifts instead of draining colour — same
+        // reading, no new module.
+        Image {
+            id: coverImage
+            visible: streamSegue._hasCover
+            source: streamSegue.boxArt
+            height: _h * 0.36
+            width: height * 2 / 3
+            fillMode: Image.PreserveAspectCrop
+            anchors.horizontalCenter: parent.horizontalCenter
+            asynchronous: true
+            opacity: 0.4 + 0.6 * streamSegue._bgProgress
+            Behavior on opacity { NumberAnimation { duration: 600; easing.type: Easing.OutCubic } }
         }
 
         Label {
-            id: stageLabel
-            height: stageSpinner.height
-            text: stageText
-            font.pointSize: 20
-            verticalAlignment: Text.AlignVCenter
-
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: _c ? _c.gameName : streamSegue.appName
+            font.pointSize: Math.max(18, Math.round(_h * 0.042))
+            font.bold: true
+            color: "#f2f2f4"
+            horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
+            width: parent.width
+        }
+
+        Row {
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: _h * 0.010
+
+            BusyIndicator {
+                id: stageSpinner
+                running: visible
+                visible: false
+                height: stageLabel.height
+                width: height
+            }
+
+            Label {
+                id: stageLabel
+                text: _c && _c.title !== "" ? _c.title : stageText
+                font.pointSize: Math.max(13, Math.round(_h * 0.026))
+                color: "#f2f2f4"
+                verticalAlignment: Text.AlignVCenter
+                wrapMode: Text.Wrap
+            }
+        }
+
+        Label {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: _c ? _c.detail : ""
+            visible: text !== ""
+            font.pointSize: Math.max(10, Math.round(_h * 0.018))
+            color: "#8f8f9c"
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            width: parent.width
+        }
+
+        // Amber, and only a line: a link that didn't switch never stops a launch, so it
+        // must not look like the fatal errors that do.
+        Label {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: _c && _c.warning !== "" ? "⚠ " + _c.warning : streamSegue.linkWarning
+            visible: text !== "" && text !== "⚠ "
+            font.pointSize: Math.max(10, Math.round(_h * 0.017))
+            color: "#f5a623"
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            width: parent.width
         }
     }
 
-    // Keyboard fallback: shown only when no gamepad is connected.
+    // The one thing worth offering during a wait: a way to stop waiting. Some launches stall
+    // on something only visible at the host — a game's own launcher wanting to update, a
+    // dialog behind the splash — and until now the only answer was to sit here until the
+    // host gave up at ninety seconds.
+    //
+    // This replaces the disconnect combo that used to be drawn here. Both would be one line
+    // too many, and of the two this is the one that helps while the launch is still running:
+    // once the host is on screen the session is a normal one and the combo works as always.
+    // Sits directly above whichever of the two hints below is showing, because it is the
+    // reason to read that hint rather than a message of its own. Amber and one line: the
+    // launch has not failed and nothing needs doing — the row underneath already says what
+    // to press, and repeating it here would be the second of two lines saying one thing.
     Label {
-        id: hintTextKb
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 50
+        id: launchSlowHint
+        anchors.bottom: hintRow.visible ? hintRow.top : hintTextKb.top
+        anchors.bottomMargin: streamSegue._h * 0.014
         anchors.horizontalCenter: parent.horizontalCenter
-        font.pointSize: 18
-        verticalAlignment: Text.AlignVCenter
-        wrapMode: Text.Wrap
-        visible: false
+        text: qsTr("Taking longer than usual")
+        visible: streamSegue._launchSlow && !streamSegue.unlockMode
+        font.pointSize: Math.max(10, Math.round(streamSegue._h * 0.016))
+        color: "#f5a623"
     }
 
-    // Gamepad combination hint: shown only when a controller is detected.
-    // Icons swap between Xbox and PlayStation based on the connected pad.
     Row {
         id: hintRow
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 50
+        anchors.bottomMargin: streamSegue._h * 0.035
         anchors.horizontalCenter: parent.horizontalCenter
-        spacing: 8
-        visible: false
-
-        readonly property bool _padIsPs: SdlGamepadKeyNavigation.controllerType === "ps"
-        readonly property string _iconA: _padIsPs ? "qrc:/res/pad_ps_create.svg"  : "qrc:/res/pad_xbox_view.svg"
-        readonly property string _iconB: _padIsPs ? "qrc:/res/pad_ps_options.svg" : "qrc:/res/pad_xbox_start.svg"
-        readonly property string _iconL: _padIsPs ? "qrc:/res/pad_ps_l1.svg"      : "qrc:/res/pad_xbox_lb.svg"
-        readonly property string _iconR: _padIsPs ? "qrc:/res/pad_ps_r1.svg"      : "qrc:/res/pad_xbox_rb.svg"
+        spacing: streamSegue._h * 0.010
+        visible: streamSegue._exitHintOn && streamSegue._hasPad
 
         Label {
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("Press")
-            font.pointSize: 16
-            color: "#f0f0f0"
+            font.pointSize: Math.max(10, Math.round(streamSegue._h * 0.016))
+            color: "#8f8f9c"
         }
-        Image {
+
+        // "B" as the app means it, which is what the user's controller calls B on every
+        // vendor — PadGlyph already resolves the glyph, including Nintendo's swapped faces.
+        PadGlyph {
             anchors.verticalCenter: parent.verticalCenter
-            source: hintRow._iconA
-            width: 36; height: 24
-            sourceSize.width: 72; sourceSize.height: 48
-            smooth: true
+            buttonKey: "B"
+            label: "B"
+            size: Math.max(22, Math.round(streamSegue._h * 0.028))
         }
+
         Label {
             anchors.verticalCenter: parent.verticalCenter
-            text: "+"
-            font.pointSize: 16
-            color: "#a0a0a0"
+            text: streamSegue._exitHintTail
+            font.pointSize: Math.max(10, Math.round(streamSegue._h * 0.016))
+            color: "#8f8f9c"
         }
-        Image {
+    }
+
+    // The wait before the pad. The curtain column above is hidden in unlock mode — it is built
+    // around a game's cover and name, neither of which exists here — which left the screen
+    // empty for the several seconds the connection takes. One spinner and one word.
+    Row {
+        anchors.centerIn: parent
+        spacing: streamSegue._h * 0.012
+        visible: streamSegue.unlockMode && !unlockPad.visible
+
+        BusyIndicator {
+            id: unlockWaitSpinner
+            running: visible
+            height: unlockWaitLabel.height * 1.4
+            width: height
             anchors.verticalCenter: parent.verticalCenter
-            source: hintRow._iconB
-            width: 36; height: 24
-            sourceSize.width: 72; sourceSize.height: 48
-            smooth: true
         }
+
         Label {
+            id: unlockWaitLabel
             anchors.verticalCenter: parent.verticalCenter
-            text: "+"
-            font.pointSize: 16
-            color: "#a0a0a0"
+            text: qsTr("Connecting…")
+            font.pointSize: Math.max(13, Math.round(streamSegue._h * 0.026))
+            color: "#f2f2f4"
         }
-        Image {
-            anchors.verticalCenter: parent.verticalCenter
-            source: hintRow._iconL
-            width: 36; height: 24
-            sourceSize.width: 72; sourceSize.height: 48
-            smooth: true
+    }
+
+    // The PIN pad. Hidden until the shade has been knocked away, so it never appears over a
+    // host that is not yet showing its logon screen.
+    UnlockPad {
+        id: unlockPad
+        anchors.fill: parent
+        visible: false
+        hostName: streamSegue.hostName
+
+        onDigitPressed: function (digit) {
+            if (!session) return
+            session.unlockDigit(digit)
+            pinLength = session.unlockPinLength()
+            if (state_ === "wrong") state_ = "entry"
         }
-        Label {
-            anchors.verticalCenter: parent.verticalCenter
-            text: "+"
-            font.pointSize: 16
-            color: "#a0a0a0"
+        onBackspacePressed: {
+            if (!session) return
+            session.unlockBackspace()
+            pinLength = session.unlockPinLength()
         }
-        Image {
-            anchors.verticalCenter: parent.verticalCenter
-            source: hintRow._iconR
-            width: 36; height: 24
-            sourceSize.width: 72; sourceSize.height: 48
-            smooth: true
+        onSubmitPressed: {
+            if (!session || pinLength === 0) return
+            session.unlockSubmitPin()
+            pinLength = 0
+            state_ = "checking"
+            streamSegue._unlockPolls = 0
+            lockPollTimer.start()
         }
-        Label {
-            anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("to disconnect")
-            font.pointSize: 16
-            color: "#f0f0f0"
-        }
+        onCancelPressed: streamSegue._unlockFinish(false)
+    }
+
+    // Keyboard fallback: shown only when no controller is connected.
+    Label {
+        id: hintTextKb
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: streamSegue._h * 0.035
+        anchors.horizontalCenter: parent.horizontalCenter
+        font.pointSize: Math.max(10, Math.round(streamSegue._h * 0.016))
+        color: "#8f8f9c"
+        wrapMode: Text.Wrap
+        visible: streamSegue._exitHintOn && !streamSegue._hasPad
+        text: qsTr("Press Esc %1").arg(streamSegue._exitHintTail)
     }
 }

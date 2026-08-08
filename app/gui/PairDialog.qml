@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 import QtQuick.Layouts 1.3
@@ -52,8 +53,8 @@ Popup {
             Layout.bottomMargin: 4
             implicitWidth:  pinText.implicitWidth  + 64
             implicitHeight: pinText.implicitHeight + 28
-            color: Qt.rgba(0, 0.9, 0.46, 0.08)
-            border.color: "#00E676"
+            color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.08)
+            border.color: Theme.accent
             border.width: 2
             radius: 12
 
@@ -61,11 +62,14 @@ Popup {
                 id: pinText
                 anchors.centerIn: parent
                 text: pop.pin
+                // The one place monospace survives the 5.0.0 unification onto DM Sans. These
+                // four digits exist to be read off this screen and compared against another,
+                // and a 1 that looks like an l is exactly the failure a monospaced face is for.
                 font.family: "JetBrains Mono"
                 font.pixelSize: 64
                 font.bold: true
                 font.letterSpacing: 10
-                color: "#00E676"
+                color: Theme.accent
             }
         }
 
@@ -109,12 +113,12 @@ Popup {
                 implicitHeight: 40
                 radius: 8
                 color: pairCancelBtn.activeFocus
-                     ? Qt.rgba(0, 0.9, 0.46, 0.12)
+                     ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12)
                      : pairCancelBtn.hovered
                        ? "#262626"
                        : "#1f1f1f"
                 border.color: (pairCancelBtn.activeFocus || pairCancelBtn.hovered)
-                              ? "#00E676"
+                              ? Theme.accent
                               : "#2a2a2a"
                 border.width: pairCancelBtn.activeFocus ? 2 : 1
             }

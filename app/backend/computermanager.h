@@ -235,6 +235,11 @@ public:
      */
     bool setTailscaleAddress(QString uuid, QString tailscaleIp);
 
+    // The host's stage backdrop. Pass an empty image path AND an empty seed to clear it and
+    // fall back to the name-derived colours. Same shape as setTailscaleAddress above: write
+    // under the host's lock, persist, then tell the model to repaint.
+    bool setStageBackground(QString uuid, QString imagePath, QString seedColor);
+
     void addNewHost(NvAddress address, bool mdns, QString name = QString(), NvAddress mdnsIpv6Address = NvAddress(), QString aliasSuffix = QString());
 
     QString generatePinString();

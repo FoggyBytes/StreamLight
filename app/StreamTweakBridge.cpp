@@ -72,15 +72,12 @@ QString StreamTweakBridge::buildAuthLine(const QString& command)
 
 // ── Fire-and-forget commands ────────────────────────────────────────────────
 
-void StreamTweakBridge::sendPrepare(const QString& hostAddress)
-{
-    sendCommand(hostAddress, QStringLiteral("PREPARE"));
-}
-
-void StreamTweakBridge::sendRestore(const QString& hostAddress)
-{
-    sendCommand(hostAddress, QStringLiteral("RESTORE"));
-}
+// sendPrepare() was removed in 4.6.0 together with the PREPARE verb it sent. It meant
+// "apply the target you have configured", and StreamTweak 8.1.0 no longer configures one:
+// the client names the speed it wants in SETSPEED.
+//
+// sendRestore() went too — it had no callers at all, in any version. The host has always
+// ended sessions from its own streaming-server log, so the client never needed to say so.
 
 void StreamTweakBridge::sendShutdown(const QString& hostAddress, bool installUpdates)
 {
@@ -185,10 +182,14 @@ void StreamTweakBridge::requestStats(const QString& hostAddress, ResponseCallbac
     sendRequest(hostAddress, QStringLiteral("STATS"), std::move(onResult));
 }
 
-void StreamTweakBridge::requestSessionId(const QString& hostAddress, ResponseCallback onResult)
+void StreamTweakBridge::requestGameState(const QString& hostAddress, ResponseCallback onResult)
 {
-    sendRequest(hostAddress, QStringLiteral("SESSIONID"), std::move(onResult));
+    sendRequest(hostAddress, QStringLiteral("GAMESTATE"), std::move(onResult));
 }
+
+// requestSessionId() (SESSIONID) was removed in 4.6.0: like sendRestore(), it had no
+// callers in any version. Telemetry carries its own session id in the SESSIONDATA batch,
+// so the client never had to ask for one.
 
 void StreamTweakBridge::requestTailscale(const QString& hostAddress, ResponseCallback onResult)
 {
@@ -203,6 +204,48 @@ void StreamTweakBridge::requestAppStores(const QString& hostAddress, ResponseCal
 void StreamTweakBridge::requestUpdateState(const QString& hostAddress, ResponseCallback onResult)
 {
     sendRequest(hostAddress, QStringLiteral("UPDATESTATE"), std::move(onResult));
+}
+
+void StreamTweakBridge::requestLockState(const QString& hostAddress, ResponseCallback onResult)
+{
+    sendRequest(hostAddress, QStringLiteral("LOCKSTATE"), std::move(onResult));
+}
+
+void StreamTweakBridge::sendUnlockBegin(const QString& hostAddress)
+{
+    sendCommand(hostAddress, QStringLiteral("UNLOCKBEGIN"));
+}
+
+void StreamTweakBridge::sendUnlockEnd(const QString& hostAddress)
+{
+    sendCommand(hostAddress, QStringLiteral("UNLOCKEND"));
+}
+
+void StreamTweakBridge::requestNetInfo(const QString& hostAddress, ResponseCallback onResult)
+{
+    sendRequest(hostAddress, QStringLiteral("NETINFO"), std::move(onResult));
+}
+
+void StreamTweakBridge::requestLastSession(const QString& hostAddress, ResponseCallback onResult)
+{
+    sendRequest(hostAddress, QStringLiteral("LASTSESSION"), std::move(onResult));
+}
+
+void StreamTweakBridge::sendRestore(const QString& hostAddress, ResponseCallback onResult)
+{
+    // "I have finished" — sent only when the user deliberately stops the session, never on a
+    // plain disconnect, which the host must be free to treat as a resumable pause. It is the
+    // only way the host can know a *Desktop* session is over: there is no process to watch.
+    sendRequest(hostAddress, QStringLiteral("RESTORE"), std::move(onResult));
+}
+
+void StreamTweakBridge::sendSetSpeed(const QString& hostAddress, quint64 mbps, ResponseCallback onResult)
+{
+    // Speeds travel as plain numbers: the driver's display strings ("1.0 Gbps Full
+    // Duplex") vary by vendor and can be localized, so the client never parses them.
+    sendRequest(hostAddress,
+                QStringLiteral("SETSPEED ") + QString::number(mbps),
+                std::move(onResult));
 }
 
 void StreamTweakBridge::sendUpdateCheck(const QString& hostAddress)

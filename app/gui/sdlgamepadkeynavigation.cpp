@@ -1,4 +1,5 @@
 #include "sdlgamepadkeynavigation.h"
+#include "settings/inputhints.h"
 
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -37,6 +38,8 @@ SdlGamepadKeyNavigation::SdlGamepadKeyNavigation(StreamingPreferences* prefs)
       m_FirstPoll(false),
       m_HasFocus(false),
       m_LastAxisNavigationEventTime(0),
+      m_LeftTriggerDown(false),
+      m_RightTriggerDown(false),
       m_ControllerType(QStringLiteral("none")),
       m_InputMode(QStringLiteral("pointer")),
       m_HasLastMousePos(false)
@@ -280,6 +283,10 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
         case SDL_CONTROLLERBUTTONDOWN:
         case SDL_CONTROLLERBUTTONUP:
         {
+            // Real controller input — as opposed to the Qt key events we are about to post for
+            // it, which must never be mistaken for typing. See InputHints.
+            InputHints::get()->notePadInput();
+
             QEvent::Type type =
                     event.type == SDL_CONTROLLERBUTTONDOWN ?
                         QEvent::Type::KeyPress : QEvent::Type::KeyRelease;
@@ -348,13 +355,18 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
                 // here (it used to also open Settings, which was unwanted).
                 sendKey(type, Qt::Key_Hangup);
                 break;
+            // The shoulders cycle the host's streaming profile on Home and the tab in
+            // Settings. They used to send Key_PageUp/PageDown, which is also the KEYBOARD
+            // pair for cycling the HOST (the trigger legend prints "LT · PgUp"), so the
+            // shoulders were delivered straight into the host handler and the profile cycle
+            // became unreachable from the pad. Own inert keys, exactly like the triggers'
+            // F14/F15 and Select's F13: nothing in Qt treats them as activation, so only our
+            // explicit handlers consume them and no keyboard binding can collide again.
             case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
-                // Used by SettingsScreen to switch to the previous tab.
-                sendKey(type, Qt::Key_PageUp);
+                sendKey(type, Qt::Key_F16);
                 break;
             case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
-                // Used by SettingsScreen to switch to the next tab.
-                sendKey(type, Qt::Key_PageDown);
+                sendKey(type, Qt::Key_F17);
                 break;
             case SDL_CONTROLLER_BUTTON_BACK:
                 // Select / View / Create / − button. Used by the app list to open
@@ -429,6 +441,35 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
             sendKey(QEvent::Type::KeyPress, Qt::Key_Right);
             sendKey(QEvent::Type::KeyRelease, Qt::Key_Right);
             m_LastAxisNavigationEventTime = SDL_GetTicks();
+        }
+
+        // Triggers → previous / next host on the Home screen. Deliberately NOT
+        // routed through the repeat timer above: a trigger pull is one discrete
+        // step, not a direction you hold, so it is edge-detected with hysteresis
+        // (press above 20000, release below 8000) — a trigger resting just at the
+        // threshold would otherwise flip hosts continuously.
+        //
+        // Key_F14/F15 are inert like the Key_F13 used for Select: nothing in Qt
+        // treats them as activation, so only our explicit handlers consume them.
+        short leftTrigger  = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
+        short rightTrigger = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+
+        if (!m_LeftTriggerDown && leftTrigger > 20000) {
+            m_LeftTriggerDown = true;
+            sendKey(QEvent::Type::KeyPress, Qt::Key_F14);
+            sendKey(QEvent::Type::KeyRelease, Qt::Key_F14);
+        }
+        else if (m_LeftTriggerDown && leftTrigger < 8000) {
+            m_LeftTriggerDown = false;
+        }
+
+        if (!m_RightTriggerDown && rightTrigger > 20000) {
+            m_RightTriggerDown = true;
+            sendKey(QEvent::Type::KeyPress, Qt::Key_F15);
+            sendKey(QEvent::Type::KeyRelease, Qt::Key_F15);
+        }
+        else if (m_RightTriggerDown && rightTrigger < 8000) {
+            m_RightTriggerDown = false;
         }
     }
 }

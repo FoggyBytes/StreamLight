@@ -1,7 +1,9 @@
 #include "computermanager.h"
 #include "boxartmanager.h"
+#include "coverpalette.h"
 #include "nvhttp.h"
 #include "nvpairingmanager.h"
+#include "../settings/appsettings.h"
 
 #include <Limelight.h>
 #include <QtEndian>
@@ -10,6 +12,7 @@
 #include <QThreadPool>
 #include <QCoreApplication>
 #include <QRandomGenerator>
+#include <QElapsedTimer>   // TEMPORARY — for the [poll-diag] probe in tryPollComputer
 
 #define SER_HOSTS "hosts"
 #define SER_HOSTS_BACKUP "hostsbackup"
@@ -33,13 +36,39 @@ private:
     {
         NvHTTP http(address, 0, m_Computer->serverCert, nam);
 
+        // ⚠️ TEMPORARY DIAGNOSTIC — remove once the "host drops straight back to offline"
+        // report is settled. This poll is silent by design (NVLL_NONE plus a catch-all that
+        // swallows everything), which is exactly why the failure could not be told apart
+        // from a slow network: nothing it does is written down. The probe adds the two facts
+        // that decide it — how long the request took, and why it failed.
+        QElapsedTimer pollTimer;
+        pollTimer.start();
+
         QString serverInfo;
         try {
             serverInfo = http.getServerInfo(NvHTTP::NvLogLevel::NVLL_NONE, true);
+        } catch (const GfeHttpResponseException& e) {
+            qInfo() << "[poll-diag]" << address.toString() << "GFE error after"
+                    << pollTimer.elapsed() << "ms:" << e.toQString();
+            return false;
+        } catch (const QtNetworkReplyException& e) {
+            qInfo() << "[poll-diag]" << address.toString() << "network error after"
+                    << pollTimer.elapsed() << "ms:" << e.toQString();
+            return false;
+        } catch (const std::exception& e) {
+            qInfo() << "[poll-diag]" << address.toString() << "exception after"
+                    << pollTimer.elapsed() << "ms:" << e.what();
+            return false;
         } catch (...) {
+            qInfo() << "[poll-diag]" << address.toString() << "unknown failure after"
+                    << pollTimer.elapsed() << "ms";
             return false;
         }
 
+        const qint64 serverInfoMs = pollTimer.elapsed();
+
+        // NB: this constructor sits OUTSIDE the try above — upstream shape, kept — so an
+        // exception here escapes the polling thread entirely rather than returning false.
         NvComputer newState(http, serverInfo);
 
         // Ensure the machine that responded is the one we intended to contact
@@ -47,6 +76,11 @@ private:
             qInfo() << "Found unexpected PC" << newState.name << "looking for" << m_Computer->name;
             return false;
         }
+
+        qInfo() << "[poll-diag]" << address.toString() << "OK in" << serverInfoMs
+                << "ms; state=" << newState.state << "pair=" << newState.pairState
+                << "local=" << newState.localAddress.toString()
+                << "active=" << newState.activeAddress.toString();
 
         changed = m_Computer->update(newState);
         return true;
@@ -197,12 +231,17 @@ ComputerManager::ComputerManager(StreamingPreferences* prefs)
     }
 
     // Inflate our hosts from QSettings
+    bool anyHostMigrated = false;
     for (int i = 0; i < hosts; i++) {
         settings.setArrayIndex(i);
         NvComputer* computer = new NvComputer(settings);
         const QString key = computer->storageKey();
         m_KnownHosts[key] = computer;
+        // NB: this snapshot is taken AFTER the constructor's address migration, so a
+        // migrated host compares equal to it and saveHost() will never write the repair
+        // out. That is why the flag below exists — see NvComputer::migratedOnLoad.
         m_LastSerializedHosts[key] = *computer;
+        anyHostMigrated |= computer->migratedOnLoad;
     }
     settings.endArray();
 
@@ -242,6 +281,16 @@ ComputerManager::ComputerManager(StreamingPreferences* prefs)
         if (!cloneKeys.isEmpty()) {
             saveHosts();
         }
+    }
+
+    // Migration: write out any address repair the NvComputer constructors performed. This
+    // has to be an unconditional saveHosts() and not saveHost(), because saveHost() decides
+    // by comparing against m_LastSerializedHosts — which was seeded from the already-repaired
+    // copies a few lines above and therefore always matches. Same shape as the clone
+    // migration directly above, and placed here for the same reason: after the flush thread
+    // is running, so the request is not dropped.
+    if (anyHostMigrated) {
+        saveHosts();
     }
 
     // To quit in a timely manner, we must block additional requests
@@ -514,10 +563,18 @@ void ComputerManager::handleMdnsServiceResolved(MdnsPendingComputer* computer,
 
 void ComputerManager::saveHost(NvComputer *computer)
 {
+    // Keyed by storageKey(), which is what populates the map — `uuid` alone misses for any
+    // host carrying an aliasSuffix, and a miss returns a default-constructed NvComputer that
+    // never compares equal, so every state change queued a pointless flush.
+    //
+    // Taken BEFORE the read lock below on purpose: storageKey() acquires that same lock, and
+    // nesting it under a held one risks stalling behind a queued writer.
+    const QString key = computer->storageKey();
+
     // If no serializable properties changed, don't bother saving hosts
     QMutexLocker lock(&m_DelayedFlushMutex);
     QReadLocker computerLock(&computer->lock);
-    if (!m_LastSerializedHosts.value(computer->uuid).isEqualSerialized(*computer)) {
+    if (!m_LastSerializedHosts.value(key).isEqualSerialized(*computer)) {
         // Queue a request for a delayed flush to QSettings outside of the lock
         computerLock.unlock();
         lock.unlock();
@@ -560,6 +617,7 @@ public:
     void run()
     {
         ComputerPollingEntry* pollingEntry;
+        QString orphanedUuid;
 
         // Only do the minimum amount of work while holding the writer lock.
         // We must release it before calling saveHosts().
@@ -570,6 +628,22 @@ public:
             pollingEntry = m_ComputerManager->m_PollEntries.take(delKey);
 
             m_ComputerManager->m_KnownHosts.remove(delKey);
+
+            // Streaming profiles and per-game overrides are keyed by UUID, while hosts are
+            // keyed by storage key — so a legacy alias clone shares its uuid with the entry
+            // it was cloned from. Disown those records only once nothing refers to the uuid
+            // any more, or deleting one of a pair would take the survivor's settings with it.
+            const QString uuid = m_Computer->uuid;
+            bool stillReferenced = false;
+            for (NvComputer* other : std::as_const(m_ComputerManager->m_KnownHosts)) {
+                if (other->uuid == uuid) {
+                    stillReferenced = true;
+                    break;
+                }
+            }
+            if (!stillReferenced) {
+                orphanedUuid = uuid;
+            }
         }
 
         // Persist the new host list with this computer deleted
@@ -580,6 +654,15 @@ public:
 
         // Delete cached box art
         BoxArtManager::deleteBoxArt(m_Computer);
+
+        // …and the settings that hung off this host. Box art was already cleaned up here;
+        // profiles and per-game overrides were not, so every host ever deleted left its
+        // settings behind permanently — unreachable, because the only key that could find
+        // them again was the uuid that just went away.
+        if (!orphanedUuid.isEmpty()) {
+            HostProfileManager::get()->forgetHost(orphanedUuid);
+            AppSettingsManager::get()->forgetHost(orphanedUuid);
+        }
 
         // Finally, delete the computer itself. This must be done
         // last because the polling thread might be using it.
@@ -1042,6 +1125,20 @@ private:
                 }
             }
             else {
+                // Diagnostic: every host that enters the list, with the identity it entered
+                // under. Two entries can only mean two different storage keys, so this says
+                // in one line whether a duplicate is two uuids, an empty uuid, or an alias
+                // suffix nobody should still be setting — which is not answerable from the
+                // screen, and was not answerable from the stored config either.
+                qInfo().nospace() << "[host-add] key=" << lookupKey
+                                  << " name=" << newComputer->name
+                                  << " uuid=" << newComputer->uuid
+                                  << " alias=" << newComputer->aliasSuffix
+                                  << " via=" << m_Address.toString()
+                                  << (m_Mdns ? " [mdns]" : " [manual]")
+                                  << " local=" << newComputer->localAddress.toString()
+                                  << " tailscale=" << newComputer->tailscaleAddress.toString();
+
                 // Store this in our active sets
                 m_ComputerManager->m_KnownHosts[lookupKey] = newComputer;
 
@@ -1125,6 +1222,49 @@ bool ComputerManager::setTailscaleAddress(QString uuid, QString tailscaleIp)
         emit computerStateChanged(computer);   // refresh the tile (badge + dual IP)
     }
     return changed;
+}
+
+bool ComputerManager::setStageBackground(QString uuid, QString imagePath, QString seedColor)
+{
+    if (uuid.isEmpty()) {
+        return false;
+    }
+
+    NvComputer* computer = nullptr;
+    {
+        QReadLocker lock(&m_Lock);
+        computer = m_KnownHosts.value(uuid);
+    }
+    if (computer == nullptr) {
+        return false;
+    }
+
+    // Derive here, once, rather than on every repaint: the picture may be a multi-megabyte
+    // JPEG and the stage is drawn every time the user changes host. Storing the result also
+    // means the gradient survives the picture being moved or deleted afterwards.
+    QColor from, to;
+    bool haveColours = false;
+    if (!imagePath.isEmpty()) {
+        haveColours = CoverPalette::fromImageFile(imagePath, from, to);
+    }
+    else if (!seedColor.isEmpty()) {
+        haveColours = CoverPalette::fromSeed(QColor(seedColor), from, to);
+    }
+
+    {
+        QWriteLocker cLock(&computer->lock);
+        computer->stageImagePath = imagePath;
+        computer->stageSeedColor = seedColor;
+        // A source that yielded nothing usable (a grey picture, an unreadable file) clears
+        // the pair instead of storing the neutral fallback, so the Home screen goes back to
+        // the host's own colours rather than showing every such host the same slate blue.
+        computer->stageColorFrom = haveColours ? from.name() : QString();
+        computer->stageColorTo   = haveColours ? to.name()   : QString();
+    }
+
+    saveHost(computer);
+    emit computerStateChanged(computer);
+    return true;
 }
 
 QString ComputerManager::generatePinString()

@@ -4,6 +4,88 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-------------------------------------------------
+Version 5.0.0 - The Spotlight Update (08/08/2026)
+-------------------------------------------------
+
+The interface has been rebuilt around one idea: one thing at a time, shown in full — see the UI section below. The rest of the release is what the host and the client can now do together, and most of it needs StreamTweak 8.1.0 or later; with an older host nothing is asked for and nothing changes.
+
+✨ NEW FEATURES:
+• New "Wait for the game to appear" switch, off by default. Turn it on and launching stops dropping you onto the host's desktop while it rearranges itself: the stream stays out of sight until the host confirms the game is really on screen, and what you watch meanwhile is the game's own cover art, its name and one line saying what is happening — the connection being prepared, the host opening the game, the game loading
+• It sits in Settings → Session and can be overridden on a host profile or on a single game: a profile because it describes a situation — a host in another room is worth waiting for, one at arm's length less so — and a game because only you know which of yours open a launcher of their own, where no game window is ever coming and the wait has nothing to end on
+• The wait is never a trap: press B — Esc if you have no controller — and the host appears immediately, whatever it says it is doing. Some launches stall on something only visible over there, a game's own launcher asking for a login or an update prompt behind the splash, and this is how you go and deal with it
+• A launch that runs long says so after twenty seconds, so a game that opens its own launcher stops looking like one that has frozen — and the prompt underneath is how you go and see what it wants
+• Nothing you press reaches the host while its window is hidden, so a stray press can't land in a game that is still loading, or answer a dialog you never saw
+• StreamLight now asks the host to match its wired link speed to this device before connecting, and starts the stream only once the host confirms the change. A host running faster than the client — 2.5 Gbps feeding a 1 Gbps handheld, say — sends each video frame in a burst the slower link can't drain in time, and the packets that die first are the few carrying audio: the symptom is sound cutting out for a couple of seconds while the picture stays perfect
+• The speed is worked out per host, from the interface that actually reaches it — a docked device with its cable up but its traffic on Wi-Fi is measured for what it really is, and a host reached over Wi-Fi or Tailscale is left alone
+• Nothing is ever raised: the host is only asked to come down to this device's speed, and it puts itself back afterwards
+• New "Match host link speed to this device" switch in Settings → Network, on by default, with a line showing this device's connection — or the reason the feature can't act, so it is never quietly doing nothing
+• Per-host profiles can override it, because a profile describes a situation: "docked" and "handheld" want different answers here as much as they want different resolutions
+• Waking a host now takes you all the way. StreamLight follows the wake — packet sent, host on the network, StreamTweak ready — and when the host turns out to be sitting at its lock screen, a number pad appears and you type its Windows PIN from the sofa, with the controller
+• The session that carries the PIN is never shown: you see the pad, not the host's lock screen behind it, and nothing you press on the pad reaches the host except the digits you confirm
+• Wrong PINs are counted out loud and stop at three, because Windows suspends the PIN after a few failures and burning it from across the room without noticing would be the worst way to find out
+• A host that is already unlocked skips the pad entirely, and one that predates this never offers it — nothing is assumed, every step is asked
+• The link speed is matched after the PIN, not before: renegotiating the adapter while nobody has logged in would take the connection down for a session lasting as long as typing a PIN. The host card shows the change while it happens and only calls itself ready once it is done
+• The pad is laid out the way the screen it stands in for is — the time, the date, the host's name — so there is no doubt about whose sign-in you are looking at, and no sentence needed to explain it
+• Once you are in, the session that carried the PIN is closed on the host rather than just dropped, so the host goes back to reporting itself as online instead of still streaming something you never asked to watch
+
+🎨 UI:
+• The button prompts now follow whatever you are actually holding. Touch the keyboard or the mouse and every prompt in the app becomes the key to press; touch the controller and they all turn back into its glyphs, in that controller's own icons. Until now they were always controller glyphs — start StreamLight with a keyboard, never pick a pad up, and the interface still told you to press B
+• Everything the controller can reach, the keyboard can too. S opens Settings, P powers the host off, PgUp and PgDn move between hosts, Q and E between that host's profiles, G opens a game's own settings, D restores the recommended bitrate — alongside Esc and Enter, which already worked and simply were never shown
+• A controller button is now drawn at one size across the whole app. The combos in Settings → Shortcuts were half the size of the same buttons in the bar underneath them, because a shoulder glyph is wider than it is tall and was being squeezed into a square
+• The screen shown while a session is being closed now stands on the app's own background instead of a bare window, so ending a stream no longer drops out of the interface for a moment
+• The host's link speed no longer flickers while it is being changed. The host now says when it is renegotiating, so the card holds the last known figure and reports "Link" instead of narrating each intermediate value — including the seconds when the adapter is down and the host cannot answer at all
+• Everything about the host's link is now said on the host itself — the card on Home, the header on the host page — instead of a line in the corner of the status bar that had to name which host it meant
+
+• The interface has been rebuilt around one idea: one thing at a time, shown in full. Home is now your hosts as tabs under the wordmark, with the selected one taking the whole screen — its name, its state, its addresses and its actions all at once — and the triggers move between them. Before, every host cost three D-pad stops and two hosts put "Add a host" six stops away
+• The host page follows the same shape: the game you are on fills the top with its cover, its name, the store it came from and the right verb — Resume when it is already running, Play when it isn't, Open for the desktop — and the rest of the library is a list of titles underneath, every name in full
+• The host page has one navigation zone and one axis: the library. Its buttons stay on screen for the mouse with their controller button drawn on them, but the pad never walks to them, because every one of them already has a button of its own — before this, reaching Play from the twentieth game in the list meant twenty presses of Up
+• Home keeps two zones, because there the host has four actions and only Shutdown has a button of its own. Adding a host is now the last tab rather than a tile to navigate past
+• Controller buttons are drawn once, where the action is: A on the button that has the focus, X on Shutdown, Select on the per-game settings. The status bar keeps only what belongs to no single control, so it can no longer contradict what a button under it claims
+• LT and RT switch host and are drawn at the two ends of the host strip itself; LB and RB switch profile and sit either side of the profile badge. Each pair is attached to the thing it moves rather than captioned somewhere else on the screen, so neither needs a label of its own and there are no floating legends left to line up
+• The profile badge now reads "Global" instead of disappearing when no profile is active — Global is a real position in the cycle, and shoulders either side of an empty space would have nothing to point at. A host with no profiles at all shows neither, since there would be nothing to move between
+• The stream settings on the host page are now separate outlined badges under a Host and a Stream heading, rather than a run of words: the eye finds "120 FPS" by its shape instead of reading to the end of the line
+• The same values — resolution, frame rate, bitrate, HDR, codec and audio — now sit beside "Ready to stream" on the Home card, so picking a host no longer means opening it first to find out what it would stream at. They follow the active profile as you cycle it
+• The accent colour is now yours: five presets or any hex code you like, and everything the interface highlights follows it. Status colours deliberately never do — online stays green, a pending link change stays amber, Shut down stays red — because a colour that follows the accent stops meaning anything. The default is now the cyan: the old green was doing two jobs at once, saying both "the focus is here" and "this host is online"
+• Each host can carry its own background — a colour you pick or a picture of your own — and the gradient behind it is derived from whichever you chose, so the two never clash
+• The host card now shows that host's last session as StreamTweak recorded it: the quality grade, how long ago it was, how long it ran, the round-trip time and its peak, the host's own frame latency, the frame drops, and the cover art of what was played — up to three covers, with a "+2" when the session credited more. It is the host's last session and not necessarily one of yours — StreamTweak logs whatever streamed — and it is the screen you are on when deciding whether to go again
+• Focus moves rather than teleports: the cover you are on lifts and glows, and its artwork sits blurred behind the library. All of it can be switched off with the new "Reduce animations" setting, which is a fair thing to want on a handheld
+• New application icon
+• The launch screen is built around the game's cover art, with the colours behind it drawn from the artwork itself, and the cover regains its colour as the launch advances — a percentage would have to be invented, since nothing can know how long a game takes to load
+• It says what is happening in one line at a time and stops there: what the host is doing with the game is the only thing worth reading while waiting for it
+• The launch screen shows the change while it happens ("2.5 Gbps → 1 Gbps") and closes it by itself once the host is ready — no fixed countdown, it watches the host's actual state
+• When the speeds already match, nothing appears at all: no extra step, no delay
+• The host card and the app list show the change ahead of time, so it isn't a surprise when the launch screen mentions it
+• When a host is faster than this device but isn't offering the change, the host card says so instead of leaving the switch looking active while nothing happens — the feature has to be enabled on the host too, and until now the reason was only visible in the log
+• If the change fails or times out, the launch says so in one line and carries on — a link that didn't switch never stops you from playing
+• You decide when the host's link speed goes back. Ending a session leaves it exactly where it is, so browsing the host's library and starting something else costs nothing; on the way back to the host list you're asked whether to restore it, once per session and never while something is still running on the host
+• While the host puts its link back you can watch it happen, and it confirms the speed it returned to — the change takes about twenty seconds, and until now nothing told you when it was safe to switch the host off
+• New "Restore NIC Speed" in a host's Options, which reads "Match Link Speed" when the host is already on its own speed — so you can also get a host ready before you launch anything, and not wait for the change at the start of the stream
+• The launch screen no longer sits silently when a host accepts the request and then stalls — after half a minute with nothing moving it says so, instead of showing "Starting…" for the full two-minute timeout with no clue that anything is wrong
+
+🐛 FIXES:
+• Waking a host that comes back locked can no longer strand you. If the host never answers the launch — it happens after shutting one down mid-session — the "Connecting…" screen used to have no way out at all: Esc was deliberately disabled there so the lock screen could never be uncovered, the PIN pad only appears once the connection is up, and the controller was left unhandled between the two. B (or Esc) now goes back to the host list
+• Ending a stream from inside it now offers to put the host's link speed back, like every other way of stopping does. That screen is replaced by the one that closes the session, and it was handing over nothing — so the most common way to finish a session was the one way that recorded nothing had finished
+• The automatic retry after a host is slow to send video no longer announces itself. It said "Host is starting up — reconnecting…", turning one wait into two visibly different ones over a failure you were never meant to see; the line now simply stays as it was
+• A launch that the host accepts and then cannot capture no longer shows you the failure. The stream window now waits for the first frame rather than for the connection, so the ten-second timeout and the automatic retry behind it happen out of sight; a healthy launch is unaffected, since its first frame arrives in about a third of a second
+• Waking a host that has no StreamTweak no longer waits two minutes before giving up: a host that has never shown one is given a few seconds, and the wake finishes with everything else it can still do
+• Per-game Philips Hue overrides are saved again — the row could be set and looked as though it had taken, but the value went somewhere nothing read back, so it reopened on Global every time and never reached a session
+• Ctrl+N opens the add-host panel again — the shortcut had been reaching nothing since the two-panel layout was introduced
+• A host profile with link matching turned off no longer announces a change that was never going to happen: the host card and the app list were reading the global switch instead of the one the active profile actually uses
+• LB and RB now cycle through Global as well as the configured profiles, so there is a way back to your unmodified settings without opening the profiles dialog — and a host with a single profile can be switched at all, which before it could not
+• The installer no longer opens filling the whole screen with its contents still laid out for a small window, the artwork stranded in a corner — Windows was maximising a wizard that is not meant to be resized in the first place, which showed up on handhelds
+• The end-of-session summary written to the log now reports the frame pacing that was actually running — it always claimed "Off", because the renderer and the pacer were already gone by the time the summary was written, so every log sent in for diagnosis was misleading on exactly the line that mattered. The on-screen overlay was always correct
+• That same summary is also complete now whatever the overlay is set to. It was being written at the overlay's verbosity, so with the overlay off — the default — the log recorded nothing but a heading, and at anything below Full it silently left out the rendering time and the frame queue delay. The people least likely to run an overlay are exactly the ones who end up sending a log in
+
+🙏 THANKS:
+• Thanks again to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/9) — the pacing line in the log was found in the logs you attached while chasing something else entirely
+
+⚠️ COMPATIBILITY:
+• Both features need StreamTweak 8.1.0: the launch screen waits on what the host reports about the game it was asked to open, and the link matching replaces the old PREPARE command, which no longer exists. Against an older host — or any other streaming server — the window appears about two seconds after connecting, the way it always did
+• The last-session panel on the host card needs StreamTweak 8.1.0 as well, and an approved client: an older host does not know the question and the panel simply isn't drawn
+• The per-host "Link-speed switch" option and its 10-second countdown are gone: the change is automatic and decided before every launch, so a manual trigger could only disagree with what was about to happen anyway
+• A game that opens a launcher of its own can't be waited out to the end: the host reports that something is asking for a click and the launcher is shown to you, which is where the click has to happen
+
 ----------------------------------------------
 Version 4.5.1 - Frame Pacing Lock (20/07/2026)
 ----------------------------------------------
@@ -41,9 +123,9 @@ No StreamTweak update required — everything in 4.4.1 is client-side and works 
 🙏 THANKS:
 • Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/6) for spotting the misleading frame pacing status
 
------------------------------------------------------
+-------------------------------------------------
 Version 4.4.0 - Live Stream Settings (27/06/2026)
------------------------------------------------------
+-------------------------------------------------
 
 No StreamTweak update required — everything in 4.4.0 is client-side and works with any host.
 
@@ -65,9 +147,9 @@ No StreamTweak update required — everything in 4.4.0 is client-side and works 
 🙏 THANKS:
 • Thanks to @ziCk2077 (https://github.com/FoggyBytes/StreamLight/issues/3) — the on-the-fly bitrate discussion is what grew into this whole live-settings panel, and the report on hosts sticking to their Tailscale IP is what drove the routing fix
 
------------------------------------------------------
+--------------------------------------------------
 Version 4.3.0 - Shortcuts Refinements (25/06/2026)
------------------------------------------------------
+--------------------------------------------------
 
 No StreamTweak update required — everything in 4.3.0 is client-side.
 
@@ -88,9 +170,9 @@ No StreamTweak update required — everything in 4.3.0 is client-side.
 🙏 THANKS:
 • Thanks again to @ziCk2077 (https://github.com/FoggyBytes/StreamLight/issues/3) for thoroughly testing 4.2.0 and surfacing all of these
 
------------------------------------------------------
+---------------------------------------------------
 Version 4.2.0 - Configurable Shortcuts (22/06/2026)
------------------------------------------------------
+---------------------------------------------------
 
 No StreamTweak update required — everything in 4.2.0 is client-side.
 
@@ -104,9 +186,9 @@ No StreamTweak update required — everything in 4.2.0 is client-side.
 🙏 THANKS:
 • Thanks to @ziCk2077 (https://github.com/FoggyBytes/StreamLight/issues/3) for requesting configurable shortcuts and per-machine settings
 
------------------------------------------------------
+-----------------------------------------------
 Version 4.1.0 - Custom Resolutions (22/06/2026)
------------------------------------------------------
+-----------------------------------------------
 
 No StreamTweak update required — everything in 4.1.0 is client-side.
 
@@ -121,16 +203,16 @@ No StreamTweak update required — everything in 4.1.0 is client-side.
 🙏 THANKS:
 • Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/4) for requesting custom resolution support for 16:10 handheld displays
 
------------------------------------------------------
+--------------------------
 Version 4.0.1 (21/06/2026)
------------------------------------------------------
+--------------------------
 
 ✨ IMPROVEMENTS:
 • Reports host frame latency to StreamTweak — StreamLight now sends the host's per-frame processing latency (capture + encode) to StreamTweak. StreamTweak 7.4.0+ uses it to grade streaming quality more accurately and shows it as a "Host frame latency" chart in its Logs. Backward compatible — works with any StreamTweak; no effect on streaming
 
------------------------------------------------------
+------------------------------------------------
 Version 4.0.0 - The Profiles Update (20/06/2026)
------------------------------------------------------
+------------------------------------------------
 
 No StreamTweak update required — everything in 4.0.0 is client-side.
 
@@ -185,9 +267,9 @@ Version 3.4.0 - The Smooth Motion Update (10/06/2026)
 🙏 THANKS:
 • Huge thanks to @Soladus for reporting the high-refresh judder (https://github.com/FoggyBytes/StreamLight/issues/2) and for thoroughly beta-testing the frame-pacing fix on both NVIDIA and AMD clients — your logs and measurements made this release possible
 
---------------------------------------------------------
+-------------------------------------------------------
 Version 3.3.0 - The "Patch Tuesday Update" (06/06/2026)
---------------------------------------------------------
+-------------------------------------------------------
 
 ✨ NEW FEATURES:
 • Update host: a new "Check Windows Update on host…" option (Options menu, approved hosts) checks the host for Windows updates, shows them classified (security & critical, Defender, optional — feature/version upgrades are listed separately and not installed remotely), and lets you choose "Security + Defender" or "All updates" before installing. The host installs and restarts itself if required — perfect for a headless PC
@@ -205,9 +287,9 @@ Version 3.3.0 - The "Patch Tuesday Update" (06/06/2026)
 ⚠️ COMPATIBILITY:
 • Requires StreamTweak 7.3.0 or later on the host for the new update features. Update both apps together
 
-------------------------------------------------
+-----------------------------------------------
 Version 3.2.0 - The "Power Update" (05/06/2026)
-------------------------------------------------
+-----------------------------------------------
 
 ✨ NEW FEATURES:
 • Power… menu: a paired, online host now has a "Power…" option that opens a chooser to shut down the host PC, this (client) PC, or both. "Host" sends a power-off command to StreamTweak over the authenticated bridge; "Both" shuts the host down and then powers off this PC a moment later. Fully gamepad- and keyboard-navigable, with Cancel focused by default for safety
@@ -219,9 +301,9 @@ Version 3.2.0 - The "Power Update" (05/06/2026)
 ⚠️ COMPATIBILITY:
 • Requires StreamTweak 7.2.0 or later for the new power-off feature. From 7.2.0 the StreamTweak↔StreamLight authentication is mandatory (the host no longer has an option to turn it off) — update both apps together
 
---------------------------------------------------------
+-------------------------------------------------------
 Version 3.1.0 - The "Secure Bridge Update" (04/06/2026)
---------------------------------------------------------
+-------------------------------------------------------
 
 ✨ NEW FEATURES:
 • Authenticated StreamTweak bridge: StreamLight now signs every command it sends to StreamTweak (NIC control, host metrics, store map, session telemetry) with its existing Moonlight identity certificate — no password to type. The first time you open a paired host, StreamLight enrolls automatically and StreamTweak shows a one-time "Allow this client?" prompt displaying a 4-digit PIN to confirm against the one StreamLight shows. This closes the previously unauthenticated bridge, so a stranger on your network can no longer command your host or read its metrics
@@ -243,9 +325,9 @@ Version 3.1.0 - The "Secure Bridge Update" (04/06/2026)
 
 ⚠️ REQUIRES: StreamTweak 7.1.0 or later on the host PC for the integration features. StreamTweak 7.1.0 requires authenticated clients by default, so older StreamLight versions can no longer use the bridge with it — update both apps together. StreamLight 3.1.0 talking to an older StreamTweak will simply show no StreamTweak features until the host is updated.
 
--------------------------------------------------
+------------------------------------------------
 Version 3.0.0 - The "Big UI Update" (27/05/2026)
--------------------------------------------------
+------------------------------------------------
 
 🎨 UI REDESIGN:
 • Complete flat redesign inspired by the Xbox and Steam Big Picture interfaces; the old sidebar and toolbar are gone and every screen is now full-width
@@ -273,18 +355,18 @@ Version 3.0.0 - The "Big UI Update" (27/05/2026)
 ⚠️ REQUIRES: StreamTweak 6.3.0 or later on the host PC for the Tailscale dual-tile workflow. Earlier versions (6.1.0+) remain fully compatible but won't expose the Tailscale endpoint — StreamLight will only show the LAN tile in that case.
 
 
-------------------------------------------------------
+-----------------------------------------------------
 Version 2.3.1 - The "Live Charts Update" (25/04/2026)
-------------------------------------------------------
+-----------------------------------------------------
 
 🔧 IMPROVEMENTS:
 • Session telemetry send interval: reduced from 10 seconds to 1 second — SESSIONDATA is now sent once per second (one sample per connection) instead of batching 10 samples every 10 seconds; StreamTweak's live session charts on the Home page now update every second as intended
 
 ⚠️ REQUIRES: StreamTweak 6.1.0 or later on the host PC for the live session charts to display correctly.
 
--------------------------------------------------------
+------------------------------------------------------
 Version 2.3.0 - The "Remote Pause Update" (17/04/2026)
--------------------------------------------------------
+------------------------------------------------------
 
 ✨ NEW FEATURES:
 • Remote session pause from host: StreamTweak's Home page now shows a Pause button when a streaming session is active; pressing it embeds a one-shot stop signal in the next STATS response; StreamLight detects the signal and terminates the session exactly as if the user had pressed Pause locally — no UI changes on the StreamLight side
@@ -292,48 +374,48 @@ Version 2.3.0 - The "Remote Pause Update" (17/04/2026)
 
 ⚠️ REQUIRES: StreamTweak 6.0.0 or later on the host PC for the remote stop to work.
 
----------------------------------------------------
+--------------------------------------------------
 Version 2.2.0 - The "Hue Sync Update" (08/04/2026)
----------------------------------------------------
+--------------------------------------------------
 
 ✨ NEW FEATURES:
 • Philips Hue Sync integration: a new toggle in Settings automatically starts Philips Hue Sync on the client PC when a streaming session begins and closes it when the session ends; the app is launched silently in the background with no window appearing
 • Smart discovery: Hue Sync is located by querying the Windows Uninstall registry (handles custom install paths and per-user Electron installations); falls back to well-known paths if the registry entry is absent
 • Silent launch: uses HueSyncStarter.exe — the dedicated background launcher shipped with Hue Sync — to start the app without any visible window
 
----------------------------------------------
+--------------------------------------------
 Version 2.1.2 - The "Flash Fix" (04/04/2026)
----------------------------------------------
+--------------------------------------------
 
 🔧 IMPROVEMENTS:
 • Title bar color: eliminated the brief blue flash on startup — the window now opens with the correct orange color immediately, instead of briefly showing the default Material Indigo blue before the QML theme applied
 
--------------------------------------------------
+------------------------------------------------
 Version 2.1.1 - The "Jitter Update" (28/03/2026)
--------------------------------------------------
+------------------------------------------------
 
 🔧 IMPROVEMENTS:
 • Session telemetry — jitter reporting: RTT variance (jitter) is now collected from LiGetEstimatedRttInfo and included in every SESSIONDATA batch alongside RTT; StreamTweak stores jitter_avg and jitter_max per sample and can use them in future quality analysis
 
-----------------------------------------------------
+---------------------------------------------------
 Version 2.1.0 - The "Telemetry Update" (27/03/2026)
-----------------------------------------------------
+---------------------------------------------------
 
 ✨ NEW FEATURES:
 • Session telemetry reporting: StreamLight now streams real-time client-side metrics to StreamTweak during active sessions — FPS, frame drops, RTT, decode latency, and bitrate are sampled every second and transmitted in periodic batches; StreamTweak uses this data to generate a session quality report visible in the Logs tab
 
 ⚠️ REQUIRES: StreamTweak 5.2.0 or later on the host PC for session quality reports to appear.
 
---------------------------------------------
+-------------------------------------------
 Version 2.0.1 - The "Sort Fix" (21/03/2026)
---------------------------------------------
+-------------------------------------------
 
 🔧 IMPROVEMENTS:
 • App list sort order: fixed — Desktop now always appears first, Steam Big Picture second, and all other apps in alphabetical order; previously the order was being overridden by the app model's own insertion logic
 
---------------------------------------------------
+-------------------------------------------------
 Version 2.0.0 - The "Library Update" (21/03/2026)
---------------------------------------------------
+-------------------------------------------------
 
 ✨ NEW FEATURES:
 • New FoggyBytes icon: StreamLight now sports a new icon that visually unifies the FoggyBytes suite — the same icon is shared with StreamTweak for a consistent identity across both apps
@@ -348,9 +430,9 @@ Version 2.0.0 - The "Library Update" (21/03/2026)
 
 ⚠️ REQUIRES: StreamTweak 5.0.0 or later on the host PC for store badges to appear.
 
--------------------------------------------------------
+------------------------------------------------------
 Version 1.2.0 - The "Host Metrics Update" (20/03/2026)
--------------------------------------------------------
+------------------------------------------------------
 
 ✨ NEW FEATURES:
 • Host metrics in overlay: the performance overlay now includes a "Host Metrics (StreamTweak)" section showing real-time data from the host PC — GPU %, GPU encoder %, GPU temperature (°C), VRAM used / total (MB), CPU %, and network TX (Mbps); the section is automatically hidden when StreamTweak is not reachable
@@ -359,9 +441,9 @@ Version 1.2.0 - The "Host Metrics Update" (20/03/2026)
 
 ⚠️ REQUIRES: StreamTweak 4.4.0 or later on the host PC for host metrics to appear in the overlay.
 
---------------------------------------------------
+-------------------------------------------------
 Version 1.1.0 - The "Overlay Update" (18/03/2026)
---------------------------------------------------
+-------------------------------------------------
 
 ✨ NEW FEATURES:
 • Performance overlay restyled to match StreamTweak's aesthetic: dark semi-transparent grey background, white text, RobotoMono font
@@ -374,9 +456,9 @@ Version 1.1.0 - The "Overlay Update" (18/03/2026)
 • Overlay box width calibrated to fit content precisely (no excess empty space on the right)
 
 
-------------------------------------------------------
+-----------------------------------------------------
 Version 1.0.0 - The "First Light Update" (13/03/2026)
-------------------------------------------------------
+-----------------------------------------------------
 Initial release based on Moonlight 6.1.0.
 
 ✨ NEW FEATURES:

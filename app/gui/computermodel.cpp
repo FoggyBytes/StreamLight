@@ -1,8 +1,11 @@
 #include "computermodel.h"
+#include "backend/linkspeed.h"
+#include "backend/linkmatcher.h"
 #include "../TailscaleManager.h"
 #include "settings/appsettings.h"
 #include "settings/streamingpreferences.h"
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRandomGenerator>
@@ -87,6 +90,14 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
         int a = HostProfileManager::get()->active(computer->uuid);
         return a >= 0 ? HostProfileManager::get()->name(computer->uuid, a) : QString();
     }
+    case StageColorFromRole:
+        return computer->stageColorFrom;
+    case StageColorToRole:
+        return computer->stageColorTo;
+    case StageImageRole:
+        return computer->stageImagePath;
+    case StageSeedRole:
+        return computer->stageSeedColor;
     case DetailsRole: {
         QString state, pairState;
 
@@ -165,6 +176,10 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
     names[ProfileCountRole] = "profileCount";
     names[ActiveProfileSlotRole] = "activeProfileSlot";
     names[ActiveProfileNameRole] = "activeProfileName";
+    names[StageColorFromRole] = "stageColorFrom";
+    names[StageColorToRole] = "stageColorTo";
+    names[StageImageRole] = "stageImage";
+    names[StageSeedRole] = "stageSeed";
 
     return names;
 }
@@ -292,6 +307,183 @@ void ComputerModel::handlePairingCompleted(NvComputer* computer, QString error)
     refreshTailscale(m_Computers.indexOf(computer));
 }
 
+QVariantMap ComputerModel::probeLocalLink(int computerIndex)
+{
+    QVariantMap out;
+    out[QStringLiteral("usable")] = false;
+    out[QStringLiteral("mbps")]   = 0;
+
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return out;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString name, address;
+    {
+        QReadLocker lock(&computer->lock);
+        name    = computer->name;
+        address = computer->activeAddress.address();
+    }
+    if (address.isEmpty()) return out;
+
+    LinkSpeed::Info info = LinkSpeed::probeForHost(QHostAddress(address));
+
+    static const char* const kStatus[] = { "wired", "wireless", "virtual", "nolinkspeed", "unavailable" };
+    out[QStringLiteral("status")]  = QString::fromLatin1(kStatus[static_cast<int>(info.status)]);
+    out[QStringLiteral("mbps")]    = static_cast<qulonglong>(info.mbps);
+    out[QStringLiteral("adapter")] = info.adapterName;
+    out[QStringLiteral("reason")]  = info.reason;
+    out[QStringLiteral("usable")]  = info.usable();
+
+    // Logged on every probe: this is the number the whole host-matching feature rests on,
+    // and it changes with the dock, the cable and the network the handheld is on.
+    qInfo() << "Local link to" << name << "via" << address << "→"
+            << (info.usable() ? QString::number(info.mbps) + " Mbps" : QStringLiteral("unusable"))
+            << "[" << out[QStringLiteral("status")].toString() << "]"
+            << "adapter:" << (info.adapterName.isEmpty() ? QStringLiteral("(none)") : info.adapterName)
+            << (info.reason.isEmpty() ? QString() : "— " + info.reason);
+
+    return out;
+}
+
+void ComputerModel::requestHostNetInfo(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString address;
+    {
+        QReadLocker lock(&computer->lock);
+        address = computer->activeAddress.address();
+    }
+    if (address.isEmpty()) return;
+
+    m_streamTweakBridge.requestNetInfo(address, [this, computerIndex](const QString& reply) {
+        QVariantMap out;
+        if (!reply.isEmpty() && !reply.startsWith(QStringLiteral("ERR"))) {
+            QJsonDocument doc = QJsonDocument::fromJson(reply.toUtf8());
+            if (doc.isObject()) {
+                QJsonObject o = doc.object();
+                out[QStringLiteral("allowsLinkControl")] =
+                    o.value(QStringLiteral("allow_client_control")).toBool();
+                out[QStringLiteral("currentMbps")] =
+                    static_cast<qulonglong>(o.value(QStringLiteral("current_mbps")).toDouble());
+                // Needed to follow a restore to completion: "switched" is true for as long as
+                // the link sits on a speed a client asked for, and drops to false only once the
+                // adapter is back on its own setting and settled.
+                out[QStringLiteral("state")]    = o.value(QStringLiteral("state")).toString();
+                out[QStringLiteral("switched")] = o.value(QStringLiteral("switched")).toBool();
+                // The host's own view of whether something is streaming. Used to decide
+                // whether it is even sensible to ask about putting the link back: a session
+                // that is still running — or merely paused and resumable — is not finished.
+                out[QStringLiteral("sessionActive")] =
+                    o.value(QStringLiteral("session_active")).toBool();
+            }
+        }
+        emit hostNetInfoReceived(computerIndex, out);
+    });
+}
+
+void ComputerModel::requestLastSession(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString address;
+    {
+        QReadLocker lock(&computer->lock);
+        address = computer->activeAddress.address();
+    }
+    if (address.isEmpty()) return;
+
+    m_streamTweakBridge.requestLastSession(address, [this, computerIndex](const QString& reply) {
+        QVariantMap out;
+        out[QStringLiteral("has")] = false;
+
+        if (!reply.isEmpty() && !reply.startsWith(QStringLiteral("ERR"))) {
+            QJsonDocument doc = QJsonDocument::fromJson(reply.toUtf8());
+            if (doc.isObject()) {
+                QJsonObject o = doc.object();
+                if (o.value(QStringLiteral("has")).toBool()) {
+                    out[QStringLiteral("has")]        = true;
+                    out[QStringLiteral("ago")]        = o.value(QStringLiteral("ago")).toString();
+                    out[QStringLiteral("duration")]   = o.value(QStringLiteral("duration")).toString();
+                    out[QStringLiteral("hasGrade")]   = o.value(QStringLiteral("has_grade")).toBool();
+                    out[QStringLiteral("grade")]      = o.value(QStringLiteral("grade")).toString();
+                    out[QStringLiteral("gradeColor")] = o.value(QStringLiteral("grade_color")).toString();
+
+                    // -1 means the host never measured it. Kept as -1 rather than folded to 0
+                    // so the QML can tell "no data" from "a genuinely excellent zero".
+                    out[QStringLiteral("rttMs")]      = o.value(QStringLiteral("rtt_ms")).toDouble(-1);
+                    out[QStringLiteral("rttPeakMs")]  = o.value(QStringLiteral("rtt_peak_ms")).toDouble(-1);
+                    out[QStringLiteral("hostLatMs")]  = o.value(QStringLiteral("host_latency_ms")).toDouble(-1);
+                    out[QStringLiteral("dropsPct")]   = o.value(QStringLiteral("drops_pct")).toDouble(-1);
+
+                    // Not games.length: the host caps the list it sends, so this is the only
+                    // way the client can know a session credited more than it can draw.
+                    out[QStringLiteral("gamesTotal")] =
+                        o.value(QStringLiteral("games_total")).toInt(0);
+
+                    QVariantList games;
+                    for (const QJsonValue& v : o.value(QStringLiteral("games")).toArray()) {
+                        QJsonObject g = v.toObject();
+                        QVariantMap game;
+                        game[QStringLiteral("name")] = g.value(QStringLiteral("name")).toString();
+
+                        // The cover arrives as base64 PNG because the client cannot reach the
+                        // host's cover cache. Handed to QML as a data: URI so an Image can take
+                        // it directly, with no image provider and nothing written to disk.
+                        QString cover = g.value(QStringLiteral("cover")).toString();
+                        game[QStringLiteral("cover")] = cover.isEmpty()
+                            ? QString()
+                            : QStringLiteral("data:image/png;base64,") + cover;
+
+                        games.append(game);
+                    }
+                    out[QStringLiteral("games")] = games;
+                }
+            }
+        }
+        emit lastSessionReceived(computerIndex, out);
+    });
+}
+
+void ComputerModel::restoreHostLink(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString address;
+    {
+        QReadLocker lock(&computer->lock);
+        address = computer->activeAddress.address();
+    }
+    if (address.isEmpty()) return;
+
+    // Fire-and-forget: a host that predates 8.1.0, or is already back on its own speed,
+    // simply has nothing to do. The UI follows the outcome through NETINFO regardless.
+    m_streamTweakBridge.sendRestore(address, [](const QString&) {});
+}
+
+void ComputerModel::setHostStageBackground(int computerIndex, const QString& imagePath,
+                                           const QString& seedColor)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString uuid;
+    {
+        QReadLocker lock(&computer->lock);
+        uuid = computer->uuid;
+    }
+    if (uuid.isEmpty()) return;
+
+    m_ComputerManager->setStageBackground(uuid, imagePath, seedColor);
+
+    // computerStateChanged only reaches the model on the next poll tick, and the user has
+    // just picked a colour — repaint now so the stage answers the click.
+    QModelIndex idx = createIndex(computerIndex, 0);
+    emit dataChanged(idx, idx, { StageColorFromRole, StageColorToRole, StageImageRole, StageSeedRole });
+}
+
 void ComputerModel::refreshTailscale(int computerIndex)
 {
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
@@ -380,21 +572,6 @@ void ComputerModel::handleComputerStateChanged(NvComputer* computer)
     }
 }
 
-void ComputerModel::prepareStreamTweak(int computerIndex)
-{
-    if (computerIndex < 0 || computerIndex >= m_Computers.count())
-        return;
-
-    NvComputer* computer = m_Computers[computerIndex];
-    QReadLocker lock(&computer->lock);
-
-    QString address = computer->activeAddress.address();
-    if (address.isEmpty())
-        return;
-
-    m_streamTweakBridge.sendPrepare(address);
-}
-
 void ComputerModel::shutdownHost(int computerIndex, bool installUpdates)
 {
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
@@ -431,6 +608,76 @@ void ComputerModel::requestUpdateState(int computerIndex)
             bool pending = response.contains(QLatin1String("\"pending\":true"));
             emit updateStateReceived(computerIndex, pending);
         });
+}
+
+// ── Remote PIN unlock ────────────────────────────────────────────────────────
+
+void ComputerModel::requestLockState(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+
+    QString address = computer->activeAddress.address();
+    if (address.isEmpty()) {
+        emit lockStateReceived(computerIndex, false, false);
+        return;
+    }
+
+    m_streamTweakBridge.requestLockState(address,
+        [this, computerIndex](const QString& response) {
+            // An empty reply or "ERR" is a host that does not know the command. That is a
+            // different answer from "not locked", and collapsing the two would march us
+            // past the PIN pad and into a session with a logon screen behind it.
+            bool supported = response.contains(QLatin1String("\"locked\""));
+            bool locked    = response.contains(QLatin1String("\"locked\":true"));
+            emit lockStateReceived(computerIndex, supported, locked);
+        });
+}
+
+void ComputerModel::matchHostLinkSpeed(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+
+    // appId -1: there is no game here, so the cascade stops at the host profile. Passing a
+    // real game's id would apply that game's overrides to a decision that is not about it.
+    StreamingPreferences* prefs = AppSettingsManager::get()->buildPrefs(
+        StreamingPreferences::get(), computer->uuid, -1, this);
+
+    LinkMatcher* matcher = new LinkMatcher(this);
+    connect(matcher, &LinkMatcher::stage, this,
+            [this, computerIndex](const QString& detail) {
+                emit linkMatchProgress(computerIndex, true, detail);
+            });
+    connect(matcher, &LinkMatcher::finished, this,
+            [this, computerIndex, matcher, prefs](bool, const QString&) {
+                emit linkMatchProgress(computerIndex, false, QString());
+                matcher->deleteLater();
+                prefs->deleteLater();
+            });
+
+    matcher->start(computer, prefs);
+}
+
+void ComputerModel::markUnlockSession(int computerIndex, bool begin)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return;
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+    QString address = computer->activeAddress.address();
+    if (address.isEmpty())
+        return;
+
+    if (begin)
+        m_streamTweakBridge.sendUnlockBegin(address);
+    else
+        m_streamTweakBridge.sendUnlockEnd(address);
 }
 
 // ── Remote "Update host" (Windows Update Agent on the host) ──────────────────
@@ -546,6 +793,7 @@ void ComputerModel::requestStreamTweakAuth(int computerIndex)
             }
             if (caps.contains(QLatin1String("auth=optional"))) {
                 m_streamTweakPins.remove(uuid);
+                rememberStreamTweakSeen(uuid);
                 emit streamTweakAuthReceived(computerIndex, QStringLiteral("open"), QString());
                 return;
             }
@@ -568,10 +816,45 @@ void ComputerModel::requestStreamTweakAuth(int computerIndex)
                     // re-request starts a fresh attempt with a new PIN.
                     if (state != QLatin1String("pending"))
                         m_streamTweakPins.remove(uuid);
+                    if (state == QLatin1String("authorized"))
+                        rememberStreamTweakSeen(uuid);
                     emit streamTweakAuthReceived(computerIndex, state,
                                                  state == QLatin1String("pending") ? pin : QString());
                 });
         });
+}
+
+// ── "Has this host ever had StreamTweak?" ────────────────────────────────────
+//
+// Persisted, and it has to be: the answer decides how long the wake flow is willing to wait
+// for StreamTweak to come up, and an in-memory flag says "no" on every fresh start of the app
+// — which is not "this host has none", it is "I have not been able to ask yet". Reading the
+// second as the first is what made a wake give up nineteen seconds before the host had even
+// finished booting.
+
+static const QString kSeenGroup = QStringLiteral("streamtweakSeen");
+
+void ComputerModel::rememberStreamTweakSeen(const QString& uuid)
+{
+    if (uuid.isEmpty()) return;
+    QSettings settings;
+    settings.setValue(kSeenGroup + QLatin1Char('/') + uuid, true);
+}
+
+bool ComputerModel::hostEverHadStreamTweak(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return false;
+
+    QString uuid;
+    {
+        NvComputer* computer = m_Computers[computerIndex];
+        QReadLocker lock(&computer->lock);
+        uuid = computer->uuid;
+    }
+    if (uuid.isEmpty()) return false;
+
+    QSettings settings;
+    return settings.value(kSeenGroup + QLatin1Char('/') + uuid, false).toBool();
 }
 
 void ComputerModel::requestAppStores(int computerIndex)
@@ -684,6 +967,15 @@ void ComputerModel::setHostProfileSettings(int computerIndex, int slot, const QV
 {
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
     HostProfileManager::get()->setSettings(m_Computers[computerIndex]->uuid, slot, appOverrideFromMap(ov));
+
+    // ⚠️ This was the one profile mutator that told nobody. Its six siblings — setActive,
+    // cycle, setName, add, remove — all emit; changing a setting *inside* the active profile
+    // did not, so the card went on promising a link switch that the profile had just turned
+    // off, until something unrelated (leaving the page and coming back) happened to
+    // re-evaluate the binding. The slot and the name are unchanged here, but they are what
+    // the QML re-reads the override on, so they are the roles to announce.
+    QModelIndex idx = index(computerIndex, 0);
+    emit dataChanged(idx, idx, { ProfileCountRole, ActiveProfileSlotRole, ActiveProfileNameRole });
 }
 
 int ComputerModel::addHostProfile(int computerIndex)

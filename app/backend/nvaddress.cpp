@@ -50,6 +50,17 @@ bool NvAddress::isNull() const
     return m_Address.isEmpty();
 }
 
+bool NvAddress::isLoopback() const
+{
+    if (m_Address.isEmpty()) {
+        return false;
+    }
+
+    // QHostAddress knows both families, which a "starts with 127." string test does not:
+    // that spelling misses ::1 entirely.
+    return QHostAddress(m_Address).isLoopback();
+}
+
 bool NvAddress::isTailscaleRange() const
 {
     if (m_Address.isEmpty()) {

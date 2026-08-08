@@ -23,11 +23,25 @@ struct AppOverride
     bool hasFramePacing = false;int framePacingMode = 0;    // StreamingPreferences::FramePacingMode
     bool hasAudio = false;      int audioConfig = 0;        // StreamingPreferences::AudioConfig
     bool hasHue = false;        bool hueSync = false;       // StreamingPreferences::hueSyncIntegration
+    // Host link matching (4.6.0). A profile is a *situation*, not just a quality preset —
+    // "docked" and "handheld" differ here as much as they do in resolution — so this is
+    // worth overriding per profile. Exposed only in the host-profile UI: the value never
+    // varies by game, and a per-game knob would just be somewhere for a stale value to hide.
+    bool hasMatchLink = false;  bool matchLinkSpeed = false; // StreamingPreferences::matchHostLinkSpeed
+
+    // Whether to hold the launch screen until the host reports the game on screen, rather than
+    // showing the stream as soon as there is a picture. Overridable at both levels, for two
+    // different reasons: a host profile because it describes a situation (a host across the room
+    // can't be walked over to), and a game because a title that opens its own launcher never
+    // puts a game window on screen, so there is nothing for the wait to end on. Absent =
+    // inherit the level below.
+    bool hasWaitForGame = false;  bool waitForGame = false; // StreamingPreferences::waitForGameOnScreen
 
     bool isEmpty() const
     {
         return !(hasResolution || hasFps || hasBitrate || hasHdr ||
-                 hasCodec || hasFramePacing || hasAudio || hasHue);
+                 hasCodec || hasFramePacing || hasAudio || hasHue || hasMatchLink ||
+                 hasWaitForGame);
     }
 };
 
@@ -48,6 +62,15 @@ public:
     void setOverride(const QString& hostUuid, int appId, const AppOverride& ov);
     bool hasOverride(const QString& hostUuid, int appId) const;
     void clearOverride(const QString& hostUuid, int appId);
+
+    /**
+     * Drops every per-game override belonging to a host.
+     *
+     * Called when the host is deleted. These records are keyed by host uuid, so once the
+     * host is gone nothing can ever reach them again — they are not "kept in case it comes
+     * back", they are unreachable bytes that accumulate for the life of the install.
+     */
+    void forgetHost(const QString& hostUuid);
 
     // Returns a per-session StreamingPreferences: a clone of `base` with the
     // host's active profile applied, then this game's overrides on top
@@ -85,6 +108,9 @@ public:
 
     int add(const QString& uuid);                   // new slot, or -1 if full
     void remove(const QString& uuid, int slot);
+
+    /// Drops all of a host's profiles. Same reasoning as AppSettingsManager::forgetHost.
+    void forgetHost(const QString& uuid);
 
     AppOverride activeOverride(const QString& uuid) const;  // active settings, or empty
 

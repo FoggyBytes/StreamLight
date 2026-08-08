@@ -29,6 +29,7 @@
 #define SDL_CODE_GAMECONTROLLER_SET_MOTION_EVENT_STATE 103
 #define SDL_CODE_GAMECONTROLLER_SET_CONTROLLER_LED 104
 #define SDL_CODE_GAMECONTROLLER_SET_ADAPTIVE_TRIGGERS 105
+#define SDL_CODE_REVEAL_STREAM_WINDOW 106
 
 #include <openssl/rand.h>
 
@@ -359,8 +360,40 @@ int Session::drSetup(int videoFormat, int width, int height, int frameRate, void
     return 0;
 }
 
+void Session::notifyFirstFrame()
+{
+    // The first frame to arrive is what lets the curtain come down — see revealWindowNow().
+    // A launch the host accepts and then cannot capture (Vibeshine losing DXGI access to the
+    // virtual display it just created, 06/08) connects, sends nothing, and is torn down ten
+    // seconds later by the no-video timeout. Revealing on "connected" showed the user that
+    // failure and the automatic retry behind it; waiting for a frame shows neither, and costs
+    // the ~300 ms a healthy launch takes to deliver one.
+    //
+    // ⚠️ Called from BOTH decoder paths, and it has to be. With a pull renderer — which the
+    // FFmpeg decoder is, so this is the normal path on Windows — populateDecoderProperties()
+    // sets submitDecodeUnit to nullptr and drSubmitDecodeUnit is never invoked at all. Hooking
+    // only that one left the curtain up on a perfectly good launch, with the game audible
+    // behind it.
+    if (s_ActiveSession == nullptr) {
+        return;
+    }
+
+    if (s_ActiveSession->m_FirstFrameSeen.testAndSetRelease(0, 1)) {
+        // A reveal that was asked for while we had nothing to show is still pending: now
+        // there is something, so ask the SDL loop again.
+        if (s_ActiveSession->m_RevealRequested.loadAcquire() != 0) {
+            SDL_Event event = {};
+            event.type = SDL_USEREVENT;
+            event.user.code = SDL_CODE_REVEAL_STREAM_WINDOW;
+            SDL_PushEvent(&event);
+        }
+    }
+}
+
 int Session::drSubmitDecodeUnit(PDECODE_UNIT du)
 {
+    notifyFirstFrame();
+
     // Use a lock since we'll be yanking this decoder out
     // from underneath the session when we initiate destruction.
     // We need to destroy the decoder on the main thread to satisfy
@@ -1621,6 +1654,92 @@ void Session::toggleFullscreen()
     m_InputHandler->updatePointerRegionLock();
 }
 
+void Session::revealStreamWindow(bool onDemand)
+{
+    if (onDemand) {
+        m_RevealOnDemand = true;
+    }
+
+    if (m_UnlockMode) {
+        // The user was explicit: during an unlock they must never see the session behind the
+        // pad. Guarded here rather than only at the call sites so a path added later cannot
+        // uncover a logon screen by accident.
+        return;
+    }
+
+    // Recorded rather than acted on: this runs from a Qt callback, which on Windows is
+    // reached from inside SDL's own message pump. Showing the window from there would call
+    // back into SDL while it is dispatching, so the SDL loop is asked to do it instead — and
+    // an SDL event is also the one way to say this before the window exists.
+    m_RevealRequested.storeRelease(1);
+
+    SDL_Event event = {};
+    event.type = SDL_USEREVENT;
+    event.user.code = SDL_CODE_REVEAL_STREAM_WINDOW;
+    SDL_PushEvent(&event);
+}
+
+void Session::revealWindowNow()
+{
+    // Two ways in — the queued event and the check before the loop — and a session that is
+    // torn down before it ever gets here.
+    if (m_WindowRevealed || m_Window == nullptr) {
+        return;
+    }
+
+    // Nothing has arrived to show yet. The request stays recorded and the first decode unit
+    // pushes the event again, so the reveal happens on whichever comes last: the host saying
+    // the game is on screen, or the picture actually turning up. Deliberately not applied to a
+    // reveal the user asked for — B means "show me now", including when there is nothing.
+    if (m_FirstFrameSeen.loadAcquire() == 0 && !m_RevealOnDemand) {
+        return;
+    }
+
+    m_WindowRevealed = true;
+
+    // Whatever brought us here — the gate finishing, or the user pressing B — there is nothing
+    // left to decide, so the asking stops. Without this a manual reveal left the gate polling
+    // the host for as long as the launch had to run (22 s on 29/07) and the curtain ticking
+    // once a second into a window nobody could see. stop() is deliberately silent, so the
+    // curtain has to be told separately; both are on this thread, which is also the Qt one.
+    if (m_LaunchGate != nullptr) {
+        m_LaunchGate->stop();
+    }
+    m_Curtain.finish();
+
+    // Showing it applies the full-screen mode recorded at creation time, which resizes the
+    // window; the resulting SDL_WINDOWEVENT_SIZE_CHANGED is handled by the renderer as a
+    // swapchain resize, not a recreation, so the picture already flowing stays flowing.
+    SDL_ShowWindow(m_Window);
+    SDL_RaiseWindow(m_Window);
+
+    // Reported after the fact, not before: whether the window came up full screen is the
+    // one thing about this that can silently be wrong, and "the mode was applied on show"
+    // is an assumption about SDL rather than something we control.
+    int w = 0, h = 0;
+    SDL_GetWindowSize(m_Window, &w, &h);
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Stream window revealed: %dx%d, fullscreen=%d",
+                w, h, (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_FULLSCREEN_DESKTOP) ? 1 : 0);
+
+    // Input was left alone while nobody could see the window: capturing the mouse would have
+    // hidden the cursor over the curtain, and the keyboard grab refuses a window without
+    // focus anyway. Now that it is on screen, both are due — and input starts reaching the
+    // host again, with the user's own background-gamepad preference back in force.
+    m_InputHandler->setStreamWindowHidden(false);
+
+    if (m_CaptureOnReveal) {
+        m_CaptureOnReveal = false;
+        m_InputHandler->setCaptureActive(true);
+    }
+    m_InputHandler->updateKeyboardGrabState();
+    m_InputHandler->updatePointerRegionLock();
+
+    // Last, and only now: the curtain in front of it can go. Direct connection on this
+    // thread, so it has happened by the time we return.
+    emit streamWindowRevealed();
+}
+
 void Session::notifyMouseEmulationMode(bool enabled)
 {
     m_MouseEmulationRefCount += enabled ? 1 : -1;
@@ -1792,10 +1911,53 @@ bool Session::startConnectionAsync()
 
     emit connectionStarted();
 
+    // Start asking the host how the launch is going. This is the earliest useful moment:
+    // LiStartConnection has returned, so the server has already run the app's command and
+    // its log line — the one the host watches for — is a beat behind us at most.
+    //
+    // Same thread rule as the sampler below: we are on AsyncConnectionStartThread here, and
+    // the gate owns a QTimer that must live on the main thread.
+    //
+    // Not in unlock mode: the gate exists to reveal the window once the game is on screen,
+    // and revealing is the one thing that must never happen here. It would also answer
+    // "not_applicable" for the Desktop app we launch, which finishes the gate immediately.
+    //
+    // And only when the user asked to wait. Off by default: StreamLight then behaves as it
+    // always did, and the window appears on the first frame. Left on for a title that opens its
+    // own launcher the gate would run to its ninety-second cap with the launcher sitting on
+    // screen unseen, which is why the wait is overridable per game as well.
+    if (!m_UnlockMode && m_Preferences->waitForGameOnScreen) {
+        QString hostAddr = m_Computer->activeAddress.address();
+        QMetaObject::invokeMethod(this, [this, hostAddr]() {
+            if (m_LaunchGate == nullptr) {
+                m_LaunchGate = new LaunchGate(this);
+                connect(m_LaunchGate, &LaunchGate::phaseChanged, this,
+                        [this](LaunchPhase p, QString fg, qint64 ms) {
+                            m_Curtain.onLaunchPhase(static_cast<int>(p), fg, ms);
+                            emit launchPhaseChanged(static_cast<int>(p), fg, ms);
+                        });
+                connect(m_LaunchGate, &LaunchGate::finished, this,
+                        [this](LaunchPhase p) {
+                            m_Curtain.finish();
+                            // The window has been waiting behind the curtain for this. It
+                            // goes up first and the curtain comes down after it, in that
+                            // order, so the desktop is never uncovered in between.
+                            revealStreamWindow();
+                            emit launchGateFinished(static_cast<int>(p));
+                        });
+            }
+            m_LaunchGate->start(hostAddr);
+        }, Qt::QueuedConnection);
+    }
+
     // Queue start() on the main Qt thread (where the sampler and its QTimers
     // were created). Direct call here would be on AsyncConnectionStartThread,
     // violating QTimer thread affinity and causing timers to never fire.
-    if (m_TelemetrySampler) {
+    //
+    // Skipped in unlock mode: there is nothing here worth recording, and leaving the sampler
+    // silent means the host has no telemetry to suppress on its side either — including the
+    // client-heartbeat watchdog, which only arms once SESSIONDATA has been seen.
+    if (m_TelemetrySampler && !m_UnlockMode) {
         QString hostAddr = m_Computer->activeAddress.address();
         int fps = m_StreamConfig.fps;
         int bitrateKbps = m_StreamConfig.bitrate;
@@ -1883,6 +2045,91 @@ void Session::requestReconfigure(int width, int height, int fps,
     m_HasPendingReconfigure = true;
 
     interrupt();
+}
+
+void Session::beginLinkMatch()
+{
+    if (m_UnlockMode) {
+        // There is nothing to match yet: nobody has logged in on the host, and renegotiating
+        // its adapter here would black out the link for a session that lasts as long as
+        // typing a PIN. The speed is matched afterwards, from the home screen.
+        //
+        // Reported as "finished, nothing changed" rather than skipped silently, because this
+        // signal is what releases the launch — the same answer a host that cannot switch
+        // would give, through the same path.
+        emit linkMatchFinished(false, QString());
+        return;
+    }
+
+    // The curtain opens here, before anything else: this is the first moment the user has
+    // committed to a launch, and from now until the game is on screen there is always
+    // something to say.
+    m_Curtain.begin(m_App.name);
+
+    // One matcher per session; a resume builds a new Session and therefore a new matcher.
+    if (m_LinkMatcher == nullptr) {
+        m_LinkMatcher = new LinkMatcher(this);
+        connect(m_LinkMatcher, &LinkMatcher::stage, this, &Session::linkMatchStage);
+        connect(m_LinkMatcher, &LinkMatcher::finished, this, &Session::linkMatchFinished);
+        connect(m_LinkMatcher, &LinkMatcher::stage, &m_Curtain, &LaunchCurtain::onLinkStage);
+        connect(m_LinkMatcher, &LinkMatcher::finished, &m_Curtain, &LaunchCurtain::onLinkFinished);
+    }
+    // m_Preferences, not the global singleton: it is the cascaded copy built by
+    // AppSettingsManager::buildPrefs, so a host profile can override the setting.
+    m_LinkMatcher->start(m_Computer, m_Preferences);
+}
+
+// ── Remote PIN unlock ────────────────────────────────────────────────────────────────
+
+void Session::unlockClick()
+{
+    LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_LEFT);
+    LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_LEFT);
+}
+
+void Session::unlockDigit(int digit)
+{
+    if (digit < 0 || digit > 9) return;
+    if (m_UnlockPinLen >= MaxUnlockPinDigits) return;
+    m_UnlockPin[m_UnlockPinLen++] = static_cast<char>('0' + digit);
+}
+
+void Session::unlockBackspace()
+{
+    if (m_UnlockPinLen <= 0) return;
+    m_UnlockPin[--m_UnlockPinLen] = 0;
+}
+
+void Session::unlockClearPin()
+{
+    wipeUnlockPin();
+}
+
+void Session::unlockSubmitPin()
+{
+    // Sent as one burst: Windows Hello submits by itself the moment the PIN reaches its
+    // configured length, so a digit that arrives late is a digit that arrives after the
+    // attempt has already been judged.
+    for (int i = 0; i < m_UnlockPinLen; i++) {
+        // 0x8000 marks a Windows virtual-key code, the same convention keyboard.cpp uses.
+        // VK_0..VK_9 are 0x30..0x39, which is the digit's ASCII value.
+        short vk = static_cast<short>(0x8000 | static_cast<unsigned char>(m_UnlockPin[i]));
+        LiSendKeyboardEvent(vk, KEY_ACTION_DOWN, 0);
+        LiSendKeyboardEvent(vk, KEY_ACTION_UP, 0);
+    }
+
+    wipeUnlockPin();
+}
+
+void Session::wipeUnlockPin()
+{
+    // volatile so the compiler cannot decide that overwriting a buffer nobody reads again
+    // is dead code — which is exactly what it would conclude here.
+    volatile char* p = m_UnlockPin;
+    for (int i = 0; i < MaxUnlockPinDigits; i++) {
+        p[i] = 0;
+    }
+    m_UnlockPinLen = 0;
 }
 
 Session* Session::createReconfiguredSession()
@@ -1981,8 +2228,14 @@ void Session::exec()
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);
 
-    // We always want a resizable window with High DPI enabled
-    Uint32 defaultWindowFlags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE;
+    // We always want a resizable window with High DPI enabled.
+    //
+    // It is born hidden: until the host says the game is on screen there is nothing here
+    // worth showing — the stream carries a desktop still reconfiguring itself — and the
+    // launch curtain in QML is already saying what is happening. Staying hidden means that
+    // curtain is the only one, so there is no second rendition of the same screen to keep
+    // in step with it across resolutions, DPI settings and scaling factors.
+    Uint32 defaultWindowFlags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN;
 
     // If we're starting in windowed mode and the Moonlight GUI is maximized or
     // minimized, match that with the streaming window.
@@ -2046,6 +2299,20 @@ void Session::exec()
 
     m_InputHandler->setWindow(m_Window);
 
+    // Nothing the user does reaches the host until they can see it, and B ends the wait.
+    m_InputHandler->setStreamWindowHidden(true);
+
+    // Without the wait there is no gate to finish, so the reveal is asked for now and happens
+    // as soon as the first frame lands — the behaviour StreamLight has always had. This is the
+    // default path; holding the window back is the opt-in.
+    if (!m_UnlockMode && !m_Preferences->waitForGameOnScreen) {
+        revealStreamWindow();
+    }
+
+    // …except in unlock mode, where the hidden window is behind a PIN pad the controller has
+    // to drive. Still nothing reaches the host: the buttons become Qt keys for the pad.
+    m_InputHandler->setUnlockMode(m_UnlockMode);
+
     QImage iconImage = QIcon(":/streamlight.ico").pixmap(ICON_SIZE, ICON_SIZE).toImage().convertToFormat(QImage::Format_RGBA8888);
     SDL_Surface* iconSurface = iconImage.isNull() ? nullptr :
         SDL_CreateRGBSurfaceWithFormatFrom((void*)iconImage.constBits(),
@@ -2067,9 +2334,27 @@ void Session::exec()
     // for if/when we enter full-screen mode.
     updateOptimalWindowDisplayMode();
 
-    // Enter full screen if requested
+    // Enter full screen if requested.
+    //
+    // On a hidden window SDL only records the flag — the mode set and the resize happen when
+    // the window is shown. That is deliberate: doing it now would light up the display while
+    // the curtain is still up, and doing it later is the same work at the moment it becomes
+    // visible anyway.
     if (m_IsFullScreen) {
         SDL_SetWindowFullscreen(m_Window, m_FullScreenFlag);
+    }
+
+    // Build the decoder now rather than at the reveal. Normally this is triggered by the
+    // first SDL_WINDOWEVENT_SHOWN, which a hidden window never gets — and waiting would be
+    // worse than a cold start: this decoder is a *pull* renderer, so with no decoder there
+    // is no thread draining moonlight-common-c's decode-unit queue. It would overflow within
+    // a second and ask the host for an IDR frame on every one after that, for the whole
+    // launch. Decoding into a window nobody can see costs what discarding the frames costs,
+    // and it means the picture is already flowing the instant the window goes up.
+    {
+        SDL_Event decoderEvent = {};
+        decoderEvent.type = SDL_RENDER_DEVICE_RESET;
+        SDL_PushEvent(&decoderEvent);
     }
 
     bool needsFirstEnterCapture = false;
@@ -2124,6 +2409,14 @@ void Session::exec()
 
     // Switch to async logging mode when we enter the SDL loop
     StreamUtils::enterAsyncLoggingMode();
+
+    // The launch can be over before the window even exists — the Desktop entry has nothing
+    // to wait for, and a host too old to answer is written off in a couple of seconds. The
+    // request is waiting in the SDL queue in that case and would be honoured on the first
+    // iteration anyway; doing it here just spares the user a frame of nothing.
+    if (m_RevealRequested.loadAcquire() != 0) {
+        revealWindowNow();
+    }
 
     // Hijack this thread to be the SDL main thread. We have to do this
     // because we want to suspend all Qt processing until the stream is over.
@@ -2200,6 +2493,9 @@ void Session::exec()
             case SDL_CODE_GAMECONTROLLER_SET_ADAPTIVE_TRIGGERS:
                 m_InputHandler->setAdaptiveTriggers((uint16_t)(uintptr_t)event.user.data1,
                                                     (DualSenseOutputReport *)event.user.data2);
+                break;
+            case SDL_CODE_REVEAL_STREAM_WINDOW:
+                revealWindowNow();
                 break;
             default:
                 SDL_assert(false);
@@ -2393,7 +2689,16 @@ void Session::exec()
                 // or mouse hiding state to the new window. By capturing after the decoder
                 // is set up, this ensures the window re-creation is already done.
                 if (needsPostDecoderCreationCapture) {
-                    m_InputHandler->setCaptureActive(true);
+                    // Not while the window is still hidden behind the curtain: capturing
+                    // there puts the mouse into relative mode and hides the cursor over a
+                    // window the user is actually looking at — the Qt one. Whichever of the
+                    // two comes last does it.
+                    if (m_WindowRevealed) {
+                        m_InputHandler->setCaptureActive(true);
+                    }
+                    else {
+                        m_CaptureOnReveal = true;
+                    }
                     needsPostDecoderCreationCapture = false;
                 }
             }

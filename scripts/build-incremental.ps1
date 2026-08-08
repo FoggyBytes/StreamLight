@@ -39,7 +39,7 @@ $exeBuild   = "$buildDir\release\StreamLight.exe"
 $exeDeploy  = "$deployDir\StreamLight.exe"
 $jom        = "$repoRoot\scripts\jom.exe"
 $vswhere    = "$repoRoot\scripts\vswhere.exe"
-$qtBin      = 'C:\Qt\6.7.3\msvc2022_64\bin'
+$qtBin      = 'C:\Qt\6.8.3\msvc2022_64\bin'
 $windeployqt = "$qtBin\windeployqt.exe"
 $qmlDir     = "$repoRoot\app\gui"
 
