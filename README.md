@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue.svg)](https://github.com/FoggyBytes/StreamLight) [![Framework](https://img.shields.io/badge/Framework-Qt%206-brightgreen.svg)](https://www.qt.io/) [![Downloads](.badges/downloads.svg)](https://github.com/FoggyBytes/StreamLight/releases) [![Built on Moonlight](https://img.shields.io/badge/built%20on-Moonlight-blue?&logo=github)](https://github.com/moonlight-stream/moonlight-qt) [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-brightgreen.svg)](https://claude.ai/code)
 
 <div align="center">
-  <img width="960" height="540" alt="Immagine 2026-08-08 114748" src="https://github.com/user-attachments/assets/3c31187d-80f0-420c-b2cb-d1441c6e961a" />
+  <img width="960" height="540" alt="Immagine 2026-08-18 172148" src="https://github.com/user-attachments/assets/22709ba2-af9b-44d8-a87c-9b69c950d477" />
 </div>
 
 **StreamLight** is the client half of the FoggyBytes streaming duo: a fork of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) with a gamepad-first interface and native integration with its host-side companion, [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak).
@@ -11,7 +11,7 @@
 The streaming engine is untouched from upstream Moonlight — FFmpeg, D3D11VA, DXVA2, libplacebo, `moonlight-common-c`. What is new sits around it: the interface, and everything the two apps can do together over a local TCP bridge — host link matching, host metrics in the overlay, store badges on covers, session quality reports, remote power-off and Windows Update, Tailscale, and signing a woken host in with its PIN from the sofa.
 
 <div align="center">
-  <img width="960" height="540" alt="Immagine 2026-08-08 114158" src="https://github.com/user-attachments/assets/5397fe87-f044-47bb-be77-7fc4c9c2e60a" />
+  <img width="960" height="540" alt="Immagine 2026-08-18 172213" src="https://github.com/user-attachments/assets/d99d94e9-6b12-4f77-9f37-4ac9633d82f3" />
 </div>
 
 ## ✅ Compatibility
