@@ -1511,6 +1511,27 @@ void Session::getWindowDimensions(int& x, int& y,
     x = y = SDL_WINDOWPOS_CENTERED_DISPLAY(displayIndex);
 }
 
+// True when 'candidate' is a better refresh rate than 'current' under the user's
+// policy (Settings → Video → Refresh rate). RR_MATCH_FPS wants the stream's own
+// frame rate, so an exact match beats everything and otherwise the lowest
+// multiple wins; the inherited behaviour wants the highest multiple, because
+// that is what the hardware frame pacing cadence needs.
+static bool refreshRateIsBetter(int candidate, int current,
+                                StreamingPreferences::RefreshRateMode rrMode, int fps)
+{
+    if (rrMode == StreamingPreferences::RR_MATCH_FPS) {
+        if (candidate == fps) {
+            return current != fps;
+        }
+        if (current == fps) {
+            return false;
+        }
+        return candidate < current;
+    }
+
+    return candidate > current;
+}
+
 void Session::updateOptimalWindowDisplayMode()
 {
     SDL_DisplayMode desktopMode, bestMode, mode;
@@ -1546,11 +1567,32 @@ void Session::updateOptimalWindowDisplayMode()
         matchVideo = WMUtils::isGpuSlow() || QString(SDL_GetCurrentVideoDriver()) == "KMSDRM";
     }
 
+    // RR_OFF skips the search entirely: the panel stays on whatever the user set
+    // it to and we simply fall through to the desktop mode below.
+    //
+    // RR_AUTO resolves here rather than in the renderer, because the pairing it
+    // makes is with the pacing choice: software pacing describes itself as being
+    // for a display running at the stream's own rate, so give it one. Everything
+    // else keeps the highest multiple, which is what the hardware cadence needs.
+    // With V-Sync off nothing is paced at all, so there is no pairing to make.
+    StreamingPreferences::RefreshRateMode rrMode = m_Preferences->refreshRateMode;
+    if (rrMode == StreamingPreferences::RR_AUTO) {
+        rrMode = (m_Preferences->enableVsync &&
+                  m_Preferences->framePacingMode == StreamingPreferences::FP_MATCHED)
+                ? StreamingPreferences::RR_MATCH_FPS
+                : StreamingPreferences::RR_HIGHEST;
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Automatic refresh rate switching resolved to: %s",
+                    rrMode == StreamingPreferences::RR_MATCH_FPS ? "match frame rate" : "highest");
+    }
+    const bool searchModes = (rrMode != StreamingPreferences::RR_OFF);
+
     bestMode = desktopMode;
     bestMode.refresh_rate = 0;
-    if (!matchVideo) {
-        // Start with the native desktop resolution and try to find
-        // the highest refresh rate that our stream FPS evenly divides.
+    if (searchModes && !matchVideo) {
+        // Start with the native desktop resolution and try to find a refresh
+        // rate that our stream FPS evenly divides — the highest one, or the one
+        // equal to the FPS if the user asked us to match it.
         for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
             if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
                 if (mode.w == desktopMode.w && mode.h == desktopMode.h &&
@@ -1558,7 +1600,9 @@ void Session::updateOptimalWindowDisplayMode()
                     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                                 "Found display mode with desktop resolution: %dx%dx%d",
                                 mode.w, mode.h, mode.refresh_rate);
-                    if (mode.refresh_rate > bestMode.refresh_rate) {
+                    if (bestMode.refresh_rate == 0 ||
+                            refreshRateIsBetter(mode.refresh_rate, bestMode.refresh_rate,
+                                                rrMode, m_StreamConfig.fps)) {
                         bestMode = mode;
                     }
                 }
@@ -1571,7 +1615,7 @@ void Session::updateOptimalWindowDisplayMode()
     // modes that can meet the required refresh rate and minimum video
     // resolution. We will also try to pick a display mode that matches
     // aspect ratio closest to the video stream.
-    if (bestMode.refresh_rate == 0) {
+    if (searchModes && bestMode.refresh_rate == 0) {
         float bestModeAspectRatio = 0;
         float videoAspectRatio = (float)m_ActiveVideoWidth / (float)m_ActiveVideoHeight;
         for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
@@ -1582,7 +1626,11 @@ void Session::updateOptimalWindowDisplayMode()
                     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                                 "Found display mode with video resolution: %dx%dx%d",
                                 mode.w, mode.h, mode.refresh_rate);
-                    if (mode.refresh_rate >= bestMode.refresh_rate &&
+                    // The equal-refresh case is kept so the aspect ratio still
+                    // breaks ties, exactly as the original >= comparison did.
+                    if ((bestMode.refresh_rate == 0 || mode.refresh_rate == bestMode.refresh_rate ||
+                         refreshRateIsBetter(mode.refresh_rate, bestMode.refresh_rate,
+                                             rrMode, m_StreamConfig.fps)) &&
                             (bestModeAspectRatio == 0 || fabs(videoAspectRatio - modeAspectRatio) <= fabs(videoAspectRatio - bestModeAspectRatio))) {
                         bestMode = mode;
                         bestModeAspectRatio = modeAspectRatio;
@@ -1593,22 +1641,39 @@ void Session::updateOptimalWindowDisplayMode()
     }
 
     if (bestMode.refresh_rate == 0) {
-        // We may find no match if the user has moved a 120 FPS
-        // stream onto a 60 Hz monitor (since no refresh rate can
-        // divide our FPS setting). We'll stick to the default in
-        // this case.
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "No matching display mode found; using desktop mode");
+        // Either the user asked us to leave the panel alone, or there is no
+        // match at all — which happens when a 120 FPS stream is moved onto a
+        // 60 Hz monitor, since no refresh rate can divide our FPS setting.
+        // Either way the desktop mode is what we want.
+        if (searchModes) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "No matching display mode found; using desktop mode");
+        }
+        else {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Leaving the display on its current mode by request: %dx%dx%d",
+                        desktopMode.w, desktopMode.h, desktopMode.refresh_rate);
+        }
         bestMode = desktopMode;
     }
 
-    if ((SDL_GetWindowFlags(m_Window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == SDL_WINDOW_FULLSCREEN) {
-        // Only print when the window is actually in full-screen exclusive mode,
-        // otherwise we're not actually using the mode we've set here
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "Chosen best display mode: %dx%dx%d",
-                    bestMode.w, bestMode.h, bestMode.refresh_rate);
-    }
+    // Always report the choice, and say plainly whether it will be used. The old
+    // version printed nothing outside exclusive fullscreen, which made the two
+    // cases — "we picked 120" and "we picked 60 and it went nowhere" — look
+    // identical in a log, since the renderer's own refresh-rate line falls back to
+    // the desktop mode in exactly the same conditions.
+    //
+    // NB: the window is created hidden (5.0.0), so this can read "not applied"
+    // even in exclusive fullscreen, simply because the mode is applied when the
+    // window is shown. That is worth knowing rather than hiding.
+    const bool exclusiveFullscreen =
+            (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == SDL_WINDOW_FULLSCREEN;
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Chosen best display mode: %dx%dx%d (%s)",
+                bestMode.w, bestMode.h, bestMode.refresh_rate,
+                exclusiveFullscreen ? "exclusive fullscreen, in effect now"
+                                    : "window not in exclusive fullscreen yet — applied when it is, "
+                                      "and never in borderless or windowed");
 
     SDL_SetWindowDisplayMode(m_Window, &bestMode);
 }
@@ -2162,6 +2227,19 @@ void Session::interrupt()
     SDL_PushEvent(&event);
 }
 
+void Session::cancelLaunch()
+{
+    if (m_LaunchCancelled) {
+        return;
+    }
+    m_LaunchCancelled = true;
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Launch cancelled by the user");
+
+    interrupt();
+}
+
 void Session::requestGracefulStop()
 {
     // Inject only SDL_QUIT — no LiInterruptConnection() here. This lets the SDL
@@ -2302,6 +2380,11 @@ void Session::exec()
     // Nothing the user does reaches the host until they can see it, and B ends the wait.
     m_InputHandler->setStreamWindowHidden(true);
 
+    // Make up for the arrival events SDL never sent, now that the connection is up and the
+    // host can be told what kind of controller it is. A no-op on the ordinary path where SDL
+    // did send them.
+    m_InputHandler->attachAlreadyConnectedGamepads();
+
     // Without the wait there is no gate to finish, so the reveal is asked for now and happens
     // as soon as the first frame lands — the behaviour StreamLight has always had. This is the
     // default path; holding the window back is the opt-in.
@@ -2405,7 +2488,7 @@ void Session::exec()
 
     // Toggle the stats overlay if requested by the user
     m_OverlayManager.setOverlayState(Overlay::OverlayDebug,
-                                     m_Preferences->overlayMode != StreamingPreferences::OM_OFF);
+                                     m_Preferences->showPerfOverlay);
 
     // Switch to async logging mode when we enter the SDL loop
     StreamUtils::enterAsyncLoggingMode();

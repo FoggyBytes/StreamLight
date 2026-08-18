@@ -56,6 +56,8 @@
 #include "settings/shortcutmanager.h"
 #include "settings/theme.h"
 #include "settings/inputhints.h"
+#include "backend/powerstatus.h"
+#include "backend/gradientimage.h"
 #include "gui/sdlgamepadkeynavigation.h"
 #include "XboxTileArtwork.h"
 #include "TailscaleManager.h"
@@ -982,6 +984,11 @@ int main(int argc, char *argv[])
                                          [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                              return InputHints::get(qmlEngine);
                                          });
+    qmlRegisterSingletonType<PowerStatus>("PowerStatus", 1, 0,
+                                          "PowerStatus",
+                                          [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
+                                              return PowerStatus::get(qmlEngine);
+                                          });
 
     // Create the identity manager on the main thread
     IdentityManager::get();
@@ -1005,6 +1012,11 @@ int main(int argc, char *argv[])
     }
 
     QQmlApplicationEngine engine;
+
+    // Serves "image://gradient/..." — every large gradient in the app goes through it so the
+    // ramps are dithered as they are quantised instead of banding. See backend/gradientimage.h.
+    engine.addImageProvider(QLatin1String("gradient"), new DitheredGradientProvider);
+
     QString initialView;
     bool hasGUI = true;
 

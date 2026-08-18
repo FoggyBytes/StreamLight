@@ -616,7 +616,6 @@ FocusScope {
     property int    updateJobHostIndex: -1
     property string updateJobHostName: ""
     property string updateJobPhase: "IDLE"
-    property int    updateJobPercent: -1
     property string updateJobMessage: ""
     property string updateJobError: ""
     property var    updateJobUpdates: []
@@ -631,7 +630,7 @@ FocusScope {
         updateJobActive = true
         _updateInstallStarted = false
         _updateMisses = 0
-        updateJobPhase = "CHECKING"; updateJobPercent = -1
+        updateJobPhase = "CHECKING"
         updateJobMessage = ""; updateJobError = ""
         updateJobUpdates = []; updateJobCounts = ({})
         computerModel.startUpdateCheck(index)
@@ -640,7 +639,7 @@ FocusScope {
     }
     function startUpdateInstall(scope) {
         _updateInstallStarted = true
-        updateJobPhase = "DOWNLOADING"; updateJobPercent = 0
+        updateJobPhase = "DOWNLOADING"
         updateJobMessage = qsTr("Preparing…")
         computerModel.startUpdateInstall(updateJobHostIndex, scope)
     }
@@ -1106,10 +1105,28 @@ FocusScope {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.topMargin: 26
         anchors.leftMargin: 44
         anchors.rightMargin: 44
-        height: 52
+        /*
+         * 22 and 60 are the clock's own top and height, not free numbers.
+         *
+         * The right corner is one strong figure with a quiet line under it; this is the same
+         * object mirrored, built from the same two sizes — 30 over 13, four pixels apart, which
+         * is the cluster's own spacing. So the two ends of the row open at y22 and close at y82
+         * together and read as one band rather than two blocks sharing a row.
+         *
+         * ⚠️ The wordmark used to be 23 against the clock's 30, which put the app's own name
+         * below a piece of chrome. It is levelled rather than raised past it: growing it further
+         * only moves the same argument to the other corner. The tracking is not multiplied with
+         * the size — 3.2 at 23 is 0.14em, and large type wants proportionally less, so 30 takes
+         * 3.6 and not the 4.2 the arithmetic would give.
+         *
+         * Keep this block 60 tall. The clock is the shell's now, pinned once at AppShell's
+         * `topMargin: 22` for all three screens, so a brand block that matches its height is one
+         * number nobody has to re-tune here later.
+         */
+        anchors.topMargin: 22
+        height: 60
 
         Image {
             id: brandIcon
@@ -1130,27 +1147,33 @@ FocusScope {
             anchors.left: brandIcon.right
             anchors.leftMargin: 14
             anchors.verticalCenter: brandIcon.verticalCenter
-            spacing: 1
+            // The cluster's own spacing, so the gap under the wordmark matches the gap under
+            // the clock opposite it.
+            spacing: 4
 
             // Uniform wordmark: "STREAMLIGHT" all caps, single size, Black weight, wide
             // letter-spacing. Avoids the optical-weight mismatch of synthesised small-caps.
             Label {
                 text: "STREAMLIGHT"
                 font.family: Theme.family
-                font.pixelSize: 23
+                font.pixelSize: 30
                 font.weight: Font.Black
                 font.bold: true
-                font.letterSpacing: 3.2
+                font.letterSpacing: 3.6
                 color: Theme.text
             }
 
             Label {
                 text: qsTr("a Moonlight fork")
                 font.family: Theme.family
-                font.pixelSize: 12
+                font.pixelSize: 13
                 color: Theme.text3
             }
         }
+
+        // (The clock, the date and the battery used to close this row. They are the shell's
+        //  now — see StatusCluster in AppShell — so that they land in the same corner here,
+        //  on the host page and in Settings instead of shifting with each header.)
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -1721,6 +1744,21 @@ FocusScope {
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: 360
                 implicitHeight: 48
+                /*
+                 * The same 15 characters Windows itself allows for a computer name — the
+                 * NetBIOS limit, and what the OS rename dialog enforces.
+                 *
+                 * A discovered name can never exceed it, since it arrives as `hostname` in
+                 * the server info, but this field could and was the only way past it. That
+                 * matters because the host name is drawn in a Row with no width constraint
+                 * on both the Home card and the host page's header, so its `elide` never
+                 * fires: a long enough name runs on until it reaches the clock. Capping the
+                 * one input that can produce one is cheaper than constraining every place it
+                 * is read, and takes nothing away — nobody deliberately names a host longer
+                 * than the machine it stands for. (Profile names are capped at 14 in
+                 * HostProfilesDialog for the same reason.)
+                 */
+                maximumLength: 15
                 color: Theme.text
                 selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
                 selectedTextColor: Theme.onAccent
@@ -1808,7 +1846,6 @@ FocusScope {
         id: updateDialog
         hostName:  homeScreen.updateJobHostName
         phase:     homeScreen.updateJobPhase
-        percent:   homeScreen.updateJobPercent
         message:   homeScreen.updateJobMessage
         errorText: homeScreen.updateJobError
         updates:   homeScreen.updateJobUpdates
@@ -1838,7 +1875,6 @@ FocusScope {
                 // (success); otherwise tolerate a few misses before declaring it lost.
                 if (homeScreen._updateInstallStarted) {
                     homeScreen.updateJobPhase = "REBOOTING"
-                    homeScreen.updateJobPercent = 100
                     homeScreen.updateJobMessage = qsTr("Host is restarting to finish updates.")
                     updatePollTimer.stop()
                 } else if (++homeScreen._updateMisses >= 4) {
@@ -1851,8 +1887,9 @@ FocusScope {
             homeScreen._updateMisses = 0
             if (phase === "DOWNLOADING" || phase === "INSTALLING")
                 homeScreen._updateInstallStarted = true
+            // (state.percent is deliberately dropped: the host still reports it, but it only
+            //  moves between files — see the note in UpdateDialog.)
             homeScreen.updateJobPhase   = phase
-            homeScreen.updateJobPercent = (state.percent !== undefined) ? state.percent : -1
             homeScreen.updateJobMessage = state.message ? state.message : ""
             homeScreen.updateJobError   = state.error ? state.error : ""
             if (state.updates !== undefined) homeScreen.updateJobUpdates = state.updates

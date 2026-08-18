@@ -20,40 +20,49 @@ Popup {
 
     signal cancelled()
 
+    // Shared dialog measurements — see Theme.uiScale.
+    readonly property real _u: Theme.uiScale
+    function _px(n) { return Math.round(n * _u) }
+
     modal: true
     focus: true
     closePolicy: Popup.NoAutoClose
     anchors.centerIn: Overlay.overlay
-    width: Math.min(480, parent ? parent.width * 0.8 : 480)
-    padding: 26
+    width: Math.min(_px(520), parent ? parent.width * 0.8 : _px(520))
+    padding: _px(28)
 
     background: Rectangle {
-        color: Theme.ground
-        radius: 14
+        // Theme.card, not Theme.ground: ground is the colour of the page underneath, so a
+        // panel painted with it does not lift off what it is covering.
+        color: Theme.card
+        radius: dialog._px(14)
         border.color: Theme.line
         border.width: 1
     }
 
-    Overlay.modal: Rectangle { color: "#b3000000" }
+    Overlay.modal: Rectangle { color: "#cc000000" }
 
     contentItem: Column {
-        spacing: 16
+        spacing: dialog._px(16)
         width: dialog.availableWidth
 
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("WAKE")
             font.family: Theme.family
-            font.pixelSize: 11
-            font.letterSpacing: 2
-            color: Theme.accent
+            // The grey, not the accent: in this interface the accent means "the focus is
+            // here", and an eyebrow is never focusable.
+            font.pixelSize: dialog._px(13)
+            font.bold: true
+            font.letterSpacing: dialog._u * 1.6
+            color: Theme.text3
         }
 
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
             text: dialog.hostName
             font.family: Theme.family
-            font.pixelSize: 22
+            font.pixelSize: dialog._px(22)
             font.bold: true
             color: Theme.text
         }
@@ -62,7 +71,7 @@ Popup {
         // ticks in a ragged column, and the point of that column is that it lines up.
         Column {
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 9
+            spacing: dialog._px(9)
 
             Repeater {
                 // Three, and it ends here: the link match that follows is shown on the host
@@ -72,14 +81,14 @@ Popup {
                         qsTr("StreamTweak ready")]
 
                 Row {
-                    spacing: 10
+                    spacing: dialog._px(10)
 
                     // Done · in progress · not yet, in one glyph column so the labels line up.
                     // 26px, not 14: a BusyIndicator draws its ring inside the box it is given,
                     // and at label height it came out as a speck.
                     Item {
-                        width: 26
-                        height: 26
+                        width: dialog._px(26)
+                        height: dialog._px(26)
                         anchors.verticalCenter: parent.verticalCenter
 
                         Label {
@@ -87,12 +96,12 @@ Popup {
                             visible: index < dialog.step
                             text: "✓"
                             font.family: Theme.family
-                            font.pixelSize: 15
+                            font.pixelSize: dialog._px(15)
                             color: Theme.online
                         }
                         BusyIndicator {
                             anchors.centerIn: parent
-                            width: 26; height: 26
+                            width: dialog._px(26); height: dialog._px(26)
                             visible: index === dialog.step
                             running: visible
                         }
@@ -102,7 +111,7 @@ Popup {
                         anchors.verticalCenter: parent.verticalCenter
                         text: modelData
                         font.family: Theme.family
-                        font.pixelSize: 14
+                        font.pixelSize: dialog._px(15)
                         color: index < dialog.step ? Theme.online
                              : index === dialog.step ? Theme.text
                              : Theme.text3
@@ -118,7 +127,7 @@ Popup {
             visible: dialog.detail !== ""
             text: dialog.detail
             font.family: Theme.family
-            font.pixelSize: 13
+            font.pixelSize: dialog._px(13)
             color: Theme.text3
         }
 
@@ -126,7 +135,6 @@ Popup {
             id: cancelBtn
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("Cancel")
-            fontSize: 14
             onActivated: dialog.cancelled()
             Keys.onEscapePressed: dialog.cancelled()
         }

@@ -44,6 +44,12 @@ FocusScope {
     property string hostNicSpeed: ""
     // Active per-host streaming profile (empty when no profile is active).
     property string hostProfileName: ""
+    // Slot and count travel with the name because the shoulders need them: -1 is Global, a
+    // real position in the cycle and not the absence of one, and a host with no profiles at
+    // all has nothing to move between.
+    property int    hostProfileSlot: -1
+    property int    hostProfileCount: 0
+    readonly property bool _hasProfiles: hostProfileCount >= 1
     // Active profile's override map (empty when none). The header shows the
     // EFFECTIVE config = global StreamingPreferences with this override applied.
     property var hostOverride: ({})
@@ -55,6 +61,9 @@ FocusScope {
     readonly property bool _effHdr:     (hostOverride && hostOverride.hdr     !== undefined) ? hostOverride.hdr     : StreamingPreferences.enableHdr
     readonly property int  _effCodec:   (hostOverride && hostOverride.codec   !== undefined) ? hostOverride.codec   : StreamingPreferences.videoCodecConfig
     readonly property int  _effAudio:   (hostOverride && hostOverride.audio   !== undefined) ? hostOverride.audio   : StreamingPreferences.audioConfig
+    // Frame pacing does nothing without V-Sync, and the per-game dialog offers frame
+    // pacing but not V-Sync — so it has to be told the effective value to grey against.
+    readonly property bool _effVsync:   (hostOverride && hostOverride.vsync   !== undefined) ? hostOverride.vsync === true : StreamingPreferences.enableVsync
 
     function _codecLabel(c) { return c === 1 ? "H.264" : c === 2 ? "HEVC" : c === 4 ? "AV1" : qsTr("Auto codec") }
     function _audioLabel(a) { return a === 1 ? "5.1" : a === 2 ? "7.1" : qsTr("Stereo") }
@@ -75,6 +84,22 @@ FocusScope {
     readonly property real _u: Math.max(0.62, Math.min(1.60, width / 1330))
     function _px(n) { return Math.round(n * _u) }
 
+    // ── The two columns ──────────────────────────────────────────────────────
+    /*
+     * The library on the left, the spotlight on the right, both running the full height
+     * under the configuration line.
+     *
+     * The page used to stack them: a spotlight band across the top and the list beneath
+     * it. That spent the width twice over — the band ended after its two buttons, and
+     * every row of the list was as wide as the screen to hold one name — while the list
+     * itself got four and a half titles out of a library with dozens. Side by side, the
+     * same screen shows seven and the cover finally has the size its artwork was made for.
+     */
+    readonly property int _sideMargin: _px(44)
+    readonly property int _colGap: _px(40)
+    readonly property int _libraryWidth:
+        Math.round((width - _sideMargin * 2 - _colGap) * 0.52)
+
     // ── Focus ────────────────────────────────────────────────────────────────
     /*
      * One zone: the library. Nothing else on this page can be reached with the pad.
@@ -89,6 +114,58 @@ FocusScope {
      * the only way to reach the other three and it stays.
      */
     function focusLibrary() { appGrid.forceActiveFocus() }
+
+    // The host went away while a launch screen was up. Deferred rather than dropped: see
+    // computerLost().
+    property bool goHomeWhenIdle : false
+
+    Connections {
+        target: stackView
+        function onDepthChanged() {
+            if (stackView.depth === 1 && appsRoot.goHomeWhenIdle) {
+                appsRoot.goHomeWhenIdle = false
+                if (appsRoot.appShell) appsRoot.appShell.showHome()
+            }
+        }
+    }
+
+    /**
+     * Builds the launch screen and pushes it.
+     *
+     * ⚠️ Lives here, on the page, and NOT in the list delegate where the values come from.
+     * A QML object keeps the context it was created in, and a delegate's context dies with the
+     * delegate — so a segue created down there is left holding an invalid context the moment
+     * this page goes away, even though the object itself survives on the stack. Every function
+     * on it then throws "attempted to evaluate a function in an invalid context", including
+     * the ones that end the launch: displayLaunchError sets no message and sessionFinished
+     * never pops. Seen on 12/08 — the host went offline mid-launch, computerLost() sent us
+     * Home, appsLoader unloaded this page, and the 503 that came back six seconds later
+     * arrived at a dead object, leaving the launch screen up forever with no error and no way
+     * out. The delegate passes plain values; the object belongs to the page.
+     */
+    function launchSegue(name, art, session, resume) {
+        var component = Qt.createComponent("StreamSegue.qml")
+        if (component.status !== Component.Ready) {
+            console.warn("StreamSegue.qml not ready:", component.errorString())
+            return
+        }
+        var segue = component.createObject(stackView, {
+            "appName":          name,
+            "boxArt":           art,
+            "session":          session,
+            "isResume":         resume,
+            // ⚠️ Built here and not passed in. A closure carries the context it was written
+            // in, so one written in the delegate would die with the delegate exactly like the
+            // segue used to — and this is the callback that records the session ending, which
+            // is what arms the "put the host's link back?" prompt.
+            "onSessionEndedFn": function() {
+                if (appsRoot.appShell)
+                    appsRoot.appShell.noteStreamEnded(appsRoot.computerIndex, appsRoot.hostName)
+            }
+        })
+        if (Window.window) Window.window.markStreamLaunching()
+        stackView.push(segue)
+    }
 
     // ── Pad glyphs ───────────────────────────────────────────────────────────
     // Resolved exactly as the status bar does, by SDL button POSITION — Nintendo swaps A/B
@@ -156,6 +233,22 @@ FocusScope {
             stopFocusedApp()
             event.accepted = true
         }
+        /*
+         * Profile cycling, the same pair as Home: LB/RB on the pad, Q/E on the keyboard.
+         *
+         * ⚠️ Handled here and not in AppShell even though the shell already owns F16/F17.
+         * Its handler returns early on any page but Home, and a key travels up the focus
+         * chain, so this page sees them first — which is where they belong, next to the
+         * badge they move. The shoulders carry inert keys of their own precisely so they
+         * cannot be confused with the host cycling on PgUp/PgDn.
+         */
+        else if (event.key === Qt.Key_F16 || event.key === Qt.Key_Q) {
+            cycleProfile(-1)
+            event.accepted = true
+        } else if (event.key === Qt.Key_F17 || event.key === Qt.Key_E) {
+            cycleProfile(1)
+            event.accepted = true
+        }
     }
 
     function resumeFocusedApp() {
@@ -175,6 +268,7 @@ FocusScope {
         appSettingsDialog.appName = name ? name : ""
         // So the per-game "inherit" option shows the active profile's name.
         appSettingsDialog.activeProfileName = appsRoot.hostProfileName
+        appSettingsDialog.effectiveVsync = appsRoot._effVsync
         appSettingsDialog.open()
     }
     function openCustomizeForFocused() {
@@ -249,15 +343,39 @@ FocusScope {
         return m >= 1000 ? (m / 1000) + " Gbps" : m + " Mbps"
     }
 
+    /*
+     * Re-read everything the active profile decides.
+     *
+     * ⚠️ `hostOverride` is assigned, not bound — it comes from a Q_INVOKABLE, so nothing
+     * invalidates it on its own. Every one of the badges on the configuration line hangs off
+     * it through `_eff*`, so reassigning it here is what makes them follow the profile the
+     * moment it changes; leaving it stale would show the previous profile's settings under
+     * the new profile's name, which is worse than not offering the shortcut at all.
+     */
+    function _refreshProfile() {
+        if (!hostComputerModel || computerIndex < 0) return
+        hostProfileSlot = hostComputerModel.hostActiveProfile(computerIndex)
+        hostProfileName = hostProfileSlot >= 0
+                          ? hostComputerModel.hostActiveProfileName(computerIndex) : ""
+        hostOverride    = hostComputerModel.hostActiveOverride(computerIndex)
+    }
+
+    // LB/RB and Q/E. The cycle includes Global at -1, so one profile is still two positions
+    // to move between — hence `< 1` and not `< 2`.
+    function cycleProfile(dir) {
+        if (!hostComputerModel || computerIndex < 0 || hostProfileCount < 1) return
+        hostComputerModel.cycleHostProfile(computerIndex, dir)
+        _refreshProfile()
+    }
+
     function _initFromHost() {
         if (!hostComputerModel || computerIndex < 0) return
         hostComputerModel.requestStreamTweakStatus(computerIndex)
         var link = hostComputerModel.probeLocalLink(computerIndex)
         _localMbps = link.usable === true ? link.mbps : 0
         hostComputerModel.requestHostNetInfo(computerIndex)
-        hostProfileName = (hostComputerModel.hostActiveProfile(computerIndex) >= 0)
-                          ? hostComputerModel.hostActiveProfileName(computerIndex) : ""
-        hostOverride = hostComputerModel.hostActiveOverride(computerIndex)
+        hostProfileCount = hostComputerModel.hostProfileCount(computerIndex)
+        _refreshProfile()
         if (appGrid) {
             appGrid.storeMap = hostComputerModel.getCachedAppStores(computerIndex)
             hostComputerModel.requestAppStores(computerIndex)
@@ -408,20 +526,40 @@ FocusScope {
                 font.letterSpacing: -appsRoot._u * 0.45
                 elide: Label.ElideRight
             }
-        }
 
-        // Chips, right-aligned — the same vocabulary as the host stage, so a host reads the
-        // same on both screens.
-        Row {
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: appsRoot._px(8)
+            /*
+             * The chips, beside the host name rather than in the far corner.
+             *
+             * They were on the right only because nothing else was, and once the clock arrived
+             * the two ended up sharing one corner without sharing a baseline — chips one line
+             * tall, clock two — which read as a dense block instead of two separate readings.
+             * They describe *this host*, and the host's name is here, so this is where they are
+             * read. It is also how the Home card already arranges them.
+             */
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                leftPadding: appsRoot._px(6)
+                spacing: appsRoot._px(8)
 
             Repeater {
                 model: {
                     var c = [{ text: qsTr("Online"), dot: Theme.online }]
-                    if (appsRoot.hostProfileName.length > 0)
-                        c.push({ text: appsRoot.hostProfileName, dot: Theme.accent })
+                    /*
+                     * The profile, with its shoulders on either side — the same arrangement
+                     * as the host card on Home, and for the same reason: LB/RB attached to
+                     * the thing they move need no caption, because the badge between them
+                     * says what they change.
+                     *
+                     * ⚠️ Which is why it reads "Global" rather than disappearing when no
+                     * profile is active. With the shoulders on it, an empty slot would leave
+                     * them pointing at nothing; Global is a real position in the cycle. A
+                     * host with no profiles at all shows neither, since naming the only
+                     * possible state tells the user nothing.
+                     */
+                    if (appsRoot._hasProfiles)
+                        c.push({ text: appsRoot.hostProfileSlot >= 0 && appsRoot.hostProfileName.length > 0
+                                       ? appsRoot.hostProfileName : qsTr("Global"),
+                                 dot: Theme.accent, kind: "profile" })
                     if (appsRoot.isTailscaleClone)
                         c.push({ text: qsTr("Tailscale"), dot: Theme.text2 })
                     // ⚠️ Same words as the host card on Home, in the same order of precedence.
@@ -445,38 +583,65 @@ FocusScope {
                     return c
                 }
 
-                delegate: Rectangle {
-                    height: appsRoot._px(30)
-                    width: chipRow.implicitWidth + appsRoot._px(26)
-                    radius: appsRoot._px(6)
-                    color: "transparent"
-                    border.color: Theme.line
-                    border.width: 1
+                // The shoulders are drawn inside the delegate rather than as a separate block
+                // beside the row: it keeps the profile in its place in the order — after
+                // Online, before Tailscale — with one delegate and no second copy of the chip.
+                // A Row skips invisible children, so on every other chip the two collapse and
+                // the spacing closes by itself.
+                delegate: Row {
+                    spacing: appsRoot._px(8)
 
-                    Row {
-                        id: chipRow
-                        anchors.centerIn: parent
-                        spacing: appsRoot._px(7)
+                    ProfileShoulder {
+                        visible: modelData.kind === "profile"
+                        anchors.verticalCenter: parent.verticalCenter
+                        buttonKey: "LB"; keyLabel: "Q"
+                        onTriggered: appsRoot.cycleProfile(-1)
+                    }
 
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: appsRoot._px(8); height: width
-                            radius: width / 2
-                            color: modelData.dot
+                    Rectangle {
+                        height: appsRoot._px(26)
+                        width: chipRow.implicitWidth + appsRoot._px(26)
+                        radius: appsRoot._px(6)
+                        color: "transparent"
+                        border.color: Theme.line
+                        border.width: 1
+
+                        Row {
+                            id: chipRow
+                            anchors.centerIn: parent
+                            spacing: appsRoot._px(7)
+
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: appsRoot._px(8); height: width
+                                radius: width / 2
+                                color: modelData.dot
+                            }
+                            Label {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: modelData.text.toUpperCase()
+                                color: modelData.fg !== undefined ? modelData.fg : Theme.text2
+                                font.family: Theme.family
+                                font.pixelSize: appsRoot._px(13)
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: appsRoot._u
+                            }
                         }
-                        Label {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: modelData.text.toUpperCase()
-                            color: modelData.fg !== undefined ? modelData.fg : Theme.text2
-                            font.family: Theme.family
-                            font.pixelSize: appsRoot._px(14)
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: appsRoot._u
-                        }
+                    }
+
+                    ProfileShoulder {
+                        visible: modelData.kind === "profile"
+                        anchors.verticalCenter: parent.verticalCenter
+                        buttonKey: "RB"; keyLabel: "E"
+                        onTriggered: appsRoot.cycleProfile(1)
                     }
                 }
             }
         }
+        }
+
+        // (The clock is the shell's — see StatusCluster in AppShell. Anchored here it took
+        //  this header's `_px` margins, so it sat in a different corner from Home's.)
     }
 
     // ── The configuration line ────────────────────────────────────────────────
@@ -556,7 +721,7 @@ FocusScope {
                     anchors.centerIn: parent
                     visible: cfgChip._isSep
                     width: 1
-                    height: appsRoot._px(22)
+                    height: appsRoot._px(26)
                     color: Theme.line
                 }
 
@@ -567,7 +732,7 @@ FocusScope {
                     text: cfgChip._isGrp ? String(modelData.text).toUpperCase() : String(modelData.text)
                     color: cfgChip._isGrp ? Theme.text3 : Theme.text
                     font.family: Theme.family
-                    font.pixelSize: appsRoot._px(cfgChip._isGrp ? 14 : 16)
+                    font.pixelSize: appsRoot._px(13)
                     font.weight: cfgChip._isGrp ? Font.Normal : Font.DemiBold
                     font.letterSpacing: cfgChip._isGrp ? appsRoot._u * 1.2 : 0
                 }
@@ -647,47 +812,58 @@ FocusScope {
     Item {
         id: hero
         anchors.top: cfgLine.bottom
-        anchors.left: parent.left
         anchors.right: parent.right
+        anchors.bottom: parent.bottom
         anchors.topMargin: appsRoot._px(16)
-        anchors.leftMargin: appsRoot._px(44)
-        anchors.rightMargin: appsRoot._px(44)
-        // The cover sets the height, and it came down from 290: the block above the list has
-        // to earn its space, and everything it says fits in the height of a readable cover.
-        // What it gives back goes to the library, which is what the screen is for.
-        height: appsRoot._px(150)
+        anchors.rightMargin: appsRoot._sideMargin
+        anchors.bottomMargin: appsRoot._px(58)
+        width: appsRoot.width - appsRoot._sideMargin * 2
+               - appsRoot._colGap - appsRoot._libraryWidth
         visible: appGrid.count > 0
+
+        // Cover, name, meta and actions as one centred stack. The column is what the
+        // library leaves, so everything in it is laid out from the centre outwards.
+        Column {
+            id: heroStack
+            anchors.centerIn: parent
+            width: parent.width
+            spacing: 0
 
         // ── The big cover ────────────────────────────────────────────────────
         Item {
             id: heroArtHolder
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
+            anchors.horizontalCenter: parent.horizontalCenter
 
-            // The box takes the artwork's own shape instead of imposing one.
+            /*
+             * A fixed 2:3 box, and the artwork fitted inside it.
+             *
+             * The box used to take the artwork's own shape, which was the right fix for the
+             * 3:4 crop that came before it but is the wrong one here: a square cover made a
+             * square box, so the column changed width as you moved down the list, and at this
+             * size that movement is the most visible thing on the page. 2:3 is not an
+             * arbitrary choice either — it is what the rows below already use, and what every
+             * cover the host produces now is.
+             *
+             * PreserveAspectFit, never Crop: anything off-ratio gets transparent bands rather
+             * than having its edges cut off. The shadow is cast from the image's own alpha, so
+             * it follows the artwork and not the box.
+             *
+             * 340 is the design height. ⚠️ It is a ceiling as much as a size: the covers
+             * themselves top out at 600x900 (Steam's library capsule, and there is no larger
+             * portrait asset), and on a 4K panel at 200% scaling — where _u is back at 1.32
+             * while the device pixel ratio is 2 — a design height of 340 asks for exactly 900
+             * physical pixels. Larger than this and the biggest cover on the screen starts
+             * being the softest.
+             */
+            height: Math.min(appsRoot._px(340), hero.height - appsRoot._px(150))
+            width: Math.round(height * 2 / 3)
+
+            // Hidden across a regeneration: the reload blanks the image and brings it back,
+            // which would otherwise flash on every return from a stream.
             //
-            // It used to be a fixed 3:4 with PreserveAspectCrop, which quietly cut the edges
-            // off anything that isn't 3:4 — and most of a real library isn't: Steam ships
-            // 600x900, a 2:3. Deriving the width from sourceSize means the cover is shown
-            // whole at whatever ratio it happens to have, and the mask and shadow below follow
-            // the same box. The 2:3 fallback covers the moment before the image has loaded and
-            // sourceSize is still zero.
-            readonly property real _ratio:
-                (heroArt.sourceSize.width > 0 && heroArt.sourceSize.height > 0)
-                    ? heroArt.sourceSize.width / heroArt.sourceSize.height : (2 / 3)
-            width: Math.round(height * _ratio)
-
-            // Hidden across a regeneration. The reload drops sourceSize to zero, so _ratio
-            // falls back to (2/3) and returns — two width changes the user has no reason to
-            // watch, and which would read as a wobble on every return from a stream.
+            // The width no longer moves — the box is a fixed ratio of its own height — so the
+            // Behavior that used to ease it away is gone with the shape it was easing.
             opacity: appsRoot._coverRegenerating ? 0 : 1
-
-            Behavior on width {
-                // Off during a regeneration: with the box invisible there is nothing to
-                // ease, and animating it would only drag those two changes out over 280 ms.
-                enabled: !Theme.reduceAnimations && !appsRoot._coverRegenerating
-                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
-            }
 
             Image {
                 id: heroArt
@@ -699,9 +875,8 @@ FocusScope {
                 mipmap: true
                 visible: false
 
-                // Deferred by a tick on purpose: sourceSize and status settle together, and
-                // clearing the flag in the same tick would re-enable the Behavior in time to
-                // animate the last width change in full view — the wobble this avoids.
+                // Deferred by a tick on purpose: clearing the flag in the same tick as the
+                // status change brings the box back before the new frame is on screen.
                 onStatusChanged: {
                     if (appsRoot._coverRegenerating
                             && (status === Image.Ready || status === Image.Error)) {
@@ -758,21 +933,32 @@ FocusScope {
         }
 
         // ── Name, meta, actions ──────────────────────────────────────────────
-        Item {
-            anchors.left: heroArtHolder.right
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.leftMargin: appsRoot._px(24)
+        // Under the cover now rather than beside it, and centred on it: the column is
+        // narrower than the old full-width band, so a name set against its left edge would
+        // sit off to one side of the artwork it belongs to.
+        Item { width: 1; height: appsRoot._px(20) }
 
             Column {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width
                 spacing: 0
 
+                /*
+                 * The name in full, always — a long title gets smaller, never cut.
+                 *
+                 * It used to elide on one line, which is how "Torment: Tides of Numenera"
+                 * became "Torment: Tides of Numene…" — the one thing on the page whose whole
+                 * job is to say which game this is, saying most of it.
+                 *
+                 * fontSizeMode does the work: Fit shrinks the text until it fits the box, and
+                 * minimumPixelSize is the floor. Two lines are allowed so that past the floor
+                 * it wraps rather than carrying on shrinking — below about 26 the title stops
+                 * reading as the title, and a name long enough to need that has room to wrap.
+                 * Only past both does it finally elide, which no name in a real library reaches.
+                 */
                 Label {
                     width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
                     text: appsRoot.focusedAppName
                     color: Theme.text
                     font.family: Theme.family
@@ -780,11 +966,14 @@ FocusScope {
                     // 24 to 30, the setting values from 14 to 16, the list rows from 76 to
                     // 84. It was never too small: it was out of proportion with the rest,
                     // and shrinking the one that was shouting was half of fixing that.
-                    font.pixelSize: appsRoot._px(44)
+                    font.pixelSize: appsRoot._px(40)
+                    fontSizeMode: Text.Fit
+                    minimumPixelSize: appsRoot._px(26)
                     font.bold: true
                     font.letterSpacing: -appsRoot._u * 0.9
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
                     elide: Text.ElideRight
-                    maximumLineCount: 1
                 }
 
                 Item { width: 1; height: appsRoot._px(4) }
@@ -794,7 +983,7 @@ FocusScope {
                 // The mark earns its place by being recognisable before the word is read, which
                 // is the whole reason storefronts have one.
                 Row {
-                    width: parent.width
+                    anchors.horizontalCenter: parent.horizontalCenter
                     spacing: appsRoot._px(8)
 
                     Image {
@@ -810,10 +999,12 @@ FocusScope {
 
                     Label {
                         anchors.verticalCenter: parent.verticalCenter
-                        // Sized from what the icon leaves, so a long line still elides against
-                        // the panel edge instead of running under the last-session block.
-                        width: parent.width - (heroStoreIcon.visible
-                                               ? heroStoreIcon.width + parent.spacing : 0)
+                        // Its natural width, capped by what the column leaves once the mark has
+                        // taken its share — so the row stays centred on short text and still
+                        // elides instead of running past the column on long text.
+                        width: Math.min(implicitWidth,
+                                        hero.width - (heroStoreIcon.visible
+                                                      ? heroStoreIcon.width + parent.spacing : 0))
                         text: {
                             var parts = []
                             if (appsRoot.focusedStore.length > 0) parts.push(appsRoot.focusedStore)
@@ -823,7 +1014,7 @@ FocusScope {
                         }
                         color: appsRoot.focusedAppIsRunning ? Theme.online : Theme.text2
                         font.family: Theme.family
-                        font.pixelSize: appsRoot._px(17)
+                        font.pixelSize: appsRoot._px(16)
                         elide: Text.ElideRight
                         maximumLineCount: 1
                     }
@@ -847,6 +1038,7 @@ FocusScope {
                  */
                 Row {
                     id: heroActions
+                    anchors.horizontalCenter: parent.horizontalCenter
                     spacing: appsRoot._px(10)
 
                     readonly property var actions: {
@@ -879,8 +1071,8 @@ FocusScope {
 
                             readonly property bool _hovered: heroBtnMouse.containsMouse
 
-                            height: appsRoot._px(44)
-                            width: heroBtnRow.implicitWidth + appsRoot._px(40)
+                            height: appsRoot._px(34)
+                            width: heroBtnRow.implicitWidth + appsRoot._px(26)
                             radius: appsRoot._px(9)
 
                             color: _hovered ? "#1fffffff" : "#0dffffff"
@@ -904,7 +1096,7 @@ FocusScope {
                                     anchors.verticalCenter: parent.verticalCenter
                                     buttonKey: modelData.btn
                                     keyLabel:  modelData.key
-                                    size: appsRoot._px(24)
+                                    size: appsRoot._px(19)
                                 }
 
                                 Label {
@@ -912,7 +1104,7 @@ FocusScope {
                                     text: modelData.label
                                     color: modelData.danger ? Theme.danger : Theme.text
                                     font.family: Theme.family
-                                    font.pixelSize: appsRoot._px(18)
+                                    font.pixelSize: appsRoot._px(15)
                                     // The launch verb carries a shade more weight — it is the
                                     // primary action — without an accent fill, which would
                                     // read as focus on a button the pad cannot reach.
@@ -937,9 +1129,9 @@ FocusScope {
     // ── Rail caption ──────────────────────────────────────────────────────────
     Label {
         id: railLabel
-        anchors.top: hero.visible ? hero.bottom : cfgLine.bottom
+        anchors.top: cfgLine.bottom
         anchors.left: parent.left
-        anchors.leftMargin: appsRoot._px(44)
+        anchors.leftMargin: appsRoot._sideMargin
         anchors.topMargin: appsRoot._px(16)
         text: qsTr("ALL APPS")
         color: Theme.text3
@@ -964,14 +1156,14 @@ FocusScope {
         id: appGrid
         anchors.top: railLabel.bottom
         anchors.left: parent.left
-        anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.topMargin: appsRoot._px(6)
-        anchors.leftMargin: appsRoot._px(44)
-        anchors.rightMargin: appsRoot._px(44)
-        anchors.bottomMargin: appsRoot._px(10)
+        anchors.leftMargin: appsRoot._sideMargin
+        anchors.bottomMargin: appsRoot._px(58)
+        width: appsRoot._libraryWidth
 
-        // Rows must not draw over the hero while the list scrolls.
+        // The list runs the full height of the page now, which is where the extra titles
+        // come from: the spotlight moved out of its way instead of sitting on top of it.
         clip: true
         boundsBehavior: Flickable.OvershootBounds
         // Keeps the focused row off the edges while walking with the pad, so the next title
@@ -1013,6 +1205,16 @@ FocusScope {
         }
 
         function computerLost() {
+            // ⚠️ Never while a launch screen is up. Going Home unloads this page, and this
+            // page owns the launch screen's QML context — pulling it out from under a launch
+            // in flight leaves an object that is still on screen but whose every function
+            // throws "invalid context", so nothing can report the failure and nothing pops it.
+            // That is the 12/08 hang: the host went offline six seconds before answering 503.
+            // A host that has gone away is worth leaving, just not this second.
+            if (stackView.depth > 1) {
+                appsRoot.goHomeWhenIdle = true
+                return
+            }
             if (appsRoot.appShell) appsRoot.appShell.showHome()
         }
 
@@ -1120,7 +1322,7 @@ FocusScope {
                         text: model.name
                         color: Theme.text
                         font.family: Theme.family
-                        font.pixelSize: appsRoot._px(23)
+                        font.pixelSize: appsRoot._px(22)
                         font.weight: appDelegate._lit ? Font.DemiBold : Font.Normal
                         elide: Text.ElideRight
                         maximumLineCount: 1
@@ -1137,8 +1339,10 @@ FocusScope {
                             return parts.join("  ·  ")
                         }
                         color: Theme.text3
+                        // The same body as the store line in the spotlight: one size for the
+                        // page's secondary text instead of a 15 here and a 17 there.
+                        font.pixelSize: appsRoot._px(16)
                         font.family: Theme.family
-                        font.pixelSize: appsRoot._px(15)
                         elide: Text.ElideRight
                         maximumLineCount: 1
                     }
@@ -1155,7 +1359,7 @@ FocusScope {
                     anchors.rightMargin: appsRoot._px(16)
                     anchors.verticalCenter: parent.verticalCenter
                     width: runTagLabel.implicitWidth + appsRoot._px(22)
-                    height: appsRoot._px(30)
+                    height: appsRoot._px(26)
                     radius: appsRoot._px(6)
                     color: Theme.accent
 
@@ -1215,29 +1419,13 @@ FocusScope {
                     return
                 }
 
-                var component = Qt.createComponent("StreamSegue.qml")
-                if (component.status !== Component.Ready) {
-                    console.warn("StreamSegue.qml not ready:", component.errorString())
-                    return
-                }
-                var segue = component.createObject(stackView, {
-                    "appName":   model.name,
-                    // The curtain wants the box art, and this is the only place that has it:
-                    // it comes from the app model, while NvApp carries no artwork at all.
-                    "boxArt":    model.boxart,
-                    "session":   m.createSessionForApp(index),
-                    "isResume":  runningId === model.appid,
-                    // Every way a stream can end — including the game closing itself, which is
-                    // the common one — lands here. Nothing happens to the link now: the host
-                    // holds the streaming speed, and this only records that there is something
-                    // to ask about when we get back to the host list.
-                    "onSessionEndedFn": function() {
-                        if (appsRoot.appShell)
-                            appsRoot.appShell.noteStreamEnded(appsRoot.computerIndex, appsRoot.hostName)
-                    }
-                })
-                if (Window.window) Window.window.markStreamLaunching()
-                stackView.push(segue)
+                // The curtain wants the box art, and this delegate is the only place that has
+                // it: it comes from the app model, while NvApp carries no artwork at all.
+                // Plain values only — the segue is built by the page, see launchSegue().
+                appsRoot.launchSegue(model.name,
+                                     model.boxart,
+                                     m.createSessionForApp(index),
+                                     runningId === model.appid)
             }
 
             onClicked: {
@@ -1255,7 +1443,26 @@ FocusScope {
             }
         }
 
-        ScrollBar.vertical: ScrollBar {}
+        /*
+         * On the left edge of the list, not the right.
+         *
+         * A ScrollBar sits at the trailing edge by default, which was fine when the list was
+         * the whole page. With the library in the left column that edge lands in the middle
+         * of the screen, between the two halves, where it reads as a divider rather than as
+         * the scrollbar of anything. On the outside edge it separates nothing and stays
+         * attached to the column it describes.
+         *
+         * ⚠️ mirrored, not a negative x: the handle has to grow from the correct side, and
+         * LayoutMirroring on the bar alone flips it without touching the list's own layout.
+         */
+        ScrollBar.vertical: ScrollBar {
+            parent: appGrid
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: -appsRoot._px(14)
+            LayoutMirroring.enabled: true
+        }
     }
 
     // ── Empty state ───────────────────────────────────────────────────────────

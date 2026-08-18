@@ -25,6 +25,9 @@ static AppOverride readOverrideGroup(const QSettings& s)
     if (s.contains("hue"))         { ov.hasHue = true;         ov.hueSync = s.value("hue").toBool(); }
     if (s.contains("matchlink"))   { ov.hasMatchLink = true;   ov.matchLinkSpeed = s.value("matchlink").toBool(); }
     if (s.contains("waitgame"))      { ov.hasWaitForGame = true; ov.waitForGame = s.value("waitgame").toBool(); }
+    if (s.contains("refreshrate"))   { ov.hasRefreshRate = true; ov.refreshRateMode = s.value("refreshrate").toInt(); }
+    if (s.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = s.value("displaymode").toInt(); }
+    if (s.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = s.value("vsync").toBool(); }
     return ov;
 }
 
@@ -40,6 +43,9 @@ static void writeOverrideGroup(QSettings& s, const AppOverride& ov)
     if (ov.hasHue)         s.setValue("hue", ov.hueSync);
     if (ov.hasMatchLink)   s.setValue("matchlink", ov.matchLinkSpeed);
     if (ov.hasWaitForGame) s.setValue("waitgame", ov.waitForGame);
+    if (ov.hasRefreshRate) s.setValue("refreshrate", ov.refreshRateMode);
+    if (ov.hasDisplayMode) s.setValue("displaymode", ov.windowMode);
+    if (ov.hasVsync)       s.setValue("vsync", ov.enableVsync);
 }
 
 QVariantMap appOverrideToMap(const AppOverride& ov)
@@ -55,6 +61,9 @@ QVariantMap appOverrideToMap(const AppOverride& ov)
     if (ov.hasHue)         m["hue"] = ov.hueSync;
     if (ov.hasMatchLink)   m["matchlink"] = ov.matchLinkSpeed;
     if (ov.hasWaitForGame) m["waitgame"] = ov.waitForGame;
+    if (ov.hasRefreshRate) m["refreshrate"] = ov.refreshRateMode;
+    if (ov.hasDisplayMode) m["displaymode"] = ov.windowMode;
+    if (ov.hasVsync)       m["vsync"] = ov.enableVsync;
     return m;
 }
 
@@ -75,6 +84,9 @@ AppOverride appOverrideFromMap(const QVariantMap& m)
     if (m.contains("hue"))         { ov.hasHue = true;         ov.hueSync = m.value("hue").toBool(); }
     if (m.contains("matchlink"))   { ov.hasMatchLink = true;   ov.matchLinkSpeed = m.value("matchlink").toBool(); }
     if (m.contains("waitgame"))      { ov.hasWaitForGame = true; ov.waitForGame = m.value("waitgame").toBool(); }
+    if (m.contains("refreshrate"))   { ov.hasRefreshRate = true; ov.refreshRateMode = m.value("refreshrate").toInt(); }
+    if (m.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = m.value("displaymode").toInt(); }
+    if (m.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = m.value("vsync").toBool(); }
     return ov;
 }
 
@@ -90,6 +102,9 @@ void applyAppOverride(StreamingPreferences* p, const AppOverride& ov)
     if (ov.hasHue)         p->hueSyncIntegration = ov.hueSync;
     if (ov.hasMatchLink)   p->matchHostLinkSpeed = ov.matchLinkSpeed;
     if (ov.hasWaitForGame) p->waitForGameOnScreen = ov.waitForGame;
+    if (ov.hasRefreshRate) p->refreshRateMode = (StreamingPreferences::RefreshRateMode)ov.refreshRateMode;
+    if (ov.hasDisplayMode) p->windowMode = (StreamingPreferences::WindowMode)ov.windowMode;
+    if (ov.hasVsync)       p->enableVsync = ov.enableVsync;
 }
 
 // ── AppSettingsManager (per-game) ────────────────────────────────────────────

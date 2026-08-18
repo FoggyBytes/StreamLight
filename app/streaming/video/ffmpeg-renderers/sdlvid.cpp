@@ -241,17 +241,14 @@ void SdlRenderer::renderOverlay(Overlay::OverlayType type)
                 m_OverlayRects[type].x = 0;
                 m_OverlayRects[type].y = viewportRect.h - newSurface->h;
             }
-            else if (type == Overlay::OverlayDebug) {
-                // Position from OverlayManager (supports drag)
-                m_OverlayRects[type].x = (int)Session::get()->getOverlayManager().getOverlayX(type);
-                m_OverlayRects[type].y = (int)Session::get()->getOverlayManager().getOverlayY(type);
-            }
-            else if (type == Overlay::OverlayStreamSettings) {
-                // Top right, inset a few px off the edges
+            else if (type == Overlay::OverlayDebug || type == Overlay::OverlayStreamSettings) {
+                // Opposite top corners — the stats card takes the one the user chose,
+                // the settings panel the other.
                 const int kEdgeMargin = 12;
                 SDL_Rect viewportRect;
                 SDL_RenderGetViewport(m_Renderer, &viewportRect);
-                m_OverlayRects[type].x = viewportRect.w - newSurface->w - kEdgeMargin;
+                m_OverlayRects[type].x = Overlay::OverlayManager::getOverlayOriginX(
+                            type, viewportRect.w, newSurface->w, kEdgeMargin);
                 m_OverlayRects[type].y = kEdgeMargin;
             }
 
@@ -268,12 +265,13 @@ void SdlRenderer::renderOverlay(Overlay::OverlayType type)
         }
 
         // If we have an overlay texture, render it too.
-        // For the debug overlay, always sync the rect position (supports live drag).
+        //
+        // ⚠️ The debug overlay's rect used to be re-read from OverlayManager here on every
+        // frame, for a drag feature that was never built. It has to go now that the corner
+        // is a setting: the rect computed above would be overwritten by the manager's
+        // untouched (12,12) on the very next frame, and top-centre and top-right would look
+        // like they did nothing at all.
         if (m_OverlayTextures[type] != nullptr) {
-            if (type == Overlay::OverlayDebug) {
-                m_OverlayRects[type].x = (int)Session::get()->getOverlayManager().getOverlayX(type);
-                m_OverlayRects[type].y = (int)Session::get()->getOverlayManager().getOverlayY(type);
-            }
             SDL_RenderCopy(m_Renderer, m_OverlayTextures[type], nullptr, &m_OverlayRects[type]);
         }
     }

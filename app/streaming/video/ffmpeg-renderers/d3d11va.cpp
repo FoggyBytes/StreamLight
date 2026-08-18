@@ -1194,14 +1194,11 @@ bool D3D11VARenderer::createOverlayVertexBuffer(Overlay::OverlayType type, int w
         renderRect.x = 0;
         renderRect.y = 0;
     }
-    else if (type == Overlay::OverlayDebug) {
-        // Top-left: y=0 is bottom, so shift up by the overlay height to reach the top edge
-        renderRect.x = kEdgeMargin;
-        renderRect.y = (float)(m_DisplayHeight - height - kEdgeMargin);
-    }
-    else if (type == Overlay::OverlayStreamSettings) {
-        // Top-right
-        renderRect.x = (float)(m_DisplayWidth - width - kEdgeMargin);
+    else if (type == Overlay::OverlayDebug || type == Overlay::OverlayStreamSettings) {
+        // Opposite top corners — the stats card takes the one the user chose, the settings
+        // panel the other. y=0 is the bottom edge here, so the top of the screen is a full
+        // overlay height down from m_DisplayHeight.
+        renderRect.x = (float)Overlay::OverlayManager::getOverlayOriginX(type, m_DisplayWidth, width, kEdgeMargin);
         renderRect.y = (float)(m_DisplayHeight - height - kEdgeMargin);
     }
 

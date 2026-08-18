@@ -20,6 +20,10 @@ import Theme 1.0
 Popup {
     id: dlg
 
+    // Shared dialog measurements — see Theme.uiScale.
+    readonly property real _u: Theme.uiScale
+    function _px(n) { return Math.round(n * _u) }
+
     property string hostName: ""
     // What the host is using now, so the current choice reads as selected.
     property string currentImage: ""
@@ -40,13 +44,13 @@ Popup {
     Overlay.modal: Rectangle { color: "#cc000000" }
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-    padding: 28
+    padding: dlg._px(28)
 
     background: Rectangle {
         color: Theme.card
         border.color: Theme.line
         border.width: 1
-        radius: 12
+        radius: dlg._px(12)
     }
 
     // Focus lands on the swatch row: picking a colour is the common case, and the file
@@ -54,13 +58,13 @@ Popup {
     onOpened: swatchRow.forceActiveFocus()
 
     contentItem: Column {
-        spacing: 20
+        spacing: dlg._px(20)
 
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("BACKGROUND") + (dlg.hostName.length ? "  ·  " + dlg.hostName : "")
             font.family: Theme.family
-            font.pixelSize: 13
+            font.pixelSize: dlg._px(13)
             font.bold: true
             font.letterSpacing: 1.6
             color: Theme.text3
@@ -70,7 +74,7 @@ Popup {
         FocusScope {
             id: swatchRow
             width: swatches.implicitWidth
-            height: 64
+            height: dlg._px(64)
             anchors.horizontalCenter: parent.horizontalCenter
             activeFocusOnTab: true
 
@@ -89,7 +93,7 @@ Popup {
             Row {
                 id: swatches
                 anchors.centerIn: parent
-                spacing: 12
+                spacing: dlg._px(12)
 
                 Repeater {
                     model: dlg._seeds
@@ -98,8 +102,8 @@ Popup {
                         readonly property bool _focused: swatchRow.activeFocus && swatchRow.index === index
                         readonly property bool _current: dlg.currentSeed === modelData && dlg.currentImage === ""
 
-                        width: 52; height: 52
-                        radius: 10
+                        width: dlg._px(52); height: dlg._px(52)
+                        radius: dlg._px(10)
                         color: modelData
                         border.width: _focused ? 3 : (_current ? 2 : 0)
                         border.color: _focused ? Theme.accent : Theme.text
@@ -117,7 +121,7 @@ Popup {
                             visible: parent._current
                             text: "✓"
                             color: "#ffffff"
-                            font.pixelSize: 22
+                            font.pixelSize: dlg._px(22)
                             font.bold: true
                         }
 
@@ -138,12 +142,12 @@ Popup {
         // ── Picture / clear ──────────────────────────────────────────────────
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 12
+            spacing: dlg._px(12)
 
             DialogButton {
                 id: pickBtn
                 text: qsTr("Choose a picture…")
-                implicitWidth: 190
+                implicitWidth: dlg._px(190)
                 KeyNavigation.right: clearBtn
                 KeyNavigation.up: swatchRow
                 onActivated: fileDialog.open()
@@ -152,7 +156,7 @@ Popup {
             DialogButton {
                 id: clearBtn
                 text: qsTr("Clear")
-                implicitWidth: 130
+                implicitWidth: dlg._px(130)
                 KeyNavigation.left: pickBtn
                 KeyNavigation.right: closeBtn
                 KeyNavigation.up: swatchRow
@@ -163,7 +167,7 @@ Popup {
                 id: closeBtn
                 text: qsTr("Done")
                 affirmative: true
-                implicitWidth: 130
+                implicitWidth: dlg._px(130)
                 KeyNavigation.left: clearBtn
                 KeyNavigation.up: swatchRow
                 onActivated: dlg.close()
@@ -172,13 +176,13 @@ Popup {
 
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
-            width: 460
+            width: dlg._px(460)
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             text: qsTr("The picture is darkened behind the host's name and details, and left alone everywhere else. Its colours also become the gradient, so the two never clash.")
             color: Theme.text3
             font.family: Theme.family
-            font.pixelSize: 12
+            font.pixelSize: dlg._px(12)
         }
     }
 

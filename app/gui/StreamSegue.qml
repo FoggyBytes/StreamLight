@@ -29,6 +29,14 @@ Item {
         else            session.revealStreamWindow(true)
     }
 
+    // X, both halves of it: from a controller it arrives as Key_Menu (that is what
+    // SdlGamepadKeyNavigation makes of X while it still owns the pad), from a keyboard as the
+    // letter. Nothing else on this screen takes focus, so both land here.
+    Keys.onMenuPressed: function(event) { _cancelLaunch(); event.accepted = true }
+    Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_X) { _cancelLaunch(); event.accepted = true }
+    }
+
     property Session session
     property string appName
     property url boxArt
@@ -83,18 +91,24 @@ Item {
     readonly property bool _waiting : session ? session.waitsForGame : false
 
     // ── The way out, and when it is worth offering ────────────────────────────
-    // Set once the loader knows whether a controller is attached; drives which of the two
-    // hint rows is used. Bindings rather than imperative visible= assignments, because in
-    // unlock mode the hint has to disappear by itself the moment the PIN pad takes over.
-    property bool _hasPad   : false
+    // Bindings rather than imperative visible= assignments, because in unlock mode the hint
+    // has to disappear by itself the moment the PIN pad takes over. Which device each prompt
+    // is drawn for is ActionHint's business, not this screen's.
     property bool _revealed : false
 
     readonly property bool _exitHintOn:
         !_revealed && (unlockMode ? !unlockPad.visible : _waiting)
 
+    // "Give up" is worth offering on every launch, not only the ones holding a picture back:
+    // the launches that need it most are the ones where nothing arrives at all. Held back a
+    // few seconds by cancelHintTimer so an ordinary launch never shows it.
+    property bool _cancelHintOn : false
+    readonly property bool _giveUpHintOn:
+        !_revealed && !unlockMode && !_cancelRequested && _cancelHintOn
+
     // Unlock mode goes back to the host list; a normal launch shows the host it is hiding.
     readonly property string _exitHintTail:
-        unlockMode ? qsTr("to go back") : qsTr("to see the host now")
+        unlockMode ? qsTr("go back") : qsTr("see the host")
 
     function linkMatchStage(detail)
     {
@@ -141,13 +155,52 @@ Item {
     function _endLaunchWait()
     {
         launchSlowTimer.stop()
+        cancelHintTimer.stop()
         _launchSlow = false
+    }
+
+    // ── Giving up on a launch ─────────────────────────────────────────────────
+    // X, from either device. Everything that follows — the stage failing, the connection
+    // ending — is the consequence of this and not something to report, so the flag lives here
+    // and every error path checks it.
+    property bool _cancelRequested : false
+    property bool _sessionStarted  : false
+
+    function _cancelLaunch()
+    {
+        if (_cancelRequested || _revealed || unlockMode) return
+        _cancelRequested = true
+
+        _endLaunchWait()
+        hostSlowTimer.stop()
+        stageText = qsTr("Cancelling…")
+        streamSegueErrorDialog.text = ""
+
+        if (session && _sessionStarted) {
+            // The session takes it from here: the teardown it triggers ends in
+            // sessionFinished(), which is the one path that pops this screen.
+            session.cancelLaunch()
+        }
+        else {
+            // Pressed inside the fraction of a second before the session is started at all.
+            // startSessionTimer sees the flag and never starts it, so nothing will end and
+            // nothing will pop us — do it here.
+            SdlGamepadKeyNavigation.enable()
+            if (Window.window && Window.window.markStreamJustEnded) {
+                Window.window.markStreamJustEnded()
+            }
+            stackView.pop()
+        }
     }
 
     function stageFailed(stage, errorCode, failingPorts)
     {
         hostSlowTimer.stop()
         _endLaunchWait()
+
+        // A launch the user called off does not get an error over it. Everything that failed
+        // from here on failed because they asked it to.
+        if (_cancelRequested) return
 
         // Display the error dialog after Session::exec() returns
         streamSegueErrorDialog.text = qsTr("Starting %1 failed: Error %2").arg(stage).arg(errorCode)
@@ -161,12 +214,13 @@ Item {
     {
         hostSlowTimer.stop()
 
+        // The session's own input handler is live from here on, so GUI navigation steps aside
+        // — see the note in the loader below for why it is only now and not earlier.
+        SdlGamepadKeyNavigation.disable()
+
         // The stream is up, but the host is still painting its logon screen. Give it a beat,
         // then knock the shade away and hand over to the pad.
         if (unlockMode) {
-            // Now the session exists and its own handler turns pad buttons into Qt keys, so
-            // GUI navigation can step aside — see the note in the loader above.
-            SdlGamepadKeyNavigation.disable()
             unlockArmTimer.start()
             return
         }
@@ -202,6 +256,9 @@ Item {
         hostSlowTimer.stop()
         _endLaunchWait()
 
+        // See stageFailed(): a cancelled launch reports nothing.
+        if (_cancelRequested) return
+
         // Display the error dialog after Session::exec() returns
         streamSegueErrorDialog.text = text
         console.error(text)
@@ -232,6 +289,14 @@ Item {
         // Before the early returns below: the reconfigure and no-video branches keep this
         // screen alive with a different message, and the hint must not outlive its launch.
         _endLaunchWait()
+
+        // A cancelled launch must not be retried. The no-video branch below would otherwise
+        // read the aborted handshake as a host that was slow to send a picture and bring the
+        // whole thing straight back.
+        if (_cancelRequested) {
+            streamSegueErrorDialog.text = ""
+            noVideoRetries = 0
+        }
 
         // Live "Stream Settings" reconfigure (4.4.0): the user changed resolution/
         // fps/bitrate/HDR mid-stream, so the session was torn down on purpose to
@@ -565,6 +630,16 @@ Item {
     }
 
     Timer {
+        id: cancelHintTimer
+
+        // Long enough that a launch which simply works never advertises a way out of itself —
+        // the same objection that took the B prompt off the default path — and short enough
+        // that anyone still looking at this screen and wondering has already been told.
+        interval: 5000
+        onTriggered: streamSegue._cancelHintOn = true
+    }
+
+    Timer {
         id: spinnerTimer
 
         // Display the spinner appearance a bit to allow us to reach
@@ -579,13 +654,19 @@ Item {
     Timer {
         id: startSessionTimer
         onTriggered: {
+            // Called off during the toast delay: there is nothing to start, and _cancelLaunch
+            // has already popped this screen.
+            if (streamSegue._cancelRequested) return
+
             // Garbage collect QML stuff before we start streaming,
             // since we'll probably be streaming for a while and we
             // won't be able to GC during the stream.
             gc()
 
             // Run the streaming session to completion
+            streamSegue._sessionStarted = true
             session.start()
+            cancelHintTimer.start()
         }
     }
 
@@ -600,27 +681,20 @@ Item {
         onActiveChanged: active ? hostSlowTimer.restart() : hostSlowTimer.stop()
 
         onLoaded: {
-            // How to stop waiting, in whichever vocabulary the user has to hand: the glyph
-            // row with a controller, Esc without one. Not rebindable, and deliberately so —
-            // it is an escape hatch, and an escape hatch nobody can find is not one.
-            // Not in unlock mode: there is nothing to reveal there, and the pad draws its
-            // own footer.
+            // ⚠️ GUI gamepad navigation is NOT stopped here — it is deferred to
+            // connectionStarted(), for every launch and not just the unlock one.
             //
-            // ⚠️ Nor when this launch isn't waiting for anything. With the wait off — the
-            // default — the window is revealed on the first frame regardless, so the prompt
-            // was offering an escape from something nobody was being held by, flashing up on
-            // every launch for the third of a second before the stream appeared.
-            streamSegue._hasPad = SdlGamepadKeyNavigation.getConnectedGamepads() > 0
-
-            // Stop GUI gamepad usage now.
+            // Nothing pumps SDL between here and there: the session's own event loop only
+            // starts once the connection is up, so stopping GUI navigation now leaves the pad
+            // dead for the entire wait. That is the state the 07/08 hang landed in — a /launch
+            // that never answered, the launch screen up, and the pad doing nothing because
+            // both halves of the handling were switched off — and it is why X could not be
+            // offered as a way out at all.
             //
-            // ⚠️ Except in unlock mode, where it is deferred to connectionStarted(). Between
-            // here and there the session does not exist yet, so nothing translates the pad
-            // into Qt keys — disabling GUI navigation now leaves the pad dead for the whole
-            // wait. That is precisely the state the 07/08 hang landed in: a /launch that never
-            // answered, "Connecting…" on screen, and B doing nothing because both halves of
-            // the pad handling were switched off. The session takes over the moment it starts.
-            if (!streamSegue.unlockMode) SdlGamepadKeyNavigation.disable()
+            // ⚠️ The price is that the gamecontroller subsystem is still held when the session
+            // initializes, so SDL sends it no arrival events; SdlInputHandler makes up for
+            // them in attachAlreadyConnectedGamepads(). Do not move the disable() back here
+            // without reading that: the two are one mechanism.
 
             // Initialize the session and probe for host/client capabilities
             if (!session.initialize(window)) {
@@ -834,7 +908,7 @@ Item {
     // to press, and repeating it here would be the second of two lines saying one thing.
     Label {
         id: launchSlowHint
-        anchors.bottom: hintRow.visible ? hintRow.top : hintTextKb.top
+        anchors.bottom: hintRow.top
         anchors.bottomMargin: streamSegue._h * 0.014
         anchors.horizontalCenter: parent.horizontalCenter
         text: qsTr("Taking longer than usual")
@@ -843,35 +917,60 @@ Item {
         color: "#f5a623"
     }
 
+    // One row for both prompts and both devices. ActionHint draws the vendor glyph or the
+    // keyboard cap by itself, which is why the pad and keyboard variants that used to sit at
+    // opposite ends of this file are now a single row — two hints written twice each would be
+    // four places for the same sentence to drift.
     Row {
         id: hintRow
         anchors.bottom: parent.bottom
         anchors.bottomMargin: streamSegue._h * 0.035
         anchors.horizontalCenter: parent.horizontalCenter
-        spacing: streamSegue._h * 0.010
-        visible: streamSegue._exitHintOn && streamSegue._hasPad
+        spacing: streamSegue._h * 0.024
+        visible: streamSegue._exitHintOn || streamSegue._giveUpHintOn
 
-        Label {
-            anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("Press")
-            font.pointSize: Math.max(10, Math.round(streamSegue._h * 0.016))
-            color: "#8f8f9c"
-        }
+        readonly property int  _glyph: Math.max(22, Math.round(streamSegue._h * 0.028))
+        readonly property int  _font:  Math.max(10, Math.round(streamSegue._h * 0.016))
+        readonly property color _dim:  "#8f8f9c"
 
         // "B" as the app means it, which is what the user's controller calls B on every
-        // vendor — PadGlyph already resolves the glyph, including Nintendo's swapped faces.
-        PadGlyph {
-            anchors.verticalCenter: parent.verticalCenter
-            buttonKey: "B"
-            label: "B"
-            size: Math.max(22, Math.round(streamSegue._h * 0.028))
+        // vendor — the glyph resolver handles that, including Nintendo's swapped faces.
+        Row {
+            spacing: streamSegue._h * 0.008
+            visible: streamSegue._exitHintOn
+
+            ActionHint {
+                anchors.verticalCenter: parent.verticalCenter
+                buttonKey: "B"
+                keyLabel: "Esc"
+                size: hintRow._glyph
+            }
+
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: streamSegue._exitHintTail
+                font.pointSize: hintRow._font
+                color: hintRow._dim
+            }
         }
 
-        Label {
-            anchors.verticalCenter: parent.verticalCenter
-            text: streamSegue._exitHintTail
-            font.pointSize: Math.max(10, Math.round(streamSegue._h * 0.016))
-            color: "#8f8f9c"
+        Row {
+            spacing: streamSegue._h * 0.008
+            visible: streamSegue._giveUpHintOn
+
+            ActionHint {
+                anchors.verticalCenter: parent.verticalCenter
+                buttonKey: "X"
+                keyLabel: "X"
+                size: hintRow._glyph
+            }
+
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("cancel")
+                font.pointSize: hintRow._font
+                color: hintRow._dim
+            }
         }
     }
 
@@ -930,16 +1029,4 @@ Item {
         onCancelPressed: streamSegue._unlockFinish(false)
     }
 
-    // Keyboard fallback: shown only when no controller is connected.
-    Label {
-        id: hintTextKb
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: streamSegue._h * 0.035
-        anchors.horizontalCenter: parent.horizontalCenter
-        font.pointSize: Math.max(10, Math.round(streamSegue._h * 0.016))
-        color: "#8f8f9c"
-        wrapMode: Text.Wrap
-        visible: streamSegue._exitHintOn && !streamSegue._hasPad
-        text: qsTr("Press Esc %1").arg(streamSegue._exitHintTail)
-    }
 }

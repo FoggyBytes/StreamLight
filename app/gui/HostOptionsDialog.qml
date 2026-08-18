@@ -9,37 +9,41 @@ import QtQuick.Controls 2.5
 Popup {
     id: dlg
 
+    // Shared dialog measurements — see Theme.uiScale.
+    readonly property real _u: Theme.uiScale
+    function _px(n) { return Math.round(n * _u) }
+
     property string hostName: ""
     property var    items: []
     signal chosen(string kind)
 
     readonly property int _cols:  3
-    readonly property int _cellW: 200
-    readonly property int _cellH: 124
+    readonly property int _cellW: dlg._px(200)
+    readonly property int _cellH: dlg._px(124)
     readonly property int _count: items ? items.length : 0
     readonly property int _rows:  Math.max(1, Math.ceil(_count / _cols))
 
     modal: true
-    Overlay.modal: Item {}
+    Overlay.modal: Rectangle { color: "#cc000000" }
     focus: true
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-    padding: 28
+    padding: dlg._px(28)
 
     background: Rectangle {
         color: Theme.card
         border.color: Theme.line
         border.width: 1
-        radius: 12
+        radius: dlg._px(12)
     }
 
     contentItem: Column {
-        spacing: 18
+        spacing: dlg._px(18)
 
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("OPTIONS") + (dlg.hostName.length ? "  ·  " + dlg.hostName : "")
-            font.family: Theme.family; font.pixelSize: 13; font.bold: true; font.letterSpacing: 1.6
+            font.family: Theme.family; font.pixelSize: dlg._px(13); font.bold: true; font.letterSpacing: 1.6
             color: Theme.text3
         }
 
@@ -79,7 +83,7 @@ Popup {
                 Rectangle {
                     anchors.fill: parent
                     anchors.margins: 8
-                    radius: 10
+                    radius: dlg._px(10)
                     opacity: _disabled ? 0.4 : 1.0
                     color: _sel ? (_danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.18)
                                            : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16))
@@ -97,16 +101,16 @@ Popup {
 
                     Column {
                         anchors.centerIn: parent
-                        spacing: 10
+                        spacing: dlg._px(10)
                         // Icon: an SVG image when iconSource is set, else the emoji glyph.
                         Item {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            width: 32; height: 32
+                            width: dlg._px(32); height: dlg._px(32)
                             Image {
                                 anchors.centerIn: parent
                                 visible: _hasImg
                                 source: modelData.iconSource || ""
-                                width: 30; height: 30
+                                width: dlg._px(30); height: dlg._px(30)
                                 sourceSize.width: 60; sourceSize.height: 60
                                 fillMode: Image.PreserveAspectFit
                                 smooth: true
@@ -115,15 +119,15 @@ Popup {
                                 anchors.centerIn: parent
                                 visible: !_hasImg
                                 text: modelData.icon || ""
-                                font.pixelSize: 30
+                                font.pixelSize: dlg._px(30)
                             }
                         }
                         Label {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            width: grid.cellWidth - 28
+                            width: grid.cellWidth - dlg._px(28)
                             text: modelData.label
                             color: (_danger && _sel) ? Qt.lighter(Theme.danger, 1.25) : Theme.text
-                            font.family: Theme.family; font.pixelSize: 14; font.bold: _sel
+                            font.family: Theme.family; font.pixelSize: dlg._px(14); font.bold: _sel
                             horizontalAlignment: Text.AlignHCenter
                             elide: Text.ElideRight
                         }
@@ -133,11 +137,11 @@ Popup {
                         // else it withholds something, and this dialog was the exception.
                         Label {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            width: grid.cellWidth - 28
+                            width: grid.cellWidth - dlg._px(28)
                             visible: _disabled && text.length > 0
                             text: modelData.reason || ""
                             color: Theme.text3
-                            font.family: Theme.family; font.pixelSize: 11
+                            font.family: Theme.family; font.pixelSize: dlg._px(11)
                             horizontalAlignment: Text.AlignHCenter
                             elide: Text.ElideRight
                         }

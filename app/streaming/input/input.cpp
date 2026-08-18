@@ -152,6 +152,18 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
 
     // We need to reinit this each time, since you only get
     // an initial set of gamepad arrival events once per init.
+    //
+    // ⚠️ …and that is only true when the subsystem was actually down. If anything else is
+    // still holding it — SdlGamepadKeyNavigation, which keeps GUI navigation alive while the
+    // launch screen is up — SDL_InitSubSystem just bumps a refcount, no arrival burst is
+    // generated, and this handler never learns about a single controller: m_GamepadState stays
+    // empty and every button event is dropped by findStateForGamepad(). That is exactly what
+    // happened to the remote PIN pad on 12/08, where GUI navigation is deliberately kept on
+    // until the connection starts. So: notice, and attach them ourselves below.
+    //
+    // The SDL_assert two lines down would have caught it in a debug build; it is compiled out
+    // in release, which is why this was silent.
+    bool gcWasAlreadyInitialized = SDL_WasInit(SDL_INIT_GAMECONTROLLER) != 0;
     SDL_assert(!SDL_WasInit(SDL_INIT_GAMECONTROLLER));
     if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -177,6 +189,46 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     SDL_zero(m_LastTouchDownEvent);
     SDL_zero(m_LastTouchUpEvent);
     SDL_zero(m_TouchDownEvent);
+
+    m_MissedGamepadArrivals = gcWasAlreadyInitialized;
+}
+
+void SdlInputHandler::attachAlreadyConnectedGamepads()
+{
+    // Nothing to do when SDL gave us the arrival burst itself.
+    if (!m_MissedGamepadArrivals) {
+        return;
+    }
+    m_MissedGamepadArrivals = false;
+
+    // No arrival burst is coming (see the constructor), so walk the attached controllers and
+    // run the same attach path by hand — the same trick, for the same reason, as
+    // SdlGamepadKeyNavigation::enable(): "we can't depend on them due to overlapping
+    // lifetimes … so we will attach ourselves".
+    //
+    // ⚠️ Called from Session::exec() and not from the constructor, because the tail of that
+    // path sends LiSendControllerArrivalEvent — the host's only source of controller type and
+    // capabilities. Before LiStartConnection it is dropped, and the host would spend the whole
+    // session emulating a generic pad.
+    SDL_JoystickUpdate();
+
+    int numJoysticks = SDL_NumJoysticks();
+    for (int i = 0; i < numJoysticks; i++) {
+        if (!SDL_IsGameController(i)) {
+            continue;
+        }
+
+        // `which` is a device index on ADDED (an instance ID on every other controller event),
+        // which is what SDL_GameControllerOpen() wants.
+        SDL_ControllerDeviceEvent addEvent = {};
+        addEvent.type = SDL_CONTROLLERDEVICEADDED;
+        addEvent.which = i;
+        handleControllerDeviceEvent(&addEvent);
+    }
+
+    // Whatever SDL queued while the other holder was running is stale for us: we have just
+    // taken stock of reality, and a duplicate add would be logged and dropped anyway.
+    SDL_FlushEvent(SDL_CONTROLLERDEVICEADDED);
 }
 
 SdlInputHandler::~SdlInputHandler()

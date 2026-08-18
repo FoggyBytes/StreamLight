@@ -663,9 +663,16 @@ void DXVA2Renderer::notifyOverlayUpdated(Overlay::OverlayType type)
         renderRect.x = 0;
         renderRect.y = m_DisplayHeight - newSurface->h;
     }
-    else if (type == Overlay::OverlayDebug) {
-        // Top left
-        renderRect.x = 0;
+    else if (type == Overlay::OverlayDebug || type == Overlay::OverlayStreamSettings) {
+        // Opposite top corners — the stats card takes the one the user chose (Settings >
+        // Overlay), the settings panel the other. No inset here, matching how this renderer
+        // has always drawn the card flush against the edge.
+        //
+        // ⚠️ Both types have to be named. With only OverlayDebug here the settings panel fell
+        // through every branch and kept the zeroed renderRect, so it drew at the top-left
+        // corner whatever the user had chosen — and on top of the stats card when that was
+        // top-left too.
+        renderRect.x = Overlay::OverlayManager::getOverlayOriginX(type, m_DisplayWidth, newSurface->w, 0);
         renderRect.y = 0;
     }
 

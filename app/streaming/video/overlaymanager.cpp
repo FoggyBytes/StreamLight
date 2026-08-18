@@ -1,5 +1,6 @@
 #include "overlaymanager.h"
 #include "path.h"
+#include "settings/streamingpreferences.h"
 
 #include <QByteArray>
 #include <QImage>
@@ -133,23 +134,27 @@ OverlayManager::OverlayManager() :
 {
     memset(m_Overlays, 0, sizeof(m_Overlays));
 
-    // Top-left stats card, nudged a few px off the top-left corner.
+    const SDL_Color defaultCard = {0x18, 0x18, 0x1A, 0xF0};
+
+    // The stats card. Colour, transparency and font size are the user's (Settings >
+    // Overlay) and are re-read on every update — these are only what it looks like
+    // before the first one. Its corner is decided by the renderer.
     m_Overlays[OverlayType::OverlayDebug].color = {0xFF, 0xFF, 0xFF, 0xFF};
+    m_Overlays[OverlayType::OverlayDebug].bgColor = defaultCard;
     m_Overlays[OverlayType::OverlayDebug].fontSize = 20;
-    m_Overlays[OverlayType::OverlayDebug].x = 12;
-    m_Overlays[OverlayType::OverlayDebug].y = 12;
 
     m_Overlays[OverlayType::OverlayStatusUpdate].color = {0xFF, 0xFF, 0xFF, 0xFF};
+    m_Overlays[OverlayType::OverlayStatusUpdate].bgColor = defaultCard;
     m_Overlays[OverlayType::OverlayStatusUpdate].fontSize = 36;
-    m_Overlays[OverlayType::OverlayStatusUpdate].x = 0;
-    m_Overlays[OverlayType::OverlayStatusUpdate].y = 0;
 
     // Live "Stream Settings" overlay — top-right (positioned by the renderer).
-    // Font size matches the stats card (20) for a consistent overlay look.
+    // Font size matches the stats card's default (20) for a consistent overlay look.
+    // ⚠️ Deliberately NOT following the stats card's user settings: this one is a
+    // control surface being operated, and a control surface has to stay legible
+    // whatever someone picked for a read-only readout.
     m_Overlays[OverlayType::OverlayStreamSettings].color = {0xFF, 0xFF, 0xFF, 0xFF};
+    m_Overlays[OverlayType::OverlayStreamSettings].bgColor = defaultCard;
     m_Overlays[OverlayType::OverlayStreamSettings].fontSize = 20;
-    m_Overlays[OverlayType::OverlayStreamSettings].x = 0;
-    m_Overlays[OverlayType::OverlayStreamSettings].y = 0;
 
     // While TTF will usually not be initialized here, it is valid for that not to
     // be the case, since Session destruction is deferred and could overlap with
@@ -266,26 +271,53 @@ void OverlayManager::setOverlayRenderer(IOverlayRenderer* renderer)
     m_Renderer = renderer;
 }
 
-void OverlayManager::setOverlayPosition(OverlayType type, float x, float y)
+int OverlayManager::getOverlayOriginX(OverlayType type, int viewportWidth, int surfaceWidth, int margin)
 {
-    m_Overlays[type].x = x;
-    m_Overlays[type].y = y;
-}
+    bool onRight = (StreamingPreferences::get()->overlayPosition
+                    == StreamingPreferences::OVP_TOP_RIGHT);
 
-float OverlayManager::getOverlayX(OverlayType type) const
-{
-    return m_Overlays[type].x;
-}
+    // The settings panel always takes the opposite corner to the stats card.
+    if (type == OverlayType::OverlayStreamSettings) {
+        onRight = !onRight;
+    }
 
-float OverlayManager::getOverlayY(OverlayType type) const
-{
-    return m_Overlays[type].y;
+    return onRight ? (viewportWidth - surfaceWidth - margin) : margin;
 }
 
 void OverlayManager::notifyOverlayUpdated(OverlayType type)
 {
     if (m_Renderer == nullptr) {
         return;
+    }
+
+    // The stats card takes its colour, transparency and size from the user before every
+    // rebuild, so a change in Settings shows up on the next tick instead of the next
+    // session. The other overlays keep what the constructor gave them.
+    if (type == OverlayType::OverlayDebug) {
+        StreamingPreferences* prefs = StreamingPreferences::get();
+
+        const QColor text = prefs->overlayTextColorValue();
+        m_Overlays[type].color = { (Uint8)text.red(), (Uint8)text.green(), (Uint8)text.blue(), 0xFF };
+
+        const QColor box = prefs->overlayBoxColorValue();
+        m_Overlays[type].bgColor = { (Uint8)box.red(), (Uint8)box.green(),
+                                     (Uint8)box.blue(), (Uint8)box.alpha() };
+
+        // A font carries its size, so a new size means a new font. Closing the old one
+        // is not optional: TTF_OpenFontRW here runs once per size change, and leaking a
+        // face per change would accumulate for as long as the session lasts.
+        const int wanted = prefs->overlayFontPixelSize();
+        if (wanted != m_Overlays[type].fontSize) {
+            m_Overlays[type].fontSize = wanted;
+            if (m_Overlays[type].font != nullptr) {
+                TTF_CloseFont(m_Overlays[type].font);
+                m_Overlays[type].font = nullptr;
+            }
+            if (m_Overlays[type].smallFont != nullptr) {
+                TTF_CloseFont(m_Overlays[type].smallFont);
+                m_Overlays[type].smallFont = nullptr;
+            }
+        }
     }
 
     // Construct the required font to render the overlay
@@ -384,7 +416,7 @@ SDL_Surface* OverlayManager::buildTextSurface(OverlayType type)
         32, SDL_PIXELFORMAT_ARGB8888);
     if (bg != nullptr) {
         SDL_FillRect(bg, nullptr, SDL_MapRGBA(bg->format, 0, 0, 0, 0));
-        fillRoundedRect(bg, 0, 0, bg->w, bg->h, radius, SDL_Color{0x18, 0x18, 0x1A, 0xF0});
+        fillRoundedRect(bg, 0, 0, bg->w, bg->h, radius, m_Overlays[type].bgColor);
 
         int y = kPadY;
         for (SDL_Surface* s : lineSurfs) {

@@ -843,21 +843,21 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
     // Start with an empty string
     output[offset] = 0;
 
-    // Overlay verbosity profile chosen by the user (Settings > Overlay), also
-    // cycled live by the overlay hotkey (Off -> Minimal -> Default -> Full).
-    // When the profile is Off the OverlayDebug layer is disabled and this is
-    // never called; guard anyway.
-    // The log summary passes forceFullDetail, because a diagnostic log that
-    // silently empties itself when the user has the overlay off — the default —
-    // is worse than useless: the people least likely to run the overlay are the
-    // ones we ask for logs.
-    const StreamingPreferences::OverlayMode mode = forceFullDetail
-            ? StreamingPreferences::OM_FULL
-            : StreamingPreferences::get()->overlayMode;
-    if (mode == StreamingPreferences::OM_OFF) {
+    // The lines the user asked for (Settings > Overlay). Replaces the fixed
+    // Off/Minimal/Default/Full profiles: verbosity levels were three guesses at
+    // which figures matter, and which ones matter is personal.
+    //
+    // The log summary passes forceFullDetail and gets everything, because a
+    // diagnostic log that silently empties itself when the user has the overlay
+    // off — the default — is worse than useless: the people least likely to run
+    // the overlay are the ones we ask for logs.
+    const int items = forceFullDetail
+            ? static_cast<int>(StreamingPreferences::OI_ALL)
+            : StreamingPreferences::get()->overlayItems;
+    if (items == 0) {
         return;
     }
-    const bool full = (mode == StreamingPreferences::OM_FULL);
+#define WANT(bit) ((items & StreamingPreferences::bit) != 0)
 
     switch (m_VideoFormat)
     {
@@ -927,87 +927,76 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
         break;
     }
 
-    // ── Minimal profile ──────────────────────────────────────────────────────
-    // A compact, headerless 3-line block: resolution + FPS + codec, bitrate, and
-    // the two figures a player glances at (latency + network drops). No host
-    // section. Returns early before the verbose path below.
-    if (mode == StreamingPreferences::OM_MINIMAL) {
-        if (stats.receivedFps > 0 && m_VideoDecoderCtx != nullptr) {
-            ret = snprintf(&output[offset], length - offset,
-                           "%dx%d | %.0f FPS | %s\n",
-                           m_VideoDecoderCtx->width, m_VideoDecoderCtx->height,
-                           stats.totalFps, codecString);
-            if (ret > 0 && ret < length - offset) offset += ret;
+    // The host block is resolved first because the two section headings only earn
+    // their place as a pair: with no host section there is nothing to tell apart,
+    // and "--- Client Metrics ---" is the widest line in the box — exactly the
+    // width someone trimming the overlay down is trying to get rid of.
+    HostMetrics hostMetrics{};
+    bool showHostSection = false;
+    if (WANT(OI_HOST_METRICS)) {
+        Session* s = Session::get();
+        if (s != nullptr) {
+            hostMetrics = s->getHostMetrics();
+            showHostSection = (hostMetrics.gpu >= 0 || hostMetrics.gpuEnc >= 0 ||
+                               hostMetrics.gpuTemp >= 0 || hostMetrics.vramUsed >= 0 ||
+                               hostMetrics.cpu >= 0 || hostMetrics.netTx >= 0);
         }
+    }
 
+    const bool anyClientItem = (items & ~static_cast<int>(StreamingPreferences::OI_HOST_METRICS)) != 0;
+
+    if (showHostSection && anyClientItem) {
         ret = snprintf(&output[offset], length - offset,
-                       "Bitrate: %.0f Mbps\n", m_BwTracker.GetAverageMbps());
-        if (ret > 0 && ret < length - offset) offset += ret;
-
-        if (stats.renderedFrames != 0) {
-            if (stats.lastRtt != 0) {
-                ret = snprintf(&output[offset], length - offset,
-                               "RTT %u ms | Net drops %.2f%%\n",
-                               stats.lastRtt,
-                               (float)stats.networkDroppedFrames / stats.totalFrames * 100);
-            }
-            else {
-                ret = snprintf(&output[offset], length - offset,
-                               "Net drops %.2f%%\n",
-                               (float)stats.networkDroppedFrames / stats.totalFrames * 100);
-            }
-            if (ret > 0 && ret < length - offset) offset += ret;
+                       "--- Client Metrics (StreamLight) ---\n");
+        if (ret < 0 || ret >= length - offset) {
+            SDL_assert(false);
+            return;
         }
-        return;
+        offset += ret;
     }
-
-    // ── Default / Full profiles ──────────────────────────────────────────────
-    // Client metrics header — mirrors "--- Host Metrics (StreamTweak) ---" at the bottom
-    ret = snprintf(&output[offset], length - offset,
-                   "--- Client Metrics (StreamLight) ---\n");
-    if (ret < 0 || ret >= length - offset) {
-        SDL_assert(false);
-        return;
-    }
-    offset += ret;
 
     if (stats.receivedFps > 0) {
         if (m_VideoDecoderCtx != nullptr) {
-            ret = snprintf(&output[offset],
-                           length - offset,
-                           "Video stream: %dx%d %.2f FPS (Codec: %s)\n",
-                           m_VideoDecoderCtx->width,
-                           m_VideoDecoderCtx->height,
-                           stats.totalFps,
-                           codecString);
-            if (ret < 0 || ret >= length - offset) {
-                SDL_assert(false);
-                return;
+            if (WANT(OI_VIDEO)) {
+                ret = snprintf(&output[offset],
+                               length - offset,
+                               "Video stream: %dx%d %.2f FPS (Codec: %s)\n",
+                               m_VideoDecoderCtx->width,
+                               m_VideoDecoderCtx->height,
+                               stats.totalFps,
+                               codecString);
+                if (ret < 0 || ret >= length - offset) {
+                    SDL_assert(false);
+                    return;
+                }
+                offset += ret;
             }
-            offset += ret;
 
-            // Bitrate: average always; the full profile also shows the windowed peak.
-            if (full) {
-                ret = snprintf(&output[offset], length - offset,
-                               "Bitrate: %.1f Mbps, Peak (%us): %.1f\n",
-                               m_BwTracker.GetAverageMbps(),
-                               m_BwTracker.GetWindowSeconds(),
-                               m_BwTracker.GetPeakMbps());
+            // The peak is a modifier of the bitrate line, not a line of its own — with
+            // the average off there is nothing for it to be the peak of, which is why
+            // the settings page greys it out in that case rather than letting it lie.
+            if (WANT(OI_BITRATE)) {
+                if (WANT(OI_BITRATE_PEAK)) {
+                    ret = snprintf(&output[offset], length - offset,
+                                   "Bitrate: %.1f Mbps, Peak (%us): %.1f\n",
+                                   m_BwTracker.GetAverageMbps(),
+                                   m_BwTracker.GetWindowSeconds(),
+                                   m_BwTracker.GetPeakMbps());
+                }
+                else {
+                    ret = snprintf(&output[offset], length - offset,
+                                   "Bitrate: %.1f Mbps\n",
+                                   m_BwTracker.GetAverageMbps());
+                }
+                if (ret < 0 || ret >= length - offset) {
+                    SDL_assert(false);
+                    return;
+                }
+                offset += ret;
             }
-            else {
-                ret = snprintf(&output[offset], length - offset,
-                               "Bitrate: %.1f Mbps\n",
-                               m_BwTracker.GetAverageMbps());
-            }
-            if (ret < 0 || ret >= length - offset) {
-                SDL_assert(false);
-                return;
-            }
-            offset += ret;
         }
 
-        // Per-stage frame-rate breakdown — full profile only.
-        if (full) {
+        if (WANT(OI_FRAMERATES)) {
             ret = snprintf(&output[offset],
                            length - offset,
                            "Incoming frame rate from network: %.2f FPS\n"
@@ -1024,8 +1013,7 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
         }
     }
 
-    // Host processing latency — full profile only.
-    if (full) {
+    if (WANT(OI_HOST_LATENCY)) {
         if (stats.framesWithHostProcessingLatency > 0) {
             ret = snprintf(&output[offset],
                            length - offset,
@@ -1055,35 +1043,48 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
             snprintf(rttString, sizeof(rttString), "N/A");
         }
 
-        // Network drops, jitter drops, latency and decode time — default and full.
-        ret = snprintf(&output[offset],
-                       length - offset,
-                       "Frames dropped by your network connection: %.2f%%\n"
-                       "Frames dropped due to network jitter: %.2f%%\n"
-                       "Average network latency: %s\n"
-                       "Average decoding time: %.2f ms\n",
-                       (float)stats.networkDroppedFrames / stats.totalFrames * 100,
-                       (float)stats.pacerDroppedFrames / stats.decodedFrames * 100,
-                       rttString,
-                       (double)(stats.totalDecodeTimeUs / 1000.0) / stats.decodedFrames);
-        if (ret < 0 || ret >= length - offset) {
-            SDL_assert(false);
-            return;
+        // One snprintf per line now rather than one for the group: they are four
+        // independent choices, and a shared format string cannot honour three of
+        // them and drop the fourth.
+        if (WANT(OI_NET_DROPS)) {
+            ret = snprintf(&output[offset], length - offset,
+                           "Frames dropped by your network connection: %.2f%%\n",
+                           (float)stats.networkDroppedFrames / stats.totalFrames * 100);
+            if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
+            offset += ret;
         }
-        offset += ret;
-
-        // Frame queue delay and rendering time — full profile only.
-        if (full) {
-            ret = snprintf(&output[offset],
-                           length - offset,
-                           "Average frame queue delay: %.2f ms\n"
+        if (WANT(OI_JITTER_DROPS)) {
+            ret = snprintf(&output[offset], length - offset,
+                           "Frames dropped due to network jitter: %.2f%%\n",
+                           (float)stats.pacerDroppedFrames / stats.decodedFrames * 100);
+            if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
+            offset += ret;
+        }
+        if (WANT(OI_LATENCY)) {
+            ret = snprintf(&output[offset], length - offset,
+                           "Average network latency: %s\n", rttString);
+            if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
+            offset += ret;
+        }
+        if (WANT(OI_DECODE_TIME)) {
+            ret = snprintf(&output[offset], length - offset,
+                           "Average decoding time: %.2f ms\n",
+                           (double)(stats.totalDecodeTimeUs / 1000.0) / stats.decodedFrames);
+            if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
+            offset += ret;
+        }
+        if (WANT(OI_QUEUE_DELAY)) {
+            ret = snprintf(&output[offset], length - offset,
+                           "Average frame queue delay: %.2f ms\n",
+                           (double)(stats.totalPacerTimeUs / 1000.0) / stats.renderedFrames);
+            if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
+            offset += ret;
+        }
+        if (WANT(OI_RENDER_TIME)) {
+            ret = snprintf(&output[offset], length - offset,
                            "Average rendering time (including monitor V-sync latency): %.2f ms\n",
-                           (double)(stats.totalPacerTimeUs / 1000.0) / stats.renderedFrames,
                            (double)(stats.totalRenderTimeUs / 1000.0) / stats.renderedFrames);
-            if (ret < 0 || ret >= length - offset) {
-                SDL_assert(false);
-                return;
-            }
+            if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
             offset += ret;
         }
     }
@@ -1091,7 +1092,7 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
     // Frame pacing status — surfaces which mechanism is actually in effect under
     // the hood: "Hardware (N:N cadence)" when the renderer self-paces via the DXGI
     // sync interval, "Software" when the V-sync Pacer is driving frames, or "Off".
-    {
+    if (WANT(OI_PACING)) {
         const char* pacingMode = "Off";
         char pacingBuf[40];
         int hwInterval = (m_FrontendRenderer != nullptr) ? m_FrontendRenderer->getFramePacingSyncInterval() : 0;
@@ -1117,58 +1118,45 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
         offset += ret;
     }
 
-    // Append real-time host metrics from StreamTweak (via STATS TCP command).
-    // Only shown when at least one metric is available; hides itself entirely
-    // when StreamTweak is not running so the overlay doesn't show a ghost section.
-    Session* session = Session::get();
-    if (session != nullptr) {
-        HostMetrics hm = session->getHostMetrics();
-        bool anyAvailable = (hm.gpu >= 0 || hm.gpuEnc >= 0 || hm.gpuTemp >= 0 ||
-                             hm.vramUsed >= 0 || hm.cpu >= 0 || hm.netTx >= 0);
-
-        if (anyAvailable) {
-            // Format each field: numeric value when available, "N/A" otherwise.
-            char gpuStr[8], encStr[8], tempStr[8], cpuStr[8], netStr[8];
+    // Real-time host metrics from StreamTweak (via the STATS TCP command). Resolved
+    // at the top of this function, and drawn only when something answered — an
+    // empty "Host Metrics" heading would tell the user their host is broken when
+    // the truth is that StreamTweak is not running.
+    if (showHostSection) {
+        // Format each field: numeric value when available, "N/A" otherwise.
+        char gpuStr[8], encStr[8], tempStr[8], cpuStr[8], netStr[8];
 #define FMT(buf, v) \
     if ((v) >= 0) snprintf(buf, sizeof(buf), "%d", (v)); \
     else          snprintf(buf, sizeof(buf), "N/A")
 
-            FMT(gpuStr,  hm.gpu);
-            FMT(encStr,  hm.gpuEnc);
-            FMT(tempStr, hm.gpuTemp);
-            FMT(cpuStr,  hm.cpu);
-            FMT(netStr,  hm.netTx);
+        FMT(gpuStr,  hostMetrics.gpu);
+        FMT(encStr,  hostMetrics.gpuEnc);
+        FMT(tempStr, hostMetrics.gpuTemp);
+        FMT(cpuStr,  hostMetrics.cpu);
+        FMT(netStr,  hostMetrics.netTx);
 #undef FMT
 
-            // VRAM line is only shown in the full profile. "used / total MB"
-            // when total is known, "used MB" otherwise, "N/A" if unavailable.
-            if (full) {
-                char vramStr[24];
-                if (hm.vramUsed >= 0 && hm.vramTotal >= 0)
-                    snprintf(vramStr, sizeof(vramStr), "%d / %d MB", hm.vramUsed, hm.vramTotal);
-                else if (hm.vramUsed >= 0)
-                    snprintf(vramStr, sizeof(vramStr), "%d MB", hm.vramUsed);
-                else
-                    snprintf(vramStr, sizeof(vramStr), "N/A");
+        char vramStr[24];
+        if (hostMetrics.vramUsed >= 0 && hostMetrics.vramTotal >= 0)
+            snprintf(vramStr, sizeof(vramStr), "%d / %d MB", hostMetrics.vramUsed, hostMetrics.vramTotal);
+        else if (hostMetrics.vramUsed >= 0)
+            snprintf(vramStr, sizeof(vramStr), "%d MB", hostMetrics.vramUsed);
+        else
+            snprintf(vramStr, sizeof(vramStr), "N/A");
 
-                ret = snprintf(&output[offset], length - offset,
-                               "--- Host Metrics (StreamTweak) ---\n"
-                               "GPU: %s%% | Enc: %s%% | Temp: %sC | VRAM: %s\n"
-                               "CPU: %s%% | Net TX: %s Mbps\n",
-                               gpuStr, encStr, tempStr, vramStr, cpuStr, netStr);
-            }
-            else {
-                ret = snprintf(&output[offset], length - offset,
-                               "--- Host Metrics (StreamTweak) ---\n"
-                               "GPU: %s%% | Enc: %s%% | Temp: %sC\n"
-                               "CPU: %s%% | Net TX: %s Mbps\n",
-                               gpuStr, encStr, tempStr, cpuStr, netStr);
-            }
+        // The heading is drawn only when there is a client section above it to be
+        // told apart from — on its own it is a title over the only thing there is.
+        ret = snprintf(&output[offset], length - offset,
+                       "%sGPU: %s%% | Enc: %s%% | Temp: %sC | VRAM: %s\n"
+                       "CPU: %s%% | Net TX: %s Mbps\n",
+                       anyClientItem ? "--- Host Metrics (StreamTweak) ---\n" : "",
+                       gpuStr, encStr, tempStr, vramStr, cpuStr, netStr);
 
-            if (ret > 0 && ret < length - offset)
-                offset += ret;
-        }
+        if (ret > 0 && ret < length - offset)
+            offset += ret;
     }
+
+#undef WANT
 }
 
 void FFmpegVideoDecoder::logVideoStats(VIDEO_STATS& stats, const char* title)

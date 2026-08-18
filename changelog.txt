@@ -4,6 +4,64 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-------------------------------------------
+Version 5.1.0 - Custom Overlay (18/08/2026)
+-------------------------------------------
+
+The performance overlay is now yours to shape: where it sits, what colour it is, how big, how see-through, and which of its lines you actually want. Alongside it, a say in what your screen's refresh rate does while streaming, a clock on the Home screen, and two rendering complaints put right.
+
+✨ NEW FEATURES:
+• The performance overlay is now built a line at a time — thirteen lines to choose from, from the video stream and bitrate down to frame queue delay and the host's own GPU, VRAM and CPU figures
+• You build it on the overlay itself: Settings → Overlay draws the box as it will look while streaming, in the real face, colours and transparency, and every line in it is something you select and switch on or off in place. A line you turn off stays where it is, faded, so nothing jumps around while you work and you switch it back on where you left it
+• Which means the controller can reach it. The old arrangement — a column of switches with a separate preview elsewhere on the page — had nothing focusable in the preview, so with a pad you were toggling blind and scrolling to check
+• Minimal, Default and Full remain as starting points, and the moment you change any line the preset reads Custom
+• Choose which top corner it sits in, its text colour from five, one of three font sizes, and how much of the game shows through the box behind the text
+• The in-stream Stream Settings panel now takes the opposite corner on its own, so the two can never land on top of each other
+• The settings draw that panel too, in whichever corner the performance overlay is not using, so the corner you pick is something you watch move rather than something you have to picture — and with the panel's own fixed size beside it, how large your three font sizes really are
+• Time, date and — on a laptop or handheld — the battery, in the top right of Home, the host page and Settings alike. Clock in 24-hour or AM/PM, date in whichever of the three common orders you read
+• The overlay hotkey now simply shows and hides it, since what it carries is no longer a matter of cycling through levels of detail
+• New "Refresh rate switching" choice in Settings → Video, for what your screen does while streaming in Fullscreen: Off leaves it alone, Highest is the long-standing behaviour, Match frame rate puts it at the stream's own rate, and Automatic follows your frame pacing choice
+• It exists because of what the old behaviour costs on a 120 Hz screen fed a 60 FPS stream: each frame is held for two refreshes, host and client run on two clocks nobody synchronises, and the wait before a frame reaches the screen drifts — which is felt as the controls going soft, on and off, for no visible reason. Putting both ends at the same rate leaves no cadence to keep
+• Automatic exists to settle a pairing that used to contradict itself: Software frame pacing describes itself as being for a screen running at the stream's rate, and was then given the highest multiple of it instead. It leaves every other combination exactly as it was
+• A host profile can override it, because it describes a situation rather than a preference: the same handheld docked to a 120 Hz TV and held in your hands want different answers
+• Display mode and V-Sync can be overridden on a host profile too. They are what Refresh rate switching and Frame pacing depend on, and until now a profile could hold a setting whose condition it had no way to express — one screen wants exclusive fullscreen, another wants to keep alt-tab, and the rows that need them followed whatever the global happened to be
+• Which means a setting that cannot act now says so wherever you meet it: greyed, with the reason on the line beneath, in Settings, in the host profile and in the per-game settings alike. Frame pacing in the per-game settings was reading the global V-Sync rather than the one in force for that host, so it could offer a choice that went nowhere
+• Host profiles can now be switched from the host's own page, with LB and RB either side of the profile badge — or Q and E on the keyboard — exactly as on Home, and the settings badges on the line below follow immediately, so you can see what each profile would stream at without leaving the game you are about to launch
+• Press X — or X on the keyboard — to give up on a launch and go back to where you started it. B has always been there to show you the host, which answers "what is it waiting for"; this answers "I don't want it any more", and a launch that has stopped moving needed both
+• The prompt for it appears after five seconds, so a launch that simply works never offers you a way out of itself
+
+✨ IMPROVEMENTS:
+• Every setting is written to disk the moment you change it rather than when you leave the page, so nothing is lost when the app is killed instead of closed
+• The default controller combos no longer use Select or Start, which is where Steam's own overlay lives: Quit session is now LB + RB + A, the performance overlay LB + RB + X, and the stream settings LB + RB + B. A combo you had already rebound is left exactly as it was — these are only the values a fresh install starts from
+• Renaming a host now stops at 15 characters, the same limit Windows itself puts on a computer name — a name found on the network could never be longer, and one typed here ran on past the clock in the corner
+• Overriding only the frame rate on a host profile no longer greys out the global resolution as well. The two shared one lock, so the greying claimed the profile was holding something it had not touched
+
+🎨 UI:
+• The host page uses its right-hand side. The library moves to the left and runs the full height of the screen, and the game in the spotlight — its cover, its name, the store it came from and its actions — becomes a column beside it: seven titles on screen instead of four and a half, and a cover two and a half times the size it was. The page used to stack them, which spent the width twice over — the spotlight band ended after its two buttons, and every row of the list was as wide as the screen to hold one name
+• Moving down the library no longer moves anything else. The big cover sits in a fixed portrait frame and the artwork is fitted inside it, so a square or wide cover gets empty space rather than having its edges cut off — and the column stops changing width from one game to the next, which at this size was the most visible thing on the page
+• A game's name is never cut short. A long title is set smaller until it fits, and wraps onto a second line rather than shrinking past the point of being readable — "Torment: Tides of Numenera" used to arrive as "Torment: Tides of Numene…", which is the one thing on the page whose whole job is to say which game this is saying most of it
+• The library's scrollbar sits on the outside edge of the list. On the inside it landed in the middle of the screen between the two columns, where it read as a divider rather than as the scrollbar of anything
+• The buttons under the cover are smaller, and the host page is down to four text sizes and three heights for everything on it. Those buttons used to be set larger than the line of text above them, despite each being the twin of a controller button you can press instead
+• Every popup is now drawn at the same scale as the page behind it. They were written in fixed pixels while the pages grow with the window, so on a large screen a dialog came out at roughly half the size of what it was covering: a button written as 44 on the host page is drawn at 70, and the same button written as 38 inside a dialog was drawn at 38, on any screen. It could not be corrected by picking bigger numbers, because no fixed value is right on both a handheld and a television
+• And they are one family again — the same surface, border, corner and spacing, one shared button instead of four hand-written ones, the same grey for their small heading, and a dimmed backdrop behind all of them. Four dialogs had no backdrop at all, so a modal left the page behind it at full brightness; three still carried colours hardcoded before the app had a palette
+• The PIN pad is measured against the same reference as everything else. It had been left on an older one and came out about 9% smaller than the screen it opens from
+• Large gradients no longer band — the app's background and the host card are dithered as they are drawn, which also takes away the faint static grain the host card carried
+• The wordmark on Home is set at the clock's own size with the fork line matching the date beneath it, so the two ends of the top row are one band built from the same two sizes — the app's name used to be the smaller of the two things up there
+• Settings has lost the sentence under its title describing what the screen is for, which the tabs beneath it already say a word at a time
+• The prompts on the loading screen follow whichever device you are holding, like every other prompt in the app — they were fixed at the start of the launch, so touching the keyboard with a controller plugged in still showed you a controller button
+
+🐛 FIXES:
+• Installing Windows updates on the host no longer shows a download percentage, in the dialog or in the status bar — it was only recalculated between files, so a single update sat at 0% for the whole download and then jumped to installing; the bar now simply says work is under way
+• The application icon is the new one everywhere — the executable was still carrying the previous artwork, so the old logo kept turning up in Explorer, on the taskbar and in the window title bar
+• The rounded corners of a host card no longer let a few light pixels through, which was visible at some window sizes and not others
+• A game's cover is checked once per launch and fetched again if it is only a thumbnail — until now nothing ever expired a cover, so one downloaded before the host learned where to find the proper artwork was kept and shown for ever, and the only way to clear it was to delete the host and pair again
+• The controller now works on the remote PIN pad. Waking a locked host brought the pad up and then ignored every button on it: the pad is handed from the app to the streaming session as the connection comes up, and in that one case the session was never told a controller was attached at all, so nothing it pressed existed as far as the pad was concerned
+• The controller is also live for the whole of a launch now, not only once the stream is up — which is what makes the new X worth having, and is why B did nothing on a launch that never got that far
+• A launch that loses its host no longer strands you on the loading screen. If the host dropped off the network while it was starting a game, the app went back to the host list underneath and took the loading screen's foundations with it: when the host's reply finally arrived it had nowhere to land, so no error was ever shown, the screen never went away, and the only way out was to kill the app. Leaving for the host list now waits until the launch is over
+
+🙏 THANKS:
+• @Soladus for the overlay he described, for spotting the corner, and for the testing behind the refresh rate choice (https://github.com/FoggyBytes/StreamLight/issues/9) — the 60 FPS on 120 Hz case was measured on his hardware, not guessed at
+
 -------------------------------------------------
 Version 5.0.0 - The Spotlight Update (08/08/2026)
 -------------------------------------------------

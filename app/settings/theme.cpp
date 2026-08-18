@@ -109,6 +109,20 @@ void Theme::setAccent(const QColor& c)
     emit changed();
 }
 
+void Theme::setUiScale(qreal s)
+{
+    // Same clamp the pages apply to their own copy. Guarded against the pointless churn of a
+    // resize that moves the scale by a thousandth: every dialog in the app binds to this.
+    if (s < 0.62) s = 0.62;
+    if (s > 1.60) s = 1.60;
+    if (qAbs(s - m_UiScale) < 0.001) {
+        return;
+    }
+
+    m_UiScale = s;
+    emit uiScaleChanged();
+}
+
 void Theme::setReduceAnimations(bool on)
 {
     if (on == m_ReduceAnimations) {

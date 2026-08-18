@@ -15,6 +15,22 @@ import SdlGamepadKeyNavigation 1.0
 FocusScope {
     id: appShell
 
+    /*
+     * The window scale, published for everything that cannot measure the window itself.
+     *
+     * The pages each compute this from their own width; the dialogs could not, because a
+     * dialog lives in the overlay above the pages rather than inside one, and so every
+     * dialog in the app was written in fixed pixels and came out around half the size of
+     * the page behind it on a large screen. The shell is the one thing that is always the
+     * size of the window, so it is where the number comes from.
+     *
+     * ⚠️ Same divisor as AppsScreen and HostStage. If it changes there it changes here, or
+     * a dialog is drawn to a different scale than the page it is covering — which is the
+     * whole defect this exists to close.
+     */
+    onWidthChanged: Theme.uiScale = width / 1330
+    Component.onCompleted: Theme.uiScale = width / 1330
+
     // Design tokens (mirrored from main.qml — id scopes are per-document).
     readonly property color _bg1:      "#151515"
     readonly property color _border:   "#2a2a2a"
@@ -23,8 +39,7 @@ FocusScope {
     readonly property color _bg2:      "#1a1a1a"
     readonly property color _text:     "#f0f0f0"
     readonly property color _textDim:  "#a0a0a0"
-    readonly property color _green:    Theme.accent
-    readonly property string _version: "5.0.0"
+    readonly property string _version: "5.1.0"
     readonly property string _mono:    "DM Sans"
 
     // 0 = Home, 1 = Apps, 2 = Settings
@@ -50,7 +65,6 @@ FocusScope {
     readonly property bool   _updateActive:  homeLoader.item ? homeLoader.item.updateJobActive  : false
     readonly property string _updateHost:    homeLoader.item ? homeLoader.item.updateJobHostName : ""
     readonly property string _updatePhase:   homeLoader.item ? homeLoader.item.updateJobPhase    : "IDLE"
-    readonly property int    _updatePercent: homeLoader.item ? homeLoader.item.updateJobPercent  : -1
 
     // ── Host link restore watch (state owned by HomeScreen, mirrored for the chip) ──
     // The host-link state is read by whoever is showing that host — the card on Home, the
@@ -333,6 +347,32 @@ FocusScope {
         }
     }
 
+    /*
+     * Clock, date and battery — the top counterpart of the status bar below, and it lives
+     * here for the same reason that one does.
+     *
+     * ⚠️ It used to be declared on each of the three pages, and each page anchored it to
+     * whatever its own header happened to be: the brand icon on Home, the header's centre on
+     * the host page (in `_px` units, so it also moved with the window size), the title on
+     * Settings — with right margins of 44, `_px(44)` and 30. Three coordinates for one
+     * object, so it hopped a few pixels on every page change. Declared once in the shell it
+     * cannot drift again, whatever the pages do to their headers.
+     *
+     * Fixed pixels, not the pages' `_u` scale: this is chrome, like the status bar's own
+     * 44px height and 16px gutter, and it belongs to the window rather than to the content.
+     * The margins put its centre on the wordmark's, which is the one header it has to agree
+     * with — the other two are close enough that no one reading them will see a difference.
+     *
+     * Declared after contentArea so it draws over the pages; popups have their own overlay
+     * layer above both.
+     */
+    StatusCluster {
+        anchors.top: parent.top
+        anchors.topMargin: 22
+        anchors.right: parent.right
+        anchors.rightMargin: 44
+    }
+
     // Status bar — gamepad prompts + version. Glyphs swap by controller type.
     Rectangle {
         id: statusBar
@@ -531,22 +571,10 @@ FocusScope {
                                   + "   " + appShell._updatePhaseLabel(appShell._updatePhase)
                             color: appShell._text; font.pixelSize: 13; font.family: "DM Sans"
                         }
-                        Row {
-                            spacing: 8
-                            visible: appShell._updatePercent >= 0
-                            Rectangle {
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 120; height: 5; radius: 3; color: "#2a2a2a"
-                                Rectangle {
-                                    width: parent.width * Math.max(0, Math.min(100, appShell._updatePercent)) / 100
-                                    height: parent.height; radius: 3; color: appShell._green
-                                }
-                            }
-                            Text {
-                                text: appShell._updatePercent + "%"
-                                color: appShell._textDim; font.pixelSize: 11; font.family: "DM Sans"
-                            }
-                        }
+                        // (A mini progress bar and a percentage used to sit here. The figure
+                        //  behind them only moves between files and stands still through the
+                        //  whole of a single-update download — see the note in UpdateDialog.
+                        //  The phase word above is what the chip is for, and it does change.)
                     }
                 }
 

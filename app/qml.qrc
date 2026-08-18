@@ -4,6 +4,8 @@
         <file>gui/AppShell.qml</file>
         <file>gui/HomeScreen.qml</file>
         <file>gui/HostStage.qml</file>
+        <file>gui/StatusCluster.qml</file>
+        <file>gui/DitheredGradient.qml</file>
         <file>gui/StageBackgroundDialog.qml</file>
         <file>gui/AppsScreen.qml</file>
         <file>gui/SettingsScreen.qml</file>
@@ -35,6 +37,7 @@
         <file>gui/CustomResolutionDialog.qml</file>
         <file>gui/PadGlyph.qml</file>
         <file>gui/ActionHint.qml</file>
+        <file>gui/ProfileShoulder.qml</file>
         <file>gui/ShortcutCaptureDialog.qml</file>
         <file>gui/GamepadCaptureDialog.qml</file>
     </qresource>

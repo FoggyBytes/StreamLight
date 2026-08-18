@@ -69,11 +69,62 @@ private:
     NvApp m_App;
 };
 
+/*
+ * Whether the cover already on disk should be fetched again.
+ *
+ * Nothing in this cache ever expired: loadBoxArt() returned the file if it existed, so a
+ * cover corrected on the host never reached a client that had already stored the old one —
+ * the only thing that ever cleared it was deleting the host. That left covers from before
+ * the host learned to look for portrait artwork on display indefinitely.
+ *
+ * The size is read from the image header, not by decoding it, and the answer is remembered
+ * for the rest of the run either way, so this costs one small read per game per launch and
+ * nothing afterwards.
+ */
+bool BoxArtManager::needsRefresh(const QString& path)
+{
+    QMutexLocker lock(&m_CheckLock);
+
+    if (m_Checked.contains(path)) {
+        return false;
+    }
+    m_Checked.insert(path);
+
+    QImageReader reader(path);
+    QSize size = reader.size();
+
+    // An unreadable header is not something a re-fetch is likely to fix, and re-fetching on
+    // it would turn a corrupt file into a download on every launch.
+    return size.isValid() && size.height() < MinCoverHeight;
+}
+
 QUrl BoxArtManager::loadBoxArt(NvComputer* computer, NvApp& app)
 {
     // Try to open the cached file if it exists and contains data
     QFile cacheFile(getFilePathForBoxArt(computer, app.id));
     if (cacheFile.exists() && cacheFile.size() > 0) {
+        if (needsRefresh(cacheFile.fileName())) {
+            m_ThreadPool.start(new NetworkBoxArtLoadTask(this, computer, app));
+
+            // Keep showing what we have while the better one downloads — a small cover
+            // beats the placeholder — but hand back a URL that differs from the one the
+            // next call will produce.
+            //
+            // ⚠️ That difference is the whole mechanism. QML caches a pixmap against its
+            // full URL, so a file replaced under the same name is never re-read and the
+            // refreshed cover would only appear on the next launch. When the download
+            // lands, boxArtLoadComplete makes the view ask again; needsRefresh() has
+            // already recorded this path, so that call returns the bare file URL — a
+            // different URL, hence a reload. The query itself is dropped when the URL is
+            // turned back into a path, so the same file is opened either way.
+            //
+            // Deliberately confined to this branch: a cover that does not need refreshing
+            // is served exactly as before, so if this ever stops working it can only
+            // affect covers that were already wrong.
+            QUrl url = QUrl::fromLocalFile(cacheFile.fileName());
+            url.setQuery(QStringLiteral("refresh=1"));
+            return url;
+        }
         return QUrl::fromLocalFile(cacheFile.fileName());
     }
 

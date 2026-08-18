@@ -2,6 +2,7 @@ import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Window 2.2
 
 import StreamingPreferences 1.0
 
@@ -16,14 +17,18 @@ import StreamingPreferences 1.0
 Popup {
     id: dlg
 
+    // Shared dialog measurements — see Theme.uiScale.
+    readonly property real _u: Theme.uiScale
+    function _px(n) { return Math.round(n * _u) }
+
     property var computerModel: null
     property int pcIndex: -1
     property string hostName: ""
 
     readonly property color _accent: Theme.accent
     readonly property color _danger: "#ef4444"
-    readonly property color _text:   "#ECECEC"
-    readonly property color _dim:    "#9A9A9A"
+    readonly property color _text:   Theme.text
+    readonly property color _dim:    Theme.text2
     readonly property color _line:   "#242424"
     readonly property int   _rowH:   52
     readonly property int   _padX:   28
@@ -53,6 +58,21 @@ Popup {
     readonly property var _fpVals:    [-1, 0, 1, 2, 3]
     readonly property var _audLabels: ["Global", "Stereo", "5.1", "7.1"]
     readonly property var _audVals:   [-1, 0, 1, 2]
+    readonly property var _rrLabels:  ["Global", "Off", "Automatic", "Highest", "Match"]
+    readonly property var _rrVals:    [-1, 0, 1, 2, 3]
+    readonly property var _dmLabels:  ["Global", "Fullscreen", "Borderless", "Windowed"]
+    readonly property var _dmVals:    [-1, 0, 1, 2]   // WM_FULLSCREEN / _DESKTOP / WINDOWED
+
+    // Effective values of the two settings other rows depend on: this profile's own
+    // override when it has one, otherwise the global setting. The dependent rows
+    // below grey themselves out against these, so the condition is always visible
+    // two rows above the control it governs.
+    readonly property int  _effWindowMode: dmSel.currentIndex > 0
+                                           ? _dmVals[dmSel.currentIndex]
+                                           : StreamingPreferences.windowMode
+    readonly property bool _effVsync:      vsyncSel.currentIndex > 0
+                                           ? (vsyncSel.currentIndex === 1)
+                                           : StreamingPreferences.enableVsync
 
     property bool _bitrateOverridden: false
     // Custom resolution override for the edited slot (0 == none / using a preset).
@@ -65,15 +85,15 @@ Popup {
     focus: true                       // grab keyboard/gamepad focus when shown
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     anchors.centerIn: Overlay.overlay
-    width: 780
-    padding: 0
+    width: dlg._px(780)
+    padding: dlg._px(0)
 
-    Overlay.modal: Rectangle { color: "#CC000000" }
+    Overlay.modal: Rectangle { color: "#cc000000" }
 
     background: Rectangle {
-        color: "#15171A"
-        radius: 16
-        border.color: "#2A2A2A"
+        color: Theme.card
+        radius: dlg._px(14)
+        border.color: Theme.line
         border.width: 1
     }
 
@@ -138,6 +158,9 @@ Popup {
         hueSel.currentIndex   = (ov.hue !== undefined) ? (ov.hue ? 1 : 2) : 0
         linkSel.currentIndex  = (ov.matchlink !== undefined) ? (ov.matchlink ? 1 : 2) : 0
         waitGameSel.currentIndex = (ov.waitgame !== undefined) ? (ov.waitgame ? 1 : 2) : 0
+        rrSel.currentIndex    = (ov.refreshrate !== undefined) ? _idxByVal(_rrVals, ov.refreshrate) : 0
+        dmSel.currentIndex    = (ov.displaymode !== undefined) ? _idxByVal(_dmVals, ov.displaymode) : 0
+        vsyncSel.currentIndex = (ov.vsync !== undefined) ? (ov.vsync ? 1 : 2) : 0
         _bitrateOverridden = (ov.bitrate !== undefined && ov.bitrate >= bitrateSlider.from)
         bitrateSlider.value = _bitrateOverridden ? ov.bitrate
                             : Math.max(bitrateSlider.from, StreamingPreferences.bitrateKbps)
@@ -159,6 +182,9 @@ Popup {
         if (hueSel.currentIndex > 0)   m.hue = (hueSel.currentIndex === 1)
         if (linkSel.currentIndex > 0)  m.matchlink = (linkSel.currentIndex === 1)
         if (waitGameSel.currentIndex > 0) m.waitgame = (waitGameSel.currentIndex === 1)
+        if (rrSel.currentIndex > 0)    m.refreshrate = _rrVals[rrSel.currentIndex]
+        if (dmSel.currentIndex > 0)    m.displaymode = _dmVals[dmSel.currentIndex]
+        if (vsyncSel.currentIndex > 0) m.vsync = (vsyncSel.currentIndex === 1)
         computerModel.setHostProfileSettings(pcIndex, editingSlot, m)
     }
 
@@ -222,37 +248,37 @@ Popup {
     }
 
     contentItem: ColumnLayout {
-        spacing: 0
+        spacing: dlg._px(0)
 
         // ── Header (title + host name inline) ───────────────────────────────
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 44
+            Layout.preferredHeight: dlg._px(44)
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: dlg._padX
                 anchors.rightMargin: dlg._padX
-                spacing: 12
+                spacing: dlg._px(12)
                 Image {
                     source: "qrc:/res/tune.svg"
                     sourceSize.width: 22; sourceSize.height: 22
-                    Layout.preferredWidth: 22; Layout.preferredHeight: 22
+                    Layout.preferredWidth: dlg._px(22); Layout.preferredHeight: dlg._px(22)
                 }
                 Label {
                     text: qsTr("Host profiles")
-                    font.family: "DM Sans"; font.pixelSize: 18; font.bold: true
+                    font.family: "DM Sans"; font.pixelSize: dlg._px(18); font.bold: true
                     color: dlg._text
                 }
                 Label {
                     text: dlg.hostName
-                    font.family: "DM Sans"; font.pixelSize: 13
+                    font.family: "DM Sans"; font.pixelSize: dlg._px(13)
                     color: dlg._dim; elide: Text.ElideRight
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
                 }
             }
         }
-        Rectangle { Layout.fillWidth: true; height: 1; color: "#2A2A2A" }
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
 
         // ── Profile bar: tabs + Add ─────────────────────────────────────────
         Item {
@@ -262,13 +288,13 @@ Popup {
                 anchors.left: parent.left; anchors.leftMargin: dlg._padX
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("Profile")
-                font.family: "DM Sans"; font.pixelSize: 15; font.bold: true
+                font.family: "DM Sans"; font.pixelSize: dlg._px(15); font.bold: true
                 color: dlg._text
             }
             Row {
                 anchors.right: parent.right; anchors.rightMargin: dlg._padX
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 10
+                spacing: dlg._px(10)
 
                 // "OFF" pill — leftmost. Selecting it deactivates all profiles
                 // (host falls back to the global settings). Styled like one
@@ -284,19 +310,19 @@ Popup {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: 8
+                        radius: dlg._px(8)
                         color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-                        border.color: offBtn.activeFocus ? dlg._accent : "#2a2a2a"
+                        border.color: offBtn.activeFocus ? dlg._accent : Theme.line
                         border.width: offBtn.activeFocus ? 3 : 1
                     }
                     Item {
                         id: offPill
                         anchors.centerIn: parent
-                        implicitWidth: offLabel.implicitWidth + 28
-                        implicitHeight: 30
+                        implicitWidth: offLabel.implicitWidth + dlg._px(28)
+                        implicitHeight: dlg._px(30)
                         width: implicitWidth; height: 30
                         Rectangle {
-                            anchors.fill: parent; anchors.margins: 2; radius: 5
+                            anchors.fill: parent; anchors.margins: 2; radius: dlg._px(5)
                             color: offBtn.selected ? dlg._accent : "transparent"
                         }
                         Label {
@@ -304,7 +330,7 @@ Popup {
                             anchors.centerIn: parent
                             text: qsTr("Off")
                             color: offBtn.selected ? Theme.onAccent : Theme.text2
-                            font.family: "DM Sans"; font.pixelSize: 13; font.bold: offBtn.selected
+                            font.family: "DM Sans"; font.pixelSize: dlg._px(13); font.bold: offBtn.selected
                         }
                     }
                     MouseArea {
@@ -336,21 +362,21 @@ Popup {
 
                     Row {
                         id: tabsRow
-                        spacing: 10
+                        spacing: dlg._px(10)
                         Repeater {
                             model: profileTabs.labels
                             delegate: Rectangle {
                                 id: ptTile
-                                width: ptLabel.implicitWidth + 28
+                                width: ptLabel.implicitWidth + dlg._px(28)
                                 height: dlg._tabH
-                                radius: 8
+                                radius: dlg._px(8)
                                 color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
                                 property bool _active: index === dlg.editingSlot
                                 property bool _cursor: profileTabs.activeFocus && index === profileTabs.currentIndex
-                                border.color: _cursor ? dlg._accent : "#2a2a2a"
+                                border.color: _cursor ? dlg._accent : Theme.line
                                 border.width: _cursor ? 3 : 1
                                 Rectangle {
-                                    anchors.fill: parent; anchors.margins: 2; radius: 5
+                                    anchors.fill: parent; anchors.margins: 2; radius: dlg._px(5)
                                     color: ptTile._active ? dlg._accent : "transparent"
                                 }
                                 Label {
@@ -358,7 +384,7 @@ Popup {
                                     anchors.centerIn: parent
                                     text: modelData
                                     color: ptTile._active ? Theme.onAccent : Theme.text2
-                                    font.family: "DM Sans"; font.pixelSize: 13; font.bold: ptTile._active
+                                    font.family: "DM Sans"; font.pixelSize: dlg._px(13); font.bold: ptTile._active
                                 }
                                 MouseArea {
                                     anchors.fill: parent
@@ -400,28 +426,28 @@ Popup {
                     opacity: enabled ? 1.0 : 0.4
                     anchors.verticalCenter: parent.verticalCenter
                     implicitHeight: dlg._tabH
-                    implicitWidth: addPill.implicitWidth + 12
+                    implicitWidth: addPill.implicitWidth + dlg._px(12)
                     width: implicitWidth; height: dlg._tabH
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: 8
+                        radius: dlg._px(8)
                         color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-                        border.color: addBtn.activeFocus ? dlg._accent : "#2a2a2a"
+                        border.color: addBtn.activeFocus ? dlg._accent : Theme.line
                         border.width: addBtn.activeFocus ? 3 : 1
                     }
                     Item {
                         id: addPill
                         anchors.centerIn: parent
-                        implicitWidth: addLabel.implicitWidth + 28
-                        implicitHeight: 30
+                        implicitWidth: addLabel.implicitWidth + dlg._px(28)
+                        implicitHeight: dlg._px(30)
                         width: implicitWidth; height: 30
                         Label {
                             id: addLabel
                             anchors.centerIn: parent
                             text: qsTr("+ Add")
                             color: dlg._accent
-                            font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
+                            font.family: "DM Sans"; font.pixelSize: dlg._px(13); font.bold: true
                         }
                     }
                     MouseArea {
@@ -446,16 +472,16 @@ Popup {
         // ── Empty state (no profiles) ───────────────────────────────────────
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 130
+            Layout.preferredHeight: dlg._px(130)
             visible: dlg.profileCount === 0
             Label {
                 anchors.centerIn: parent
-                width: parent.width - 80
+                width: parent.width - dlg._px(80)
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
                 lineHeight: 1.25
                 text: qsTr("No profiles yet.\nAdd one to override streaming settings for this host\n(e.g. a “docked” 4K profile and a “portable” 1080p profile).")
-                font.family: "DM Sans"; font.pixelSize: 14
+                font.family: "DM Sans"; font.pixelSize: dlg._px(14)
                 color: dlg._dim
             }
         }
@@ -463,16 +489,16 @@ Popup {
         // ── OFF state (profiles exist but none active) ──────────────────────
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 130
+            Layout.preferredHeight: dlg._px(130)
             visible: dlg.profileCount > 0 && !dlg._editing
             Label {
                 anchors.centerIn: parent
-                width: parent.width - 80
+                width: parent.width - dlg._px(80)
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
                 lineHeight: 1.25
                 text: qsTr("No profile active — this host uses your global settings.\nSelect a profile above to activate and edit it.")
-                font.family: "DM Sans"; font.pixelSize: 14
+                font.family: "DM Sans"; font.pixelSize: dlg._px(14)
                 color: dlg._dim
             }
         }
@@ -490,22 +516,78 @@ Popup {
             interactive: contentHeight > height
             ScrollBar.vertical: ScrollBar {}
 
+            // Auto-scroll: keep the focused row in view as the D-pad moves down the
+            // list. Without this the cursor walks off the bottom of the clipped
+            // viewport and the rows below "Match host link speed" are selectable but
+            // invisible. Same mechanism as SettingsScreen's tab body — if that one is
+            // ever changed, change this one with it.
+            property Item activeFocusItem: Window.activeFocusItem
+            onActiveFocusItemChanged: {
+                if (!activeFocusItem) return
+                // Only react to focus that belongs to this Flickable: the dialog's
+                // tabs, name field and footer buttons live outside it.
+                var p = activeFocusItem
+                var inside = false
+                while (p) {
+                    if (p === flick) { inside = true; break }
+                    p = p.parent
+                }
+                if (!inside) return
+
+                var margin = 12
+                var pos    = activeFocusItem.mapToItem(rowsCol, 0, 0)
+                var top    = pos.y
+                var bottom = pos.y + activeFocusItem.height
+
+                if (top < contentY + margin) {
+                    contentY = Math.max(0, top - margin)
+                } else if (bottom > contentY + height - margin) {
+                    contentY = Math.min(Math.max(0, contentHeight - height),
+                                        bottom - height + margin)
+                }
+            }
+
             Column {
                 id: rowsCol
                 width: flick.width
-                spacing: 0
+                spacing: dlg._px(0)
 
                 component SettingRow: Item {
+                    id: row
                     width: rowsCol.width
-                    height: dlg._rowH
+                    // Grows only when a reason is shown, so every other row keeps its height.
+                    height: row.detail.length > 0
+                            ? Math.max(dlg._rowH, labelCol.implicitHeight + 20)
+                            : dlg._rowH
                     property string label: ""
+                    // Optional second line, used to say why a row is greyed out. A locked
+                    // control with no reason given is worse than no lock at all — the user
+                    // is left guessing which other setting is holding it.
+                    property string detail: ""
                     default property alias content: holder.data
-                    Label {
+                    opacity: enabled ? 1.0 : 0.4
+
+                    Column {
+                        id: labelCol
                         anchors.left: parent.left; anchors.leftMargin: dlg._padX
+                        anchors.right: holder.left; anchors.rightMargin: dlg._px(16)
                         anchors.verticalCenter: parent.verticalCenter
-                        text: parent.label
-                        font.family: "DM Sans"; font.pixelSize: 15; font.bold: true
-                        color: dlg._text
+                        spacing: dlg._px(2)
+                        Label {
+                            width: parent.width
+                            text: row.label
+                            font.family: "DM Sans"; font.pixelSize: dlg._px(15); font.bold: true
+                            color: dlg._text
+                            elide: Text.ElideRight
+                        }
+                        Label {
+                            width: parent.width
+                            visible: row.detail.length > 0
+                            text: row.detail
+                            font.family: "DM Sans"; font.pixelSize: dlg._px(12)
+                            color: dlg._dim
+                            wrapMode: Text.WordWrap
+                        }
                     }
                     Item {
                         id: holder
@@ -528,23 +610,23 @@ Popup {
                         anchors.left: parent.left; anchors.leftMargin: dlg._padX
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("Name")
-                        font.family: "DM Sans"; font.pixelSize: 15; font.bold: true
+                        font.family: "DM Sans"; font.pixelSize: dlg._px(15); font.bold: true
                         color: dlg._text
                     }
                     TextField {
                         id: nameField
                         anchors.right: parent.right; anchors.rightMargin: dlg._padX
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 320; height: 38
-                        leftPadding: 12; rightPadding: 12
+                        width: dlg._px(320); height: dlg._px(38)
+                        leftPadding: dlg._px(12); rightPadding: dlg._px(12)
                         maximumLength: dlg._maxNameLen
-                        font.family: "DM Sans"; font.pixelSize: 14
+                        font.family: "DM Sans"; font.pixelSize: dlg._px(14)
                         color: dlg._text
                         selectByMouse: true
                         background: Rectangle {
-                            radius: 9
+                            radius: dlg._px(9)
                             color: "#101316"
-                            border.color: nameField.activeFocus ? dlg._accent : "#2a2a2a"
+                            border.color: nameField.activeFocus ? dlg._accent : Theme.line
                             border.width: nameField.activeFocus ? 2 : 1
                         }
                         onEditingFinished: dlg.saveName()
@@ -560,7 +642,7 @@ Popup {
                 SettingRow {
                     label: qsTr("Resolution")
                     Row {
-                        spacing: 12
+                        spacing: dlg._px(12)
                         SegmentedSelector {
                             id: resSel; labels: dlg._resLabels
                             KeyNavigation.up: nameField
@@ -604,14 +686,14 @@ Popup {
                         anchors.left: parent.left; anchors.leftMargin: dlg._padX
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("Bitrate (Mbps)")
-                        font.family: "DM Sans"; font.pixelSize: 15; font.bold: true
+                        font.family: "DM Sans"; font.pixelSize: dlg._px(15); font.bold: true
                         color: dlg._text
                     }
 
                     Row {
                         anchors.right: parent.right; anchors.rightMargin: dlg._padX
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 16
+                        spacing: dlg._px(16)
 
                         // Global pill — built to match a single SegmentedSelector
                         // pill exactly (same container, pill geometry and sizes).
@@ -620,25 +702,25 @@ Popup {
                             activeFocusOnTab: true
                             anchors.verticalCenter: parent.verticalCenter
                             property bool selected: !dlg._bitrateOverridden
-                            implicitHeight: 36
+                            implicitHeight: dlg._px(36)
                             implicitWidth: gPill.implicitWidth + 8
                             width: implicitWidth; height: 36
 
                             Rectangle {
                                 anchors.fill: parent
-                                radius: 8
+                                radius: dlg._px(8)
                                 color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-                                border.color: bitrateGlobalBtn.activeFocus ? dlg._accent : "#2a2a2a"
+                                border.color: bitrateGlobalBtn.activeFocus ? dlg._accent : Theme.line
                                 border.width: bitrateGlobalBtn.activeFocus ? 3 : 1
                             }
                             Item {
                                 id: gPill
                                 anchors.centerIn: parent
-                                implicitWidth: gLabel.implicitWidth + 28
-                                implicitHeight: 30
+                                implicitWidth: gLabel.implicitWidth + dlg._px(28)
+                                implicitHeight: dlg._px(30)
                                 width: implicitWidth; height: 30
                                 Rectangle {
-                                    anchors.fill: parent; anchors.margins: 2; radius: 5
+                                    anchors.fill: parent; anchors.margins: 2; radius: dlg._px(5)
                                     color: bitrateGlobalBtn.selected ? dlg._accent : "transparent"
                                 }
                                 Label {
@@ -646,7 +728,7 @@ Popup {
                                     anchors.centerIn: parent
                                     text: qsTr("Global")
                                     color: bitrateGlobalBtn.selected ? Theme.onAccent : Theme.text2
-                                    font.family: "DM Sans"; font.pixelSize: 13
+                                    font.family: "DM Sans"; font.pixelSize: dlg._px(13)
                                     font.bold: bitrateGlobalBtn.selected
                                 }
                             }
@@ -666,11 +748,11 @@ Popup {
                         // Focus ring + slider — replicates Settings → Video → Video bitrate.
                         Item {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 240; height: 36
+                            width: dlg._px(240); height: dlg._px(36)
 
                             Rectangle {   // focus ring (FocusFrame equivalent)
                                 anchors.fill: parent; anchors.margins: -2
-                                radius: 6; color: "transparent"
+                                radius: dlg._px(6); color: "transparent"
                                 border.color: dlg._accent; border.width: 2
                                 visible: bitrateSlider.activeFocus
                             }
@@ -720,13 +802,13 @@ Popup {
                                     x: bitrateSlider.leftPadding
                                     y: bitrateSlider.topPadding + bitrateSlider.availableHeight / 2 - height / 2
                                     width: bitrateSlider.availableWidth
-                                    height: 3; radius: 2
+                                    height: dlg._px(3); radius: dlg._px(2)
                                     color: "#f0f0f0"
                                 }
                                 handle: Rectangle {
                                     x: bitrateSlider.leftPadding + bitrateSlider.visualPosition * (bitrateSlider.availableWidth - width)
                                     y: bitrateSlider.topPadding + bitrateSlider.availableHeight / 2 - height / 2
-                                    implicitWidth: 14; implicitHeight: 14; radius: 7
+                                    implicitWidth: dlg._px(14); implicitHeight: dlg._px(14); radius: dlg._px(7)
                                     color: bitrateSlider.pressed ? Qt.lighter(dlg._accent, 1.2)
                                          : bitrateSlider.hovered ? Qt.lighter(dlg._accent, 1.1)
                                          :                         dlg._accent
@@ -738,10 +820,10 @@ Popup {
                         Label {
                             id: brValue
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 78
+                            width: dlg._px(78)
                             text: (bitrateSlider.value / 1000).toFixed(0) + qsTr(" Mbps")
                             color: dlg._accent
-                            font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
+                            font.family: "DM Sans"; font.pixelSize: dlg._px(13); font.bold: true
                             horizontalAlignment: Text.AlignRight
                         }
                     }
@@ -765,15 +847,57 @@ Popup {
                     SegmentedSelector {
                         id: codecSel; labels: dlg._codecLabels
                         KeyNavigation.up: hdrSel
+                        KeyNavigation.down: dmSel
+                        onActivated: dlg.saveOverride()
+                    }
+                }
+                // ⚠️ Row order groups by what a setting acts on, not by when it was added:
+                // picture first, then audio, then the network one, then the two that are
+                // about the session around the stream. Within each group the order mirrors
+                // Settings, so there is one order to learn and not two. Anything appended
+                // to the end from now on has to earn its place here as well — and the
+                // KeyNavigation chain below has to be walked end to end when it moves.
+                //
+                // The last four are in Settings → Video's own order, which is also
+                // dependency order: each of Display mode and V-Sync sits directly above
+                // the row it governs, so a greyed control never sends you hunting for the
+                // reason. Global = follow the setting in Settings → Video.
+                SettingRow {
+                    label: qsTr("Display mode")
+                    SegmentedSelector {
+                        id: dmSel; labels: dlg._dmLabels
+                        KeyNavigation.up: codecSel
+                        KeyNavigation.down: rrSel
+                        onActivated: dlg.saveOverride()
+                    }
+                }
+                SettingRow {
+                    label: qsTr("Refresh rate switching")
+                    enabled: dlg._effWindowMode === StreamingPreferences.WM_FULLSCREEN
+                    detail: enabled ? "" : qsTr("Needs Fullscreen — the row above is set to something else.")
+                    SegmentedSelector {
+                        id: rrSel; labels: dlg._rrLabels
+                        KeyNavigation.up: dmSel
+                        KeyNavigation.down: vsyncSel
+                        onActivated: dlg.saveOverride()
+                    }
+                }
+                SettingRow {
+                    label: qsTr("V-Sync")
+                    SegmentedSelector {
+                        id: vsyncSel; labels: dlg._hdrLabels
+                        KeyNavigation.up: rrSel
                         KeyNavigation.down: fpSel
                         onActivated: dlg.saveOverride()
                     }
                 }
                 SettingRow {
                     label: qsTr("Frame pacing")
+                    enabled: dlg._effVsync
+                    detail: enabled ? "" : qsTr("Needs V-Sync — the row above is off.")
                     SegmentedSelector {
                         id: fpSel; labels: dlg._fpLabels
-                        KeyNavigation.up: codecSel
+                        KeyNavigation.up: vsyncSel
                         KeyNavigation.down: audSel
                         onActivated: dlg.saveOverride()
                     }
@@ -783,15 +907,6 @@ Popup {
                     SegmentedSelector {
                         id: audSel; labels: dlg._audLabels
                         KeyNavigation.up: fpSel
-                        KeyNavigation.down: hueSel
-                        onActivated: dlg.saveOverride()
-                    }
-                }
-                SettingRow {
-                    label: qsTr("Philips Hue")
-                    SegmentedSelector {
-                        id: hueSel; labels: dlg._hdrLabels
-                        KeyNavigation.up: audSel
                         KeyNavigation.down: linkSel
                         onActivated: dlg.saveOverride()
                     }
@@ -803,7 +918,7 @@ Popup {
                     label: qsTr("Match host link speed")
                     SegmentedSelector {
                         id: linkSel; labels: dlg._hdrLabels
-                        KeyNavigation.up: hueSel
+                        KeyNavigation.up: audSel
                         KeyNavigation.down: waitGameSel
                         onActivated: dlg.saveOverride()
                     }
@@ -818,6 +933,18 @@ Popup {
                     SegmentedSelector {
                         id: waitGameSel; labels: dlg._hdrLabels
                         KeyNavigation.up: linkSel
+                        KeyNavigation.down: hueSel
+                        onActivated: dlg.saveOverride()
+                    }
+                }
+                // Sits with the row above because it belongs to the same context: both are
+                // about what happens around the stream rather than to the picture, and both
+                // live in Settings → Session.
+                SettingRow {
+                    label: qsTr("Philips Hue")
+                    SegmentedSelector {
+                        id: hueSel; labels: dlg._hdrLabels
+                        KeyNavigation.up: waitGameSel
                         KeyNavigation.down: removeBtn
                         onActivated: dlg.saveOverride()
                     }
@@ -825,12 +952,12 @@ Popup {
             }
         }
 
-        Rectangle { Layout.fillWidth: true; height: 1; color: "#2A2A2A" }
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
 
         // ── Footer: Remove (left) · Done + Reset to Global (right) ──────────
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 52
+            Layout.preferredHeight: dlg._px(52)
 
             DialogButton {
                 id: removeBtn
@@ -840,25 +967,25 @@ Popup {
                 text: qsTr("Remove")
                 danger: true
                 fontSize: 13
-                width: 84; height: 36
+                width: dlg._px(84); height: dlg._px(36)
                 onActivated: dlg.removeProfile()
-                KeyNavigation.up: dlg._editing ? waitGameSel : addBtn
+                KeyNavigation.up: dlg._editing ? hueSel : addBtn
                 KeyNavigation.right: doneBtn
             }
 
             Row {
                 anchors.right: parent.right; anchors.rightMargin: dlg._padX
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 8
+                spacing: dlg._px(8)
 
                 DialogButton {
                     id: doneBtn
                     text: qsTr("Done")
                     affirmative: true
                     fontSize: 13
-                    width: 76; height: 36
+                    width: dlg._px(76); height: dlg._px(36)
                     onActivated: dlg.close()
-                    KeyNavigation.up: dlg._editing ? waitGameSel : addBtn
+                    KeyNavigation.up: dlg._editing ? hueSel : addBtn
                     KeyNavigation.left: dlg._editing ? removeBtn : null
                     KeyNavigation.right: dlg._editing ? resetBtn : null
                 }
@@ -867,9 +994,9 @@ Popup {
                     visible: dlg._editing
                     text: qsTr("Reset to Global")
                     fontSize: 13
-                    width: 128; height: 36
+                    width: dlg._px(128); height: dlg._px(36)
                     onActivated: dlg.resetAll()
-                    KeyNavigation.up: waitGameSel
+                    KeyNavigation.up: hueSel
                     KeyNavigation.left: doneBtn
                 }
             }

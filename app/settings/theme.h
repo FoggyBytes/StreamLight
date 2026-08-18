@@ -68,6 +68,26 @@ class Theme : public QObject
      */
     Q_PROPERTY(bool reduceAnimations READ reduceAnimations WRITE setReduceAnimations NOTIFY changed)
 
+    /**
+     * How much bigger than its design size everything should be drawn, for the window the app
+     * is currently in. AppShell computes it from the window width and writes it here; the
+     * pages have always had their own copy of the same number.
+     *
+     * It lives on the theme because of who could not reach it. A dialog is not inside a page —
+     * it sits in the overlay above all of them — so it had no way to read a page's scale, and
+     * every dialog in the app was therefore written in fixed pixels. On a large screen that
+     * left the popups drawn at roughly half the size of the page behind them: a button written
+     * as 44 on the host page comes out at 70, while the same button written as 38 in a dialog
+     * comes out at 38, on any screen. Fixed numbers cannot be corrected by picking bigger ones,
+     * because there is no value that is right on both a handheld and a television.
+     *
+     * ⚠️ Deliberately a property and not a `px(n)` invokable. A C++ invokable is opaque to the
+     * QML engine, so a binding that called it would never be told the scale had changed and
+     * would keep whatever value it happened to be built with. Callers multiply by it, or wrap
+     * it in a QML-side helper — where the engine does see the property read.
+     */
+    Q_PROPERTY(qreal uiScale READ uiScale WRITE setUiScale NOTIFY uiScaleChanged)
+
 public:
     static Theme* get(QQmlEngine* qmlEngine = nullptr);
 
@@ -96,8 +116,11 @@ public:
 
     bool reduceAnimations() const { return m_ReduceAnimations; }
 
+    qreal uiScale() const { return m_UiScale; }
+
     void setAccent(const QColor& c);
     void setReduceAnimations(bool on);
+    void setUiScale(qreal s);
 
     /**
      * Black or white, whichever can be read on top of @p background.
@@ -121,10 +144,15 @@ public:
 
 signals:
     void changed();
+    void uiScaleChanged();
 
 private:
     void save() const;
 
     QColor m_Accent;
     bool   m_ReduceAnimations = false;
+
+    // 1.0 until AppShell has a width to measure. Not persisted: it describes the window the
+    // app happens to be in, not anything the user chose.
+    qreal  m_UiScale = 1.0;
 };

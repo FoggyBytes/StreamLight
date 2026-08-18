@@ -164,6 +164,16 @@ public:
     // key events and posted to the Qt window, which is the one on screen.
     void setUnlockMode(bool on);
 
+    /**
+     * Opens the controllers SDL never told us about.
+     *
+     * <p>SDL emits its one arrival burst on the first init of the gamecontroller subsystem
+     * only. When something else is still holding that subsystem — GUI navigation, which stays
+     * alive while the launch screen is up — our init is a refcount bump and no burst arrives,
+     * leaving this handler with no controllers at all. Call once the connection is up.</p>
+     */
+    void attachAlreadyConnectedGamepads();
+
     bool isMouseInVideoRegion(int mouseX, int mouseY, int windowWidth = -1, int windowHeight = -1);
 
     void updateKeyboardGrabState();
@@ -233,6 +243,10 @@ private:
     bool m_StreamWindowHidden = false;
     bool m_UnlockMode = false;
     bool m_BackgroundGamepad = false;
+
+    // The gamecontroller subsystem was already up when we initialized it, so SDL owes us no
+    // arrival events. Cleared by attachAlreadyConnectedGamepads(), which makes up for them.
+    bool m_MissedGamepadArrivals = false;
 
     bool m_MouseWasInVideoRegion;
     bool m_PendingMouseButtonsAllUpOnVideoRegionLeave;

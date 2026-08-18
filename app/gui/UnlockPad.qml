@@ -4,6 +4,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.5
 
 import SdlGamepadKeyNavigation 1.0
+import StreamingPreferences 1.0
 
 /*
  * The PIN pad shown while a hidden session sits on the host's logon screen.
@@ -50,7 +51,10 @@ Item {
     // Sized off the window height, like the launch curtain, so one layout holds from a
     // handheld to a TV.
     readonly property real _h : height > 0 ? height : 1080
-    readonly property real _u : Math.max(0.62, Math.min(1.6, width / 1450))
+    // ⚠️ 1330, the same divisor as AppsScreen, HostStage and Theme.uiScale. This was left on
+    // 1450 when that reference changed, so the pad came out about 9% smaller than the page it
+    // opens from — scaling, but to a scale of its own.
+    readonly property real _u : Math.max(0.62, Math.min(1.6, width / 1330))
 
     function _press(index) {
         if (_busy) return
@@ -84,7 +88,13 @@ Item {
         // screen, and saying so with its own shape works better than a sentence explaining it.
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: Qt.formatTime(root._now, "HH:mm")
+            // Follows the same setting as the Home clock: how you read a clock is one preference,
+            // not one per screen. The date below does not — this pad is imitating the Windows
+            // logon screen, which writes it out in full, and that is what makes it look like
+            // Windows asking rather than us.
+            text: Qt.formatTime(root._now,
+                                StreamingPreferences.clockFormat === StreamingPreferences.CF_12H
+                                ? "h:mm AP" : "HH:mm")
             font.pointSize: Math.max(34, Math.round(root._h * 0.075))
             font.weight: Font.Light
             color: "#f2f2f4"

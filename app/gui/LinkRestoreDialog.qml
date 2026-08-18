@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import Theme 1.0
 
 // "Put the host's link speed back?" — asked on returning to the host list after a session,
 // and only when the host says it is still on a speed this client asked for.
@@ -16,20 +17,25 @@ Popup {
 
     signal restoreChosen(int index)
 
+    // The shared dialog measurements, all of them multiplied by the window scale — see
+    // Theme.uiScale for why a dialog cannot take this from the page it is covering.
+    readonly property real _u: Theme.uiScale
+    function _px(n) { return Math.round(n * _u) }
+
     modal: true
     dim: true
     focus: true
     closePolicy: Popup.CloseOnEscape
     anchors.centerIn: Overlay.overlay
-    width: 520
-    padding: 0
+    width: _px(520)
+    padding: _px(28)
 
-    Overlay.modal: Rectangle { color: "#CC000000" }
+    Overlay.modal: Rectangle { color: "#cc000000" }
 
     background: Rectangle {
-        color: "#15171A"
-        radius: 16
-        border.color: "#2A2A2A"
+        color: Theme.card
+        radius: dlg._px(14)
+        border.color: Theme.line
         border.width: 1
     }
 
@@ -37,57 +43,64 @@ Popup {
     // destructive-ish dialogs: the safe answer is the one under the cursor.
     onOpened: keepBtn.forceActiveFocus()
 
+    // Centred, because this dialog asks a question. The ones that present something to read
+    // or scroll through — the update list, the profile editor — stay left-aligned: centring
+    // a paragraph or a list makes it harder to read, not more formal.
     contentItem: Column {
         spacing: 0
 
-        Item { width: 1; height: 24 }
+        Label {
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            text: qsTr("LINK SPEED")
+            font.family: Theme.family; font.pixelSize: dlg._px(13)
+            font.bold: true; font.letterSpacing: dlg._u * 1.6
+            color: Theme.text3
+        }
+
+        Item { width: 1; height: dlg._px(12) }
 
         Label {
-            x: 28
-            width: parent.width - 56
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
             text: qsTr("Restore host link speed?")
-            font.family: "DM Sans"; font.pixelSize: 19; font.bold: true
-            color: "#ECECEC"
+            font.family: Theme.family; font.pixelSize: dlg._px(22); font.bold: true
+            color: Theme.text
             wrapMode: Text.WordWrap
         }
 
-        Item { width: 1; height: 10 }
+        Item { width: 1; height: dlg._px(10) }
 
         Label {
-            x: 28
-            width: parent.width - 56
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
             // What it is and what each answer does. The reasoning lives in the changelog.
             text: qsTr("%1 is still on the speed matched for streaming.").arg(dlg.hostName)
-            font.family: "DM Sans"; font.pixelSize: 14
-            color: "#9A9A9A"
+            font.family: Theme.family; font.pixelSize: dlg._px(15)
+            color: Theme.text2
             wrapMode: Text.WordWrap
         }
 
-        Item { width: 1; height: 22 }
+        Item { width: 1; height: dlg._px(22) }
 
         Row {
-            x: 28
-            spacing: 8
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: dlg._px(10)
 
+            // No width or height here: DialogButton carries the shared size and scales it.
             DialogButton {
                 id: restoreBtn
                 text: qsTr("Restore")
                 affirmative: true
-                fontSize: 13
-                width: 108; height: 38
                 onActivated: { dlg.restoreChosen(dlg.pcIndex); dlg.close() }
                 KeyNavigation.right: keepBtn
             }
             DialogButton {
                 id: keepBtn
                 text: qsTr("Keep it")
-                fontSize: 13
-                width: 108; height: 38
                 onActivated: dlg.close()
                 KeyNavigation.left: restoreBtn
             }
         }
-
-        Item { width: 1; height: 24 }
     }
 }

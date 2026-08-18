@@ -82,10 +82,19 @@ public:
 
     void setOverlayRenderer(IOverlayRenderer* renderer);
 
-    // Position (used for drag support); coordinates are in pixels from top-left of the window
-    void setOverlayPosition(OverlayType type, float x, float y);
-    float getOverlayX(OverlayType type) const;
-    float getOverlayY(OverlayType type) const;
+    /**
+     * Left edge for an overlay of @p surfaceWidth inside a viewport of @p viewportWidth.
+     *
+     * OverlayDebug takes the corner the user chose (Settings > Overlay); OverlayStreamSettings
+     * takes the other one, so the two can never land on top of each other and the live
+     * settings panel needs no corner setting of its own. That relationship is the reason the
+     * position choice has two values and not three.
+     *
+     * Here rather than in each renderer because every renderer would otherwise carry its own
+     * copy of it, and they already disagree about which way y points — one shared answer for
+     * x is one fewer thing to keep in step.
+     */
+    static int getOverlayOriginX(OverlayType type, int viewportWidth, int surfaceWidth, int margin);
 
 private:
     void notifyOverlayUpdated(OverlayType type);
@@ -100,14 +109,13 @@ private:
         bool isPanel;
         int fontSize;
         SDL_Color color;
+        SDL_Color bgColor;
         char text[1024];
 
         TTF_Font* font;
         TTF_Font* smallFont;
         SDL_Surface* surface;
 
-        float x;
-        float y;
     } m_Overlays[OverlayMax];
     OverlayPanel m_Panels[OverlayMax];
     IOverlayRenderer* m_Renderer;

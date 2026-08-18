@@ -166,6 +166,8 @@ SOURCES += \
     backend/coverpalette.cpp \
     backend/linkspeed.cpp \
     backend/linkmatcher.cpp \
+    backend/powerstatus.cpp \
+    backend/gradientimage.cpp \
     backend/launchgate.cpp \
     streaming/launchcurtain.cpp \
     backend/nvapp.cpp \
@@ -224,6 +226,8 @@ HEADERS += \
     backend/coverpalette.h \
     backend/linkspeed.h \
     backend/linkmatcher.h \
+    backend/powerstatus.h \
+    backend/gradientimage.h \
     backend/launchgate.h \
     streaming/launchcurtain.h \
     backend/nvapp.h \

@@ -421,7 +421,7 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
                     "Detected stats toggle gamepad combo");
 
         // Cycle the stats overlay: Off -> Minimal -> Default -> Full -> Off ...
-        Session::get()->cycleOverlayMode();
+        Session::get()->togglePerfOverlay();
 
         // Clear buttons down on this gamepad
         LiSendMultiControllerEvent(state->index, m_GamepadMask,
@@ -489,6 +489,14 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                         "B pressed behind the launch curtain: showing the host now");
             Session::get()->revealStreamWindow(true);
+        }
+        // X is the other half of the answer: B is "let me look at it", X is "I don't want it".
+        // A launch can wedge somewhere neither side can see — the host accepting /launch and
+        // never answering, a game whose window never comes — and looking at it does not help.
+        else if (event->state == SDL_PRESSED && event->button == SDL_CONTROLLER_BUTTON_X) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "X pressed behind the launch curtain: cancelling the launch");
+            Session::get()->cancelLaunch();
         }
         return;
     }

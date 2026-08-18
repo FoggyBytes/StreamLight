@@ -132,6 +132,13 @@ public:
     Q_INVOKABLE void start();
     Q_INVOKABLE void interrupt();
 
+    // Give up on a launch that has not produced a picture yet — X behind the launch screen.
+    // Same teardown as interrupt(), plus a mark so the segue knows the end that follows was
+    // asked for and shows no error over it. Safe at any point: LiInterruptConnection() aborts
+    // a handshake in progress, and a session that never started simply never runs.
+    Q_INVOKABLE void cancelLaunch();
+    Q_INVOKABLE bool launchWasCancelled() const { return m_LaunchCancelled; }
+
     // Request a clean shutdown of an established session. Unlike interrupt(),
     // this does NOT call LiInterruptConnection() — it only pushes SDL_QUIT and
     // lets the SDL event loop perform an orderly LiStopConnection() with a
@@ -160,26 +167,25 @@ public:
     NvComputer* getComputer() const { return m_Computer; }
     const NvApp& getApp() const { return m_App; }
 
-    // Advance the performance overlay through Off -> Minimal -> Default -> Full
-    // -> Off ... — bound to the overlay hotkey (Ctrl+Alt+O / Select+L1+R1+X).
-    // This drives the same persisted setting shown in Settings > Overlay, so the
-    // selector there stays in sync; the overlay layer is shown whenever the
-    // resulting profile is not Off.
-    void cycleOverlayMode()
+    // Show or hide the performance overlay — bound to the overlay hotkey
+    // (Ctrl+Alt+Shift+S / Select+L1+R1+X).
+    //
+    // It used to cycle Off -> Minimal -> Default -> Full, because verbosity was the only
+    // thing there was to choose. Since the content is picked line by line in Settings,
+    // three levels would be three answers to a question the user has already answered, so
+    // the key does the one thing left: shows it or hides it.
+    void togglePerfOverlay()
     {
-        auto mode = static_cast<StreamingPreferences::OverlayMode>(
-            (static_cast<int>(m_Preferences->overlayMode) + 1)
-            % (static_cast<int>(StreamingPreferences::OM_FULL) + 1));
+        const bool show = !m_Preferences->showPerfOverlay;
         // Apply to the live session preferences (which may be a per-game clone).
-        m_Preferences->overlayMode = mode;
+        m_Preferences->showPerfOverlay = show;
         // Persist on the GLOBAL singleton — not the session clone — so Settings >
         // Overlay stays in sync and we never write per-game overrides to the
         // global store.
         auto* global = StreamingPreferences::get();
-        global->overlayMode = mode;
+        global->showPerfOverlay = show;
         global->save();
-        m_OverlayManager.setOverlayState(Overlay::OverlayDebug,
-            m_Preferences->overlayMode != StreamingPreferences::OM_OFF);
+        m_OverlayManager.setOverlayState(Overlay::OverlayDebug, show);
     }
 
     /** Thread-safe snapshot of the latest host metrics from StreamTweak. */
@@ -500,6 +506,10 @@ private:
     // Remote PIN unlock. The buffer is fixed and small: a Windows Hello PIN is a handful of
     // digits, and a fixed array is something we can actually overwrite afterwards.
     bool m_UnlockMode = false;
+
+    // The user pressed X behind the launch screen. Read by the segue when the session ends, so
+    // a cancellation is not dressed up as a failure.
+    bool m_LaunchCancelled = false;
     static constexpr int MaxUnlockPinDigits = 16;
     char m_UnlockPin[MaxUnlockPinDigits] = {};
     int  m_UnlockPinLen = 0;

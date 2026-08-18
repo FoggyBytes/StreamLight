@@ -12,6 +12,10 @@ import QtQuick.Layouts 1.3
 Popup {
     id: pop
 
+    // Shared dialog measurements — see Theme.uiScale.
+    readonly property real _u: Theme.uiScale
+    function _px(n) { return Math.round(n * _u) }
+
     // ── Public API ────────────────────────────────────────────────────────────
     property int    pcIndex: -1
     property string hostName: ""
@@ -49,17 +53,17 @@ Popup {
     readonly property var _targets: ["host", "client", "both"]
 
     modal: true
-    Overlay.modal: Item {}
+    Overlay.modal: Rectangle { color: "#cc000000" }
     focus: true
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
-    padding: 32
+    padding: pop._px(32)
 
     background: Rectangle {
-        color: "#1a1a1a"
-        border.color: "#2a2a2a"
+        color: Theme.card
+        border.color: Theme.line
         border.width: 1
-        radius: 12
+        radius: pop._px(12)
     }
 
     function _bodyText() {
@@ -99,15 +103,15 @@ Popup {
     }
 
     contentItem: ColumnLayout {
-        spacing: 22
+        spacing: pop._px(22)
 
         Label {
             text: qsTr("POWER")
             font.family: "DM Sans"
-            font.pixelSize: 13
+            font.pixelSize: pop._px(13)
             font.bold: true
             font.letterSpacing: 1.6
-            color: "#707070"
+            color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
         }
 
@@ -124,12 +128,12 @@ Popup {
         Label {
             text: pop._bodyText()
             font.family: "DM Sans"
-            font.pixelSize: 18
+            font.pixelSize: pop._px(18)
             color: "#f0f0f0"
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
-            Layout.maximumWidth: 520
+            Layout.maximumWidth: pop._px(520)
         }
 
         // Inline hint shown when the host hasn't approved this device yet. Suppressed
@@ -138,50 +142,50 @@ Popup {
             visible: !pop.hostAllowed && !pop.clientOnly
             text: qsTr("Host shutdown needs StreamTweak access. Approve this device on the host (Settings → Bridge security) to enable Host and Both.")
             font.family: "DM Sans"
-            font.pixelSize: 13
+            font.pixelSize: pop._px(13)
             color: "#a0a0a0"
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
-            Layout.maximumWidth: 520
+            Layout.maximumWidth: pop._px(520)
         }
 
         // ── Evidence: Windows-update status per side (rows shown for the target) ──
         ColumnLayout {
             Layout.alignment: Qt.AlignHCenter
-            Layout.maximumWidth: 520
-            spacing: 4
+            Layout.maximumWidth: pop._px(520)
+            spacing: pop._px(4)
 
             Label {
                 text: qsTr("WINDOWS UPDATES")
-                font.family: "DM Sans"; font.pixelSize: 11; font.bold: true; font.letterSpacing: 1.2
+                font.family: "DM Sans"; font.pixelSize: pop._px(11); font.bold: true; font.letterSpacing: 1.2
                 color: "#606060"
                 Layout.alignment: Qt.AlignHCenter
             }
             RowLayout {
                 visible: pop._targetIncludesHost
                 Layout.alignment: Qt.AlignHCenter
-                spacing: 10
+                spacing: pop._px(10)
                 Label {
                     text: "🖥  " + qsTr("Host") + (pop.hostName.length ? " (" + pop.hostName + ")" : "")
-                    font.family: "DM Sans"; font.pixelSize: 13; color: "#c0c0c0"
+                    font.family: "DM Sans"; font.pixelSize: pop._px(13); color: "#c0c0c0"
                 }
                 Label {
                     text: pop._pillText(pop.hostUpdateState)
-                    font.family: "DM Sans"; font.pixelSize: 13; color: pop._pillColor(pop.hostUpdateState)
+                    font.family: "DM Sans"; font.pixelSize: pop._px(13); color: pop._pillColor(pop.hostUpdateState)
                 }
             }
             RowLayout {
                 visible: pop._targetIncludesClient
                 Layout.alignment: Qt.AlignHCenter
-                spacing: 10
+                spacing: pop._px(10)
                 Label {
                     text: "💻  " + qsTr("This PC")
-                    font.family: "DM Sans"; font.pixelSize: 13; color: "#c0c0c0"
+                    font.family: "DM Sans"; font.pixelSize: pop._px(13); color: "#c0c0c0"
                 }
                 Label {
                     text: pop._pillText(pop.clientUpdateState)
-                    font.family: "DM Sans"; font.pixelSize: 13; color: pop._pillColor(pop.clientUpdateState)
+                    font.family: "DM Sans"; font.pixelSize: pop._px(13); color: pop._pillColor(pop.clientUpdateState)
                 }
             }
         }
@@ -206,9 +210,9 @@ Popup {
             Keys.onSpacePressed:  updatesCheck.toggle()
 
             indicator: Rectangle {
-                implicitWidth: 20
-                implicitHeight: 20
-                radius: 4
+                implicitWidth: pop._px(20)
+                implicitHeight: pop._px(20)
+                radius: pop._px(4)
                 y: updatesCheck.height / 2 - height / 2
                 color: updatesCheck.checked ? Theme.accent : "transparent"
                 border.color: (updatesCheck.activeFocus || updatesCheck.checked) ? Theme.accent : "#3a3a3a"
@@ -218,17 +222,17 @@ Popup {
                     visible: updatesCheck.checked
                     text: "✓"
                     color: "#0d0d0d"
-                    font.pixelSize: 14
+                    font.pixelSize: pop._px(14)
                     font.bold: true
                 }
             }
             contentItem: Label {
                 text: updatesCheck.text
                 font.family: "DM Sans"
-                font.pixelSize: 14
+                font.pixelSize: pop._px(14)
                 color: "#d0d0d0"
                 verticalAlignment: Text.AlignVCenter
-                leftPadding: updatesCheck.indicator.width + 10
+                leftPadding: updatesCheck.indicator.width + pop._px(10)
             }
         }
 
@@ -240,18 +244,18 @@ Popup {
                   ? qsTr("Checking for updates…")
                   : qsTr("Nothing pending for the selected device. For a full check, use \"Windows Update\".")
             font.family: "DM Sans"
-            font.pixelSize: 13
+            font.pixelSize: pop._px(13)
             color: "#909090"
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
-            Layout.maximumWidth: 520
+            Layout.maximumWidth: pop._px(520)
         }
 
         RowLayout {
             Layout.alignment: Qt.AlignHCenter
-            Layout.topMargin: 4
-            spacing: 14
+            Layout.topMargin: pop._px(4)
+            spacing: pop._px(14)
 
             Button {
                 id: confirmBtn
@@ -265,22 +269,22 @@ Popup {
                 Keys.onUpPressed:     (updatesCheck.enabled ? updatesCheck : selector).forceActiveFocus()
 
                 background: Rectangle {
-                    implicitWidth: 140
-                    implicitHeight: 42
-                    radius: 8
+                    implicitWidth: pop._px(140)
+                    implicitHeight: pop._px(42)
+                    radius: pop._px(8)
                     color: confirmBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : confirmBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
                          :                          "#1f1f1f"
                     border.color: confirmBtn.activeFocus ? Theme.accent
                                 : confirmBtn.hovered     ? "#3a3a3a"
-                                :                          "#2a2a2a"
+                                :                          Theme.line
                     border.width: confirmBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: confirmBtn.text
                     color: Theme.accent
                     font.family: "DM Sans"
-                    font.pixelSize: 15
+                    font.pixelSize: pop._px(15)
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -299,22 +303,22 @@ Popup {
                 Keys.onUpPressed:     (updatesCheck.enabled ? updatesCheck : selector).forceActiveFocus()
 
                 background: Rectangle {
-                    implicitWidth: 140
-                    implicitHeight: 42
-                    radius: 8
+                    implicitWidth: pop._px(140)
+                    implicitHeight: pop._px(42)
+                    radius: pop._px(8)
                     color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : cancelBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
                          :                         "#1f1f1f"
                     border.color: cancelBtn.activeFocus ? Theme.accent
                                 : cancelBtn.hovered     ? "#3a3a3a"
-                                :                         "#2a2a2a"
+                                :                         Theme.line
                     border.width: cancelBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: cancelBtn.text
                     color: "#f0f0f0"
                     font.family: "DM Sans"
-                    font.pixelSize: 15
+                    font.pixelSize: pop._px(15)
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter

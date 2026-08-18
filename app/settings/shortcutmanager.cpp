@@ -44,10 +44,20 @@ struct PadDefault {
     int mask;
 };
 
+// Defaults deliberately avoid Select and Start: Steam's own overlay binds combos
+// on those, and a client shortcut that fights the overlay is one the user cannot
+// win. LB + RB + a face button clears them while still satisfying the "three
+// buttons, at least one system button" rule that keeps a combo from firing during
+// play (gamepadMaskIsSafe) — LB and RB both count as system buttons.
+//
+// The trade is real and was made knowingly: LB + RB + A is easier to hit by
+// accident mid-game than the old Select + LB + RB + X. Rebindable in
+// Settings -> Shortcuts, and an existing custom binding is never touched — these
+// are only the values a fresh install starts from.
 static const PadDefault s_PadDefaults[ShortcutManager::PAD_COUNT] = {
-    { "Quit session",              PLAY_FLAG | BACK_FLAG | LB_FLAG | RB_FLAG },
-    { "Cycle performance overlay", BACK_FLAG | LB_FLAG | RB_FLAG | X_FLAG },
-    { "Open stream settings",      BACK_FLAG | LB_FLAG | RB_FLAG | B_FLAG },
+    { "Quit session",              LB_FLAG | RB_FLAG | A_FLAG },
+    { "Cycle performance overlay", LB_FLAG | RB_FLAG | X_FLAG },
+    { "Open stream settings",      LB_FLAG | RB_FLAG | B_FLAG },
 };
 
 // Digital buttons that can take part in a pad combo (analog triggers L2/R2 are

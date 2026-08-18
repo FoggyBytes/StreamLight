@@ -32,6 +32,7 @@
 #define SER_STARTWINDOWED "startwindowed"
 #define SER_FRAMEPACING "framepacing"
 #define SER_FRAMEPACINGMODE "framepacingmode"
+#define SER_REFRESHRATEMODE "refreshratemode"
 #define SER_CONNWARNINGS "connwarnings"
 #define SER_CONFWARNINGS "confwarnings"
 #define SER_UIDISPLAYMODE "uidisplaymode"
@@ -45,6 +46,11 @@
 #define SER_WAITFORGAME "waitforgame"
 #define SER_SHOWPERFOVERLAY "showperfoverlay"
 #define SER_OVERLAYMODE "overlaymode"
+#define SER_OVERLAYPOSITION "overlayposition"
+#define SER_OVERLAYTEXTCOLOR "overlaytextcolor"
+#define SER_OVERLAYFONTSIZE "overlayfontsize"
+#define SER_OVERLAYTRANSPARENCY "overlaytransparency"
+#define SER_OVERLAYITEMS "overlayitems"
 #define SER_SWAPMOUSEBUTTONS "swapmousebuttons"
 #define SER_MUTEONFOCUSLOSS "muteonfocusloss"
 #define SER_BACKGROUNDGAMEPAD "backgroundgamepad"
@@ -56,6 +62,8 @@
 #define SER_HIDEHOSTIPS "hidehostips"
 #define SER_TAILSCALE_AUTOSTART "tailscaleautostart"
 #define SER_GLYPHSET "glyphset"
+#define SER_CLOCKFORMAT "clockformat"
+#define SER_DATEFORMAT "dateformat"
 #define CURRENT_DEFAULT_VER 2
 
 static StreamingPreferences* s_GlobalPrefs;
@@ -127,6 +135,7 @@ StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
     p->absoluteMouseMode = absoluteMouseMode;
     p->absoluteTouchMode = absoluteTouchMode;
     p->framePacingMode = framePacingMode;
+    p->refreshRateMode = refreshRateMode;
     p->connectionWarnings = connectionWarnings;
     p->configurationWarnings = configurationWarnings;
     p->richPresence = richPresence;
@@ -135,7 +144,12 @@ StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
     p->autoReconnectNoVideo = autoReconnectNoVideo;
     p->matchHostLinkSpeed = matchHostLinkSpeed;
     p->waitForGameOnScreen = waitForGameOnScreen;
-    p->overlayMode = overlayMode;
+    p->showPerfOverlay = showPerfOverlay;
+    p->overlayPosition = overlayPosition;
+    p->overlayTextColor = overlayTextColor;
+    p->overlayFontSize = overlayFontSize;
+    p->overlayTransparency = overlayTransparency;
+    p->overlayItems = overlayItems;
     p->swapMouseButtons = swapMouseButtons;
     p->muteOnFocusLoss = muteOnFocusLoss;
     p->backgroundGamepad = backgroundGamepad;
@@ -156,6 +170,8 @@ StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
     p->uiDisplayMode = uiDisplayMode;
     p->captureSysKeysMode = captureSysKeysMode;
     p->glyphSet = glyphSet;
+    p->clockFormat = clockFormat;
+    p->dateFormat = dateFormat;
 
     p->setParent(parent);
     return p;
@@ -208,6 +224,11 @@ void StreamingPreferences::reload()
                               ? FramePacingMode::FP_AUTO
                               : FramePacingMode::FP_OFF;
     }
+    // Defaults to the inherited behaviour, so nothing changes for anyone who
+    // doesn't go looking for it — deliberately not RR_AUTO, which would move the
+    // default configuration on somebody else's behalf.
+    refreshRateMode = static_cast<RefreshRateMode>(settings.value(SER_REFRESHRATEMODE,
+                                                   static_cast<int>(RefreshRateMode::RR_HIGHEST)).toInt());
     connectionWarnings = settings.value(SER_CONNWARNINGS, true).toBool();
     configurationWarnings = settings.value(SER_CONFWARNINGS, true).toBool();
     richPresence = settings.value(SER_RICHPRESENCE, true).toBool();
@@ -223,18 +244,36 @@ void StreamingPreferences::reload()
     // screen is the opt-in, because it is the answer to a problem not everyone has — and a
     // title that opens its own launcher never satisfies it at all.
     waitForGameOnScreen = settings.value(SER_WAITFORGAME, false).toBool();
-    // Overlay verbosity. New 4-state setting (Off/Minimal/Default/Full). Migrate
-    // from the old boolean: an enabled legacy overlay showed everything, so it
-    // maps to OM_FULL; a disabled one maps to OM_OFF.
+    // ── Performance overlay ──────────────────────────────────────────────────
+    // On/off migrates through two older shapes: the 4-state profile of 4.x/5.0.0
+    // (anything but Off meant on) and, before that, a plain boolean. Neither is
+    // written any more, but a user upgrading should not find their overlay gone.
     if (settings.contains(SER_OVERLAYMODE)) {
-        overlayMode = static_cast<OverlayMode>(settings.value(SER_OVERLAYMODE,
-                                               static_cast<int>(OverlayMode::OM_OFF)).toInt());
+        showPerfOverlay = settings.value(SER_OVERLAYMODE, 0).toInt() != 0;   // 0 was OM_OFF
     }
     else {
-        overlayMode = settings.value(SER_SHOWPERFOVERLAY, false).toBool()
-                          ? OverlayMode::OM_FULL
-                          : OverlayMode::OM_OFF;
+        showPerfOverlay = settings.value(SER_SHOWPERFOVERLAY, false).toBool();
     }
+    // Clamped rather than cast blindly: this enum lost its middle value (centre), so a
+    // config written by an in-development build can hold a 2 that no longer means anything.
+    {
+        const int p = settings.value(SER_OVERLAYPOSITION,
+                                     static_cast<int>(OverlayPosition::OVP_TOP_LEFT)).toInt();
+        overlayPosition = (p == static_cast<int>(OverlayPosition::OVP_TOP_RIGHT))
+                          ? OverlayPosition::OVP_TOP_RIGHT
+                          : OverlayPosition::OVP_TOP_LEFT;
+    }
+    overlayTextColor = static_cast<OverlayTextColor>(settings.value(SER_OVERLAYTEXTCOLOR,
+                                       static_cast<int>(OverlayTextColor::OTC_WHITE)).toInt());
+    overlayFontSize = static_cast<OverlayFontSize>(settings.value(SER_OVERLAYFONTSIZE,
+                                       static_cast<int>(OverlayFontSize::OFS_MEDIUM)).toInt());
+    // 0 = the box as every build so far has drawn it. The card colour already carries
+    // a little transparency of its own; this is what the user adds on top.
+    overlayTransparency = settings.value(SER_OVERLAYTRANSPARENCY, 0).toInt();
+    // The set the old "Default" profile drew, so an upgrade shows what it used to.
+    overlayItems = settings.value(SER_OVERLAYITEMS,
+                                  OI_VIDEO | OI_BITRATE | OI_NET_DROPS | OI_JITTER_DROPS |
+                                  OI_LATENCY | OI_DECODE_TIME | OI_PACING | OI_HOST_METRICS).toInt();
     packetSize = settings.value(SER_PACKETSIZE, 0).toInt();
     swapMouseButtons = settings.value(SER_SWAPMOUSEBUTTONS, false).toBool();
     muteOnFocusLoss = settings.value(SER_MUTEONFOCUSLOSS, false).toBool();
@@ -250,6 +289,10 @@ void StreamingPreferences::reload()
                                                          static_cast<int>(CaptureSysKeysMode::CSK_OFF)).toInt());
     glyphSet = static_cast<GlyphSet>(settings.value(SER_GLYPHSET,
                                                     static_cast<int>(GlyphSet::GS_AUTO)).toInt());
+    clockFormat = static_cast<ClockFormat>(settings.value(SER_CLOCKFORMAT,
+                                                    static_cast<int>(ClockFormat::CF_24H)).toInt());
+    dateFormat = static_cast<DateFormat>(settings.value(SER_DATEFORMAT,
+                                                    static_cast<int>(DateFormat::DF_DMY)).toInt());
     audioConfig = static_cast<AudioConfig>(settings.value(SER_AUDIOCFG,
                                                   static_cast<int>(AudioConfig::AC_STEREO)).toInt());
     videoCodecConfig = static_cast<VideoCodecConfig>(settings.value(SER_VIDEOCFG,
@@ -307,6 +350,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_ABSMOUSEMODE, absoluteMouseMode);
     settings.setValue(SER_ABSTOUCHMODE, absoluteTouchMode);
     settings.setValue(SER_FRAMEPACINGMODE, static_cast<int>(framePacingMode));
+    settings.setValue(SER_REFRESHRATEMODE, static_cast<int>(refreshRateMode));
     settings.setValue(SER_CONNWARNINGS, connectionWarnings);
     settings.setValue(SER_CONFWARNINGS, configurationWarnings);
     settings.setValue(SER_RICHPRESENCE, richPresence);
@@ -316,7 +360,16 @@ void StreamingPreferences::save()
     settings.setValue(SER_AUTORECONNECTNOVIDEO, autoReconnectNoVideo);
     settings.setValue(SER_MATCHHOSTLINKSPEED, matchHostLinkSpeed);
     settings.setValue(SER_WAITFORGAME, waitForGameOnScreen);
-    settings.setValue(SER_OVERLAYMODE, static_cast<int>(overlayMode));
+    settings.setValue(SER_SHOWPERFOVERLAY, showPerfOverlay);
+    settings.setValue(SER_OVERLAYPOSITION, static_cast<int>(overlayPosition));
+    settings.setValue(SER_OVERLAYTEXTCOLOR, static_cast<int>(overlayTextColor));
+    settings.setValue(SER_OVERLAYFONTSIZE, static_cast<int>(overlayFontSize));
+    settings.setValue(SER_OVERLAYTRANSPARENCY, overlayTransparency);
+    settings.setValue(SER_OVERLAYITEMS, overlayItems);
+    // ⚠️ Removed, not left alone: reload() prefers the old key when it is present, so a
+    // stale one would keep overriding the new setting on every launch and the on/off
+    // switch would look like it never took. Dropping it retires the migration for good.
+    settings.remove(SER_OVERLAYMODE);
     settings.setValue(SER_AUDIOCFG, static_cast<int>(audioConfig));
     settings.setValue(SER_HDR, enableHdr);
     settings.setValue(SER_YUV444, enableYUV444);
@@ -336,6 +389,41 @@ void StreamingPreferences::save()
     settings.setValue(SER_HIDEHOSTIPS, hideHostIps);
     settings.setValue(SER_TAILSCALE_AUTOSTART, tailscaleAutoStart);
     settings.setValue(SER_GLYPHSET, static_cast<int>(glyphSet));
+    settings.setValue(SER_CLOCKFORMAT, static_cast<int>(clockFormat));
+    settings.setValue(SER_DATEFORMAT, static_cast<int>(dateFormat));
+}
+
+QColor StreamingPreferences::overlayTextColorValue() const
+{
+    switch (overlayTextColor) {
+    case OTC_GREEN:  return QColor(0x3B, 0xFF, 0x6E);
+    case OTC_YELLOW: return QColor(0xFF, 0xE1, 0x4D);
+    case OTC_CYAN:   return QColor(0x4D, 0xE3, 0xFF);
+    case OTC_ORANGE: return QColor(0xFF, 0x9A, 0x3C);
+    case OTC_WHITE:
+    default:         return QColor(0xFF, 0xFF, 0xFF);
+    }
+}
+
+int StreamingPreferences::overlayFontPixelSize() const
+{
+    switch (overlayFontSize) {
+    case OFS_SMALL: return 16;
+    case OFS_LARGE: return 25;
+    case OFS_MEDIUM:
+    default:        return 20;
+    }
+}
+
+QColor StreamingPreferences::overlayBoxColorValue() const
+{
+    // The card colour every build so far has drawn, with the user's transparency applied
+    // on top of the 6% the design already carried. Clamped rather than trusted: the value
+    // comes out of QSettings and a hand-edited registry is not a reason to produce an
+    // invalid alpha.
+    const int t = qBound(0, overlayTransparency, 95);
+    const int alpha = qRound(0xF0 * (100 - t) / 100.0);
+    return QColor(0x18, 0x18, 0x1A, alpha);
 }
 
 int StreamingPreferences::getDefaultBitrate(int width, int height, int fps, bool yuv444)

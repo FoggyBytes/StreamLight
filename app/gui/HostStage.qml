@@ -322,116 +322,136 @@ Item {
         clip: true
 
         // ── Backdrop ─────────────────────────────────────────────────────────
-        // Two flat layers rather than one diagonal gradient: QML's Gradient is horizontal
-        // or vertical only, and horizontal is the axis that matters here — the text sits
-        // on the left, so that is where the darkening has to be.
-        //
-        // ⚠️ Every layer below repeats the card's radius, and that is not redundant: `clip`
-        // is RECTANGULAR. It clips to the bounding box and knows nothing about `radius`, so
-        // a square child filling a rounded parent paints straight over the rounded corners
-        // and the card comes out sharp-cornered no matter what the parent says.
-        Rectangle {
-            anchors.fill: parent
-            visible: !stage.addMode
-            radius: card.radius
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0;  color: stage.backdropFrom }
-                GradientStop { position: 0.46; color: stage.backdropTo }
-                GradientStop { position: 0.90; color: "#05080a" }
-            }
-        }
-
-        // The picture, when there is one, over the gradient it was derived from — so the
-        // corners and anything the crop leaves uncovered still carry the host's colour
-        // rather than falling back to black.
-        Item {
-            anchors.fill: parent
-            visible: !stage.addMode && stage.backdropImage !== ""
-
-            Image {
-                id: backdropPicture
-                anchors.fill: parent
-                source: stage.backdropImage !== "" ? "file:///" + stage.backdropImage : ""
-                fillMode: Image.PreserveAspectCrop
-                asynchronous: true
-                // Drawn by the effect below, which is here only to round the corners — a
-                // MultiEffect has no radius of its own, and `clip` would not help because it
-                // clips to the bounding box.
-                visible: false
-            }
-
-            MultiEffect {
-                anchors.fill: parent
-                source: backdropPicture
-                autoPaddingEnabled: false
-                maskEnabled: true
-                maskSource: backdropMask
-            }
-
-            Item {
-                id: backdropMask
-                anchors.fill: parent
-                layer.enabled: true
-                visible: false
-                Rectangle {
-                    anchors.fill: parent
-                    radius: card.radius
-                }
-            }
-        }
-
-        // The scrim. Not decoration: without it, a light backdrop and white text meet and
-        // the text loses. Densest on the left where the name and the fields are, gone by
-        // the right edge so the host's colour still reads as a colour.
-        Rectangle {
-            anchors.fill: parent
-            visible: !stage.addMode
-            radius: card.radius
-            // Over a picture it starts denser and clears sooner: the text occupies the left
-            // quarter, so that is where the protection has to be, and everything past it is
-            // where the picture earns its place. Reaching fully transparent at the right edge
-            // matters — the previous 19% black there was what made the artwork look washed out.
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0;  color: stage.backdropImage !== "" ? "#e605080a" : "#b005080a" }
-                GradientStop { position: 0.30; color: stage.backdropImage !== "" ? "#b005080a" : "#8005080a" }
-                GradientStop { position: 0.62; color: stage.backdropImage !== "" ? "#4005080a" : "#3005080a" }
-                GradientStop { position: 1.0;  color: "#0005080a" }
-            }
-        }
-
-        // ── Dither ───────────────────────────────────────────────────────────
         /*
-         * The banding fix, and it has to sit above both ramps because it is fixing what they
-         * have in common.
+         * The base ramp, the host's picture over it, and the scrim over that — all inside ONE
+         * layer, masked once to the card's shape.
          *
-         * A gradient is computed in floating point and written to an 8-bit surface, so a ramp
-         * that crosses few levels over many pixels lands as visible steps. That is exactly
-         * this card's second half: the pair CoverPalette produces runs value 200 → 38, but
-         * from the mid stop to the right edge it only falls 38 → 10, about twenty-eight levels
-         * spread over eight hundred pixels — one step every twenty-eight px, in the dark end
-         * where the eye is most sensitive to them. The scrim laid on top then quantises the
-         * same region a second time.
+         * Two flat ramps rather than one diagonal: QML gradients are horizontal or vertical
+         * only, and horizontal is the axis that matters — the text sits on the left, so that
+         * is where the darkening has to be.
          *
-         * More gradient stops would not help: the steps are the output depth, not the
-         * interpolation. What does help is dither — a pixel of noise smaller than one level,
-         * which turns a hard edge into a scattered transition the eye reads as smooth. The
-         * tile is half black and half white at alpha 0–5, so it nudges in both directions
-         * rather than only darkening.
+         * ⚠️ Grouping them is what keeps the corners right. `clip` is RECTANGULAR: it clips to
+         * the bounding box and knows nothing about `radius`, so a square child filling a
+         * rounded parent paints straight over the rounded corners. Each layer used to repeat
+         * the radius to work around that, which a gradient IMAGE cannot do at all — so they
+         * are masked together instead. That is also one effect pass fewer than the two this
+         * card used to run.
          *
-         * Practically free: a 64px tile, no shader (Qt 6 would need a precompiled .qsb and a
-         * build-system change for one texture), and Qt Quick only repaints on change, so a
-         * still card draws it once.
+         * ⚠️ There is no dither tile any more, and its absence is the fix rather than a
+         * simplification. A tile of faint noise used to sit over the finished ramps; because
+         * it was composited rather than applied at quantisation it was both five times too
+         * strong and lopsided — white at alpha 5 over a near-black card adds five levels while
+         * black subtracts a third of one — so it read as static grain instead of disappearing.
+         * The ramps now carry their own dither, applied as they are rounded to 8 bits. See
+         * backend/gradientimage.h.
+         */
+        Item {
+            id: cardMask
+            anchors.fill: parent
+            layer.enabled: true
+            visible: false
+            Rectangle {
+                anchors.fill: parent
+                radius: card.radius
+            }
+        }
+
+        // ── 1. The base ramp ─────────────────────────────────────────────────
+        Item {
+            id: baseRampLayer
+            anchors.fill: parent
+            layer.enabled: true
+            visible: false
+
+            DitheredGradient {
+                anchors.fill: parent
+                orientation: Qt.Horizontal
+                stops: [
+                    { pos: 0.0,  color: stage.backdropFrom },
+                    { pos: 0.46, color: stage.backdropTo },
+                    { pos: 0.90, color: "#05080a" }
+                ]
+            }
+        }
+
+        MultiEffect {
+            anchors.fill: parent
+            visible: !stage.addMode
+            source: baseRampLayer
+            autoPaddingEnabled: false
+            maskEnabled: true
+            maskSource: cardMask
+        }
+
+        // ── 2. The host's picture, over the ramp it was derived from ─────────
+        /*
+         * ⚠️ On its own effect, and NOT grouped into a layer with the ramps around it.
+         *
+         * 5.1.0 first put all three in one layer, masked once — tidier, one pass fewer, and
+         * it broke this: the picture stopped appearing and the card showed the ramp under the
+         * scrim, reported as "the dark bordeaux gradient". The measurements say the file, the
+         * path and the mask are all fine — the same picture renders correctly in an isolated
+         * scene — but inside the layer the element never left `status: Loading`, with its
+         * painted geometry already computed, so it never produced a node to be rendered into
+         * the FBO. The small provider-generated ramps beside it were unaffected, which is why
+         * the card looked half-right.
+         *
+         * An effect sampling this Image directly does not depend on any of that: it asks the
+         * texture provider every frame and draws whatever is there. It is the arrangement
+         * 5.0.0 shipped and the one that demonstrably works. The cost is one extra pass on a
+         * card that is redrawn only when something about the host changes.
          */
         Image {
+            id: backdropPicture
+            anchors.fill: parent
+            source: stage.backdropImage !== "" ? "file:///" + stage.backdropImage : ""
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            // Drawn by the effect below; this element is only the texture behind it.
+            visible: false
+        }
+
+        MultiEffect {
+            anchors.fill: parent
+            visible: !stage.addMode && stage.backdropImage !== ""
+            source: backdropPicture
+            autoPaddingEnabled: false
+            maskEnabled: true
+            maskSource: cardMask
+        }
+
+        // ── 3. The scrim ─────────────────────────────────────────────────────
+        // Not decoration: without it a light backdrop and white text meet and the text loses.
+        // Densest on the left where the name and the fields are, gone by the right edge so the
+        // host's colour still reads as a colour. Over a picture it starts denser and clears
+        // sooner — reaching fully transparent at the right edge matters, the 19% black that
+        // used to sit there is what made artwork look washed out. Its alpha ramp is dithered
+        // too: a staircase in alpha bands just as visibly as one in a colour channel.
+        Item {
+            id: scrimLayer
+            anchors.fill: parent
+            layer.enabled: true
+            visible: false
+
+            DitheredGradient {
+                anchors.fill: parent
+                orientation: Qt.Horizontal
+                stops: [
+                    { pos: 0.0,  color: stage.backdropImage !== "" ? "#e605080a" : "#b005080a" },
+                    { pos: 0.30, color: stage.backdropImage !== "" ? "#b005080a" : "#8005080a" },
+                    { pos: 0.62, color: stage.backdropImage !== "" ? "#4005080a" : "#3005080a" },
+                    { pos: 1.0,  color: "#0005080a" }
+                ]
+            }
+        }
+
+        MultiEffect {
             anchors.fill: parent
             visible: !stage.addMode
-            source: "qrc:/res/dither.png"
-            fillMode: Image.Tile
-            // The card clips rectangularly, so this does reach the four rounded corners. At
-            // two percent of a level it is not visible there, and masking it would cost a
-            // second full-card effect to hide something nobody can see.
+            source: scrimLayer
+            autoPaddingEnabled: false
+            maskEnabled: true
+            maskSource: cardMask
         }
 
         // ── Chips ────────────────────────────────────────────────────────────
