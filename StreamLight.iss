@@ -1,8 +1,8 @@
-; StreamLight 5.1.0 — Moonlight fork with StreamTweak integration.
+; StreamLight 5.1.1 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
-#define AppVersion "5.1.0"
+#define AppVersion "5.1.1"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -63,8 +63,12 @@ Name: "xboxtile"; Description: "Add an icon to the Xbox app's 'My apps' section"
 ; otherwise ship its own stale copy (the pristine one is installed from the root,
 ; two lines below). Runtime folders must never be swept into the installer —
 ; StreamTweak shipped a WebView2 cache this way for six releases.
+; *.bat excluded: the deploy directory is where diagnostic launchers get dropped
+; while chasing a bug (one that sets STREAMLIGHT_PACING_DIAG lives there now).
+; They are for whoever is doing the chasing, not for everyone who installs the
+; app, and nothing that belongs in a release is a .bat.
 Source: "{#SourceDir}\*"; DestDir: "{app}"; \
-    Excludes: "*.log,sl_*.txt,streamlight_pad.log,portable.dat,cache\*"; \
+    Excludes: "*.log,*.bat,sl_*.txt,streamlight_pad.log,portable.dat,cache\*"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceDir}\gamecontrollerdb.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "installer\resources\streamlight.png"; Flags: dontcopy

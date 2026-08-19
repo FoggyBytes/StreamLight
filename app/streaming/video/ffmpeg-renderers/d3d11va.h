@@ -21,10 +21,12 @@ public:
     virtual bool prepareDecoderContext(AVCodecContext* context, AVDictionary**) override;
     virtual bool prepareDecoderContextInGetFormat(AVCodecContext* context, AVPixelFormat pixelFormat) override;
     virtual void renderFrame(AVFrame* frame) override;
+    virtual void waitToRender() override;
     virtual void notifyOverlayUpdated(Overlay::OverlayType) override;
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO stateInfo) override;
     virtual int getRendererAttributes() override;
     virtual int getFramePacingSyncInterval() override { return m_SyncInterval; }
+    virtual bool getPacingMeasurement(PPACING_MEASUREMENT measurement) override;
     virtual int getDecoderCapabilities() override;
     virtual InitFailureReason getInitFailureReason() override;
 
@@ -38,6 +40,8 @@ public:
 private:
     static void lockContext(void* lock_ctx);
     static void unlockContext(void* lock_ctx);
+    void sampleCadence(uint64_t presentStartUs, uint64_t presentEndUs, int64_t qpcAfterPresent);
+    void flushCadenceWindow(uint64_t nowUs);
 
     bool setupRenderingResources();
     std::vector<DXGI_FORMAT> getVideoTextureSRVFormats();
@@ -98,6 +102,73 @@ private:
     // immediately (default). >=2 gives low-FPS streams a hardware-locked cadence
     // on high-refresh displays when "Smooth low-FPS streams" is enabled.
     int m_SyncInterval;
+
+    // Signalled by a waitable swapchain when it can take another frame. Only created
+    // on the hardware-paced path (m_SyncInterval >= 2); null everywhere else, which is
+    // what makes waitToRender() a no-op for every other configuration.
+    HANDLE m_FrameWaitableObject;
+    bool m_LoggedWaitTimeout;
+
+    // --- Frame pacing diagnostics (issue #9) ---------------------------------
+    // Measures what the display pipeline actually did with our presents: how many
+    // V-blanks each frame occupied, how deep the DXGI present queue settled, and
+    // how long Present() blocked. Entirely inert unless STREAMLIGHT_PACING_DIAG=1,
+    // because it costs a GetFrameStatistics() call and a log line per second.
+    static const int k_CadenceBuckets = 8;
+
+    struct CadenceDiag {
+        DXGI_FRAME_STATISTICS lastStats;
+        bool haveBaseline;          // lastStats is usable for a delta
+        int consecutiveFailures;
+
+        uint64_t windowStartUs;
+        uint32_t presentCalls;      // Present() calls made in this window
+        uint64_t sumRefreshes;      // V-blanks consumed by completed presents
+        uint64_t sumPresents;       // completed presents those V-blanks belong to
+        uint32_t buckets[k_CadenceBuckets];
+        int minVblanks;
+        int maxVblanks;
+
+        uint64_t waitSumUs;
+        uint64_t waitMinUs;
+        uint64_t waitMaxUs;
+        uint32_t waitOverCount;     // presents blocked for more than 1.5 frame periods
+
+        // Time spent waiting on the swapchain before latching a frame. Reported next
+        // to the Present() wait on purpose: without it, moving the block from one to
+        // the other would read as a fix.
+        uint64_t gateWaitSumUs;
+        uint64_t gateWaitMaxUs;
+        uint32_t gateWaitSamples;
+
+
+        // Present() calls made since the baseline, against the count DXGI reports
+        // as completed: the difference is how deep the present queue is sitting.
+        uint64_t presentsSubmitted;
+        uint32_t baselinePresentCount;
+
+        int64_t queueSum;
+        uint32_t queueSamples;
+        int queueMin;
+        int queueMax;
+
+        uint64_t phaseSumUs;
+        uint32_t phaseSamples;
+
+        uint32_t disjointCount;
+        uint32_t slipsLogged;
+    };
+
+    bool m_CadenceDiagEnabled;
+    int m_DisplayHz;
+    int64_t m_QpcFrequency;
+    CadenceDiag m_Cadence;
+
+    // Published once per window for the performance overlay, which reads it from
+    // the decoder thread while renderFrame() writes from the render thread.
+    SDL_SpinLock m_CadenceLock;
+    PACING_MEASUREMENT m_PublishedCadence;
+    bool m_HavePublishedCadence;
 
     std::array<Microsoft::WRL::ComPtr<ID3D11PixelShader>, PixelShaders::_COUNT> m_VideoPixelShaders;
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_VideoVertexBuffer;

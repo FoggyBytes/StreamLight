@@ -1109,8 +1109,20 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
                     : "Software";
         }
 
+        // With the pacing diagnostic running, follow the cadence we asked the display
+        // for with the one it actually delivered. This line already claims a cadence;
+        // measuring it is what makes the claim checkable while the stream is running.
+        char measuredBuf[80] = "";
+        PACING_MEASUREMENT measurement;
+        if (m_FrontendRenderer != nullptr && m_FrontendRenderer->getPacingMeasurement(&measurement)) {
+            snprintf(measuredBuf, sizeof(measuredBuf),
+                     " - measured %.2f v/f (%d-%d), queue %.1f, wait %.1f ms",
+                     measurement.vblanksPerFrame, measurement.minVblanks, measurement.maxVblanks,
+                     measurement.queueDepthVblanks, measurement.presentWaitMs);
+        }
+
         ret = snprintf(&output[offset], length - offset,
-                       "Frame pacing: %s\n", pacingMode);
+                       "Frame pacing: %s%s\n", pacingMode, measuredBuf);
         if (ret < 0 || ret >= length - offset) {
             SDL_assert(false);
             return;

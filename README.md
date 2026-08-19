@@ -75,6 +75,15 @@ These cross the bridge and need both apps. The version shown is the **minimum St
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 
+## ✨ What's New in 5.1.1 — Frame Pacing Latency
+
+The soft-controls problem behind [issue #9](https://github.com/FoggyBytes/StreamLight/issues/9), found and fixed. Client-side, and it works with any host.
+
+- **Streaming at half your screen's refresh rate no longer builds up a frame of latency** — on a 120 Hz screen fed 60 FPS the controls would start feeling soft, on and off, while every meter said the stream was perfect: the picture flawless, the frame rate exact. Frames were queueing three deep inside the graphics driver, and once that queue was full each one had to wait for room before it could be handed over. Where it settled was decided in the first seconds of the stream and never changed again — which is why reconnecting cured it sometimes and not others. StreamLight now waits for the screen to be ready *before* it draws a frame rather than after, so nothing queues. Measured across a whole session, the time a frame spends waiting on the display went from **6.68 ms to 0.57 ms**, with the cadence it exists to protect untouched: 60 frames out of 60, held exactly two refreshes each
+- **Your screen goes back to its normal refresh rate when the stream ends** — with *Refresh rate switching* set to **Match frame rate**, a 60 FPS stream left a 120 Hz screen at 60 Hz once you returned to the host list, and it stayed there until you changed it by hand. It never came up before 5.1.0 because the highest refresh rate is usually the one the desktop is already on, so there was nothing to put back
+- **The launch and quit screens stand on the game's own artwork** — the same picture the host page is already showing. Starting a game used to cross onto a gradient mixed from two colours sampled out of the cover, so the background changed under you at the one moment when nothing else should move. Quitting shows the artwork of what is being closed. With **Reduce animations** on, all three keep the plain gradient in your accent colour
+- Thanks to [@Soladus](https://github.com/FoggyBytes/StreamLight/issues/9), whose measurements on three different machines pinned the latency to a 2:1 ratio and nothing else, and who then found a way to trigger it on demand — without that the cause would still be a guess
+
 ## ✨ What's New in 5.1.0 — Custom Overlay
 
 The performance overlay stops being three fixed answers and becomes yours. Alongside it, a say in what your screen's refresh rate does while streaming, a clock on every screen, and the dialogs brought back in line with the rest of the app.

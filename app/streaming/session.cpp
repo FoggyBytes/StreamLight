@@ -47,6 +47,63 @@
 #include <QQuickOpenGLUtils>
 #endif
 
+#ifdef Q_OS_WIN32
+#include <SDL_syswm.h>
+
+// Undo a display mode change that outlived the stream window.
+//
+// SDL is supposed to put the panel back when an exclusive-fullscreen window is
+// destroyed, and normally does. It does not always: with "Refresh rate switching"
+// set to "Match frame rate", a 60 FPS stream leaves a 120 Hz panel sitting at
+// 60 Hz after the session ends (issue #9). That case never showed up before 5.1.0
+// because we always picked the highest refresh rate, which on such a panel is the
+// desktop mode already - there was nothing to put back.
+//
+// Rather than guess which of SDL's restore paths was missed, ask Windows. A mode
+// set for fullscreen is temporary and does not touch the saved settings, so if the
+// display is not running what the user has saved for it, the leftover change is
+// ours and we undo it. When SDL got it right this is a no-op, which is what keeps
+// it from introducing a mode change of its own.
+static void restoreDesktopDisplayModeIfChanged(const WCHAR* deviceName)
+{
+    DEVMODEW currentMode = {};
+    DEVMODEW savedMode = {};
+
+    currentMode.dmSize = sizeof(currentMode);
+    savedMode.dmSize = sizeof(savedMode);
+
+    if (!EnumDisplaySettingsW(deviceName, ENUM_CURRENT_SETTINGS, &currentMode) ||
+        !EnumDisplaySettingsW(deviceName, ENUM_REGISTRY_SETTINGS, &savedMode)) {
+        return;
+    }
+
+    // Both readings have to actually carry a resolution and a refresh rate before
+    // they can be compared. Testing a field the driver never filled in would have
+    // us "restoring" the display after every single session.
+    const DWORD requiredFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
+    if ((currentMode.dmFields & requiredFields) != requiredFields ||
+        (savedMode.dmFields & requiredFields) != requiredFields) {
+        return;
+    }
+
+    if (currentMode.dmPelsWidth == savedMode.dmPelsWidth &&
+        currentMode.dmPelsHeight == savedMode.dmPelsHeight &&
+        currentMode.dmDisplayFrequency == savedMode.dmDisplayFrequency) {
+        return;
+    }
+
+    // A null DEVMODE means "go back to the settings saved for this display".
+    LONG result = ChangeDisplaySettingsExW(deviceName, nullptr, nullptr, 0, nullptr);
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Display was left at %lux%lu@%lu Hz after the stream - restoring the desktop mode "
+                "%lux%lu@%lu Hz (result %ld)",
+                currentMode.dmPelsWidth, currentMode.dmPelsHeight, currentMode.dmDisplayFrequency,
+                savedMode.dmPelsWidth, savedMode.dmPelsHeight, savedMode.dmDisplayFrequency,
+                result);
+}
+#endif
+
 #define CONN_TEST_SERVER "qt.conntest.moonlight-stream.org"
 
 CONNECTION_LISTENER_CALLBACKS Session::k_ConnCallbacks = {
@@ -2923,6 +2980,25 @@ DispatchDeferredCleanup:
 
     // This must be called after the decoder is deleted, because
     // the renderer may want to interact with the window
+#ifdef Q_OS_WIN32
+    // Note which display the stream window was on while the window still exists,
+    // so we can check after teardown whether a mode change of ours survived it.
+    WCHAR streamDisplayDevice[CCHDEVICENAME] = {};
+    if (m_Window != nullptr) {
+        SDL_SysWMinfo wmInfo;
+        SDL_VERSION(&wmInfo.version);
+        if (SDL_GetWindowWMInfo(m_Window, &wmInfo) && wmInfo.subsystem == SDL_SYSWM_WINDOWS) {
+            HMONITOR monitor = MonitorFromWindow(wmInfo.info.win.window, MONITOR_DEFAULTTONEAREST);
+            MONITORINFOEXW monitorInfo = {};
+            monitorInfo.cbSize = sizeof(monitorInfo);
+            if (monitor != nullptr && GetMonitorInfoW(monitor, &monitorInfo)) {
+                SDL_memcpy(streamDisplayDevice, monitorInfo.szDevice, sizeof(streamDisplayDevice));
+                streamDisplayDevice[CCHDEVICENAME - 1] = L'\0';
+            }
+        }
+    }
+#endif
+
     SDL_DestroyWindow(m_Window);
 
     if (iconSurface != nullptr) {
@@ -2930,6 +3006,16 @@ DispatchDeferredCleanup:
     }
 
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
+
+#ifdef Q_OS_WIN32
+    // Put the panel back if a fullscreen mode change of ours outlived the window.
+    // Skipped when another session is about to reuse this display (a live settings
+    // change reconnects), because bouncing the mode back and forth between the two
+    // halves of one reconnect would be worse than leaving it where it is.
+    if (streamDisplayDevice[0] != L'\0' && !m_HasPendingReconfigure) {
+        restoreDesktopDisplayModeIfChanged(streamDisplayDevice);
+    }
+#endif
 
     // Terminate Hue Sync if it was launched for this session.
     if (m_HueSyncManager) {

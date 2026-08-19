@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QColor>
 #include <QObject>
 #include <QString>
 #include <QTimer>
@@ -22,8 +21,6 @@ class LaunchCurtain : public QObject
     Q_PROPERTY(bool         active   READ active   NOTIFY changed)
     Q_PROPERTY(QString      gameName READ gameName NOTIFY changed)
     Q_PROPERTY(QUrl         coverUrl READ coverUrl NOTIFY changed)
-    Q_PROPERTY(QColor       accent   READ accent   NOTIFY changed)
-    Q_PROPERTY(QColor       deep     READ deep     NOTIFY changed)
     Q_PROPERTY(QString      title    READ title    NOTIFY changed)
     Q_PROPERTY(QString      detail   READ detail   NOTIFY changed)
     Q_PROPERTY(QString      warning  READ warning  NOTIFY changed)
@@ -38,8 +35,6 @@ public:
     bool         active()   const { return m_Active; }
     QString      gameName() const { return m_GameName; }
     QUrl         coverUrl() const { return m_CoverUrl; }
-    QColor       accent()   const { return m_Accent; }
-    QColor       deep()     const { return m_Deep; }
     QString      title()    const { return m_Title; }
     QString      detail()   const { return m_Detail; }
     QString      warning()  const { return m_Warning; }
@@ -86,7 +81,6 @@ private:
     void  completeStep(int index, int state);
     void  recompute();
     qint64 nowMs() const;
-    void  extractCoverColours(const QUrl& coverUrl);
 
     void ensureLaunchSteps();
 
@@ -107,8 +101,6 @@ private:
     bool     m_Active = false;
     QString  m_GameName;
     QUrl     m_CoverUrl;
-    QColor   m_Accent = QColor(0x3a, 0x4a, 0x5c);
-    QColor   m_Deep   = QColor(0x10, 0x14, 0x1c);
     QString  m_Title;
     QString  m_Detail;
     QString  m_Warning;

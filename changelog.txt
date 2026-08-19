@@ -4,6 +4,22 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-------------------------------------------------
+Version 5.1.1 - Frame Pacing Latency (19/08/2026)
+-------------------------------------------------
+
+No StreamTweak update required — everything in 5.1.1 is client-side and works with any host.
+
+🐛 FIXES:
+• Streaming at half your screen's refresh rate no longer builds up a frame of latency — on a 120 Hz screen fed 60 FPS the controls would start feeling soft, on and off, with nothing on any meter to explain it: the picture was flawless and the frame rate exact. What was happening is that frames were queueing up three deep inside the graphics driver, and once the queue was full every frame had to wait for room before it could be handed over. Where that queue settled was decided in the first seconds of the stream and never changed again, which is why reconnecting sometimes cured it and sometimes did not. StreamLight now waits for the screen to be ready before it draws a frame instead of after, so nothing queues: measured over a whole session, the time a frame spends waiting on the display went from 6.68 ms to 0.57 ms, and the cadence it was there to protect is untouched
+• Your screen goes back to its normal refresh rate when the stream ends — with "Refresh rate switching" set to Match frame rate, a 60 FPS stream left a 120 Hz screen sitting at 60 Hz after you returned to the host list, and it stayed there until you changed it by hand. The desktop is now put back whenever a mode set for the stream outlives it, and nothing happens at all when it was already restored, so this never adds a mode change of its own
+
+🎨 UI:
+• The launch and quit screens stand on the game's own artwork, the same picture the host page is already showing — starting a game used to cross onto a gradient mixed from two colours sampled out of the cover, so the background changed under you at the one moment when nothing else should move. Quitting shows the artwork of what is being closed. With "Reduce animations" on, all three keep the plain gradient in your accent colour
+
+🙏 THANKS:
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/9), whose measurements on three different machines pinned the latency down to a 2:1 ratio and nothing else, and who then found a way to trigger it on demand — without that the cause would still be a guess
+
 -------------------------------------------
 Version 5.1.0 - Custom Overlay (18/08/2026)
 -------------------------------------------

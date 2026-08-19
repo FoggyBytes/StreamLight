@@ -1,10 +1,8 @@
 #include "launchcurtain.h"
-#include "../backend/coverpalette.h"
 #include "../backend/launchgate.h"
 
 #include <QDateTime>
 #include <QDebug>
-#include <QImage>
 #include <QVariantMap>
 #include <QtMath>
 
@@ -43,15 +41,12 @@ qint64 LaunchCurtain::nowMs() const
 void LaunchCurtain::setCover(const QUrl& coverUrl)
 {
     m_CoverUrl = coverUrl;
-    extractCoverColours(coverUrl);
 
-    // Says whether the artwork arrived at all, whether it was a real file or the
-    // placeholder the model hands back while a cover is still downloading, and what came
-    // out. Without this, "the background isn't coloured" has three different causes that
-    // all look identical on screen.
+    // Says whether the artwork arrived at all, and whether it was a real file or the
+    // placeholder the model hands back while a cover is still downloading. Without this,
+    // "the launch screen has no picture" has two different causes that look identical.
     qInfo().nospace() << "Launch curtain: cover " << coverUrl.toString()
-                      << (coverUrl.isLocalFile() ? " [local]" : " [not a local file]")
-                      << " accent=" << m_Accent.name() << " deep=" << m_Deep.name();
+                      << (coverUrl.isLocalFile() ? " [local]" : " [not a local file]");
     emit changed();
 }
 
@@ -260,16 +255,3 @@ void LaunchCurtain::recompute()
 }
 
 
-void LaunchCurtain::extractCoverColours(const QUrl& coverUrl)
-{
-    // The logic moved to CoverPalette when the host stage needed the same thing from a
-    // picture the user chose. Two copies of "find the dominant colour and tidy it up" would
-    // have drifted the first time either was tuned, and the whole point of the pair is that
-    // the two screens look like one design.
-    if (!coverUrl.isLocalFile()) {
-        CoverPalette::neutral(m_Accent, m_Deep);
-        return;
-    }
-
-    CoverPalette::fromImageFile(coverUrl.toLocalFile(), m_Accent, m_Deep);
-}

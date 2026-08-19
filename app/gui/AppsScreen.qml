@@ -304,17 +304,36 @@ FocusScope {
         return mbps + " Mbps"
     }
 
-    // This page paints its own floor — the ambient artwork under a veil that reaches full
-    // opacity at the bottom — so the shell's status bar has to sit on the same near-black
-    // instead of on the shell's own accent-tinted gradient, which left a step across the
-    // bottom of the screen. Cleared on the way out so every other page keeps the gradient.
-    //
-    // ⚠️ On `appShellChanged`, NOT on `Component.onCompleted`: the Loader assigns `appShell`
-    // after the item is constructed, so at completion it is still null and the assignment
-    // was silently skipped — which is why the bar kept the shell's lighter gradient. Same
-    // ordering trap as the host properties below.
-    onAppShellChanged:       if (appShell) appShell.statusBarFloor = "#05080a"
+    /*
+     * This page paints its own floor when it has artwork to paint it with — the blurred cover
+     * under a veil that reaches full opacity at the bottom — so the shell's status bar has to
+     * sit on the same near-black instead of on the shell's accent-tinted gradient, or there is
+     * a visible step across the foot of the screen.
+     *
+     * ⚠️ It has to follow whether the artwork is actually there, not just be set once. Without
+     * a cover, or with reduced animations, this page falls back to the shell's gradient and a
+     * hardcoded near-black bar produced that same step the other way round.
+     *
+     * ⚠️ On `appShellChanged`, NOT on `Component.onCompleted`: the Loader assigns `appShell`
+     * after the item is constructed, so at completion it is still null and the assignment is
+     * silently skipped — which is why the bar once kept the shell's lighter gradient.
+     *
+     * ⚠️ And restored explicitly on the way out. This was briefly a `Binding`, on the
+     * assumption that it would put the old value back when the page went away. It does not,
+     * and the shell outlives the page — so the near-black leaked onto Home and every other
+     * screen, which is the whole reason this property defaults to transparent.
+     */
+    function _syncStatusBarFloor() {
+        if (appShell) appShell.statusBarFloor = ambient.drawing ? "#05080a" : "transparent"
+    }
+
+    onAppShellChanged:       _syncStatusBarFloor()
     Component.onDestruction: if (appShell) appShell.statusBarFloor = "transparent"
+
+    Connections {
+        target: ambient
+        function onDrawingChanged() { appsRoot._syncStatusBarFloor() }
+    }
 
     // Loader sets host properties AFTER Component.onCompleted → init here.
     onHostComputerModelChanged: _initFromHost()
@@ -403,86 +422,18 @@ FocusScope {
         }
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // Ambient backdrop — the focused cover, blurred, behind everything
-    // ═════════════════════════════════════════════════════════════════════════
-    /*
-     * The single effect that changes the character of the screen more than any rearrangement
-     * of boxes. It is also the most expensive one, so it is built to cost nothing when
-     * nothing is happening: Qt Quick only repaints on change, so a still blurred image is
-     * drawn once and then sits there. The cost lands on the focus moving, which is exactly
-     * when the user is asking for it.
-     *
-     * The swap is a fade down and back up rather than a cut, and the new source is set at
-     * the bottom of the fade — a straight source change would pop, and a pop on every D-pad
-     * press is worse than no effect at all.
-     */
-    property string _ambientSource: ""
-    property string _ambientPending: ""
-
-    onFocusedBoxArtChanged: {
-        if (Theme.reduceAnimations) { _ambientSource = focusedBoxArt; return }
-        if (_ambientSource === "") { _ambientSource = focusedBoxArt; return }
-        if (focusedBoxArt === _ambientSource) return
-        _ambientPending = focusedBoxArt
-        ambientSwap.restart()
-    }
-
-    SequentialAnimation {
-        id: ambientSwap
-        NumberAnimation { target: ambientLayer; property: "opacity"; to: 0; duration: 140 }
-        ScriptAction { script: appsRoot._ambientSource = appsRoot._ambientPending }
-        NumberAnimation { target: ambientLayer; property: "opacity"; to: 0.5; duration: 260 }
-    }
-
-    Item {
-        id: ambientLayer
-        anchors.fill: parent
-        // Overscanned so the blur has material to sample at the edges instead of smearing
-        // the border of the picture across the screen.
-        anchors.margins: -appsRoot._px(60)
+    // Ambient backdrop — the focused cover, blurred, behind everything.
+    //
+    // Lives in CoverAmbient so that the launch and quit screens can stand on the same
+    // artwork rather than on their own imitation of it. The crossfade on focus changes
+    // moved in there with it.
+    CoverAmbient {
+        id: ambient
         z: -2
-        opacity: 0.5
-        visible: !Theme.reduceAnimations && appsRoot._ambientSource !== ""
-
-        Image {
-            id: ambientImage
-            anchors.fill: parent
-            source: appsRoot._ambientSource
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            // Hidden because MultiEffect draws it: the Image is only here as a texture
-            // provider. Leaving it visible would paint the sharp copy under the blurred one.
-            visible: false
-        }
-
-        MultiEffect {
-            anchors.fill: parent
-            source: ambientImage
-            blurEnabled: true
-            blur: 1.0
-            blurMax: 48
-            saturation: 0.25
-            autoPaddingEnabled: false
-        }
+        source: appsRoot.focusedBoxArt
+        overscan: appsRoot._px(60)
     }
 
-    // The veil. Without it the text sits on whatever the artwork happens to be, and loses.
-    Rectangle {
-        anchors.fill: parent
-        z: -1
-        visible: ambientLayer.visible
-        gradient: Gradient {
-            // Fully opaque by the bottom edge, not 93%. The ambient artwork is clipped to the
-            // content area while the page background continues behind the status bar, so any
-            // residual transparency here left the blurred image ending on a hard horizontal
-            // line — read on screen as a solid band across the foot of the page.
-            GradientStop { position: 0.0;  color: "#d005080a" }
-            GradientStop { position: 0.44; color: "#bb05080a" }
-            GradientStop { position: 0.88; color: "#f205080a" }
-            GradientStop { position: 1.0;  color: "#ff05080a" }
-        }
-    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // Header
@@ -1407,6 +1358,7 @@ FocusScope {
                 if (runningId !== 0 && runningId !== model.appid) {
                     if (quitExistingApp) {
                         quitAppDialog.appName = m.getRunningAppName()
+                        quitAppDialog.boxArt = m.getRunningAppBoxArt()
                         quitAppDialog.segueToStream = true
                         quitAppDialog.nextAppName = model.name
                         // Captured here and not in quitApp(): this is the delegate, the only
@@ -1438,6 +1390,7 @@ FocusScope {
 
             function doQuitGame() {
                 quitAppDialog.appName = appGrid.appModel.getRunningAppName()
+                quitAppDialog.boxArt = appGrid.appModel.getRunningAppBoxArt()
                 quitAppDialog.segueToStream = false
                 quitAppDialog.open()
             }
@@ -1482,6 +1435,7 @@ FocusScope {
     NavigableMessageDialog {
         id: quitAppDialog
         property string appName: ""
+        property url boxArt: ""
         property bool segueToStream: false
         property string nextAppName: ""
         property string nextBoxArt: ""
@@ -1493,6 +1447,7 @@ FocusScope {
             var component = Qt.createComponent("QuitSegue.qml")
             var params = {
                 "appName": appName,
+                "boxArt": boxArt,
                 "quitRunningAppFn": function() { appGrid.appModel.quitRunningApp() },
                 // A deliberate stop no longer puts the link back by itself — the question is
                 // put once, on returning to the host list.

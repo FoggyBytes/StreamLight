@@ -5,9 +5,22 @@ import ComputerManager 1.0
 import Session 1.0
 
 Item {
+    id: quitSegue
+
     // Same floor as the rest of the app: this used to be the one screen that showed the bare
     // window behind it, so ending a session dropped out of the app's own surface for a moment.
     AmbientBackground {}
+
+    // ...with the blurred artwork of whatever is being closed over it, the same drawing the
+    // host page and the launch screen use. Quitting is the other half of launching, and it
+    // should not land on a different surface.
+    CoverAmbient {
+        source: quitSegue.boxArt
+    }
+
+    // The box art of the app being closed, so this screen can stand on it. Empty for the
+    // paths that have none (the CLI), where the floor above shows through on its own.
+    property url boxArt
 
     property string appName
     property var quitRunningAppFn

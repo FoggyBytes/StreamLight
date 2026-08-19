@@ -50,6 +50,23 @@ QString AppModel::getRunningAppName()
     return nullptr;
 }
 
+// The artwork for the app currently running on the host, so the screens that close it can
+// stand on the same picture the rest of the app uses. Looks in the full list rather than
+// the visible one for the same reason getRunningAppName() does: a hidden game is still the
+// one that is running.
+QUrl AppModel::getRunningAppBoxArt()
+{
+    if (m_CurrentGameId != 0) {
+        for (int i = 0; i < m_AllApps.count(); i++) {
+            if (m_AllApps[i].id == m_CurrentGameId) {
+                return m_BoxArtManager.loadBoxArt(m_Computer, m_AllApps[i]);
+            }
+        }
+    }
+
+    return QUrl();
+}
+
 int AppModel::indexOfAppNamed(const QString& name) const
 {
     for (int i = 0; i < m_VisibleApps.count(); i++) {

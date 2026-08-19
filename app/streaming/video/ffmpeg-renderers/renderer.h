@@ -143,6 +143,18 @@ private:
 // displays (e.g. 60 FPS on a 120 Hz panel) without judder.
 #define RENDERER_ATTRIBUTE_SELF_PACING 0x20
 
+// Measured presentation cadence, read back from the display pipeline by renderers
+// that can (D3D11VA via IDXGISwapChain::GetFrameStatistics). This is diagnostic
+// instrumentation for issue #9 and is only populated when the pacing diagnostic
+// is switched on with STREAMLIGHT_PACING_DIAG=1.
+typedef struct _PACING_MEASUREMENT {
+    double vblanksPerFrame;    // V-blanks each presented frame actually occupied
+    int minVblanks;
+    int maxVblanks;
+    double queueDepthVblanks;  // refreshes elapsed since the last completed present
+    double presentWaitMs;      // average time blocked inside Present()
+} PACING_MEASUREMENT, *PPACING_MEASUREMENT;
+
 class IFFmpegRenderer : public Overlay::IOverlayRenderer {
 public:
     enum class RendererType {
@@ -229,6 +241,13 @@ public:
     // 0 means the renderer does not self-pace. Used by the performance overlay.
     virtual int getFramePacingSyncInterval() {
         return 0;
+    }
+
+    // Fills in what the display pipeline actually did with our presents. Returns
+    // false when no measurement is available (renderer can't read it back, or the
+    // pacing diagnostic is off, which is the default).
+    virtual bool getPacingMeasurement(PPACING_MEASUREMENT) {
+        return false;
     }
 
     virtual int getDecoderColorspace() {

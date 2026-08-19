@@ -276,6 +276,7 @@ Item {
         stackView.replace(stackView.currentItem,
                           component.createObject(stackView, {
                               "appName":           appName,
+                              "boxArt":            boxArt,
                               "onQuitSucceededFn": onSessionEndedFn
                           }),
                           StackView.Immediate)
@@ -751,19 +752,14 @@ Item {
     // launch, suddenly wearing a different face.
     readonly property bool   _hasCover: boxArt.toString() !== ""
 
-    // Latched for the same reason: these are computed in C++ from the artwork, so they can
-    // only come from the curtain — but they must outlive it. The defaults are the neutral
-    // pair the gradient used to fall back to, so a launch with no artwork looks unchanged.
-    property color _bgAccent : Qt.rgba(0.27, 0.35, 0.43, 1.0)
-    property color _bgDeep   : Qt.rgba(0.08, 0.09, 0.13, 1.0)
-    // Same treatment for the brightness the cover has reached: bound to the curtain it fell
-    // back to zero when the session went, dimming the artwork just as the retry appeared.
+    // Latched for the same reason: the brightness the cover has reached is computed in C++
+    // by the curtain, so it can only come from there — but it must outlive it. Bound to the
+    // curtain directly it fell back to zero when the session went, dimming the artwork just
+    // as the retry appeared.
     property real  _bgProgress : 0.0
 
     function _latchCurtainColours() {
         if (!_c) return
-        _bgAccent   = _c.accent
-        _bgDeep     = _c.deep
         _bgProgress = _c.progress
     }
 
@@ -772,38 +768,22 @@ Item {
         function onChanged() { streamSegue._latchCurtainColours() }
     }
 
-    // Background built from the box art. A near-black ground with the accent laid over it
-    // at low opacity — a wash, not a tint. Darkening the accent instead (which is what this
-    // did first) produces a colour that is technically correct and visually black: the hue
-    // survives the maths and dies on the screen.
-    // In unlock mode there is no cover to draw colours from, and the pad should look like part
-    // of the app rather than like a launch that lost its artwork — so it stands on the app's
-    // own floor, the same one Home and the quit screen use.
-    AmbientBackground {
-        visible: streamSegue.unlockMode
-    }
+    /*
+     * Background: the app's own floor, with the blurred box art of whatever is starting
+     * laid over it — the same drawing the host page uses, from the same component.
+     *
+     * It used to be a gradient built from two colours sampled out of the cover. That was a
+     * second picture of the same game, so crossing from the host page into the launch the
+     * background changed under you at the one moment when nothing else should move.
+     *
+     * With no artwork (a CLI launch, the PIN pad, a game with no cover) CoverAmbient draws
+     * nothing and the floor below is what shows — which is also what the PIN pad wanted
+     * anyway: it should look like part of the app, not like a launch that lost its picture.
+     */
+    AmbientBackground {}
 
-    Rectangle {
-        anchors.fill: parent
-        color: "#07070b"
-        visible: !streamSegue.unlockMode
-
-        Rectangle {
-            anchors.fill: parent
-            gradient: Gradient {
-                GradientStop {
-                    position: 0.0
-                    color: Qt.rgba(streamSegue._bgAccent.r, streamSegue._bgAccent.g,
-                                   streamSegue._bgAccent.b, 0.40)
-                }
-                GradientStop {
-                    position: 0.45
-                    color: Qt.rgba(streamSegue._bgDeep.r, streamSegue._bgDeep.g,
-                                   streamSegue._bgDeep.b, 0.85)
-                }
-                GradientStop { position: 1.0; color: "transparent" }
-            }
-        }
+    CoverAmbient {
+        source: streamSegue.unlockMode ? "" : streamSegue.boxArt
     }
 
     // Four things and nothing else: what is starting, a picture of it, one line saying what
