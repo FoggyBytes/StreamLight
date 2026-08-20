@@ -345,6 +345,20 @@ FocusScope {
     property int  _hostMbps: 0
     property bool _hostAllowsLink: false
 
+    // The host declines SETSPEED while it counts a session as running, and it keeps counting
+    // one for its whole inactivity grace after a client disconnects — so this covers the half
+    // minute after the previous session as well as a live one. Announcing a change through it
+    // is announcing one that will not happen. False by default, so a host that never answers
+    // behaves as it did before.
+    //
+    // ⚠️ A snapshot taken on entering the page, like _hostAllowsLink beside it — this screen
+    // asks NETINFO once, where the host list polls it every two seconds. So a visit that
+    // begins inside the grace window keeps the chip hidden even once the window has passed.
+    // Left as is: the flow this exists for is finish a session, come back, launch again, which
+    // happens well inside the window, and the worst the staleness costs is a missing chip
+    // rather than a promise that goes unkept.
+    property bool _hostSessionActive: false
+
     // ⚠️ The EFFECTIVE setting: a per-host profile can turn link matching off, and reading the
     // global toggle straight made the header announce a change that would then not happen.
     readonly property bool _effMatchLink:
@@ -355,6 +369,7 @@ FocusScope {
     readonly property bool _willSwitchLink:
         _effMatchLink
         && _hostAllowsLink
+        && !_hostSessionActive
         && _localMbps > 0
         && _hostMbps > _localMbps
 
@@ -413,6 +428,10 @@ FocusScope {
         function onHostNetInfoReceived(idx, info) {
             if (idx === appsRoot.computerIndex) {
                 appsRoot._hostAllowsLink = info.allowsLinkControl === true
+                // Guarded, unlike the line above: an empty reply is the host mid-change and
+                // says nothing about whether a session is running, so it must not read as no.
+                if (info.sessionActive !== undefined)
+                    appsRoot._hostSessionActive = info.sessionActive === true
             }
         }
         function onAppStoresReceived(idx, stores) {
@@ -691,71 +710,20 @@ FocusScope {
         }
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // Hero cover regeneration — a workaround, and labelled as one
-    // ═════════════════════════════════════════════════════════════════════════
     /*
-     * Coming back from a stream, the spotlight cover sometimes comes out oversized and
-     * stretched, overflowing onto the ALL APPS caption. It only happens to Desktop and Steam
-     * Big Picture — the only two entries whose artwork is not 2:3 (they are 600x800; every
-     * real cover is 600x900, i.e. the (2/3) fallback above to the pixel), so they are the
-     * only two whose box actually resizes once the image has loaded. Moving the focus to
-     * another cover and back clears it every time.
+     * A "hero cover regeneration" workaround used to live here — a forced source reload 150 ms
+     * after the window came back from a stream, because the spotlight cover sometimes returned
+     * oversized and stretched. It repaired the symptom without knowing the cause.
      *
-     * What is NOT established is why it sticks. The suspect is the full-screen return path:
-     * restoreAfterStream() calls SystemProperties.recreateNativeWindow(), which destroys the
-     * top-level window and with it the whole scene graph, so every effect texture is rebuilt
-     * — and the MultiEffect below draws through a mask texture and an auto-padded rect that
-     * both have to come back in step. Suspected, not measured. The clean fix, if it is ever
-     * wanted, is to stop drawing this cover through an effect at all.
+     * It is gone because the cause was found and fixed at the spotlight itself: one MultiEffect
+     * was doing both the rounded mask and the drop shadow, and the shadow's automatic padding
+     * put the source and the mask in two different rects. See the two-pass split further down.
      *
-     * So this does not prevent the corruption, it repairs it: it reproduces the one thing
-     * known to clear it — a genuine source reload — at the moment the window comes back.
+     * ⚠️ Removed deliberately rather than kept as a net. With a blind repair firing on every
+     * return there is no way to tell whether the real fix works — "it stopped happening" would
+     * prove nothing. If the deformation ever comes back, restore this from git and instrument
+     * before guessing again.
      */
-    property bool _coverRegenerating: false
-
-    function regenerateHeroCover() {
-        if (appsRoot.focusedBoxArt === "") return
-        coverRegenTimer.restart()
-    }
-
-    // The window is back before its scene graph has been rebuilt and presented, so the
-    // reload is held for a couple of frames. This delay is a hedge, not a measurement — if
-    // the workaround ever misses, this is the number to look at first.
-    Timer {
-        id: coverRegenTimer
-        interval: 150
-        repeat: false
-        onTriggered: {
-            appsRoot._coverRegenerating = true
-            // ⚠️ source is BOUND to focusedBoxArt. Clearing it imperatively drops that
-            // binding for good, so it has to go back as a binding and not as a value —
-            // otherwise the cover silently stops following the selected game from here on.
-            heroArt.source = ""
-            heroArt.source = Qt.binding(function() { return appsRoot.focusedBoxArt })
-            coverRegenGuard.restart()
-        }
-    }
-
-    // If the reload never resolves, the cover must not stay invisible forever.
-    Timer {
-        id: coverRegenGuard
-        interval: 3000
-        repeat: false
-        onTriggered: appsRoot._coverRegenerating = false
-    }
-
-    // The window is hidden for the length of a session and shown again on return, so its
-    // own visibility is the signal — no call has to be threaded down from main.qml through
-    // AppShell. appsLoader stays active throughout the stream, so this screen is here to
-    // hear it.
-    Connections {
-        target: Window.window
-        function onVisibleChanged() {
-            if (Window.window && Window.window.visible)
-                appsRoot.regenerateHeroCover()
-        }
-    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // The spotlight
@@ -809,12 +777,8 @@ FocusScope {
             height: Math.min(appsRoot._px(340), hero.height - appsRoot._px(150))
             width: Math.round(height * 2 / 3)
 
-            // Hidden across a regeneration: the reload blanks the image and brings it back,
-            // which would otherwise flash on every return from a stream.
-            //
             // The width no longer moves — the box is a fixed ratio of its own height — so the
             // Behavior that used to ease it away is gone with the shape it was easing.
-            opacity: appsRoot._coverRegenerating ? 0 : 1
 
             Image {
                 id: heroArt
@@ -825,28 +789,44 @@ FocusScope {
                 smooth: true
                 mipmap: true
                 visible: false
-
-                // Deferred by a tick on purpose: clearing the flag in the same tick as the
-                // status change brings the box back before the new frame is on screen.
-                onStatusChanged: {
-                    if (appsRoot._coverRegenerating
-                            && (status === Image.Ready || status === Image.Error)) {
-                        Qt.callLater(function() {
-                            appsRoot._coverRegenerating = false
-                            coverRegenGuard.stop()
-                        })
-                    }
-                }
             }
 
-            // Rounded corners plus a static drop shadow. Static is the point: it is drawn
-            // once and never again, which is why it is the one effect that can be on
-            // permanently without costing anything per frame.
+            // Rounded corners plus a static drop shadow, in TWO passes with one job each.
+            // Static is the point: they are drawn once and never again, which is why they are
+            // the effects that can be on permanently without costing anything per frame.
+            /*
+             * ⚠️ One MultiEffect used to do both, and that is what deformed this cover on the
+             * way back from a stream — the artwork blown up and cropped instead of letterboxed.
+             *
+             * A shadow makes MultiEffect widen its own rendered rect so the blur is not cut
+             * off (`autoPaddingEnabled`, on by default), while the mask below stays the size
+             * of the item. Source and mask then live in two different rects, and the effect
+             * resolves that by stretching. It shows on Desktop and Steam Big Picture and on
+             * nothing else, because their artwork is 600x800 and every real cover is 600x900:
+             * they are the only two whose painted rect is smaller than the box it sits in, so
+             * they are the only two where a uniform stretch is visible rather than invisible.
+             *
+             * Every other masked MultiEffect in the project already sets autoPaddingEnabled
+             * false — this was the only one that did not, and the only one carrying a shadow
+             * as well. Splitting them means the masked pass has no padding to disagree about
+             * and the shadow pass has no mask to disagree with.
+             */
             MultiEffect {
+                id: roundedCover
                 anchors.fill: parent
                 source: heroArt
                 maskEnabled: true
                 maskSource: heroArtMask
+                autoPaddingEnabled: false
+
+                // Its own layer, so the pass below can sample it. Drawn by that pass, not here.
+                layer.enabled: true
+                visible: false
+            }
+
+            MultiEffect {
+                anchors.fill: parent
+                source: roundedCover
                 shadowEnabled: !Theme.reduceAnimations
                 shadowColor: "#000000"
                 shadowBlur: 0.9

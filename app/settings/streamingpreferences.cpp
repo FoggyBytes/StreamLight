@@ -274,6 +274,12 @@ void StreamingPreferences::reload()
     overlayItems = settings.value(SER_OVERLAYITEMS,
                                   OI_VIDEO | OI_BITRATE | OI_NET_DROPS | OI_JITTER_DROPS |
                                   OI_LATENCY | OI_DECODE_TIME | OI_PACING | OI_HOST_METRICS).toInt();
+    // ⚠️ Adding OI_CADENCE moved OI_ALL, so a mask saved as "Full" by an earlier build
+    // no longer equals it and the Overlay tab would report Custom to everyone who had
+    // picked Full. Carry them across; anything else is left exactly as they set it.
+    if (overlayItems == ((1 << 13) - 1)) {
+        overlayItems = OI_ALL;
+    }
     packetSize = settings.value(SER_PACKETSIZE, 0).toInt();
     swapMouseButtons = settings.value(SER_SWAPMOUSEBUTTONS, false).toBool();
     muteOnFocusLoss = settings.value(SER_MUTEONFOCUSLOSS, false).toBool();

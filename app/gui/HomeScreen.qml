@@ -783,6 +783,14 @@ FocusScope {
             property bool   stSwitched: false
             property int    stLocalMbps: 0
 
+            // The host refuses SETSPEED while it considers a session to be running, and it goes on
+            // counting one for its whole inactivity grace after the client disconnects. So this
+            // is not only "a stream is live": for about half a minute after the last session it
+            // is also "the grace timer has not fired yet". Either way the host will decline, and
+            // the card must not promise a change that will not happen. Defaults false so a host
+            // that never answers behaves exactly as before.
+            property bool   stSessionActive: false
+
             // The host's last finished session, as StreamTweak reports it. Empty map until it
             // answers, {has:false} on a host that does not know the command — so the panel is
             // absent rather than empty on anything that cannot fill it.
@@ -813,14 +821,20 @@ FocusScope {
                     : StreamingPreferences.matchHostLinkSpeed
 
             readonly property bool willSwitchLink:
-                stMatchLink && stAllowsLink
+                stMatchLink && stAllowsLink && !stSessionActive
                 && stLocalMbps > 0 && stHostMbps > stLocalMbps
 
             // The mirror case: this host is faster than our link, so matching *would* help,
             // but the host isn't offering it. Without this the client toggle looks enabled
             // and simply does nothing, with the reason buried in the log.
+            //
+            // ⚠️ Also suppressed while the host counts a session, and that is not the same
+            // situation: there the host does offer the change and is merely busy, so saying
+            // "enable it in StreamTweak" would send the user to a setting that is already on.
+            // Nothing is a better answer than the wrong instruction for a state that clears
+            // itself within the grace window.
             readonly property bool cantSwitchLink:
-                stMatchLink && !stAllowsLink
+                stMatchLink && !stAllowsLink && !stSessionActive
                 && stLocalMbps > 0 && stHostMbps > stLocalMbps
 
             function record() {
@@ -864,6 +878,7 @@ FocusScope {
                     // note on stMatchLink. The Options tile has to know it or it offers an
                     // action LinkMatcher will decline without a word.
                     matchLink:         stMatchLink,
+                    sessionActive:     stSessionActive,
                     lastSession:       stLastSession
                 }
             }
@@ -888,7 +903,7 @@ FocusScope {
                 model.activeProfileName, model.stageColorFrom, model.stageColorTo,
                 model.stageImage, model.stageSeed, stAuth, stSpeedRaw,
                 willSwitchLink, cantSwitchLink, stLastSession, stMatchLink,
-                stLinkChanging, stSwitched, stAllowsLink
+                stLinkChanging, stSwitched, stAllowsLink, stSessionActive
             ]
             on_WatchChanged: push()
             onIsCurrentChanged: push()
@@ -949,6 +964,11 @@ FocusScope {
                     // a speed a client asked for, "Match link speed" when it is on its own.
                     if (info.switched !== undefined)
                         probe.stSwitched = info.switched === true
+
+                    // Guarded like the two above: an empty reply is the host mid-change, not
+                    // a host telling us no session is running.
+                    if (info.sessionActive !== undefined)
+                        probe.stSessionActive = info.sessionActive === true
 
                     // ⚠️ An empty reply here means the opposite of what it means everywhere
                     // else in this app. While the adapter is down the host is unreachable, so
@@ -1591,9 +1611,15 @@ FocusScope {
         // depends on the preference.
         if (h.online && h.paired && h.auth === "authorized") {
             var restoring = h.linkSwitched === true
+            // ⚠️ The session clause applies to the matching direction only. A restore asked for
+            // during a live stream is not refused — the host schedules it and puts the link back
+            // once the stream is done — so grey that one and the tile would be lying the other
+            // way. Last in the chain because "matching is off" is the actionable reason when
+            // both are true, while this one clears itself.
             var why = h.linkChanging          ? qsTr("changing")
                     : !h.allowsLinkControl    ? qsTr("host declined")
                     : (!restoring && !h.matchLink) ? qsTr("matching is off")
+                    : (!restoring && h.sessionActive) ? qsTr("host busy")
                     : ""
             items.push({ kind: "linkSpeed", icon: "🔀",
                          label: restoring ? qsTr("Restore NIC Speed")

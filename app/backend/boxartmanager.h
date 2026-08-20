@@ -21,6 +21,22 @@ public:
     QUrl
     loadBoxArt(NvComputer* computer, NvApp& app);
 
+    /**
+     * The cover already on disk for this app, or an empty QUrl when there is none.
+     *
+     * Unlike loadBoxArt() this never fetches and never hands back the placeholder: it
+     * answers "do we already have this one" and nothing else. That is what a caller
+     * needs when it has something of its own to fall back on and would rather show
+     * that than a grey rectangle or a download it did not ask for.
+     *
+     * Static because the caller — the last-session panel on the home screen — has a
+     * computer and an app id but no reason to own a BoxArtManager: it is not browsing
+     * a library, it is decorating a summary.
+     */
+    static
+    QUrl
+    cachedBoxArt(NvComputer* computer, int appId);
+
     static
     void
     deleteBoxArt(NvComputer* computer);
@@ -39,6 +55,12 @@ private:
     QUrl
     loadBoxArtFromNetwork(NvComputer* computer, int appId);
 
+    // Static so cachedBoxArt() can reach it without an instance. It derives the whole
+    // path from Path::getBoxArtCacheDir(), exactly as it always did — the member QDir it
+    // used to copy was that same directory. Keeping this the single definition of where a
+    // cover lives is the point: a second copy of the convention elsewhere is how the two
+    // drift apart.
+    static
     QString
     getFilePathForBoxArt(NvComputer* computer, int appId);
 

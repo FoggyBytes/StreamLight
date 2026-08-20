@@ -143,7 +143,12 @@ public:
         OI_RENDER_TIME  = 1 << 10,
         OI_PACING       = 1 << 11,
         OI_HOST_METRICS = 1 << 12,  // the StreamTweak block
-        OI_ALL          = (1 << 13) - 1
+        // What the display actually did with the cadence the line above asked for.
+        // The only item that costs something to produce — it puts the renderer's
+        // per-present instrumentation to work — so it is also the only one whose
+        // switch turns a measurement on rather than just choosing what to print.
+        OI_CADENCE      = 1 << 13,
+        OI_ALL          = (1 << 14) - 1
     };
     Q_ENUM(OverlayItem)
 

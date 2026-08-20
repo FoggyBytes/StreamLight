@@ -1187,6 +1187,7 @@ FocusScope {
 
                         // ── Frame Pacing ──────────────────────────────────────
                         Item {
+                            id: fpRow
                             width: parent.width
                             height: Math.max(settingsScreen._rowHeightTall, fpCol.implicitHeight + 16)
                             // Frame pacing has no effect without V-Sync: Session passes
@@ -1198,6 +1199,37 @@ FocusScope {
                             enabled: !settingsScreen._lockFramePacing
                                      && StreamingPreferences.enableVsync
                             opacity: enabled ? 1.0 : 0.4
+
+                            // The 2:2 arrangement is not a setting anyone can see, so work out
+                            // whether these choices actually land on it and say so only then.
+                            // Mirrors the gate in D3D11VARenderer::initialize(): Automatic or
+                            // Hardware, V-Sync on, and a panel running a whole multiple of 2 to 4
+                            // times the stream rate, within a Hz of exact.
+                            //
+                            // ⚠️ getRefreshRate() is a Q_INVOKABLE, so a binding that read it
+                            // inline would never be told to re-evaluate. It is captured once
+                            // instead - the panel does not change rate while this page is open,
+                            // and everything else here is a property that tracks. Display 0: on a
+                            // multi-monitor desk the stream may open elsewhere, which is why this
+                            // line is advisory and gates nothing.
+                            property int _panelHz: 0
+                            Component.onCompleted: _panelHz = SystemProperties.getRefreshRate(0)
+
+                            readonly property int _cadence: {
+                                if (!StreamingPreferences.enableVsync) return 0
+                                if (StreamingPreferences.framePacingMode !== StreamingPreferences.FP_AUTO
+                                        && StreamingPreferences.framePacingMode !== StreamingPreferences.FP_MULTIPLE) return 0
+                                // Match frame rate puts the panel on the stream's own rate, so
+                                // there is no multiple left to warn about - but only in exclusive
+                                // fullscreen, the one place a mode switch actually happens.
+                                if (StreamingPreferences.refreshRateMode === StreamingPreferences.RR_MATCH_FPS
+                                        && StreamingPreferences.windowMode === StreamingPreferences.WM_FULLSCREEN) return 0
+                                var fps = StreamingPreferences.fps
+                                if (fps <= 0 || fpRow._panelHz < fps * 2) return 0
+                                var n = Math.round(fpRow._panelHz / fps)
+                                if (n < 2 || n > 4 || Math.abs(fpRow._panelHz - n * fps) > 1) return 0
+                                return n
+                            }
 
                             Column {
                                 id: fpCol
@@ -1224,6 +1256,18 @@ FocusScope {
                                     font.family: "DM Sans"
                                     font.pixelSize: 13
                                     color: settingsScreen._textDim
+                                }
+                                Label {
+                                    visible: fpRow._cadence !== 0
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: qsTr("At %1 FPS on a %2 Hz screen each frame is held for %3 refreshes, and how much delay that adds is settled when the stream starts. Match frame rate avoids the arrangement instead of managing it.")
+                                          .arg(StreamingPreferences.fps)
+                                          .arg(fpRow._panelHz)
+                                          .arg(["", "", qsTr("two"), qsTr("three"), qsTr("four")][fpRow._cadence])
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 13
+                                    color: Theme.warning
                                 }
                             }
 
@@ -3294,6 +3338,16 @@ FocusScope {
                       desc: qsTr("Which pacing mechanism is really in effect"),
                       host: false, sub: false,
                       lines: ["Frame pacing: Hardware (2:2 cadence)"] },
+                    // ⚠️ The one switch here that does more than choose what to print: it
+                    // turns on the renderer's per-present measurement, and with it the
+                    // [pacing] lines in the log. That is the point — it is what a bug
+                    // report needs, and it used to require setting an environment variable
+                    // from a shell.
+                    { bit: StreamingPreferences.OI_CADENCE,
+                      name: qsTr("Cadence (measured)"),
+                      desc: qsTr("What the display did with the cadence above — how long each frame was really held, how deep the queue sat, how long a frame waited to be handed over. Also records it in the log, which is what to switch on before reporting a stutter"),
+                      host: false, sub: false,
+                      lines: ["Cadence: 2.00 v/f (2-2), queue 0.0, wait 0.4 ms"] },
                     { bit: StreamingPreferences.OI_HOST_METRICS,
                       name: qsTr("Host metrics"),
                       desc: qsTr("GPU, encoder, temperature, VRAM, CPU and outbound network — needs StreamTweak on the host"),

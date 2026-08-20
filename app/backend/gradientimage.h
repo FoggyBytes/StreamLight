@@ -28,6 +28,15 @@
  * <p>Alpha is dithered too. The host card's scrim fades to transparent, and a staircase in
  * the alpha channel bands just as visibly as one in a colour channel.</p>
  *
+ * <p><b>And the ramp dithers what is under it, not only itself.</b> A translucent ramp laid
+ * over a picture squeezes that picture's 256 levels into however many survive the
+ * multiplication — about 26 at the dense end of the host card's scrim — so the picture, not
+ * the ramp, is what bands. Dithering the alpha cannot reach that; dithering the ramp's colour
+ * can, because at high alpha the output follows the colour almost one for one. The colour
+ * channels therefore carry a deliberate half-level bias so the threshold engages even where
+ * the colour is constant, which is precisely the case a scrim presents. See kColourDitherBias
+ * in the .cpp — the reasoning is there and it is the non-obvious part of this file.</p>
+ *
  * <p><b>URL form:</b> {@code image://gradient/<v|h>/<pos>:<aarrggbb>[,<pos>:<aarrggbb>…]} —
  * `v` runs top to bottom, `h` left to right. Build it with gui/DitheredGradient.qml rather
  * than by hand; that component also asks for the one size that makes the result exact.</p>

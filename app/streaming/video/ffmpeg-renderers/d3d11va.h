@@ -21,7 +21,6 @@ public:
     virtual bool prepareDecoderContext(AVCodecContext* context, AVDictionary**) override;
     virtual bool prepareDecoderContextInGetFormat(AVCodecContext* context, AVPixelFormat pixelFormat) override;
     virtual void renderFrame(AVFrame* frame) override;
-    virtual void waitToRender() override;
     virtual void notifyOverlayUpdated(Overlay::OverlayType) override;
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO stateInfo) override;
     virtual int getRendererAttributes() override;
@@ -103,12 +102,6 @@ private:
     // on high-refresh displays when "Smooth low-FPS streams" is enabled.
     int m_SyncInterval;
 
-    // Signalled by a waitable swapchain when it can take another frame. Only created
-    // on the hardware-paced path (m_SyncInterval >= 2); null everywhere else, which is
-    // what makes waitToRender() a no-op for every other configuration.
-    HANDLE m_FrameWaitableObject;
-    bool m_LoggedWaitTimeout;
-
     // --- Frame pacing diagnostics (issue #9) ---------------------------------
     // Measures what the display pipeline actually did with our presents: how many
     // V-blanks each frame occupied, how deep the DXGI present queue settled, and
@@ -134,13 +127,6 @@ private:
         uint64_t waitMaxUs;
         uint32_t waitOverCount;     // presents blocked for more than 1.5 frame periods
 
-        // Time spent waiting on the swapchain before latching a frame. Reported next
-        // to the Present() wait on purpose: without it, moving the block from one to
-        // the other would read as a fix.
-        uint64_t gateWaitSumUs;
-        uint64_t gateWaitMaxUs;
-        uint32_t gateWaitSamples;
-
 
         // Present() calls made since the baseline, against the count DXGI reports
         // as completed: the difference is how deep the present queue is sitting.
@@ -160,6 +146,12 @@ private:
     };
 
     bool m_CadenceDiagEnabled;
+
+    // Emission state for the [pacing] log, kept out of CadenceDiag because it spans
+    // windows rather than belonging to one — that struct is wiped every second and
+    // only a named few fields survive it.
+    uint64_t m_CadenceLastLogUs;
+    double m_CadenceLastLogWaitMs;
     int m_DisplayHz;
     int64_t m_QpcFrequency;
     CadenceDiag m_Cadence;
@@ -183,6 +175,18 @@ private:
     std::array<Microsoft::WRL::ComPtr<ID3D11Buffer>, Overlay::OverlayMax> m_OverlayVertexBuffers;
     std::array<Microsoft::WRL::ComPtr<ID3D11Texture2D>, Overlay::OverlayMax> m_OverlayTextures;
     std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, Overlay::OverlayMax> m_OverlayTextureResourceViews;
+
+    // The objects last drawn for each overlay. A frame that cannot take m_OverlayLock
+    // draws these again rather than dropping the overlay for that frame - see
+    // renderOverlay(). Owned by the render thread; the only other toucher is the resize
+    // path, which holds the context lock and therefore cannot run concurrently with it.
+    struct LastOverlay {
+        Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> resourceView;
+    };
+    std::array<LastOverlay, Overlay::OverlayMax> m_LastOverlay;
+
     Microsoft::WRL::ComPtr<ID3D11PixelShader> m_OverlayPixelShader;
 
     AVBufferRef* m_HwDeviceContext;

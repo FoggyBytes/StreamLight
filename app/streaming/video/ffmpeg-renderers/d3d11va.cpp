@@ -11,6 +11,7 @@
 
 #include <SDL_syswm.h>
 
+#include <cmath>
 #include <dwmapi.h>
 
 using Microsoft::WRL::ComPtr;
@@ -63,9 +64,9 @@ D3D11VARenderer::D3D11VARenderer(int decoderSelectionPass)
       m_LastColorTrc(AVCOL_TRC_UNSPECIFIED),
       m_AllowTearing(false),
       m_SyncInterval(0),
-      m_FrameWaitableObject(nullptr),
-      m_LoggedWaitTimeout(false),
       m_CadenceDiagEnabled(false),
+      m_CadenceLastLogUs(0),
+      m_CadenceLastLogWaitMs(0.0),
       m_DisplayHz(0),
       m_QpcFrequency(0),
       m_CadenceLock(0),
@@ -85,10 +86,6 @@ D3D11VARenderer::~D3D11VARenderer()
 {
     DwmEnableMMCSS(FALSE);
 
-    if (m_FrameWaitableObject != nullptr) {
-        CloseHandle(m_FrameWaitableObject);
-    }
-
     SDL_DestroyMutex(m_ContextLock);
 
     m_VideoVertexBuffer.Reset();
@@ -103,6 +100,12 @@ D3D11VARenderer::~D3D11VARenderer()
     }
 
     m_VideoTexture.Reset();
+
+    // Before the arrays below: these hold references to the same objects, and everything
+    // overlay-side has to be gone before the device is.
+    for (auto& last : m_LastOverlay) {
+        last = {};
+    }
 
     for (auto& buffer : m_OverlayVertexBuffers) {
         buffer.Reset();
@@ -620,9 +623,8 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
     // Hardware pacing applies only in Automatic and Multiple modes (Matched forces
     // the software pacer; Off disables pacing).
     //
-    // This has to be decided before the swapchain exists, because a sync interval of
-    // 2 or more changes how the swapchain must be built - see the waitable object
-    // below.
+    // Decided before the swapchain exists because the frame-latency cap applied right
+    // after it is created is gated on the interval.
     bool hwPacingAllowed = (params->framePacingMode == StreamingPreferences::FP_AUTO ||
                             params->framePacingMode == StreamingPreferences::FP_MULTIPLE);
     m_SyncInterval = 0;
@@ -651,17 +653,17 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
     // flawless 2:2. That is invisible to every other meter and is what "the controls feel
     // soft" means (issue #9).
     //
-    // A waitable swapchain fixes the mechanism rather than the symptom: with a maximum
-    // frame latency of 1 we wait on the swapchain's own object *before* latching and
-    // rendering a frame (waitToRender()), instead of blocking at the end holding a frame
-    // that is already stale.
+    // The cap is applied on the device, below, once the sync interval is known.
     //
-    // Confined to this branch on purpose. The SyncInterval 0 path must keep DXGI's
-    // default latency: setting it to 1 there makes non-blocking presents block on DWM
-    // as though the sync interval were 1, which is why it was avoided in the first place.
-    if (m_SyncInterval >= 2) {
-        swapChainDesc.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
-    }
+    // ⚠️ 5.1.1 also made the swapchain waitable and waited on its object in waitToRender(),
+    // before latching a frame, rather than letting Present() block at the end. That was
+    // wrong and is gone. It moved the wait rather than removing it - the frame then sat in
+    // the Pacer's queue instead of the driver's, measured at 10.86 ms against 0.03 ms
+    // before - and worse, it drove the render loop from the swapchain's rhythm while
+    // frames still arrived on the stream's. Two clocks beating against each other produced
+    // frames latched late and dropped, reported from three machines as anything from
+    // nano-jitter on a slow camera pan to heavy stuttering. Present() blocking keeps the
+    // loop on one clock: the frames'.
 
     SDL_SysWMinfo info;
     SDL_VERSION(&info.version);
@@ -693,26 +695,46 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
         return false;
     }
 
-    // Take the swapchain down to a single queued frame and grab the object that says
-    // when it is ready for the next one. Together these are what keep Present() from
-    // becoming a blocking call once the queue fills - see the flag above.
-    if (swapChainDesc.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) {
-        hr = m_SwapChain->SetMaximumFrameLatency(1);
-        if (FAILED(hr)) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "IDXGISwapChain2::SetMaximumFrameLatency() failed: %x",
-                        hr);
+    // Cap how many frames the driver may queue ahead of the display. Present() still
+    // blocks - that is the point, it is what keeps the render loop on the frames' own
+    // rhythm - but it can only ever be two frames deep instead of the driver default of
+    // three, which takes a whole frame period of buffering out of the path to the screen.
+    //
+    // ⚠️ Two and not one, and that was measured rather than reasoned. A cap of 1 leaves
+    // no reserve to absorb render jitter: at 1080p the wait inside Present() settled at
+    // 15.8 ms and never came back down, and at 4K only 46 of the 57 frames arriving each
+    // second were presented at all, because a missed window has no ready frame to cover
+    // it and costs the next pair of V-blanks. 2 forbids the pathological depth of 3
+    // without imposing the block that 1 imposes.
+    //
+    // ⚠️ Confined to the hardware-paced branch, and that is a requirement rather than
+    // caution. On the SyncInterval 0 path a low frame latency makes presents that are
+    // supposed to be non-blocking block on DWM as though the interval were 1 - which is
+    // exactly why the swapchain comment above says to leave the default alone there.
+    //
+    // ⚠️ This does not make "rendering time" flat, and it is not meant to. The cap bounds
+    // how deep the queue can settle; the sawtooth inside Present() stays. The honest
+    // figure is frame queue delay PLUS rendering time, never either one on its own - that
+    // is the reading that made 5.1.1 look like a win when it had only moved the wait.
+    if (m_SyncInterval >= 2) {
+        const UINT k_MaxFrameLatency = 2;
+
+        ComPtr<IDXGIDevice1> dxgiDevice;
+        hr = m_RenderDevice.As(&dxgiDevice);
+        if (SUCCEEDED(hr)) {
+            hr = dxgiDevice->SetMaximumFrameLatency(k_MaxFrameLatency);
         }
 
-        m_FrameWaitableObject = m_SwapChain->GetFrameLatencyWaitableObject();
-        if (m_FrameWaitableObject == nullptr) {
+        if (FAILED(hr)) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "IDXGISwapChain2::GetFrameLatencyWaitableObject() returned nothing - "
-                        "frames will be paced by blocking inside Present() instead");
+                        "IDXGIDevice1::SetMaximumFrameLatency() failed: %x - frames may queue "
+                        "up to the driver default of 3",
+                        hr);
         }
         else {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "Using a waitable swapchain with a maximum frame latency of 1");
+                        "Frame queue capped at %u frames ahead of the display",
+                        k_MaxFrameLatency);
         }
     }
 
@@ -761,21 +783,37 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
     }
 
 
-    // Frame pacing diagnostics for issue #9. Off unless explicitly asked for: it
-    // reads presentation statistics on every Present() and writes a log line per
-    // second, which nobody who isn't chasing this bug should pay for.
+    // Frame pacing instrumentation. Off unless asked for: it reads presentation
+    // statistics on every Present(), which is cheap but not free, and there is no
+    // reason to pay it when nobody is reading the result.
+    //
+    // Driven by the overlay's Cadence line — switching that on is the request to
+    // measure, and it is what makes the numbers reachable without a shell. The
+    // environment variable stays alongside it as an OR: it costs one term, it is
+    // what the 5.1.1 release notes already told people to use, and it works on a
+    // machine where getting into Settings is awkward.
+    //
+    // ⚠️ overlayItems is global-only — no per-host or per-game override exists for
+    // it — so the singleton is the effective value here, unlike every setting that
+    // does cascade. And it cannot change mid-session: the in-stream panel changes
+    // resolution, FPS, bitrate, HDR and pacing, never the overlay contents.
+    //
     // Skipped for the throwaway renderers built while probing decoder support:
     // they would print the banner four times before every session and measure a
     // window that is never presented to.
     m_CadenceDiagEnabled = !params->testOnly &&
-            qEnvironmentVariableIntValue("STREAMLIGHT_PACING_DIAG") != 0;
+            (qEnvironmentVariableIntValue("STREAMLIGHT_PACING_DIAG") != 0 ||
+             (StreamingPreferences::get()->overlayItems & StreamingPreferences::OI_CADENCE) != 0);
     if (m_CadenceDiagEnabled) {
         LARGE_INTEGER qpf;
         m_QpcFrequency = QueryPerformanceFrequency(&qpf) ? qpf.QuadPart : 0;
         m_Cadence.minVblanks = -1;
         m_Cadence.windowStartUs = LiGetMicroseconds();
+        m_CadenceLastLogUs = 0;
+        m_CadenceLastLogWaitMs = 0.0;
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "[pacing] diagnostics on: %d Hz display, %d FPS stream, sync interval %d, %s",
+                    "[pacing] diagnostics on: %d Hz display, %d FPS stream, sync interval %d, %s "
+                    "(measured every second; logged on a slip, a change of regime, or every 30s)",
                     m_DisplayHz, params->frameRate, m_SyncInterval,
                     m_AllowTearing ? "tearing" : "V-synced");
     }
@@ -838,42 +876,6 @@ bool D3D11VARenderer::prepareDecoderContextInGetFormat(AVCodecContext *context, 
     }
 
     return true;
-}
-
-// Called by the Pacer's render thread before it latches the next frame. Waiting here
-// rather than inside Present() is the whole point of the waitable swapchain: we hold
-// nothing while we wait, and the frame we go on to render is the freshest one there is.
-//
-// Only does anything on the hardware-paced path, where the swapchain was built for it.
-void D3D11VARenderer::waitToRender()
-{
-    if (m_FrameWaitableObject == nullptr) {
-        return;
-    }
-
-    uint64_t beforeWaitUs = m_CadenceDiagEnabled ? LiGetMicroseconds() : 0;
-
-    // The timeout is short on purpose. In normal running the object is signalled
-    // every frame, so it is never reached; it exists so that a swapchain which
-    // stops signalling - a hidden or occluded window, or teardown - costs a tenth
-    // of a second rather than stalling the render thread outright. Rendering
-    // without the gate is exactly the behaviour we had before it existed.
-    DWORD result = WaitForSingleObjectEx(m_FrameWaitableObject, 100, FALSE);
-
-    if (m_CadenceDiagEnabled) {
-        uint64_t waitUs = LiGetMicroseconds() - beforeWaitUs;
-        m_Cadence.gateWaitSumUs += waitUs;
-        if (waitUs > m_Cadence.gateWaitMaxUs) {
-            m_Cadence.gateWaitMaxUs = waitUs;
-        }
-        m_Cadence.gateWaitSamples++;
-    }
-
-    if (result == WAIT_TIMEOUT && !m_LoggedWaitTimeout) {
-        m_LoggedWaitTimeout = true;
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Timed out waiting for the swapchain to be ready for a new frame");
-    }
 }
 
 void D3D11VARenderer::renderFrame(AVFrame* frame)
@@ -1138,7 +1140,6 @@ void D3D11VARenderer::flushCadenceWindow(uint64_t nowUs)
     double queueDepth = c.queueSamples != 0 ? (double)c.queueSum / (double)c.queueSamples : 0.0;
     double waitAvgMs = c.presentCalls != 0 ? (double)c.waitSumUs / (double)c.presentCalls / 1000.0 : 0.0;
     double phaseMs = c.phaseSamples != 0 ? (double)c.phaseSumUs / (double)c.phaseSamples / 1000.0 : 0.0;
-    double gateAvgMs = c.gateWaitSamples != 0 ? (double)c.gateWaitSumUs / (double)c.gateWaitSamples / 1000.0 : 0.0;
 
     char hist[64] = "";
     int histOffset = 0;
@@ -1155,17 +1156,39 @@ void D3D11VARenderer::flushCadenceWindow(uint64_t nowUs)
         histOffset += ret;
     }
 
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                "[pacing] %.1fs: %u presents | v/f %.2f min %d max %d hist{%s} | "
-                "wait %.2f/%.2f/%.2f ms min/avg/max, %u blocked | "
-                "gate %.2f/%.2f ms avg/max | "
-                "queue %.1f vbl (%d-%d) | phase %.2f ms | disjoint %u",
-                windowSecs, c.presentCalls,
-                vblanksPerFrame, c.minVblanks < 0 ? 0 : c.minVblanks, c.maxVblanks, hist,
-                (double)c.waitMinUs / 1000.0, waitAvgMs, (double)c.waitMaxUs / 1000.0, c.waitOverCount,
-                gateAvgMs, (double)c.gateWaitMaxUs / 1000.0,
-                queueDepth, c.queueMin, c.queueMax,
-                phaseMs, c.disjointCount);
+    // The window is measured every second — the overlay reads it at that rate — but
+    // only written out when it says something. A line per second was right while
+    // hunting the bug and is wrong now that the instrument ships: it would put a few
+    // hundred KB an hour into everyone's log for a metric that is flat almost all of
+    // the time.
+    //
+    // Three reasons to write, and between them they keep everything the investigation
+    // actually used:
+    //   • a window that blocked or slipped, which is the event itself;
+    //   • a change of regime — the wait settling somewhere new is THE symptom of
+    //     issue #9, and at one second of resolution the move is still pinned to the
+    //     second it happened;
+    //   • a heartbeat, so a quiet session still shows what quiet looked like.
+    bool anomaly      = (c.waitOverCount != 0) || (c.slipsLogged != 0);
+    bool regimeChange = (m_CadenceLastLogUs != 0) &&
+                        (fabs(waitAvgMs - m_CadenceLastLogWaitMs) >= 1.0);
+    bool heartbeat    = (m_CadenceLastLogUs == 0) ||
+                        (nowUs - m_CadenceLastLogUs >= 30000000);
+
+    if (anomaly || regimeChange || heartbeat) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "[pacing] %.1fs: %u presents | v/f %.2f min %d max %d hist{%s} | "
+                    "wait %.2f/%.2f/%.2f ms min/avg/max, %u blocked | "
+                    "queue %.1f vbl (%d-%d) | phase %.2f ms | disjoint %u%s",
+                    windowSecs, c.presentCalls,
+                    vblanksPerFrame, c.minVblanks < 0 ? 0 : c.minVblanks, c.maxVblanks, hist,
+                    (double)c.waitMinUs / 1000.0, waitAvgMs, (double)c.waitMaxUs / 1000.0, c.waitOverCount,
+                    queueDepth, c.queueMin, c.queueMax,
+                    phaseMs, c.disjointCount,
+                    regimeChange ? "  <-- wait changed" : "");
+        m_CadenceLastLogUs = nowUs;
+        m_CadenceLastLogWaitMs = waitAvgMs;
+    }
 
     SDL_AtomicLock(&m_CadenceLock);
     m_PublishedCadence.vblanksPerFrame = vblanksPerFrame;
@@ -1215,20 +1238,40 @@ bool D3D11VARenderer::getPacingMeasurement(PPACING_MEASUREMENT measurement)
 void D3D11VARenderer::renderOverlay(Overlay::OverlayType type)
 {
     if (!Session::get()->getOverlayManager().isOverlayEnabled(type)) {
+        // Forget what we last drew. An overlay that has been switched off must not be able
+        // to reappear on a frame that misses the lock, and there is no reason to keep its
+        // texture alive for the rest of the session.
+        m_LastOverlay[type] = {};
         return;
     }
 
-    // If the overlay is being updated, just skip rendering it this frame
-    if (!SDL_AtomicTryLock(&m_OverlayLock)) {
-        return;
-    }
+    ComPtr<ID3D11Texture2D> overlayTexture;
+    ComPtr<ID3D11Buffer> overlayVertexBuffer;
+    ComPtr<ID3D11ShaderResourceView> overlayTextureResourceView;
 
-    // Reference these objects so they don't immediately go away if the
-    // overlay update thread tries to release them.
-    ComPtr<ID3D11Texture2D> overlayTexture = m_OverlayTextures[type];
-    ComPtr<ID3D11Buffer> overlayVertexBuffer = m_OverlayVertexBuffers[type];
-    ComPtr<ID3D11ShaderResourceView> overlayTextureResourceView = m_OverlayTextureResourceViews[type];
-    SDL_AtomicUnlock(&m_OverlayLock);
+    // ⚠️ A frame that cannot take the lock draws the previous frame's objects instead of
+    // skipping. Skipping means the overlay is absent for that frame, and one absent frame
+    // is a blink - the stats overlay is rebuilt once a second, so it blinked about that
+    // often. The references we hold here are what keep the objects alive even if the
+    // update thread releases its own in the meantime.
+    if (SDL_AtomicTryLock(&m_OverlayLock)) {
+        overlayTexture = m_OverlayTextures[type];
+        overlayVertexBuffer = m_OverlayVertexBuffers[type];
+        overlayTextureResourceView = m_OverlayTextureResourceViews[type];
+        SDL_AtomicUnlock(&m_OverlayLock);
+
+        // Remember them for the frames that miss. Assigning unconditionally is deliberate:
+        // reading a null trio (an overlay just enabled, or one whose texture failed to
+        // build) must clear the memory rather than resurrect what was there before.
+        m_LastOverlay[type].texture = overlayTexture;
+        m_LastOverlay[type].vertexBuffer = overlayVertexBuffer;
+        m_LastOverlay[type].resourceView = overlayTextureResourceView;
+    }
+    else {
+        overlayTexture = m_LastOverlay[type].texture;
+        overlayVertexBuffer = m_LastOverlay[type].vertexBuffer;
+        overlayTextureResourceView = m_LastOverlay[type].resourceView;
+    }
 
     if (!overlayTexture) {
         return;
@@ -1476,17 +1519,26 @@ void D3D11VARenderer::notifyOverlayUpdated(Overlay::OverlayType type)
         return;
     }
 
-    SDL_AtomicLock(&m_OverlayLock);
-    ComPtr<ID3D11Texture2D> oldTexture = std::move(m_OverlayTextures[type]);
-    ComPtr<ID3D11Buffer> oldVertexBuffer = std::move(m_OverlayVertexBuffers[type]);
-    ComPtr<ID3D11ShaderResourceView> oldTextureResourceView = std::move(m_OverlayTextureResourceViews[type]);
-    SDL_AtomicUnlock(&m_OverlayLock);
-
-    // If the overlay is disabled, we're done
+    // If the overlay is disabled, clear it out and we're done. The objects are moved into
+    // locals so that the D3D releases happen once the spinlock is back up.
     if (!overlayEnabled) {
+        SDL_AtomicLock(&m_OverlayLock);
+        ComPtr<ID3D11Texture2D> oldTexture = std::move(m_OverlayTextures[type]);
+        ComPtr<ID3D11Buffer> oldVertexBuffer = std::move(m_OverlayVertexBuffers[type]);
+        ComPtr<ID3D11ShaderResourceView> oldTextureResourceView = std::move(m_OverlayTextureResourceViews[type]);
+        SDL_AtomicUnlock(&m_OverlayLock);
+
         SDL_FreeSurface(newSurface);
         return;
     }
+
+    // ⚠️ The old objects stay in place while the new ones are built, and are swapped in one
+    // go at the end. They used to be moved out here, at the top, which left
+    // m_OverlayTextures[type] null for the whole of CreateTexture2D +
+    // CreateShaderResourceView + createOverlayVertexBuffer - uploading roughly a megabyte
+    // of surface among them. The render thread would take the lock during that window,
+    // find nothing, and draw no overlay: the long half of the blink, and the half the
+    // lock itself never explained. The lock is now held only for the swap.
 
     // Create a texture with our pixel data
     SDL_assert(!SDL_MUSTLOCK(newSurface));
@@ -1540,6 +1592,12 @@ void D3D11VARenderer::notifyOverlayUpdated(Overlay::OverlayType type)
     newSurface = nullptr;
 
     SDL_AtomicLock(&m_OverlayLock);
+    // The outgoing objects are moved into locals rather than dropped here, so that their
+    // D3D releases happen below, with the spinlock already back up.
+    ComPtr<ID3D11Buffer> oldVertexBuffer = std::move(m_OverlayVertexBuffers[type]);
+    ComPtr<ID3D11Texture2D> oldTexture = std::move(m_OverlayTextures[type]);
+    ComPtr<ID3D11ShaderResourceView> oldTextureResourceView = std::move(m_OverlayTextureResourceViews[type]);
+
     m_OverlayVertexBuffers[type] = std::move(newVertexBuffer);
     m_OverlayTextures[type] = std::move(newTexture);
     m_OverlayTextureResourceViews[type] = std::move(newTextureResourceView);
@@ -1645,7 +1703,16 @@ bool D3D11VARenderer::notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO stateInfo)
         // Release the video vertex buffer so we will upload a new one after resize
         m_VideoVertexBuffer.Reset();
 
-        // Create new vertex buffers for active overlays
+        // Create new vertex buffers for active overlays.
+        //
+        // The remembered objects go too: theirs are the pre-resize vertex buffers, and a
+        // frame that missed the lock right after a resize would otherwise draw the overlay
+        // at its old screen position. Safe to touch here without the render thread's
+        // knowledge because we hold the context lock, which renderFrame() also takes.
+        for (auto& last : m_LastOverlay) {
+            last = {};
+        }
+
         SDL_AtomicLock(&m_OverlayLock);
         for (size_t i = 0; i < m_OverlayVertexBuffers.size(); i++) {
             if (!m_OverlayTextures[i]) {

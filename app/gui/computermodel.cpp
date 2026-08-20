@@ -1,4 +1,5 @@
 #include "computermodel.h"
+#include "backend/boxartmanager.h"
 #include "backend/linkspeed.h"
 #include "backend/linkmatcher.h"
 #include "../TailscaleManager.h"
@@ -422,19 +423,84 @@ void ComputerModel::requestLastSession(int computerIndex)
                     out[QStringLiteral("gamesTotal")] =
                         o.value(QStringLiteral("games_total")).toInt(0);
 
+                    /*
+                     * The covers are resolved against this host's own app list first, and
+                     * only fall back to what the reply carries.
+                     *
+                     * The client already holds the real artwork: the host page fetches it
+                     * from the streaming server (/appasset, keyed by app id) at full size
+                     * and caches it per host. The inline thumbnail in this reply exists
+                     * because the panel had no way to reach that cache — LASTSESSION names
+                     * the games but carries no app id, so there was nothing to look them up
+                     * by. Matching on the name closes that: both sides get it from the same
+                     * apps.json entry, so the strings agree by construction.
+                     *
+                     * Worth the lookup because the thumbnail is the weaker picture by some
+                     * way — it is sized for the panel's design size and is stretched, not
+                     * fitted, so a cover that is not 2:3 arrives distorted. The cached one
+                     * is the same file the library is showing.
+                     *
+                     * ⚠️ Deliberately does NOT fetch anything it does not already have.
+                     * This is a summary on the home screen, not a library being browsed:
+                     * kicking off downloads for games the user has not opened would be
+                     * doing work nobody asked for, and BoxArtManager::loadBoxArt() would
+                     * hand back its placeholder in the meantime — which is worse than the
+                     * thumbnail we already have in hand.
+                     */
+                    QHash<QString, int> appIdByName;
+                    NvComputer* computer = nullptr;
+                    if (computerIndex >= 0 && computerIndex < m_Computers.count()) {
+                        computer = m_Computers[computerIndex];
+                        QReadLocker lock(&computer->lock);
+                        for (const NvApp& app : computer->appList) {
+                            appIdByName.insert(app.name.toLower(), app.id);
+                        }
+                    }
+
                     QVariantList games;
                     for (const QJsonValue& v : o.value(QStringLiteral("games")).toArray()) {
                         QJsonObject g = v.toObject();
                         QVariantMap game;
-                        game[QStringLiteral("name")] = g.value(QStringLiteral("name")).toString();
+                        const QString gameName = g.value(QStringLiteral("name")).toString();
+                        game[QStringLiteral("name")] = gameName;
 
-                        // The cover arrives as base64 PNG because the client cannot reach the
-                        // host's cover cache. Handed to QML as a data: URI so an Image can take
-                        // it directly, with no image provider and nothing written to disk.
-                        QString cover = g.value(QStringLiteral("cover")).toString();
-                        game[QStringLiteral("cover")] = cover.isEmpty()
-                            ? QString()
-                            : QStringLiteral("data:image/png;base64,") + cover;
+                        QUrl localCover;
+                        if (computer != nullptr) {
+                            const auto it = appIdByName.constFind(gameName.toLower());
+                            if (it != appIdByName.constEnd()) {
+                                localCover = BoxArtManager::cachedBoxArt(computer, it.value());
+                            }
+                        }
+
+                        if (!localCover.isEmpty()) {
+                            game[QStringLiteral("cover")] = localCover.toString();
+                        }
+                        else {
+                            // Nothing cached for it — a game that has been removed from the
+                            // host's library, or one this client has simply never opened. The
+                            // host's inline thumbnail is the fallback, handed to QML as a
+                            // data: URI so an Image can take it with no image provider and
+                            // nothing written to disk.
+                            //
+                            // ⚠️ The MIME is read off the payload rather than assumed. A
+                            // data: URI has to declare a type, and hardcoding one ties this
+                            // line to whatever the host happens to encode. Base64 is 6 bits
+                            // per character, so the first bytes always land on the same
+                            // leading characters: "iVBORw0KGgo" is the PNG signature, "/9j/"
+                            // is FF D8 FF (JPEG).
+                            const QString cover = g.value(QStringLiteral("cover")).toString();
+                            if (!cover.isEmpty()) {
+                                const QLatin1String mime =
+                                    cover.startsWith(QLatin1String("iVBORw0KGgo"))
+                                        ? QLatin1String("image/png")
+                                        : QLatin1String("image/jpeg");
+                                game[QStringLiteral("cover")] =
+                                    QStringLiteral("data:") + mime + QStringLiteral(";base64,") + cover;
+                            }
+                            else {
+                                game[QStringLiteral("cover")] = QString();
+                            }
+                        }
 
                         games.append(game);
                     }

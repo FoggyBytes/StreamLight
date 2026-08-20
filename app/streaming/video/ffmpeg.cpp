@@ -1109,20 +1109,44 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
                     : "Software";
         }
 
-        // With the pacing diagnostic running, follow the cadence we asked the display
-        // for with the one it actually delivered. This line already claims a cadence;
-        // measuring it is what makes the claim checkable while the stream is running.
-        char measuredBuf[80] = "";
+        ret = snprintf(&output[offset], length - offset,
+                       "Frame pacing: %s\n", pacingMode);
+        if (ret < 0 || ret >= length - offset) {
+            SDL_assert(false);
+            return;
+        }
+        offset += ret;
+    }
+
+    // What the display actually did with the cadence the line above asked for.
+    //
+    // ⚠️ A line of its own rather than a suffix on the pacing line, which is what it
+    // used to be. The two are different in kind — one says what was asked for, the
+    // other what happened — and only a real line can be a row in the Settings preview
+    // and be reachable with the pad. The rule this follows is the one OI_BITRATE_PEAK
+    // established from the other side: things that modify a line are not rows.
+    if (WANT(OI_CADENCE)) {
         PACING_MEASUREMENT measurement;
         if (m_FrontendRenderer != nullptr && m_FrontendRenderer->getPacingMeasurement(&measurement)) {
-            snprintf(measuredBuf, sizeof(measuredBuf),
-                     " - measured %.2f v/f (%d-%d), queue %.1f, wait %.1f ms",
-                     measurement.vblanksPerFrame, measurement.minVblanks, measurement.maxVblanks,
-                     measurement.queueDepthVblanks, measurement.presentWaitMs);
+            ret = snprintf(&output[offset], length - offset,
+                           "Cadence: %.2f v/f (%d-%d), queue %.1f, wait %.1f ms\n",
+                           measurement.vblanksPerFrame, measurement.minVblanks,
+                           measurement.maxVblanks, measurement.queueDepthVblanks,
+                           measurement.presentWaitMs);
         }
-
-        ret = snprintf(&output[offset], length - offset,
-                       "Frame pacing: %s%s\n", pacingMode, measuredBuf);
+        else if (!forceFullDetail) {
+            // Switched on but nothing measured yet — the first window has not closed,
+            // or this renderer does not instrument. Say so rather than leave a gap
+            // where the user just switched a line on and sees nothing appear.
+            ret = snprintf(&output[offset], length - offset, "Cadence: measuring...\n");
+        }
+        else {
+            // ⚠️ The end-of-session summary asks for every line (forceFullDetail passes
+            // OI_ALL), but this one needs instrumentation that only runs when it was
+            // switched on. With nothing measured there is nothing to record, and
+            // "measuring..." in a log written after the stream ended would be a lie.
+            ret = 0;
+        }
         if (ret < 0 || ret >= length - offset) {
             SDL_assert(false);
             return;

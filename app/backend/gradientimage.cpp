@@ -35,6 +35,37 @@ inline int quantise(qreal v, qreal t)
     return qBound(0, qRound(v + t), 255);
 }
 
+/*
+ * Half a level, added to the COLOUR channels before they are dithered — and it is the
+ * difference between this ramp dithering itself and this ramp dithering what is under it.
+ *
+ * Dither can only act on a value that falls between two integers: qRound(v + t) with t in
+ * [-0.5, 0.5) returns v unchanged for every t when v is already a whole number. That is
+ * correct for a ramp judged on its own — an exactly representable colour has no error to
+ * spread — and it is why a ramp whose colour never changes, only its alpha, came out
+ * perfectly flat: every pixel of it identical, no dither anywhere.
+ *
+ * A scrim is exactly that ramp, and it is not judged on its own. Laid over a picture the
+ * result is pic*(1-a) + scrim*a, and near the dense end a is around 0.9 — so the picture
+ * arrives with its 256 levels squeezed into about 26, and a smooth dark region turns into
+ * wide plateaus a full level apart. Dithering the ALPHA cannot repair that: at this contrast
+ * half a level of alpha moves the output by about 0.014 of a level, three orders of
+ * magnitude short. Dithering the scrim's COLOUR can, because the output follows it almost
+ * one for one — half a level in becomes 0.45 of a level out.
+ *
+ * Hence the bias: it puts the colour half a step off the lattice so the existing Bayer
+ * threshold has something to resolve, and the channel alternates between two adjacent values
+ * in the same ordered pattern as everything else. What it costs is half a level of lift and
+ * half a level of jitter on flat colour — neither visible, and the jitter is the entire
+ * point.
+ *
+ * ⚠️ Colour only, not alpha. The amplitude that reaches the composite is scaled by a, so it
+ * is strongest exactly where the crushing is worst and fades out where there is nothing left
+ * to crush — which is the behaviour wanted. Biasing alpha as well would just make the scrim
+ * a fifth of a percent denser and change nothing else.
+ */
+constexpr qreal kColourDitherBias = 0.5;
+
 } // namespace
 
 DitheredGradientProvider::DitheredGradientProvider()
@@ -112,8 +143,10 @@ QImage DitheredGradientProvider::requestImage(const QString& id, QSize* size, co
             // which looks worse than the banding.
             const qreal th = (kBayer8[(y % 8) * 8 + (x % 8)] + 0.5) / 64.0 - 0.5;
 
-            line[x] = qRgba(quantise(rf, th), quantise(gf, th),
-                            quantise(bf, th), quantise(af, th));
+            line[x] = qRgba(quantise(rf + kColourDitherBias, th),
+                            quantise(gf + kColourDitherBias, th),
+                            quantise(bf + kColourDitherBias, th),
+                            quantise(af, th));
         }
     }
 

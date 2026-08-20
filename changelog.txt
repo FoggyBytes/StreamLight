@@ -4,6 +4,26 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-------------------------------------------
+Version 5.1.2 - Smoother Again (20/08/2026)
+-------------------------------------------
+
+A stutter that 5.1.1 introduced, an overlay that blinked once a second, four things that were being drawn or said wrong, a note in Settings that shows up only when it applies to you, and a way to see what your screen is really doing with the frame pacing. All of it is client-side and works with any host.
+
+✨ IMPROVEMENTS:
+• The performance overlay has a new line, Cadence, that measures what your screen actually did with the frame pacing it was asked for — how long each frame was really held, how deep the queue of frames waiting to be handed over sat, and how long the handover itself took. Every other line prints something already known; this one switches a measurement on, and with it a record in the log. It is what to turn on before reporting a stutter, and it is in the Full preset. The environment variable from 5.1.1 still works and does the same thing
+
+🐛 FIXES:
+• The stutter some people saw in 5.1.1 is gone — the fix that release made to the half-refresh case did two things, and only one of them was right. Capping how many frames the driver may hold ahead of the display was right, and it stays: it is what stopped the latency building up and never coming back. Waiting for the screen before drawing the next frame was wrong, and it is gone: it made the picture run on the screen's rhythm while frames kept arriving on the stream's, and where those two didn't line up the result was anything from barely visible jitter on a slow camera pan to heavy stuttering. If 5.1.1 felt worse to you rather than better, this is why, and it is fixed
+• The performance overlay no longer blinks about once a second — it is rebuilt in the background at that rate, and the old one was being taken down before the new one was made, so any frame drawn in between had nothing to draw and the overlay simply vanished for it. The old one now stays up until the new one is ready to take its place, and a frame that lands on the swap itself redraws what it drew last instead of nothing
+• The game's cover on the host page is no longer stretched and cut off when you come back from a stream — it only ever happened to Desktop and Steam Big Picture, because their artwork is the only one that is not the usual portrait shape, and moving to another game and back was the one thing that cleared it. Two drawing steps that had been sharing a single pass — rounding the corners and casting the shadow — were disagreeing about how large the picture was, and they are now done one at a time
+• The covers in the last-session panel are sharp on a dense screen — they were drawn from the small thumbnail the host sends inside its report, sized for the panel's own layout and stretched rather than fitted, so on a 4K screen it was blown up almost threefold and any cover that was not the usual portrait shape arrived squashed. StreamLight now draws the full-size artwork it already holds for that host, the very file the game list is showing, and falls back to the host's thumbnail only for a game it has never opened or one since removed from the library
+• Dark backdrops no longer step through visible bands — a host background picture, and the blurred cover behind the host page, sit under a dark veil that keeps the text readable, and darkening a picture that far leaves it only a couple of dozen distinct shades, so anything smooth in it breaks into stripes. The veil is now dithered the way the app's own gradients already were: a pattern half a shade deep, far too fine to see, which is exactly what stops the stripes forming
+• The host card no longer promises a link-speed change it will not get — for around half a minute after a session ends the host still counts one as running and turns down any request to change its adapter, so starting another game in that window showed "on launch → 1 Gbps" and then quietly did not do it. The card and the Options tile now say nothing while the host reports itself busy, and the tile gives that as the reason. The wait itself belongs to the host: StreamTweak 8.1.2 does away with it, and against an older host this at least stops a promise that was never going to be kept
+
+🎨 UI:
+• Settings → Video says so when your choices land on the half-refresh arrangement — at 60 FPS on a 120 Hz screen with frame pacing on Automatic or Hardware, each frame is held for two refreshes, and how much delay that comes with is settled when the stream starts rather than being anything the app gets to choose. The line sits under Frame Pacing and appears only when that is what your settings will actually do, and it points at Match frame rate, which avoids the arrangement instead of managing it
+
 -------------------------------------------------
 Version 5.1.1 - Frame Pacing Latency (19/08/2026)
 -------------------------------------------------

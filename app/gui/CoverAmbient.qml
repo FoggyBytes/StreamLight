@@ -89,19 +89,29 @@ Item {
         }
     }
 
-    // The veil. Without it the text sits on whatever the artwork happens to be, and loses.
-    Rectangle {
+    /*
+     * The veil. Without it the text sits on whatever the artwork happens to be, and loses.
+     *
+     * ⚠️ DitheredGradient and not a plain Rectangle gradient, and here it matters more than
+     * anywhere else in the app. This veil is 81% opaque at its lightest, so the picture under
+     * it arrives with its levels squeezed to a fifth — and the picture is BLURRED, which is
+     * the smoothest surface there is and therefore the one with nothing of its own to hide the
+     * steps. A Rectangle gradient carries no dither at all, so the banding it produced was the
+     * app's worst even though this was the last place still using one.
+     */
+    DitheredGradient {
         anchors.fill: parent
         visible: ambientLayer.visible
-        gradient: Gradient {
-            // Fully opaque by the bottom edge, not 93%. The artwork is clipped to the content
-            // area while the page background continues behind the status bar, so any residual
-            // transparency here left the blurred image ending on a hard horizontal line — read
-            // on screen as a solid band across the foot of the page.
-            GradientStop { position: 0.0;  color: "#d005080a" }
-            GradientStop { position: 0.44; color: "#bb05080a" }
-            GradientStop { position: 0.88; color: "#f205080a" }
-            GradientStop { position: 1.0;  color: "#ff05080a" }
-        }
+        orientation: Qt.Vertical
+        // Fully opaque by the bottom edge, not 93%. The artwork is clipped to the content
+        // area while the page background continues behind the status bar, so any residual
+        // transparency here left the blurred image ending on a hard horizontal line — read
+        // on screen as a solid band across the foot of the page.
+        stops: [
+            { pos: 0.0,  color: "#d005080a" },
+            { pos: 0.44, color: "#bb05080a" },
+            { pos: 0.88, color: "#f205080a" },
+            { pos: 1.0,  color: "#ff05080a" }
+        ]
     }
 }

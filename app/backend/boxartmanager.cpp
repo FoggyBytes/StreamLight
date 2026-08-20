@@ -19,21 +19,41 @@ BoxArtManager::BoxArtManager(QObject *parent) :
     }
 }
 
+namespace {
+
+// Where a cover lives, and the only place that answers it. Composition only: it creates
+// nothing, so a caller that is merely asking whether we already have one does not leave a
+// trail of empty directories behind.
+QString boxArtFilePath(NvComputer* computer, int appId)
+{
+    return QDir(Path::getBoxArtCacheDir())
+            .filePath(computer->uuid + QLatin1Char('/') + QString::number(appId) + ".png");
+}
+
+} // namespace
+
 QString
 BoxArtManager::getFilePathForBoxArt(NvComputer* computer, int appId)
 {
-    QDir dir = m_BoxArtDir;
+    QDir dir(Path::getBoxArtCacheDir());
 
     // Create the cache directory if it did not already exist
     if (!dir.exists(computer->uuid)) {
-        dir.mkdir(computer->uuid);
+        dir.mkpath(computer->uuid);
     }
 
-    // Change to this computer's box art cache folder
-    dir.cd(computer->uuid);
+    return boxArtFilePath(computer, appId);
+}
 
-    // Try to open the cached file
-    return dir.filePath(QString::number(appId) + ".png");
+QUrl
+BoxArtManager::cachedBoxArt(NvComputer* computer, int appId)
+{
+    QFile file(boxArtFilePath(computer, appId));
+    if (!file.exists() || file.size() == 0) {
+        return QUrl();
+    }
+
+    return QUrl::fromLocalFile(file.fileName());
 }
 
 class NetworkBoxArtLoadTask : public QObject, public QRunnable

@@ -1009,8 +1009,14 @@ Item {
                                 width: stage._px(100)
                                 height: stage._px(150)
 
-                                // The cover travels inline as a data: URI, so there is nothing
-                                // to fetch and nothing cached on disk.
+                                // Usually the full-size artwork already cached for this host
+                                // (600x900), resolved by name in ComputerModel; the host's
+                                // inline thumbnail only when there is nothing cached for it.
+                                //
+                                // ⚠️ mipmap, because the usual case is now MINIFYING rather
+                                // than magnifying: 900 down to somewhere between 144 and 288
+                                // physical pixels depending on the panel. Plain bilinear
+                                // aliases at that ratio, and mipmap is what stops it.
                                 Image {
                                     id: cover
                                     anchors.fill: parent
@@ -1018,6 +1024,7 @@ Item {
                                     fillMode: Image.PreserveAspectCrop
                                     asynchronous: true
                                     smooth: true
+                                    mipmap: true
                                     visible: false
                                 }
 
