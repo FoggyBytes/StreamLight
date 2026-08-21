@@ -4,6 +4,25 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+--------------------------------------
+Version 5.1.3 - As It Was (21/08/2026)
+--------------------------------------
+
+Frame pacing goes back to doing exactly what 5.1.0 did, the busy spinner is drawn by us now, and a line of text that repeated the one above it is gone. All client-side, and it works with any host.
+
+🐛 FIXES:
+• Frame pacing is back to 5.1.0's behaviour — 5.1.2 capped how many frames the driver was allowed to queue ahead of the display, and on every machine measured before and after, the build carrying that cap read worse than the build without it, so it is gone
+• On Intel graphics the Cadence line no longer prints V-blank counts — the driver's presentation counter there disagrees with its own panel, reporting one V-blank per frame where two is the only physical answer and flagging every single frame as a cadence slip; the wait and queue figures beside it are measured separately and are still shown
+
+🎨 UI:
+• The busy spinner is drawn by StreamLight now, everywhere it turns up — launching, quitting, waking a host, pairing, finding hosts, checking for updates. The stock one built its arc from flat-ended segments with nothing behind them, so its outline was never really a circle and its two ends read as corners stuck to the ring; that showed at every size, including the one the control picks for itself
+• Every spinner is now sized against the text it sits beside instead of by hand, so it is the same proportion in all of them — they ranged from just right to nearly twice the size of their own label, and the one in the Windows Update view was a fixed size that never grew on a high-resolution display
+• Cover art on the host page has rounded corners whatever shape it arrives in — the rounding was being applied to the frame rather than to the picture, so a cover that was not exactly 2:3 sat inside that frame keeping its own square corners, which is why two games side by side on the same screen could look different
+• The launch screen no longer says "window open on host" beneath "Loading" — the title already said it, in fewer words
+
+🙏 THANKS:
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/9) for four logs, a video, and two rounds of telling me I had it wrong — both times he was right, and both times it changed the release
+
 -------------------------------------------
 Version 5.1.2 - Smoother Again (20/08/2026)
 -------------------------------------------

@@ -39,7 +39,7 @@ Everything below is in the current release, whichever version first introduced i
 - **Time, date and battery** in the top right of every screen, in the clock and date format you read
 
 **🎬 In-stream**
-- **Performance overlay, built line by line** — fourteen lines to choose from, switched on and off *on the overlay itself* in Settings, plus corner, text colour, font size and transparency. Minimal / Default / Full remain as starting points. The last of them, *Cadence*, measures what the display really did with the frame pacing and records it in the log — the one to switch on before reporting a stutter
+- **Performance overlay, built line by line** — fourteen lines to choose from, switched on and off *on the overlay itself* in Settings, plus corner, text colour, font size and transparency. Minimal / Default / Full remain as starting points. The last of them, *Cadence*, measures what the display really did with the frame pacing and records it in the log — the one to switch on before reporting a stutter. On Intel graphics the V-blank counts are left out of it, since the driver misreports them; the rest is measured separately and still shown
 - **Stream Settings panel** — change resolution, frame rate, bitrate, HDR and frame pacing **while streaming**, applied with a brief reconnect and host-agnostic. It takes the corner the performance overlay is not using
 - **Custom resolutions** — any width and height, not just the presets, from Settings or the in-stream panel
 - **Frame pacing** — Off, Automatic, Software or Hardware, the last locking the cadence in the GPU on a display running a whole multiple of the stream
@@ -74,6 +74,17 @@ These cross the bridge and need both apps. The version shown is the **minimum St
 - **Remote Windows Update** *(7.3.0+)* — scan, classify and install updates on the host, rebooting only if required, with a backgroundable progress view. Updates can also be installed before a shutdown
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
+
+## ✨ What's New in 5.1.3 — As It Was
+
+Frame pacing goes back to doing exactly what 5.1.0 did, the busy spinner is drawn by us now, and a line of text that repeated the one above it is gone. All client-side, and it works with any host.
+
+- **The frame queue cap introduced in 5.1.2 is gone.** It limited how many frames the driver was allowed to queue ahead of the display, on the path where StreamLight holds each frame for a whole number of V-blanks. On every machine measured before and after, the build carrying it read worse than the build without, so pacing is back to what 5.1.0 did
+- **The busy spinner is drawn by StreamLight now**, everywhere it turns up — launching, quitting, waking a host, pairing, finding hosts, checking for updates. The stock one built its arc from flat-ended segments with nothing behind them, so its outline was never really a circle and its two ends read as corners stuck to the ring, at every size
+- **Every spinner is sized against the text beside it** instead of by hand, so the proportion is the same in all of them. They ranged from just right to nearly twice the size of their own label, and the one in the Windows Update view was fixed at a size that never grew on a high-resolution display
+- **Cover art on the host page has rounded corners whatever shape it arrives in.** The rounding was applied to the frame rather than to the picture, so a cover that was not exactly 2:3 sat inside that frame keeping its own square corners — two games side by side on the same screen could look different
+- **The launch screen no longer says "window open on host"** beneath "Loading" — the title already said it, in fewer words
+- **On Intel graphics the Cadence line leaves out the V-blank counts.** The driver's presentation counter there disagrees with its own panel: it reports one V-blank per frame where two is the only physical answer, and flags every frame as a cadence slip. The wait and queue figures beside it are measured separately and are still shown
 
 ## ✨ What's New in 5.1.2 — Smoother Again
 

@@ -64,7 +64,9 @@ D3D11VARenderer::D3D11VARenderer(int decoderSelectionPass)
       m_LastColorTrc(AVCOL_TRC_UNSPECIFIED),
       m_AllowTearing(false),
       m_SyncInterval(0),
+      m_AdapterVendorId(0),
       m_CadenceDiagEnabled(false),
+      m_CadenceRefreshTrusted(true),
       m_CadenceLastLogUs(0),
       m_CadenceLastLogWaitMs(0.0),
       m_DisplayHz(0),
@@ -314,6 +316,8 @@ bool D3D11VARenderer::createDeviceByAdapterIndex(int adapterIndex, bool* adapter
                 adapterDesc.Description,
                 adapterDesc.VendorId,
                 adapterDesc.DeviceId);
+
+    m_AdapterVendorId = adapterDesc.VendorId;
 
     hr = D3D11CreateDevice(adapter.Get(),
                            D3D_DRIVER_TYPE_UNKNOWN,
@@ -623,8 +627,10 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
     // Hardware pacing applies only in Automatic and Multiple modes (Matched forces
     // the software pacer; Off disables pacing).
     //
-    // Decided before the swapchain exists because the frame-latency cap applied right
-    // after it is created is gated on the interval.
+    // Decided before the swapchain exists for historical reasons only: 5.1.1 needed the
+    // interval here to know whether to ask for a waitable swapchain, and 5.1.2 to gate the
+    // frame-latency cap. Both are gone as of 5.1.3, so nothing between this and the
+    // swapchain reads m_SyncInterval any more. Harmless where it is.
     bool hwPacingAllowed = (params->framePacingMode == StreamingPreferences::FP_AUTO ||
                             params->framePacingMode == StreamingPreferences::FP_MULTIPLE);
     m_SyncInterval = 0;
@@ -695,48 +701,19 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
         return false;
     }
 
-    // Cap how many frames the driver may queue ahead of the display. Present() still
-    // blocks - that is the point, it is what keeps the render loop on the frames' own
-    // rhythm - but it can only ever be two frames deep instead of the driver default of
-    // three, which takes a whole frame period of buffering out of the path to the screen.
+    // ⚠️ Deliberately no SetMaximumFrameLatency() call here. 5.1.2 capped the present
+    // queue at 2 on the hardware-paced branch and 5.1.3 took it back out, restoring
+    // 5.1.0's behaviour, because it never once earned its place in the field: on the
+    // Arc handheld where the symptom is reproducible on demand the queue read 0.0 in
+    // every window of every session - the bad ones included - so the cap had nothing
+    // to cap there, and on the one machine with a clean before-and-after the build
+    // carrying it measured worse than the build without.
     //
-    // ⚠️ Two and not one, and that was measured rather than reasoned. A cap of 1 leaves
-    // no reserve to absorb render jitter: at 1080p the wait inside Present() settled at
-    // 15.8 ms and never came back down, and at 4K only 46 of the 57 frames arriving each
-    // second were presented at all, because a missed window has no ready frame to cover
-    // it and costs the next pair of V-blanks. 2 forbids the pathological depth of 3
-    // without imposing the block that 1 imposes.
-    //
-    // ⚠️ Confined to the hardware-paced branch, and that is a requirement rather than
-    // caution. On the SyncInterval 0 path a low frame latency makes presents that are
-    // supposed to be non-blocking block on DWM as though the interval were 1 - which is
-    // exactly why the swapchain comment above says to leave the default alone there.
-    //
-    // ⚠️ This does not make "rendering time" flat, and it is not meant to. The cap bounds
-    // how deep the queue can settle; the sawtooth inside Present() stays. The honest
-    // figure is frame queue delay PLUS rendering time, never either one on its own - that
-    // is the reading that made 5.1.1 look like a win when it had only moved the wait.
-    if (m_SyncInterval >= 2) {
-        const UINT k_MaxFrameLatency = 2;
-
-        ComPtr<IDXGIDevice1> dxgiDevice;
-        hr = m_RenderDevice.As(&dxgiDevice);
-        if (SUCCEEDED(hr)) {
-            hr = dxgiDevice->SetMaximumFrameLatency(k_MaxFrameLatency);
-        }
-
-        if (FAILED(hr)) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "IDXGIDevice1::SetMaximumFrameLatency() failed: %x - frames may queue "
-                        "up to the driver default of 3",
-                        hr);
-        }
-        else {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "Frame queue capped at %u frames ahead of the display",
-                        k_MaxFrameLatency);
-        }
-    }
+    // ⚠️ It does address something real, so if it is ever reinstated it needs field
+    // evidence rather than the argument from mechanism that put it there the first
+    // time: a present queue settling at 3 and staying there, with the wait inside
+    // Present() going from 0.4 ms to ~16 ms permanently, was measured on an Ally.
+    // Removing the cap makes that possible again, knowingly.
 
     // Disable Alt+Enter, PrintScreen, and window message snooping. This makes
     // it safe to run the renderer on a separate rendering thread rather than
@@ -804,6 +781,37 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
     m_CadenceDiagEnabled = !params->testOnly &&
             (qEnvironmentVariableIntValue("STREAMLIGHT_PACING_DIAG") != 0 ||
              (StreamingPreferences::get()->overlayItems & StreamingPreferences::OI_CADENCE) != 0);
+
+    // ⚠️ On Intel the refresh counter is not believed, and only the figures derived from
+    // it are dropped. Measured on @Soladus's MSI Claw under 5.1.2: at 60 presents a second
+    // on a 120 Hz panel it reports 1.00 V-blanks per frame where 2.00 is the only physical
+    // answer, and does so in all three sessions of the log - the two flawless ones included
+    // - producing a "cadence slip" on every single frame. 155 of them in a session that was
+    // pristine by every measure not derived from that counter.
+    //
+    // ⚠️ What it is NOT is a counter that simply ticks once per present, which is what an
+    // earlier note here claimed: earlier in that same session, at 17 presents a second, it
+    // reported 6-7 V-blanks per frame, which is right for 120 Hz. So it is wrong in one
+    // regime and correct in another, and no explanation for that has been measured. Do not
+    // write one into this comment; the machine has left the tester's hands.
+    //
+    // A gate on the vendor and NOT a heuristic that catches the disagreement at runtime,
+    // which is what this nearly became: that heuristic could not have been verified without
+    // Intel hardware to hand, and putting unverifiable logic in the present path is exactly
+    // how 5.1.1 shipped a regression. This is correct by inspection.
+    //
+    // ⚠️ Narrow on purpose. `wait`, `blocked` and `queue` come from QueryPerformanceCounter
+    // and PresentCount, not from the refresh counter, and on that same Claw log the wait is
+    // the one figure that separates the sick session (8-13 ms, every present blocked) from
+    // the healthy ones (0.10 ms). Suppressing the whole line would blind the instrument on
+    // exactly the hardware where it has something to say.
+    if (m_CadenceDiagEnabled && m_AdapterVendorId == 0x8086) {
+        m_CadenceRefreshTrusted = false;
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "[pacing] V-blank counts are not reported on Intel graphics: the driver's "
+                    "presentation counter disagrees with the panel, so cadence and slips are "
+                    "omitted. Wait and queue are measured independently and are still shown");
+    }
     if (m_CadenceDiagEnabled) {
         LARGE_INTEGER qpf;
         m_QpcFrequency = QueryPerformanceFrequency(&qpf) ? qpf.QuadPart : 0;
@@ -1069,7 +1077,8 @@ void D3D11VARenderer::sampleCadence(uint64_t presentStartUs, uint64_t presentEnd
                 // A frame held for a different number of V-blanks than the cadence we
                 // asked for is the difference between an ugly average and a visible
                 // stutter, so each one is named (rate-limited to keep the log usable).
-                if (m_SyncInterval >= 2 && (int)deltaRefreshes != m_SyncInterval && c.slipsLogged < 5) {
+                if (m_CadenceRefreshTrusted && m_SyncInterval >= 2 &&
+                        (int)deltaRefreshes != m_SyncInterval && c.slipsLogged < 5) {
                     c.slipsLogged++;
                     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                                 "[pacing] cadence slip: a frame was held for %u V-blanks, expected %d",
@@ -1175,13 +1184,21 @@ void D3D11VARenderer::flushCadenceWindow(uint64_t nowUs)
     bool heartbeat    = (m_CadenceLastLogUs == 0) ||
                         (nowUs - m_CadenceLastLogUs >= 30000000);
 
+    // The V-blank half of the line is left out rather than printed wrong where the
+    // adapter's refresh counter disagrees with the panel (see initialize()). Everything
+    // that remains is measured without it.
+    char cadence[128] = "";
+    if (m_CadenceRefreshTrusted) {
+        SDL_snprintf(cadence, sizeof(cadence), "v/f %.2f min %d max %d hist{%s} | ",
+                     vblanksPerFrame, c.minVblanks < 0 ? 0 : c.minVblanks, c.maxVblanks, hist);
+    }
+
     if (anomaly || regimeChange || heartbeat) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "[pacing] %.1fs: %u presents | v/f %.2f min %d max %d hist{%s} | "
+                    "[pacing] %.1fs: %u presents | %s"
                     "wait %.2f/%.2f/%.2f ms min/avg/max, %u blocked | "
                     "queue %.1f vbl (%d-%d) | phase %.2f ms | disjoint %u%s",
-                    windowSecs, c.presentCalls,
-                    vblanksPerFrame, c.minVblanks < 0 ? 0 : c.minVblanks, c.maxVblanks, hist,
+                    windowSecs, c.presentCalls, cadence,
                     (double)c.waitMinUs / 1000.0, waitAvgMs, (double)c.waitMaxUs / 1000.0, c.waitOverCount,
                     queueDepth, c.queueMin, c.queueMax,
                     phaseMs, c.disjointCount,
@@ -1191,9 +1208,11 @@ void D3D11VARenderer::flushCadenceWindow(uint64_t nowUs)
     }
 
     SDL_AtomicLock(&m_CadenceLock);
-    m_PublishedCadence.vblanksPerFrame = vblanksPerFrame;
-    m_PublishedCadence.minVblanks = c.minVblanks < 0 ? 0 : c.minVblanks;
-    m_PublishedCadence.maxVblanks = c.maxVblanks;
+    // A negative cadence is how the overlay is told there is no V-blank figure worth
+    // drawing; the wait and queue beside it are still real. See initialize().
+    m_PublishedCadence.vblanksPerFrame = m_CadenceRefreshTrusted ? vblanksPerFrame : -1.0;
+    m_PublishedCadence.minVblanks = (m_CadenceRefreshTrusted && c.minVblanks > 0) ? c.minVblanks : 0;
+    m_PublishedCadence.maxVblanks = m_CadenceRefreshTrusted ? c.maxVblanks : 0;
     m_PublishedCadence.queueDepthVblanks = queueDepth;
     m_PublishedCadence.presentWaitMs = waitAvgMs;
     m_HavePublishedCadence = (c.sumPresents != 0);

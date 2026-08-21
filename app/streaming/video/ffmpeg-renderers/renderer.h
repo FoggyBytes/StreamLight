@@ -145,10 +145,13 @@ private:
 
 // Measured presentation cadence, read back from the display pipeline by renderers
 // that can (D3D11VA via IDXGISwapChain::GetFrameStatistics). This is diagnostic
-// instrumentation for issue #9 and is only populated when the pacing diagnostic
-// is switched on with STREAMLIGHT_PACING_DIAG=1.
+// instrumentation for issue #9 and is only populated when the Cadence overlay line
+// is switched on, or STREAMLIGHT_PACING_DIAG=1 is set.
 typedef struct _PACING_MEASUREMENT {
-    double vblanksPerFrame;    // V-blanks each presented frame actually occupied
+    // V-blanks each presented frame actually occupied, or negative where the adapter's
+    // refresh counter cannot be believed. The three fields below are measured without
+    // that counter and stay valid when this one is negative.
+    double vblanksPerFrame;
     int minVblanks;
     int maxVblanks;
     double queueDepthVblanks;  // refreshes elapsed since the last completed present

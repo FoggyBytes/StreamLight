@@ -1128,11 +1128,21 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
     if (WANT(OI_CADENCE)) {
         PACING_MEASUREMENT measurement;
         if (m_FrontendRenderer != nullptr && m_FrontendRenderer->getPacingMeasurement(&measurement)) {
-            ret = snprintf(&output[offset], length - offset,
-                           "Cadence: %.2f v/f (%d-%d), queue %.1f, wait %.1f ms\n",
-                           measurement.vblanksPerFrame, measurement.minVblanks,
-                           measurement.maxVblanks, measurement.queueDepthVblanks,
-                           measurement.presentWaitMs);
+            if (measurement.vblanksPerFrame < 0) {
+                // The adapter's refresh counter disagrees with its panel, so there is no
+                // honest V-blank figure to show. The wait and the queue are measured
+                // without it and are the two that matter anyway.
+                ret = snprintf(&output[offset], length - offset,
+                               "Cadence: queue %.1f, wait %.1f ms (V-blanks not reported)\n",
+                               measurement.queueDepthVblanks, measurement.presentWaitMs);
+            }
+            else {
+                ret = snprintf(&output[offset], length - offset,
+                               "Cadence: %.2f v/f (%d-%d), queue %.1f, wait %.1f ms\n",
+                               measurement.vblanksPerFrame, measurement.minVblanks,
+                               measurement.maxVblanks, measurement.queueDepthVblanks,
+                               measurement.presentWaitMs);
+            }
         }
         else if (!forceFullDetail) {
             // Switched on but nothing measured yet — the first window has not closed,

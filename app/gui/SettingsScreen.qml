@@ -3345,7 +3345,7 @@ FocusScope {
                     // from a shell.
                     { bit: StreamingPreferences.OI_CADENCE,
                       name: qsTr("Cadence (measured)"),
-                      desc: qsTr("What the display did with the cadence above — how long each frame was really held, how deep the queue sat, how long a frame waited to be handed over. Also records it in the log, which is what to switch on before reporting a stutter"),
+                      desc: qsTr("What the display did with the cadence above — how long each frame was really held, how deep the queue sat, how long a frame waited to be handed over. Also records it in the log, which is what to switch on before reporting a stutter. On Intel graphics the V-blank counts are left out, because the driver does not report them correctly; everything else is measured separately and still shown"),
                       host: false, sub: false,
                       lines: ["Cadence: 2.00 v/f (2-2), queue 0.0, wait 0.4 ms"] },
                     { bit: StreamingPreferences.OI_HOST_METRICS,

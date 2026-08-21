@@ -39,7 +39,7 @@ FocusScope {
     readonly property color _bg2:      "#1a1a1a"
     readonly property color _text:     "#f0f0f0"
     readonly property color _textDim:  "#a0a0a0"
-    readonly property string _version: "5.1.2"
+    readonly property string _version: "5.1.3"
     readonly property string _mono:    "DM Sans"
 
     // 0 = Home, 1 = Apps, 2 = Settings

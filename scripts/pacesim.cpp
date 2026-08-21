@@ -1,5 +1,9 @@
 // pacesim - a discrete model of the D3D11VA present path under SyncInterval >= 2.
 //
+// ⚠️ HISTORICAL AS OF 5.1.3. The cap this file was written to choose was removed
+// entirely and pacing went back to 5.1.0's behaviour - see CLAUDE.md §54. What follows
+// records how cap 2 was picked over 1 and 3, not what the client does today.
+//
 // Purpose: choose between maximum-frame-latency caps WITHOUT another runtime round.
 // A simulation only proves what its model says, so it has to reproduce what we have
 // already measured on real hardware before any prediction of it is worth reading:

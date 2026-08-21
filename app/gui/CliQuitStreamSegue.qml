@@ -30,10 +30,11 @@ Item {
 
     Row {
         anchors.centerIn: parent
-        spacing: 5
+        spacing: Math.round(stageLabel.font.pixelSize * 0.45)
 
-        BusyIndicator {
+        Spinner {
             id: stageSpinner
+            bodySize: stageLabel.font.pixelSize
             running: visible
         }
 

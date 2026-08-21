@@ -84,8 +84,9 @@ Popup {
                     spacing: dialog._px(10)
 
                     // Done · in progress · not yet, in one glyph column so the labels line up.
-                    // 26px, not 14: a BusyIndicator draws its ring inside the box it is given,
-                    // and at label height it came out as a speck.
+                    // 26px, not 14: that dates from Material BusyIndicator, which shrank to
+                    // a speck at label height. Spinner scales properly, so the size is now a
+                    // layout choice rather than a workaround.
                     Item {
                         width: dialog._px(26)
                         height: dialog._px(26)
@@ -99,9 +100,9 @@ Popup {
                             font.pixelSize: dialog._px(15)
                             color: Theme.online
                         }
-                        BusyIndicator {
+                        Spinner {
                             anchors.centerIn: parent
-                            width: dialog._px(26); height: dialog._px(26)
+                            bodySize: dialog._px(15)
                             visible: index === dialog.step
                             running: visible
                         }

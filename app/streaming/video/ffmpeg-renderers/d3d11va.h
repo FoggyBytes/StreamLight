@@ -145,7 +145,17 @@ private:
         uint32_t slipsLogged;
     };
 
+    // PCI vendor of the adapter we ended up rendering on, captured where the adapter is
+    // chosen because that is the only place it is known. Used to decide whether the
+    // refresh counter can be believed - see initialize().
+    UINT m_AdapterVendorId;
+
     bool m_CadenceDiagEnabled;
+
+    // False when the adapter's presentation refresh counter disagrees with the panel, in
+    // which case the V-blank figures and the slip lines are omitted while the wait and
+    // queue figures - which do not come from that counter - are still reported.
+    bool m_CadenceRefreshTrusted;
 
     // Emission state for the [pacing] log, kept out of CadenceDiag because it spans
     // windows rather than belonging to one — that struct is wiped every second and

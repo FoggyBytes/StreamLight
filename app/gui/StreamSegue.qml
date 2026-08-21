@@ -829,18 +829,24 @@ Item {
 
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: _h * 0.010
+            spacing: _h * 0.016
 
-            BusyIndicator {
+            Spinner {
                 id: stageSpinner
                 running: visible
                 visible: false
-                height: stageLabel.height
-                width: height
+                // Tied to the label font size and not to the label height, and vertically
+                // centred. A Label height is the whole line box with the leading in it, so
+                // a nominal 1.4 of that came out at about 1.69 of the type and dominated
+                // the line. 1.30 of the body sits level with the text, and both are driven
+                // by _h, so the pair keeps its proportion at any resolution.
+                bodySize: stageLabel.font.pixelSize
+                anchors.verticalCenter: parent.verticalCenter
             }
 
             Label {
                 id: stageLabel
+                anchors.verticalCenter: parent.verticalCenter
                 text: _c && _c.title !== "" ? _c.title : stageText
                 font.pointSize: Math.max(13, Math.round(_h * 0.026))
                 color: "#f2f2f4"
@@ -959,14 +965,13 @@ Item {
     // empty for the several seconds the connection takes. One spinner and one word.
     Row {
         anchors.centerIn: parent
-        spacing: streamSegue._h * 0.012
+        spacing: streamSegue._h * 0.016
         visible: streamSegue.unlockMode && !unlockPad.visible
 
-        BusyIndicator {
+        Spinner {
             id: unlockWaitSpinner
             running: visible
-            height: unlockWaitLabel.height * 1.4
-            width: height
+            bodySize: unlockWaitLabel.font.pixelSize
             anchors.verticalCenter: parent.verticalCenter
         }
 

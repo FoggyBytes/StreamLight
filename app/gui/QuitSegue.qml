@@ -29,7 +29,7 @@ Item {
     // the X on a tile, the Desktop tile, the quit prompt — so it is the one place that can
     // tell the host "finished", as opposed to a disconnect it should treat as a pause.
     property var onQuitSucceededFn: null
-    property Session nextSession : null
+    property Session nextSession
     property string nextAppName : ""
     // What the next game's launch screen needs, since this screen builds it. Everything about
     // that launch has to travel through here: the artwork its curtain is drawn from, and the
@@ -92,10 +92,11 @@ Item {
 
     Row {
         anchors.centerIn: parent
-        spacing: 5
+        spacing: Math.round(stageLabel.font.pixelSize * 0.45)
 
-        BusyIndicator {
+        Spinner {
             id: stageSpinner
+            bodySize: stageLabel.font.pixelSize
             running: visible
         }
 

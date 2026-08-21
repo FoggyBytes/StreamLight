@@ -43,7 +43,7 @@ NavigableDialog {
             Layout.alignment: Qt.AlignHCenter
         }
 
-        BusyIndicator {
+        Spinner {
             id: spinner
             visible: false
             running: visible

@@ -1101,9 +1101,9 @@ Item {
             spacing: stage._px(14)
             visible: stage.addMode && stage.discovering
 
-            BusyIndicator {
+            Spinner {
                 anchors.verticalCenter: parent.verticalCenter
-                width: stage._px(26); height: width
+                bodySize: stage._px(16)
                 running: visible
             }
             Text {
@@ -1213,7 +1213,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             visible: _letter.length > 0
                             width: _padMode ? stage._px(26)
-                                            : Math.max(stage._px(26), badgeText.implicitWidth + stage._px(14))
+                                            : Math.max(stage._px(26), actionBadgeText.implicitWidth + stage._px(14))
                             height: stage._px(26)
                             radius: _padMode ? width / 2 : stage._px(7)
                             color: actionBtn._lit
@@ -1221,7 +1221,7 @@ Item {
                                    : "#26ffffff"
 
                             Text {
-                                id: badgeText
+                                id: actionBadgeText
                                 anchors.centerIn: parent
                                 text: actionBadge._letter
                                 color: actionBtn._lit

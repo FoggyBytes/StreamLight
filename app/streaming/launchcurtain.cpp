@@ -159,7 +159,9 @@ void LaunchCurtain::onLaunchPhase(int phase, const QString& foreground, qint64 e
         completeStep(m_LaunchIdx, StepDone);
         setStepActive(m_WindowIdx);
         m_Title  = QStringLiteral("Loading");
-        m_Detail = QStringLiteral("window open on host");
+        // The title already says what is happening; naming the window as well was
+        // the same thing in more words.
+        m_Detail.clear();
         break;
 
     case LaunchPhase::Ready:

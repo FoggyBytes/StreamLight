@@ -82,7 +82,14 @@ Popup {
             visible: pop.phase === "CHECKING"
             Layout.alignment: Qt.AlignHCenter
             spacing: pop._px(14)
-            BusyIndicator { running: pop.phase === "CHECKING"; Layout.alignment: Qt.AlignHCenter }
+            // A block above the line rather than beside a word, so bodySize does not
+            // apply - but the size still has to follow the dialog, which at a flat 48
+            // it did not while everything around it scaled.
+            Spinner {
+                running: pop.phase === "CHECKING"
+                implicitWidth: pop._px(48); implicitHeight: implicitWidth
+                Layout.alignment: Qt.AlignHCenter
+            }
             Label {
                 text: qsTr("Checking for updates on the host…")
                 font.family: "DM Sans"; font.pixelSize: pop._px(17); color: "#f0f0f0"

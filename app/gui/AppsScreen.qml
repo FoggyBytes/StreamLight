@@ -784,7 +784,23 @@ FocusScope {
                 id: heroArt
                 anchors.fill: parent
                 source: appsRoot.focusedBoxArt
-                fillMode: Image.PreserveAspectFit
+                /*
+                 * ⚠️ Crop and not Fit, and the mask below is the reason. The mask is a rounded
+                 * rectangle the size of the BOX; Fit letterboxes any artwork that is not 2:3,
+                 * which leaves the rounded corners sitting on transparent margin where they
+                 * round nothing, and the artwork keeps its own square corners. That is the
+                 * split Marcello caught between 007 First Light (600x900, corners rounded) and
+                 * Cyberpunk 2077 (342x482, corners square) on the same screen.
+                 *
+                 * Cropping costs 6% of the height on a 342x482 and 11% of the width on the
+                 * 600x800 that Desktop and Steam Big Picture use. That is the trade every other
+                 * masked cover in this app already takes - the host card, the last-session
+                 * strip and the launch curtain are all Crop - and the one StreamTweak took
+                 * deliberately in its own §35: empty bands above and below read worse than a
+                 * crop. ⚠️ The list-row thumbnail below stays Fit on purpose; it has no mask,
+                 * so it has nothing to line up with, and its own comment explains why.
+                 */
+                fillMode: Image.PreserveAspectCrop
                 asynchronous: true
                 smooth: true
                 mipmap: true
@@ -801,10 +817,17 @@ FocusScope {
              * A shadow makes MultiEffect widen its own rendered rect so the blur is not cut
              * off (`autoPaddingEnabled`, on by default), while the mask below stays the size
              * of the item. Source and mask then live in two different rects, and the effect
-             * resolves that by stretching. It shows on Desktop and Steam Big Picture and on
-             * nothing else, because their artwork is 600x800 and every real cover is 600x900:
-             * they are the only two whose painted rect is smaller than the box it sits in, so
-             * they are the only two where a uniform stretch is visible rather than invisible.
+             * resolves that by stretching. It showed on any artwork whose painted rect was
+             * smaller than the box it sat in, which is where a uniform stretch is visible
+             * rather than invisible.
+             *
+             * ⚠️ This comment used to say that meant "Desktop and Steam Big Picture and
+             * nothing else, because every real cover is 600x900". That was wrong: Cyberpunk
+             * 2077 came through GOG at 342x482. Do not use "every cover is 2:3" as a premise
+             * anywhere - the covers arrive from seven stores and StreamTweak only enforces a
+             * floor on the height (§44). It is moot for the stretch now that the two passes
+             * are split, and moot for the corners now that this one crops, but the premise
+             * itself keeps coming back.
              *
              * Every other masked MultiEffect in the project already sets autoPaddingEnabled
              * false — this was the only one that did not, and the only one carrying a shadow

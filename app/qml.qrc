@@ -11,6 +11,7 @@
         <file>gui/SettingsScreen.qml</file>
         <file>gui/StreamSegue.qml</file>
         <file>gui/AmbientBackground.qml</file>
+        <file>gui/Spinner.qml</file>
         <file>gui/CoverAmbient.qml</file>
         <file>gui/UnlockPad.qml</file>
         <file>gui/WakeDialog.qml</file>
