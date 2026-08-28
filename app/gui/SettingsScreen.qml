@@ -4750,26 +4750,46 @@ FocusScope {
                             // anchor inside a Row whose own height comes from its tallest
                             // child is the kind of arrangement that produces a binding loop
                             // warning; a spacer entry is declarative and cannot.
+                            //
+                            // Read left to right, the columns go from the reason StreamTweak
+                            // exists to what it merely adds to the picture: the link speed,
+                            // then the things you can do to the host from here, then what
+                            // turns up on screen once it is installed.
+                            //
+                            // ⚠️ Every line has to fit on ONE line. A wrap adds 17 px to one
+                            // column only, which unbalances the row and makes the spacer below
+                            // wrong. Measured: nothing here wraps down to a text width of
+                            // 380 px, which is a narrower window than the app can be resized to.
                             model: [
                                 [ { group: qsTr("Network") },
-                                  { name: qsTr("Host link speed follows this device") },
-                                  { name: qsTr("Speed put back when you are done") },
-                                  { name: qsTr("Host link speed on its card") },
+                                  { name: qsTr("Host link speed matched to this device") },
+                                  { name: qsTr("Speed put back when you stop streaming") },
+                                  { name: qsTr("Host link speed shown on its card") },
                                   { group: qsTr("Launch") },
                                   { name: qsTr("Wait until the game is on screen") } ],
 
-                                [ { gap: 30 },
+                                // ⚠️ The spacer centres this column against the two beside it,
+                                // and 21 is not a round number by accident: the outer columns
+                                // are 166 px and this one is 117 without the spacer, so the
+                                // boxes would centre at 24.5 — but the group label is anchored
+                                // to the BOTTOM of its box, so 10 of its 30 px are blank space
+                                // above the word. What the eye balances is the text, and that
+                                // lands at 21. Recompute it if the entries below change:
+                                // gap = (rowHeight − blockHeight) / 2 − (30 − 3 − labelHeight),
+                                // with blockHeight measured from the top of the group label to
+                                // the bottom of the last line.
+                                [ { gap: 21 },
                                   { group: qsTr("Remote") },
                                   { name: qsTr("Power the host off") },
                                   { name: qsTr("Windows Update: check, install, restart") },
-                                  { name: qsTr("Type your PIN after waking it") } ],
+                                  { name: qsTr("Unlock with your PIN after waking it") } ],
 
-                                [ { group: qsTr("Card & overlay") },
-                                  { name: qsTr("What last session looked like") },
-                                  { name: qsTr("Store badges on the cover art") },
-                                  { name: qsTr("GPU, encoder, temperature, VRAM, CPU, network") },
+                                [ { group: qsTr("On screen") },
+                                  { name: qsTr("Host GPU, CPU and network in the overlay") },
+                                  { name: qsTr("How your last session went, on its card") },
+                                  { name: qsTr("Which store each game comes from") },
                                   { group: qsTr("History") },
-                                  { name: qsTr("Sessions recorded and charted in StreamTweak") } ]
+                                  { name: qsTr("Sessions graded and charted in StreamTweak") } ]
                             ]
 
                             delegate: Column {
@@ -4807,7 +4827,12 @@ FocusScope {
                                         }
 
                                         Row {
-                                            visible: modelData.group === undefined
+                                            // Only an entry that has something to say gets a
+                                            // bullet. The test is on `name` rather than on the
+                                            // absence of `group`, because the spacer above has
+                                            // neither: the negative test let it through and
+                                            // drew it an arrow with no text next to it.
+                                            visible: modelData.name !== undefined
                                             anchors.left: parent.left
                                             anchors.right: parent.right
                                             anchors.verticalCenter: parent.verticalCenter
