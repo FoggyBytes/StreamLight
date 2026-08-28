@@ -1153,6 +1153,11 @@ QVariantMap ComputerModel::hostProfileSettings(int computerIndex, int slot) cons
     return appOverrideToMap(HostProfileManager::get()->settings(m_Computers[computerIndex]->uuid, slot));
 }
 
+QVariantMap ComputerModel::globalLabels() const
+{
+    return inheritedValueLabels(StreamingPreferences::get());
+}
+
 void ComputerModel::setHostProfileSettings(int computerIndex, int slot, const QVariantMap& ov)
 {
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;

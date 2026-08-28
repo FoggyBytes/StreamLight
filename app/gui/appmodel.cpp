@@ -107,6 +107,20 @@ QVariantMap AppModel::getAppOverride(int appIndex)
         AppSettingsManager::get()->getOverride(m_Computer->uuid, m_VisibleApps.at(appIndex).id));
 }
 
+QVariantMap AppModel::inheritedLabels() const
+{
+    if (m_Computer == nullptr) {
+        return QVariantMap();
+    }
+
+    // Same two steps buildPrefs() takes, minus the third: global, then the host's active
+    // profile. Reusing buildPrefs() itself would fold the game's own overrides in and the
+    // dialog would end up quoting the user their own answer back as what they inherit.
+    QScopedPointer<StreamingPreferences> p(StreamingPreferences::get()->clone());
+    applyAppOverride(p.data(), HostProfileManager::get()->activeOverride(m_Computer->uuid));
+    return inheritedValueLabels(p.data());
+}
+
 void AppModel::setAppOverride(int appIndex, const QVariantMap& src)
 {
     if (appIndex < 0 || appIndex >= m_VisibleApps.count()) {

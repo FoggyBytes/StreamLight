@@ -58,6 +58,12 @@ public:
     Q_INVOKABLE bool appHasOverride(int appIndex);
     Q_INVOKABLE void clearAppOverride(int appIndex);
 
+    // What a per-game row set to "inherit" will actually run at: the global settings with
+    // this host's active profile applied on top — one level down, not the full cascade,
+    // because the level above is the dialog the user is looking at. Values are formatted
+    // for display; see inheritedValueLabels() in settings/appsettings.h.
+    Q_INVOKABLE QVariantMap inheritedLabels() const;
+
     QVariant data(const QModelIndex &index, int role) const override;
 
     int rowCount(const QModelIndex &parent) const override;

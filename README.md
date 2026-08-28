@@ -76,6 +76,17 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 
+## ✨ What's New in 5.3.0 — One Scale
+
+The interface is drawn at one scale from end to end, and the settings you override per host or per game now say what they inherit. Client-side, works with any host.
+
+- **Every override says what it inherits.** The first option in the per-game and host profile panels carries the value it stands for — *Global · 1080p* instead of *Global* — so choosing it no longer means leaving for *Settings* to find out what it meant. Where a host profile is active, the per-game panel names that profile and the value it hands down
+- **And the row stops offering that value twice.** With *Global* at 1080p the resolution row reads *Global · 1080p | 720p | 1440p | 4K*: the option that would only repeat the inherited answer is gone, and comes back as soon as it stops being a repetition. A value you pinned yourself is never hidden
+- **One scale, everywhere.** *Settings* was written in fixed pixels while the host page and every dialog already grew with the window, so on a large screen the same row came out one size there and another in a dialog opened on top of it. The segmented pickers and the pill buttons follow now too — they were the last controls left at a fixed size
+- **The per-game and host profile panels are wider**, using the space they were leaving empty at both sides rather than getting taller
+- **The cover no longer comes back deformed from a stream.** The drop shadow's automatic padding was resizing the effect under the artwork; the shadow is now cast by a separate silhouette and the picture never passes through a padded pass. Reported in [issue #10](https://github.com/FoggyBytes/StreamLight/issues/10)
+- **The version in the corner is read from the app itself** — it had been typed by hand at every release, and 5.2.1 shipped saying 5.2.0
+
 ## ✨ What's New in 5.2.1 — One To One
 
 The refresh rate match is back, as an addition on top of Moonlight's presentation code rather than a change to it. Client-side, works with any host, and with the switch off nothing behaves differently from 5.2.0.

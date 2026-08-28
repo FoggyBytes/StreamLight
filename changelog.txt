@@ -4,6 +4,28 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+--------------------------------------
+Version 5.3.0 - One Scale (29/08/2026)
+--------------------------------------
+
+No StreamTweak update required — everything in 5.3.0 is client-side and works with any host. The interface is drawn at one scale from end to end, and the settings you override per host or per game now say what they inherit instead of only saying "Global".
+
+✨ NEW FEATURES:
+• Every override says what it inherits — the first option in the per-game and host profile panels carries the value it stands for, "Global · 1080p" instead of "Global", so choosing it no longer means leaving for Settings to find out what it meant. Where a host profile is active, the per-game panel names that profile and the value it hands down
+• And the row stops offering that same value twice — with Global at 1080p the resolution row reads "Global · 1080p | 720p | 1440p | 4K". The option returns as soon as it stops being a repetition, and a value you had already pinned yourself is never hidden
+
+🎨 UI:
+• The whole interface is drawn at one scale — Settings was written in fixed pixels while the host page and every dialog already grew with the window, so on a large screen the same row came out one size there and another in a dialog opened on top of it
+• The segmented pickers and the pill buttons grow with it, the last controls left at a fixed size — on a 1920 handheld that was a 36 px control sitting in a 75 px row
+• The per-game and host profile panels are wider, using the space they were leaving empty at both sides rather than getting taller
+
+🐛 FIXES:
+• The game's cover on the host page no longer comes back deformed from a stream — the drop shadow's automatic padding was resizing the effect under the artwork, which the attempts in 5.1.2 and 5.2.0 had each caught a piece of. The shadow is now cast by a separate silhouette behind the picture, and the reload that had been repairing the symptom is gone
+• The version shown in the corner is read from the app itself — it was a number typed by hand at every release, and 5.2.1 shipped saying 5.2.0
+
+🙏 THANKS:
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/10) for the cover report, and for catching the wrong version number in the same breath
+
 ---------------------------------------
 Version 5.2.1 - One To One (28/08/2026)
 ---------------------------------------

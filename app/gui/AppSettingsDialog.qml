@@ -56,18 +56,68 @@ Popup {
     // Label for the index-0 "inherit" option: the active profile's name, or "Global".
     readonly property string _inheritLabel: activeProfileName.length > 0 ? activeProfileName : qsTr("Global")
 
-    // value tables (index 0 == inherit placeholder, labelled by _inheritLabel)
-    readonly property var _resLabels: [_inheritLabel, "720p", "1080p", "1440p", "4K"]
+    /*
+     * What the level below actually holds, keyed the way the override map is:
+     * {"resolution": "1080p", "fps": "60", …}. Filled on open from
+     * AppModel::inheritedLabels(), which is the global settings with this host's active
+     * profile on top.
+     *
+     * ⚠️ Without this the inherit option was a word and nothing else. Choosing it told the
+     * user their game would follow "Global" — and the only way to learn what Global was
+     * came to leaving the dialog, opening Settings, reading the value and coming back.
+     * The same is true of a profile name, and worse, because a profile is a partial set:
+     * "Docked" says nothing at all about the frame rate it does not override.
+     */
+    property var _inheritedValues: ({})
+
+    // "Global · 1080p", or plain "Global" for a row whose value we could not resolve —
+    // never a dangling separator.
+    function _inheritText(key) {
+        var v = _inheritedValues[key]
+        return (v === undefined || v === "") ? _inheritLabel : _inheritLabel + " · " + v
+    }
+
+    /*
+     * The option that would repeat what the inherit pill already says, hidden so the strip
+     * never offers the same answer twice: with Global at 1080p the row reads
+     * "Global · 1080p | 720p | 1440p | 4K".
+     *
+     * The comparison is against the printed label on purpose. inheritedValueLabels() spells
+     * its values in the same vocabulary these tables use — "1080p", "60", "HEVC", "Stereo" —
+     * so a value with no matching option simply hides nothing: a custom inherited resolution,
+     * or a codec inherited as Auto, which is not one of the choices here.
+     *
+     * ⚠️ Never hides the option that is currently selected. An override can legitimately hold
+     * the same value the level below happens to hold — the user pinned it, and the two agreeing
+     * today says nothing about tomorrow. Hiding it there would leave the row unable to show its
+     * own state, and loadFromModel() would find no index for a stored value and silently fall
+     * back to inherit, throwing the override away.
+     */
+    function _dupIndices(labels, key, current) {
+        var v = _inheritedValues[key]
+        if (v === undefined || v === "") return []
+        for (var i = 1; i < labels.length; i++)
+            if (labels[i] === v && i !== current) return [i]
+        return []
+    }
+
+    // value tables (index 0 == inherit placeholder, labelled by _inheritText)
+    readonly property var _resLabels: [_inheritText("resolution"), "720p", "1080p", "1440p", "4K"]
     readonly property var _resW:      [0, 1280, 1920, 2560, 3840]
     readonly property var _resH:      [0, 720, 1080, 1440, 2160]
-    readonly property var _fpsLabels: [_inheritLabel, "30", "60", "90", "120"]
+    readonly property var _fpsLabels: [_inheritText("fps"), "30", "60", "90", "120"]
     readonly property var _fpsVals:   [0, 30, 60, 90, 120]
-    readonly property var _hdrLabels: [_inheritLabel, "On", "Off"]
-    readonly property var _codecLabels: [_inheritLabel, "H.264", "HEVC", "AV1"]
+    readonly property var _hdrLabels: [_inheritText("hdr"), "On", "Off"]
+    // ⚠️ The wait-for-game and Hue rows used to borrow _hdrLabels, since all three are
+    // On/Off. They cannot any more: the tables now carry a value, and HDR's is not the
+    // one those two inherit. Three identical-looking rows, three different answers.
+    readonly property var _waitLabels: [_inheritText("waitgame"), "On", "Off"]
+    readonly property var _hueLabels:  [_inheritText("hue"), "On", "Off"]
+    readonly property var _codecLabels: [_inheritText("codec"), "H.264", "HEVC", "AV1"]
     readonly property var _codecVals:   [-1, 1, 2, 4]   // VCC_FORCE_H264/HEVC/AV1
-    readonly property var _fpLabels:  [_inheritLabel, "Off", "On"]
+    readonly property var _fpLabels:  [_inheritText("framepacing"), "Off", "On"]
     readonly property var _fpVals:    [-1, 0, 1]  // FP_OFF / FP_ON
-    readonly property var _audLabels: [_inheritLabel, "Stereo", "5.1", "7.1"]
+    readonly property var _audLabels: [_inheritText("audio"), "Stereo", "5.1", "7.1"]
     readonly property var _audVals:   [-1, 0, 1, 2]     // AC_STEREO/51/71
 
     // Bitrate override state (kbps)
@@ -81,7 +131,24 @@ Popup {
     focus: true                       // grab keyboard/gamepad focus when shown
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     anchors.centerIn: Overlay.overlay
-    width: dlg._px(780)
+    /*
+     * 780 until 5.3.0, when the inherit pill started carrying its value. _px is proportional
+     * (uiScale is width/1330), so this is 72% of the window rather than a fixed size — it does
+     * not creep towards full screen on a large one.
+     *
+     * The number came from measuring the widest row — Resolution, its pill strip plus the
+     * Custom button, with a 14-character profile name and a custom resolution inside the first
+     * pill: 574 px of controls at scale 1.0, against the 723 px the whole row then needs. 780
+     * left 27 px of slack; 960 leaves about 237.
+     *
+     * ⚠️ That slack used to vary with the window, because the pill strip was drawn at a fixed
+     * size while this width scaled — so the tightest case was the SMALLEST window, which is
+     * not where anyone looks for a layout problem. Since SegmentedSelector took the scale too,
+     * both sides grow by the same factor and the proportion is the same everywhere. Widening
+     * this further is no longer a fix for anything; if a row overflows, it overflows at every
+     * size and the row is what to look at.
+     */
+    width: dlg._px(960)
     padding: dlg._px(0)
 
     Overlay.modal: Rectangle { color: "#cc000000" }
@@ -103,6 +170,9 @@ Popup {
 
     function loadFromModel() {
         if (!appModel || appIndex < 0) return
+        // Read once per opening, not per row: the level below cannot change while this
+        // dialog is up, and every label table binds to it.
+        _inheritedValues = appModel.inheritedLabels()
         var ov = appModel.getAppOverride(appIndex)
         // Resolution is tri-state: inherit (0) / preset (>0) / custom (-1 + _customRes*).
         _customResW = 0; _customResH = 0
@@ -320,6 +390,7 @@ Popup {
                         spacing: dlg._px(12)
                         SegmentedSelector {
                             id: resSel; labels: dlg._resLabels
+                            hiddenIndices: dlg._dupIndices(dlg._resLabels, "resolution", currentIndex)
                             KeyNavigation.up: doneBtn
                             KeyNavigation.down: resCustomBtn
                             KeyNavigation.right: resCustomBtn
@@ -347,6 +418,7 @@ Popup {
                     label: qsTr("Frame rate")
                     SegmentedSelector {
                         id: fpsSel; labels: dlg._fpsLabels
+                        hiddenIndices: dlg._dupIndices(dlg._fpsLabels, "fps", currentIndex)
                         KeyNavigation.up: resCustomBtn
                         KeyNavigation.down: bitrateGlobalBtn
                         onActivated: dlg.saveToModel()
@@ -370,51 +442,27 @@ Popup {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: dlg._px(16)
 
-                        // Global pill — built to match a single SegmentedSelector
-                        // pill exactly (same container, pill geometry and sizes).
-                        FocusScope {
+                        /*
+                         * The inherit pill for bitrate. It used to be forty lines rebuilding
+                         * PillButton by hand "to match a single SegmentedSelector pill exactly"
+                         * — and it had already stopped matching: it wrote `implicitHeight:
+                         * _px(36)` and then `height: 36` on the next line, throwing the scaled
+                         * value away, while `anchors.margins: 2` and the container's 8 were
+                         * never scaled at all. A copy made to guarantee a match is the thing
+                         * that guarantees the drift.
+                         *
+                         * PillButton is that pill, and now carries the scale itself. It also
+                         * brings the hover wash and the focus rule the copy never had: the ring
+                         * appears for the pad and the keyboard, not for a mouse that merely
+                         * clicked it.
+                         */
+                        PillButton {
                             id: bitrateGlobalBtn
-                            activeFocusOnTab: true
                             anchors.verticalCenter: parent.verticalCenter
-                            property bool selected: !dlg._bitrateOverridden
-                            implicitHeight: dlg._px(36)
-                            implicitWidth: gPill.implicitWidth + 8
-                            width: implicitWidth; height: 36
-
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: dlg._px(8)
-                                color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-                                border.color: bitrateGlobalBtn.activeFocus ? dlg._accent : Theme.line
-                                border.width: bitrateGlobalBtn.activeFocus ? 3 : 1
-                            }
-                            Item {
-                                id: gPill
-                                anchors.centerIn: parent
-                                implicitWidth: gLabel.implicitWidth + dlg._px(28)
-                                implicitHeight: dlg._px(30)
-                                width: implicitWidth; height: 30
-                                Rectangle {
-                                    anchors.fill: parent; anchors.margins: 2; radius: dlg._px(5)
-                                    color: bitrateGlobalBtn.selected ? dlg._accent : "transparent"
-                                }
-                                Label {
-                                    id: gLabel
-                                    anchors.centerIn: parent
-                                    text: dlg._inheritLabel
-                                    color: bitrateGlobalBtn.selected ? Theme.onAccent : Theme.text2
-                                    font.family: "DM Sans"; font.pixelSize: dlg._px(13)
-                                    font.bold: bitrateGlobalBtn.selected
-                                }
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: { bitrateGlobalBtn.forceActiveFocus(); dlg.setBitrateGlobal() }
-                            }
-                            Keys.onReturnPressed: dlg.setBitrateGlobal()
-                            Keys.onEnterPressed:  dlg.setBitrateGlobal()
-                            Keys.onSpacePressed:  dlg.setBitrateGlobal()
+                            selected: !dlg._bitrateOverridden
+                            // Bare number, no unit: the row is labelled "Bitrate (Mbps)".
+                            text: dlg._inheritText("bitrate")
+                            onClicked: dlg.setBitrateGlobal()
                             KeyNavigation.up: fpsSel
                             KeyNavigation.down: bitrateSlider
                             KeyNavigation.right: bitrateSlider
@@ -514,6 +562,7 @@ Popup {
                     label: qsTr("HDR")
                     SegmentedSelector {
                         id: hdrSel; labels: dlg._hdrLabels
+                        hiddenIndices: dlg._dupIndices(dlg._hdrLabels, "hdr", currentIndex)
                         KeyNavigation.up: bitrateSlider
                         KeyNavigation.down: codecSel
                         onActivated: dlg.saveToModel()
@@ -523,6 +572,7 @@ Popup {
                     label: qsTr("Video codec")
                     SegmentedSelector {
                         id: codecSel; labels: dlg._codecLabels
+                        hiddenIndices: dlg._dupIndices(dlg._codecLabels, "codec", currentIndex)
                         KeyNavigation.up: hdrSel
                         KeyNavigation.down: fpSel
                         onActivated: dlg.saveToModel()
@@ -543,6 +593,7 @@ Popup {
                     detail: enabled ? "" : qsTr("Needs V-Sync, which is off for this host.")
                     SegmentedSelector {
                         id: fpSel; labels: dlg._fpLabels
+                        hiddenIndices: dlg._dupIndices(dlg._fpLabels, "framepacing", currentIndex)
                         KeyNavigation.up: codecSel
                         KeyNavigation.down: audSel
                         onActivated: dlg.saveToModel()
@@ -558,6 +609,7 @@ Popup {
                     label: qsTr("Audio")
                     SegmentedSelector {
                         id: audSel; labels: dlg._audLabels
+                        hiddenIndices: dlg._dupIndices(dlg._audLabels, "audio", currentIndex)
                         KeyNavigation.up: fpSel
                         KeyNavigation.down: waitGameSel
                         onActivated: dlg.saveToModel()
@@ -570,7 +622,8 @@ Popup {
                 SettingRow {
                     label: qsTr("Wait for the game to appear")
                     SegmentedSelector {
-                        id: waitGameSel; labels: dlg._hdrLabels
+                        id: waitGameSel; labels: dlg._waitLabels
+                        hiddenIndices: dlg._dupIndices(dlg._waitLabels, "waitgame", currentIndex)
                         KeyNavigation.up: audSel
                         KeyNavigation.down: hueSel
                         onActivated: dlg.saveToModel()
@@ -581,7 +634,8 @@ Popup {
                 SettingRow {
                     label: qsTr("Philips Hue")
                     SegmentedSelector {
-                        id: hueSel; labels: dlg._hdrLabels
+                        id: hueSel; labels: dlg._hueLabels
+                        hiddenIndices: dlg._dupIndices(dlg._hueLabels, "hue", currentIndex)
                         KeyNavigation.up: waitGameSel
                         KeyNavigation.down: doneBtn
                         onActivated: dlg.saveToModel()

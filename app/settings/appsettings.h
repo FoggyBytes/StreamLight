@@ -69,6 +69,20 @@ void applyAppOverride(StreamingPreferences* p, const AppOverride& ov);
 QVariantMap appOverrideToMap(const AppOverride& ov);
 AppOverride appOverrideFromMap(const QVariantMap& m);
 
+/**
+ * What "inherit" actually resolves to, one entry per override row, already formatted
+ * for display: {"resolution": "1080p", "fps": "60", "bitrate": "40", "hdr": "Off", …}.
+ * Keys are the same ones appOverrideFromMap() reads, so a row and its inherited value
+ * are looked up by the same string.
+ *
+ * ⚠️ Formatted here rather than in QML on purpose. The two override editors — the
+ * per-game dialog and the host-profiles dialog — already keep mirrored copies of the
+ * label tables, and a third and fourth copy of "how a codec enum is spelled" is exactly
+ * how one of them ends up a release behind (it has happened: see the note on
+ * AppModel::getAppOverride). The wording lives next to the enums it describes.
+ */
+QVariantMap inheritedValueLabels(const StreamingPreferences* p);
+
 class AppSettingsManager
 {
 public:

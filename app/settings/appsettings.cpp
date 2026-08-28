@@ -1,5 +1,6 @@
 #include "appsettings.h"
 
+#include <QCoreApplication>
 #include <QSettings>
 #include <QVector>
 #include <algorithm>
@@ -88,6 +89,74 @@ AppOverride appOverrideFromMap(const QVariantMap& m)
     if (m.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = m.value("displaymode").toInt(); }
     if (m.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = m.value("vsync").toBool(); }
     return ov;
+}
+
+QVariantMap inheritedValueLabels(const StreamingPreferences* p)
+{
+    QVariantMap m;
+    if (p == nullptr) {
+        return m;
+    }
+
+    // Resolution reads back as the preset name when it is one, because that is what the
+    // pill next to it says. Anything else — a custom resolution, or a preset we do not
+    // offer — is printed as itself rather than rounded to the nearest label.
+    QString res;
+    if      (p->width == 1280 && p->height == 720)  res = QStringLiteral("720p");
+    else if (p->width == 1920 && p->height == 1080) res = QStringLiteral("1080p");
+    else if (p->width == 2560 && p->height == 1440) res = QStringLiteral("1440p");
+    else if (p->width == 3840 && p->height == 2160) res = QStringLiteral("4K");
+    else res = QString::number(p->width) + QChar(0x00D7) + QString::number(p->height);
+    m.insert(QStringLiteral("resolution"), res);
+
+    m.insert(QStringLiteral("fps"), QString::number(p->fps));
+
+    // Bare number: the row it sits on is already labelled "Bitrate (Mbps)", and the unit
+    // repeated inside the pill is the widest thing on the widest row for no information.
+    m.insert(QStringLiteral("bitrate"), QString::number(qRound(p->bitrateKbps / 1000.0)));
+
+    const QString on  = QCoreApplication::translate("AppSettings", "On");
+    const QString off = QCoreApplication::translate("AppSettings", "Off");
+
+    m.insert(QStringLiteral("hdr"),          p->enableHdr ? on : off);
+    m.insert(QStringLiteral("hue"),          p->hueSyncIntegration ? on : off);
+    m.insert(QStringLiteral("matchlink"),    p->matchHostLinkSpeed ? on : off);
+    m.insert(QStringLiteral("waitgame"),     p->waitForGameOnScreen ? on : off);
+    m.insert(QStringLiteral("matchrefresh"), p->matchRefreshRate ? on : off);
+    m.insert(QStringLiteral("vsync"),        p->enableVsync ? on : off);
+    m.insert(QStringLiteral("framepacing"),
+             p->framePacingMode == StreamingPreferences::FP_ON ? on : off);
+
+    QString codec;
+    switch (p->videoCodecConfig) {
+    case StreamingPreferences::VCC_FORCE_H264: codec = QStringLiteral("H.264"); break;
+    case StreamingPreferences::VCC_FORCE_HEVC: codec = QStringLiteral("HEVC");  break;
+    case StreamingPreferences::VCC_FORCE_AV1:  codec = QStringLiteral("AV1");   break;
+    // VCC_AUTO, and the deprecated forced-HEVC-HDR value that old settings can still hold.
+    default: codec = QCoreApplication::translate("AppSettings", "Auto"); break;
+    }
+    m.insert(QStringLiteral("codec"), codec);
+
+    QString audio;
+    switch (p->audioConfig) {
+    case StreamingPreferences::AC_51_SURROUND: audio = QStringLiteral("5.1"); break;
+    case StreamingPreferences::AC_71_SURROUND: audio = QStringLiteral("7.1"); break;
+    default: audio = QCoreApplication::translate("AppSettings", "Stereo"); break;
+    }
+    m.insert(QStringLiteral("audio"), audio);
+
+    QString dm;
+    switch (p->windowMode) {
+    case StreamingPreferences::WM_FULLSCREEN_DESKTOP:
+        dm = QCoreApplication::translate("AppSettings", "Borderless"); break;
+    case StreamingPreferences::WM_WINDOWED:
+        dm = QCoreApplication::translate("AppSettings", "Windowed"); break;
+    default:
+        dm = QCoreApplication::translate("AppSettings", "Fullscreen"); break;
+    }
+    m.insert(QStringLiteral("displaymode"), dm);
+
+    return m;
 }
 
 void applyAppOverride(StreamingPreferences* p, const AppOverride& ov)

@@ -3,6 +3,7 @@ import QtQuick 2.9
 import QtQuick.Controls 2.2
 
 import SdlGamepadKeyNavigation 1.0
+import SystemProperties 1.0
 
 // AppShell — two-panel shell (sidebar + content area).
 // Pushed as the initial StackView item by main.qml.
@@ -39,7 +40,12 @@ FocusScope {
     readonly property color _bg2:      "#1a1a1a"
     readonly property color _text:     "#f0f0f0"
     readonly property color _textDim:  "#a0a0a0"
-    readonly property string _version: "5.2.0"
+    // ⚠️ Read from the binary, never written here. This was a literal from 4.3.0 to
+    // 5.2.0 and was bumped by hand at every release — until 5.2.1, where the bump was
+    // missed and the app spent a release telling users it was the previous version.
+    // SystemProperties.versionString is VERSION_STR, which qmake takes from
+    // app/version.txt, so the label and the installer can no longer disagree.
+    readonly property string _version: SystemProperties.versionString
     readonly property string _mono:    "DM Sans"
 
     // 0 = Home, 1 = Apps, 2 = Settings

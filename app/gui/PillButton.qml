@@ -19,11 +19,16 @@ FocusScope {
     readonly property color _bgPill: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
                                                                  Theme.accent.b, 0.07))
 
+    // Same scale, read the same way, as SegmentedSelector — read the note there. These two
+    // are meant to be indistinguishable, so they cannot take it from different places.
+    readonly property real _u: Theme.uiScale
+    function _px(n) { return Math.round(n * _u) }
+
     activeFocusOnTab: true
-    implicitHeight: 36
-    implicitWidth: pill.implicitWidth + 8
+    implicitHeight: btn._px(36)
+    implicitWidth: pill.implicitWidth + btn._px(8)
     width: implicitWidth
-    height: 36
+    height: implicitHeight
 
     // Bordered control, so hover goes on the border — see HoverState. The inner pill is the
     // selected state, not a hover surface.
@@ -31,7 +36,7 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        radius: 8
+        radius: btn._px(8)
         color: btn._bgPill
         border.color: hov.keyFocused ? btn._accent
                     : hov.active     ? Theme.lineHigh
@@ -47,12 +52,12 @@ FocusScope {
     Item {
         id: pill
         anchors.centerIn: parent
-        implicitWidth: lbl.implicitWidth + 28
-        implicitHeight: 30
-        width: implicitWidth; height: 30
+        implicitWidth: lbl.implicitWidth + btn._px(28)
+        implicitHeight: btn._px(30)
+        width: implicitWidth; height: implicitHeight
 
         Rectangle {
-            anchors.fill: parent; anchors.margins: 2; radius: 5
+            anchors.fill: parent; anchors.margins: btn._px(2); radius: btn._px(5)
             color: btn.selected ? btn._accent : "transparent"
         }
         Label {
@@ -60,7 +65,7 @@ FocusScope {
             anchors.centerIn: parent
             text: btn.text
             color: btn.selected ? Theme.onAccent : Theme.text2
-            font.family: Theme.family; font.pixelSize: 13
+            font.family: Theme.family; font.pixelSize: btn._px(13)
             font.bold: btn.selected
         }
     }

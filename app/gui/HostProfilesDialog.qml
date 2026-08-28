@@ -63,20 +63,56 @@ Popup {
     // True when a profile is selected for editing (not OFF and at least one exists).
     readonly property bool _editing: profileCount > 0 && editingSlot >= 0
 
+    /*
+     * What "Global" holds, per row, keyed the way the override map is. Filled on open
+     * from ComputerModel::globalLabels(). See the longer note in AppSettingsDialog: a
+     * profile that says it follows Global, without saying what Global is, sends the user
+     * out to Settings to find out and back again.
+     *
+     * A profile sits directly on the global settings, so there is no middle level here —
+     * this is the global value and nothing else.
+     */
+    property var _globalValues: ({})
+
+    function _globalText(key) {
+        var v = _globalValues[key]
+        return (v === undefined || v === "") ? qsTr("Global") : qsTr("Global") + " · " + v
+    }
+
+    // The option that would repeat what the Global pill already says — hidden, so the strip
+    // never offers the same answer twice. Read the long note on the twin of this function in
+    // AppSettingsDialog: same rule, including the one case it must not hide.
+    function _dupIndices(labels, key, current) {
+        var v = _globalValues[key]
+        if (v === undefined || v === "") return []
+        for (var i = 1; i < labels.length; i++)
+            if (labels[i] === v && i !== current) return [i]
+        return []
+    }
+
     // value tables (index 0 == Global placeholder) — mirror AppSettingsDialog
-    readonly property var _resLabels: ["Global", "720p", "1080p", "1440p", "4K"]
+    //
+    // ⚠️ One table per row, even where two rows offer the same three words. Six of these
+    // used to share _hdrLabels because they were all "Global / On / Off"; now that index 0
+    // carries a value, sharing would print HDR's answer on the V-Sync row.
+    readonly property var _resLabels: [_globalText("resolution"), "720p", "1080p", "1440p", "4K"]
     readonly property var _resW:      [0, 1280, 1920, 2560, 3840]
     readonly property var _resH:      [0, 720, 1080, 1440, 2160]
-    readonly property var _fpsLabels: ["Global", "30", "60", "90", "120"]
+    readonly property var _fpsLabels: [_globalText("fps"), "30", "60", "90", "120"]
     readonly property var _fpsVals:   [0, 30, 60, 90, 120]
-    readonly property var _hdrLabels: ["Global", "On", "Off"]
-    readonly property var _codecLabels: ["Global", "H.264", "HEVC", "AV1"]
+    readonly property var _hdrLabels: [_globalText("hdr"), "On", "Off"]
+    readonly property var _matchRrLabels: [_globalText("matchrefresh"), "On", "Off"]
+    readonly property var _vsyncLabels:   [_globalText("vsync"), "On", "Off"]
+    readonly property var _linkLabels:    [_globalText("matchlink"), "On", "Off"]
+    readonly property var _waitLabels:    [_globalText("waitgame"), "On", "Off"]
+    readonly property var _hueLabels:     [_globalText("hue"), "On", "Off"]
+    readonly property var _codecLabels: [_globalText("codec"), "H.264", "HEVC", "AV1"]
     readonly property var _codecVals:   [-1, 1, 2, 4]
-    readonly property var _fpLabels:  ["Global", "Off", "On"]
+    readonly property var _fpLabels:  [_globalText("framepacing"), "Off", "On"]
     readonly property var _fpVals:    [-1, 0, 1]
-    readonly property var _audLabels: ["Global", "Stereo", "5.1", "7.1"]
+    readonly property var _audLabels: [_globalText("audio"), "Stereo", "5.1", "7.1"]
     readonly property var _audVals:   [-1, 0, 1, 2]
-    readonly property var _dmLabels:  ["Global", "Fullscreen", "Borderless", "Windowed"]
+    readonly property var _dmLabels:  [_globalText("displaymode"), "Fullscreen", "Borderless", "Windowed"]
     readonly property var _dmVals:    [-1, 0, 1, 2]   // WM_FULLSCREEN / _DESKTOP / WINDOWED
 
     // Effective values of the two settings other rows depend on: this profile's own
@@ -101,7 +137,10 @@ Popup {
     focus: true                       // grab keyboard/gamepad focus when shown
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     anchors.centerIn: Overlay.overlay
-    width: dlg._px(780)
+    // Same widening, and the same measurement, as AppSettingsDialog — read the note there.
+    // This dialog's own worst row is Display mode, four pills with "Global · Borderless"
+    // in the first: 425 px of controls against the per-game dialog's 574.
+    width: dlg._px(960)
     padding: dlg._px(0)
 
     Overlay.modal: Rectangle { color: "#cc000000" }
@@ -114,6 +153,9 @@ Popup {
     }
 
     onOpened: {
+        // Read once per opening, not per row: Settings cannot be reached from here, so
+        // the global values cannot change while this dialog is up.
+        if (computerModel) _globalValues = computerModel.globalLabels()
         if (_editing)          profileTabs.forceActiveFocus()
         else if (_hasProfiles) offBtn.forceActiveFocus()
         else                   addBtn.forceActiveFocus()
@@ -689,6 +731,7 @@ Popup {
                         spacing: dlg._px(12)
                         SegmentedSelector {
                             id: resSel; labels: dlg._resLabels
+                            hiddenIndices: dlg._dupIndices(dlg._resLabels, "resolution", currentIndex)
                             KeyNavigation.up: nameField
                             KeyNavigation.down: resCustomBtn
                             KeyNavigation.right: resCustomBtn
@@ -716,6 +759,7 @@ Popup {
                     label: qsTr("Frame rate")
                     SegmentedSelector {
                         id: fpsSel; labels: dlg._fpsLabels
+                        hiddenIndices: dlg._dupIndices(dlg._fpsLabels, "fps", currentIndex)
                         KeyNavigation.up: resCustomBtn
                         KeyNavigation.down: bitrateGlobalBtn
                         onActivated: dlg.saveOverride()
@@ -739,51 +783,15 @@ Popup {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: dlg._px(16)
 
-                        // Global pill — built to match a single SegmentedSelector
-                        // pill exactly (same container, pill geometry and sizes).
-                        FocusScope {
+                        // The twin of the one in AppSettingsDialog — read the note there for
+                        // why forty lines of hand-built pill became this.
+                        PillButton {
                             id: bitrateGlobalBtn
-                            activeFocusOnTab: true
                             anchors.verticalCenter: parent.verticalCenter
-                            property bool selected: !dlg._bitrateOverridden
-                            implicitHeight: dlg._px(36)
-                            implicitWidth: gPill.implicitWidth + 8
-                            width: implicitWidth; height: 36
-
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: dlg._px(8)
-                                color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-                                border.color: bitrateGlobalBtn.activeFocus ? dlg._accent : Theme.line
-                                border.width: bitrateGlobalBtn.activeFocus ? 3 : 1
-                            }
-                            Item {
-                                id: gPill
-                                anchors.centerIn: parent
-                                implicitWidth: gLabel.implicitWidth + dlg._px(28)
-                                implicitHeight: dlg._px(30)
-                                width: implicitWidth; height: 30
-                                Rectangle {
-                                    anchors.fill: parent; anchors.margins: 2; radius: dlg._px(5)
-                                    color: bitrateGlobalBtn.selected ? dlg._accent : "transparent"
-                                }
-                                Label {
-                                    id: gLabel
-                                    anchors.centerIn: parent
-                                    text: qsTr("Global")
-                                    color: bitrateGlobalBtn.selected ? Theme.onAccent : Theme.text2
-                                    font.family: "DM Sans"; font.pixelSize: dlg._px(13)
-                                    font.bold: bitrateGlobalBtn.selected
-                                }
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: { bitrateGlobalBtn.forceActiveFocus(); dlg.setBitrateGlobal() }
-                            }
-                            Keys.onReturnPressed: dlg.setBitrateGlobal()
-                            Keys.onEnterPressed:  dlg.setBitrateGlobal()
-                            Keys.onSpacePressed:  dlg.setBitrateGlobal()
+                            selected: !dlg._bitrateOverridden
+                            // Bare number, no unit: the row is labelled "Bitrate (Mbps)".
+                            text: dlg._globalText("bitrate")
+                            onClicked: dlg.setBitrateGlobal()
                             KeyNavigation.up: fpsSel
                             KeyNavigation.down: bitrateSlider
                             KeyNavigation.right: bitrateSlider
@@ -881,6 +889,7 @@ Popup {
                     label: qsTr("HDR")
                     SegmentedSelector {
                         id: hdrSel; labels: dlg._hdrLabels
+                        hiddenIndices: dlg._dupIndices(dlg._hdrLabels, "hdr", currentIndex)
                         KeyNavigation.up: bitrateSlider
                         KeyNavigation.down: codecSel
                         onActivated: dlg.saveOverride()
@@ -890,6 +899,7 @@ Popup {
                     label: qsTr("Video codec")
                     SegmentedSelector {
                         id: codecSel; labels: dlg._codecLabels
+                        hiddenIndices: dlg._dupIndices(dlg._codecLabels, "codec", currentIndex)
                         KeyNavigation.up: hdrSel
                         KeyNavigation.down: dmSel
                         onActivated: dlg.saveOverride()
@@ -914,6 +924,7 @@ Popup {
                     label: qsTr("Display mode")
                     SegmentedSelector {
                         id: dmSel; labels: dlg._dmLabels
+                        hiddenIndices: dlg._dupIndices(dlg._dmLabels, "displaymode", currentIndex)
                         KeyNavigation.up: codecSel
                         KeyNavigation.down: matchRrSel
                         onActivated: dlg.saveOverride()
@@ -929,7 +940,8 @@ Popup {
                     // Keep this row and Frame pacing below in the same form.
                     detail: enabled ? "" : qsTr("Needs Fullscreen")
                     SegmentedSelector {
-                        id: matchRrSel; labels: dlg._hdrLabels
+                        id: matchRrSel; labels: dlg._matchRrLabels
+                        hiddenIndices: dlg._dupIndices(dlg._matchRrLabels, "matchrefresh", currentIndex)
                         KeyNavigation.up: dmSel
                         KeyNavigation.down: vsyncSel
                         onActivated: dlg.saveOverride()
@@ -938,7 +950,8 @@ Popup {
                 SettingRow {
                     label: qsTr("V-Sync")
                     SegmentedSelector {
-                        id: vsyncSel; labels: dlg._hdrLabels
+                        id: vsyncSel; labels: dlg._vsyncLabels
+                        hiddenIndices: dlg._dupIndices(dlg._vsyncLabels, "vsync", currentIndex)
                         KeyNavigation.up: matchRrSel
                         KeyNavigation.down: fpSel
                         onActivated: dlg.saveOverride()
@@ -950,6 +963,7 @@ Popup {
                     detail: enabled ? "" : qsTr("Needs V-Sync")
                     SegmentedSelector {
                         id: fpSel; labels: dlg._fpLabels
+                        hiddenIndices: dlg._dupIndices(dlg._fpLabels, "framepacing", currentIndex)
                         KeyNavigation.up: vsyncSel
                         KeyNavigation.down: audSel
                         onActivated: dlg.saveOverride()
@@ -959,6 +973,7 @@ Popup {
                     label: qsTr("Audio")
                     SegmentedSelector {
                         id: audSel; labels: dlg._audLabels
+                        hiddenIndices: dlg._dupIndices(dlg._audLabels, "audio", currentIndex)
                         KeyNavigation.up: fpSel
                         KeyNavigation.down: linkSel
                         onActivated: dlg.saveOverride()
@@ -970,7 +985,8 @@ Popup {
                 SettingRow {
                     label: qsTr("Match host link speed")
                     SegmentedSelector {
-                        id: linkSel; labels: dlg._hdrLabels
+                        id: linkSel; labels: dlg._linkLabels
+                        hiddenIndices: dlg._dupIndices(dlg._linkLabels, "matchlink", currentIndex)
                         KeyNavigation.up: audSel
                         KeyNavigation.down: waitGameSel
                         onActivated: dlg.saveOverride()
@@ -984,7 +1000,8 @@ Popup {
                 SettingRow {
                     label: qsTr("Wait for the game to appear")
                     SegmentedSelector {
-                        id: waitGameSel; labels: dlg._hdrLabels
+                        id: waitGameSel; labels: dlg._waitLabels
+                        hiddenIndices: dlg._dupIndices(dlg._waitLabels, "waitgame", currentIndex)
                         KeyNavigation.up: linkSel
                         KeyNavigation.down: hueSel
                         onActivated: dlg.saveOverride()
@@ -996,7 +1013,8 @@ Popup {
                 SettingRow {
                     label: qsTr("Philips Hue")
                     SegmentedSelector {
-                        id: hueSel; labels: dlg._hdrLabels
+                        id: hueSel; labels: dlg._hueLabels
+                        hiddenIndices: dlg._dupIndices(dlg._hueLabels, "hue", currentIndex)
                         KeyNavigation.up: waitGameSel
                         KeyNavigation.down: removeBtn
                         onActivated: dlg.saveOverride()

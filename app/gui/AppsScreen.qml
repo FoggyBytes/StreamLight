@@ -713,17 +713,12 @@ FocusScope {
     /*
      * A "hero cover regeneration" workaround used to live here — a forced source reload 150 ms
      * after the window came back from a stream, because the spotlight cover returned oversized
-     * and stretched.
+     * and stretched. It was removed in 5.1.2, put back inside HeroCover.qml in 5.2.0, and is
+     * now gone for good: the cause was found and fixed at the source (the drop shadow's
+     * automatic padding resizing the effect item), so there is nothing left to repair.
      *
-     * It was removed in 5.1.2 on the belief that the cause had been found and fixed at the
-     * spotlight itself (one MultiEffect doing both the rounded mask and the drop shadow, whose
-     * automatic padding put source and mask in different rects). That split is still there and
-     * is still right, but it was NOT the whole cause: the deformation is back in 5.2.0.
-     *
-     * The repair is back too, and it now lives inside HeroCover.qml so the host page and the
-     * launch curtain cannot drift apart on it. Read the block at the top of that file before
-     * touching this area — it says what has already been excluded by measurement, and what
-     * the one remaining unmeasured thing is.
+     * Nothing about the deformation belongs in this file. Read the block at the top of
+     * HeroCover.qml before touching cover geometry anywhere.
      */
 
     // ═════════════════════════════════════════════════════════════════════════

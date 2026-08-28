@@ -227,6 +227,10 @@ public:
     Q_INVOKABLE QString hostProfileName(int computerIndex, int slot) const;
     Q_INVOKABLE void setHostProfileName(int computerIndex, int slot, const QString& name);
     Q_INVOKABLE QVariantMap hostProfileSettings(int computerIndex, int slot) const;
+    // What a profile row set to "Global" will actually run at. A profile sits directly on
+    // top of the global settings, so unlike the per-game dialog there is no middle level
+    // to fold in. Formatted for display; see inheritedValueLabels() in settings/appsettings.h.
+    Q_INVOKABLE QVariantMap globalLabels() const;
     Q_INVOKABLE void setHostProfileSettings(int computerIndex, int slot, const QVariantMap& ov);
     Q_INVOKABLE int addHostProfile(int computerIndex);                // new slot, or -1
     Q_INVOKABLE void removeHostProfile(int computerIndex, int slot);
