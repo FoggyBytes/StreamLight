@@ -175,6 +175,7 @@ Popup {
         linkSel.currentIndex  = (ov.matchlink !== undefined) ? (ov.matchlink ? 1 : 2) : 0
         waitGameSel.currentIndex = (ov.waitgame !== undefined) ? (ov.waitgame ? 1 : 2) : 0
         dmSel.currentIndex    = (ov.displaymode !== undefined) ? _idxByVal(_dmVals, ov.displaymode) : 0
+        matchRrSel.currentIndex = (ov.matchrefresh !== undefined) ? (ov.matchrefresh ? 1 : 2) : 0
         vsyncSel.currentIndex = (ov.vsync !== undefined) ? (ov.vsync ? 1 : 2) : 0
         _bitrateOverridden = (ov.bitrate !== undefined && ov.bitrate >= bitrateSlider.from)
         bitrateSlider.value = _bitrateOverridden ? ov.bitrate
@@ -198,6 +199,11 @@ Popup {
         if (linkSel.currentIndex > 0)  m.matchlink = (linkSel.currentIndex === 1)
         if (waitGameSel.currentIndex > 0) m.waitgame = (waitGameSel.currentIndex === 1)
         if (dmSel.currentIndex > 0)    m.displaymode = _dmVals[dmSel.currentIndex]
+        // ⚠️ Saved even when the row is greyed out, exactly like Frame pacing under a
+        // V-Sync it does not have: the profile keeps the choice it was given, and it
+        // starts acting the day the display mode above it becomes Fullscreen. Dropping
+        // it here would silently rewrite the profile the moment the condition lapsed.
+        if (matchRrSel.currentIndex > 0) m.matchrefresh = (matchRrSel.currentIndex === 1)
         if (vsyncSel.currentIndex > 0) m.vsync = (vsyncSel.currentIndex === 1)
         computerModel.setHostProfileSettings(pcIndex, editingSlot, m)
     }
@@ -901,14 +907,30 @@ Popup {
                 // greyed control never sends you hunting for the reason. Global = follow the
                 // setting in Settings → Video.
                 //
-                // ⚠️ Refresh rate switching used to sit between Display mode and V-Sync, and
-                // was what made Display mode a dependency here. It went in 5.2.0 with the
-                // setting itself; Display mode now governs nothing in this dialog.
+                // ⚠️ Match refresh rate sits between them because that is what makes Display
+                // mode a dependency here: it acts only in exclusive fullscreen, so the row
+                // that decides the window mode has to be the row directly above it.
                 SettingRow {
                     label: qsTr("Display mode")
                     SegmentedSelector {
                         id: dmSel; labels: dlg._dmLabels
                         KeyNavigation.up: codecSel
+                        KeyNavigation.down: matchRrSel
+                        onActivated: dlg.saveOverride()
+                    }
+                }
+                SettingRow {
+                    label: qsTr("Match refresh rate")
+                    enabled: dlg._effWindowMode === StreamingPreferences.WM_FULLSCREEN
+                    // ⚠️ Both dependency notes in this dialog state the bare condition — no row
+                    // named, no full stop. The row a condition points at can read Global, and
+                    // then the answer is in Settings → Video rather than in this dialog at all,
+                    // so naming a row that may not hold the reason is worse than naming none.
+                    // Keep this row and Frame pacing below in the same form.
+                    detail: enabled ? "" : qsTr("Needs Fullscreen")
+                    SegmentedSelector {
+                        id: matchRrSel; labels: dlg._hdrLabels
+                        KeyNavigation.up: dmSel
                         KeyNavigation.down: vsyncSel
                         onActivated: dlg.saveOverride()
                     }
@@ -917,7 +939,7 @@ Popup {
                     label: qsTr("V-Sync")
                     SegmentedSelector {
                         id: vsyncSel; labels: dlg._hdrLabels
-                        KeyNavigation.up: dmSel
+                        KeyNavigation.up: matchRrSel
                         KeyNavigation.down: fpSel
                         onActivated: dlg.saveOverride()
                     }
@@ -925,7 +947,7 @@ Popup {
                 SettingRow {
                     label: qsTr("Frame pacing")
                     enabled: dlg._effVsync
-                    detail: enabled ? "" : qsTr("Needs V-Sync — the row above is off.")
+                    detail: enabled ? "" : qsTr("Needs V-Sync")
                     SegmentedSelector {
                         id: fpSel; labels: dlg._fpLabels
                         KeyNavigation.up: vsyncSel

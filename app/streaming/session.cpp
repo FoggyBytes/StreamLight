@@ -1,6 +1,7 @@
 #include "session.h"
 #include "settings/streamingpreferences.h"
 #include "streaming/streamutils.h"
+#include "streaming/refreshratematch.h"
 #include "backend/nvhttp.h"
 #include "backend/richpresencemanager.h"
 
@@ -48,11 +49,11 @@
 #endif
 
 // ⚠️ A Windows-only restoreDesktopDisplayModeIfChanged() lived here, with the
-// <SDL_syswm.h> include it needed. It undid a fullscreen mode change that outlived
-// the stream window — a case that only existed because "Refresh rate switching" set
-// to "Match frame rate" could leave a 120 Hz panel at 60 Hz. That setting went in
-// 5.2.0, so mode selection is upstream's again (always the highest multiple, which
-// on such a panel is the desktop mode already) and there is nothing left to put back.
+// <SDL_syswm.h> include it needed. It went in 5.2.0 along with "Refresh rate
+// switching", and came back in 5.2.1 with "Match refresh rate" — but in
+// streaming/refreshratematch.cpp, not here. That is the point of the rewrite:
+// the whole feature sits beside the engine instead of inside it, and this file
+// carries three call lines and nothing else.
 
 #define CONN_TEST_SERVER "qt.conntest.moonlight-stream.org"
 
@@ -1688,6 +1689,27 @@ void Session::updateOptimalWindowDisplayMode()
                                       "and never in borderless or windowed");
 
     SDL_SetWindowDisplayMode(m_Window, &bestMode);
+
+    // ⚠️ Here, at the tail of the function, and NOT at the call sites: there are three
+    // of them — the window setup and the two paths that fire when the window lands on
+    // another display mid-session — and a post-pass that only ran on the first would
+    // quietly stop matching the moment the user dragged the stream to another monitor.
+    // Everything above this line is upstream's, untouched.
+    //
+    // Never for an unlock session: that one exists to put a PIN into a logon screen and
+    // is over in seconds, so matching it would only bounce the panel down and back up
+    // before the real session arrives and does it again.
+    //
+    // And only in exclusive fullscreen, which is the only place a display mode recorded
+    // on the window ever reaches the panel. Borderless and windowed sessions keep the
+    // desktop refresh rate no matter what is stored here — the Settings row says as much
+    // — so the match stays quiet there rather than writing a mode and a log line that
+    // nothing will act on.
+    const bool matchRefresh = m_Preferences->matchRefreshRate
+                              && !m_UnlockMode
+                              && m_IsFullScreen
+                              && m_FullScreenFlag == SDL_WINDOW_FULLSCREEN;
+    RefreshRateMatch::apply(m_Window, m_StreamConfig.fps, matchRefresh);
 }
 
 void Session::toggleFullscreen()
@@ -2956,6 +2978,10 @@ DispatchDeferredCleanup:
 #endif
     }
 
+    // Note which display we are on while the window still exists. Records nothing
+    // unless the match actually wrote a mode.
+    RefreshRateMatch::rememberDisplay(m_Window);
+
     // This must be called after the decoder is deleted, because
     // the renderer may want to interact with the window
     SDL_DestroyWindow(m_Window);
@@ -2965,6 +2991,16 @@ DispatchDeferredCleanup:
     }
 
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
+
+    // Put the panel back if a fullscreen mode change of ours outlived the window.
+    //
+    // ⚠️ Skipped when another session is about to reuse this display: a live settings
+    // change reconnects, and bouncing the mode back and forth between the two halves of
+    // one reconnect would be worse than leaving it where it is. The second half sets the
+    // mode again on its way in, and restores on its own way out.
+    if (!m_HasPendingReconfigure) {
+        RefreshRateMatch::restoreIfChanged();
+    }
 
     // Terminate Hue Sync if it was launched for this session.
     if (m_HueSyncManager) {

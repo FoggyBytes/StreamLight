@@ -76,6 +76,15 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 
+## ✨ What's New in 5.2.1 — One To One
+
+The refresh rate match is back, as an addition on top of Moonlight's presentation code rather than a change to it. Client-side, works with any host, and with the switch off nothing behaves differently from 5.2.0.
+
+- **Match refresh rate.** A switch in *Settings → Video* runs your display at the stream's frame rate for the session and puts it back when the stream ends, so 60 FPS on a 120 Hz screen is shown one frame per refresh instead of two — the judder 5.2.0 warned about, without NVIDIA Profile Inspector or Special-K. Off by default
+- **It acts only in Fullscreen.** Borderless and Windowed keep the desktop refresh rate, so there the switch greys out and says why rather than pretending. Your setting is kept and comes back with Fullscreen
+- **Overridable per host profile**, on the row directly under *Display mode*, since that is what decides whether it can act at all. A profile that is not on Fullscreen greys it out and names the reason — and keeps the choice, which starts working the day that profile goes back to Fullscreen
+- **The streaming engine is untouched.** The display mode is chosen exactly as Moonlight chooses it; the setting only edits that choice in the moment between the window being made and it going fullscreen, so the panel still sees a single change and nothing in the picture path is different
+
 ## ✨ What's New in 5.2.0 — Hands Off
 
 StreamLight stops taking the presentation of frames into its own hands: between the decoder and your screen it now runs Moonlight's own code, with Moonlight's current protocol and video libraries alongside it. And everything that needs StreamTweak on the host moves behind one switch per host, in a Settings tab of its own.

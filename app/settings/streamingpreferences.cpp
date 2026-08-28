@@ -42,6 +42,7 @@
 #define SER_DETECTNETBLOCKING "detectnetblocking"
 #define SER_AUTORECONNECTNOVIDEO "autoreconnectnovideo"
 #define SER_MATCHHOSTLINKSPEED "matchhostlinkspeed"
+#define SER_MATCHREFRESHRATE "matchrefreshrate"
 #define SER_WAITFORGAME "waitforgame"
 #define SER_SHOWPERFOVERLAY "showperfoverlay"
 #define SER_OVERLAYMODE "overlaymode"
@@ -141,6 +142,7 @@ StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
     p->detectNetworkBlocking = detectNetworkBlocking;
     p->autoReconnectNoVideo = autoReconnectNoVideo;
     p->matchHostLinkSpeed = matchHostLinkSpeed;
+    p->matchRefreshRate = matchRefreshRate;
     p->waitForGameOnScreen = waitForGameOnScreen;
     p->showPerfOverlay = showPerfOverlay;
     p->overlayPosition = overlayPosition;
@@ -253,6 +255,11 @@ void StreamingPreferences::reload()
     // handshake is skipped when the host is already at the right speed — which is the
     // common case, and costs nothing.
     matchHostLinkSpeed = settings.value(SER_MATCHHOSTLINKSPEED, true).toBool();
+    // Off by default, and deliberately NOT migrated from the old `refreshratemode` key
+    // that 5.1.0 - 5.1.3 wrote: that setting was removed in 5.2.0, and a stored "match"
+    // resurrecting itself in an upgrade is not something anyone asked for. Whoever wants
+    // it back turns it back on.
+    matchRefreshRate = settings.value(SER_MATCHREFRESHRATE, false).toBool();
     // Off by default: without it StreamLight behaves as it always did, showing the stream as
     // soon as the session is up. Holding the launch screen until the host says the game is on
     // screen is the opt-in, because it is the answer to a problem not everyone has — and a
@@ -379,6 +386,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_DETECTNETBLOCKING, detectNetworkBlocking);
     settings.setValue(SER_AUTORECONNECTNOVIDEO, autoReconnectNoVideo);
     settings.setValue(SER_MATCHHOSTLINKSPEED, matchHostLinkSpeed);
+    settings.setValue(SER_MATCHREFRESHRATE, matchRefreshRate);
     settings.setValue(SER_WAITFORGAME, waitForGameOnScreen);
     settings.setValue(SER_SHOWPERFOVERLAY, showPerfOverlay);
     settings.setValue(SER_OVERLAYPOSITION, static_cast<int>(overlayPosition));

@@ -199,6 +199,7 @@ SOURCES += \
     streaming/input/mouse.cpp \
     streaming/input/reltouch.cpp \
     streaming/session.cpp \
+    streaming/refreshratematch.cpp \
     streaming/audio/audio.cpp \
     streaming/audio/renderers/sdlaud.cpp \
     gui/computermodel.cpp \
@@ -254,6 +255,7 @@ HEADERS += \
     settings/shortcutmanager.h \
     streaming/input/input.h \
     streaming/session.h \
+    streaming/refreshratematch.h \
     streaming/audio/renderers/renderer.h \
     streaming/audio/renderers/sdl.h \
     gui/computermodel.h \

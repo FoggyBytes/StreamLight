@@ -37,12 +37,13 @@ struct AppOverride
     // inherit the level below.
     bool hasWaitForGame = false;  bool waitForGame = false; // StreamingPreferences::waitForGameOnScreen
 
-    // Which refresh rate to put the panel on in exclusive fullscreen. Host-profile
-    // only, for the same reason as link matching: it describes the situation the
-    // device is in — docked to a 120 Hz TV wants a different answer from the same
-    // handheld in your hands — and never varies by game.
+    // Whether to run the panel at the stream's own frame rate in exclusive fullscreen.
+    // Host-profile only, for the same reason as link matching: it describes the
+    // situation the device is in — docked to a 120 Hz TV wants a different answer from
+    // the same handheld in your hands — and never varies by game.
+    bool hasMatchRefreshRate = false; bool matchRefreshRate = false; // StreamingPreferences::matchRefreshRate
 
-    // ⚠️ The two below are dependencies, not features: Refresh rate switching only
+    // ⚠️ The two below are dependencies, not features: Match refresh rate only
     // means anything in exclusive fullscreen, and Frame pacing only means anything
     // with V-Sync on. Both dependents were already overridable per profile while
     // these were global-only, so a profile could hold a setting whose condition it
@@ -56,7 +57,7 @@ struct AppOverride
     {
         return !(hasResolution || hasFps || hasBitrate || hasHdr ||
                  hasCodec || hasFramePacing || hasAudio || hasHue || hasMatchLink ||
-                 hasWaitForGame || hasDisplayMode || hasVsync);
+                 hasWaitForGame || hasMatchRefreshRate || hasDisplayMode || hasVsync);
     }
 };
 

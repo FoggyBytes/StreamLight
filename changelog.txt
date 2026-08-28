@@ -4,6 +4,19 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+---------------------------------------
+Version 5.2.1 - One To One (28/08/2026)
+---------------------------------------
+
+No StreamTweak update required — everything in 5.2.1 is client-side and works with any host. The refresh rate match is back, this time added on top of Moonlight's presentation code instead of inside it: the engine 5.2.0 restored is untouched, and with the switch off nothing behaves differently from 5.2.0.
+
+✨ NEW FEATURES:
+• Match refresh rate — a switch in Settings → Video runs your display at the stream's frame rate for the session and puts it back when the stream ends, so 60 FPS on a 120 Hz screen is shown one frame per refresh instead of two. Off by default, and it acts only in Fullscreen: Borderless and Windowed keep the desktop refresh rate, and the switch says so rather than pretending
+• Overridable per host profile, directly under Display mode — the row it depends on, so a profile that is not on Fullscreen greys it out and names the reason instead of holding a setting that cannot act
+
+🙏 THANKS:
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/9) for asking for this one back with the reason attached
+
 --------------------------------------
 Version 5.2.0 - Hands Off (28/08/2026)
 --------------------------------------

@@ -109,6 +109,7 @@ FocusScope {
     readonly property bool _lockMatchLink:   activeProfileOverride && activeProfileOverride.matchlink !== undefined
     readonly property bool _lockWaitForGame: activeProfileOverride && activeProfileOverride.waitgame !== undefined
     readonly property bool _lockDisplayMode: activeProfileOverride && activeProfileOverride.displaymode !== undefined
+    readonly property bool _lockMatchRefresh: activeProfileOverride && activeProfileOverride.matchrefresh !== undefined
 
     // Settings that cannot do anything without StreamTweak on the host. Greyed with the
     // reason rather than left live and inert — an inert switch is indistinguishable from a
@@ -788,6 +789,7 @@ FocusScope {
                                     || settingsScreen._lockFps
                                     || settingsScreen._lockBitrate
                                     || settingsScreen._lockDisplayMode
+                                    || settingsScreen._lockMatchRefresh
                                     || settingsScreen._lockVsync
                                     || settingsScreen._lockFramePacing
                         }
@@ -1162,6 +1164,66 @@ FocusScope {
                                     }
                                 }
                                 onActivated: function(idx) { StreamingPreferences.windowMode = _values[idx]; StreamingPreferences.save() }
+                            }
+                        }
+                        Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
+
+                        // ── Match refresh rate ────────────────────────────────
+                        Item {
+                            id: matchRrRow
+                            width: parent.width
+                            height: Math.max(settingsScreen._rowHeightTall, matchRrCol.implicitHeight + 16)
+                            // The mode change only ever happens in exclusive fullscreen:
+                            // in Borderless and Windowed the panel keeps the desktop
+                            // refresh rate and the switch would be a promise the window
+                            // cannot keep. Lock it and say why, the same shape Frame
+                            // Pacing uses when V-Sync is off. The stored value is left
+                            // alone and comes back with Fullscreen.
+                            enabled: !settingsScreen._lockMatchRefresh
+                                     && StreamingPreferences.windowMode === StreamingPreferences.WM_FULLSCREEN
+                            opacity: enabled ? 1.0 : 0.4
+
+                            Column {
+                                id: matchRrCol
+                                anchors.left: parent.left
+                                anchors.leftMargin: 16
+                                anchors.right: matchRrSwitch.left
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 3
+
+                                Label {
+                                    text: qsTr("Match refresh rate")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 16
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    // ⚠️ On the window mode, not on the row's `enabled`: a
+                                    // profile lock also disables the row, and it has its own
+                                    // notice at the top of the card. Reading "Requires
+                                    // Fullscreen" while sitting in Fullscreen would send the
+                                    // user to fix the wrong thing.
+                                    text: StreamingPreferences.windowMode === StreamingPreferences.WM_FULLSCREEN
+                                          ? qsTr("Runs your display at the stream's frame rate, and puts it back when the stream ends.")
+                                          : qsTr("Requires Fullscreen — in Borderless and Windowed your display stays at its desktop refresh rate.")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: 13
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            FocusFrame { anchors.fill: matchRrSwitch; anchors.margins: -3; target: matchRrSwitch }
+                            STSwitch {
+                                id: matchRrSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.matchRefreshRate
+                                onCheckedChanged: { if (StreamingPreferences.matchRefreshRate !== checked) { StreamingPreferences.matchRefreshRate = checked; StreamingPreferences.save() } }
                             }
                         }
                         Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
