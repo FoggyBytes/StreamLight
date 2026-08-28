@@ -30,6 +30,7 @@
 #define SER_STAGESEED "stageseed"
 #define SER_STAGEFROM "stagefrom"
 #define SER_STAGETO "stageto"
+#define SER_STENABLED "streamtweakenabled"
 
 NvComputer::NvComputer(QSettings& settings)
 {
@@ -55,6 +56,28 @@ NvComputer::NvComputer(QSettings& settings)
     this->stageSeedColor = settings.value(SER_STAGESEED).toString();
     this->stageColorFrom = settings.value(SER_STAGEFROM).toString();
     this->stageColorTo   = settings.value(SER_STAGETO).toString();
+
+    // ⚠️ Absence of the key is NOT the same as false, and reading it as false would be a
+    // regression shipped in a release: everyone already using StreamTweak would upgrade and
+    // silently lose link matching, the PIN unlock, the last-session panel, store badges and
+    // host metrics until they found the new Settings tab.
+    //
+    // So a host stored by an older build is seeded from something we already know: the
+    // "has this host ever answered as a StreamTweak host" key that ComputerModel has been
+    // writing all along. A host that has answered starts on; anything else starts off,
+    // which is exactly what a plain Sunshine box should get. Once the user touches the
+    // switch the key exists and this branch never runs again for that host.
+    if (settings.contains(SER_STENABLED)) {
+        this->streamTweakEnabled = settings.value(SER_STENABLED).toBool();
+    }
+    else {
+        // A separate QSettings instance on purpose: `settings` is positioned inside the
+        // hosts array, so it cannot see a top-level group.
+        QSettings global;
+        this->streamTweakEnabled =
+            !this->uuid.isEmpty() &&
+            global.value(QStringLiteral("streamtweakSeen/") + this->uuid, false).toBool();
+    }
 
     // Migration: older builds could persist a Tailscale-range IP into the LAN/remote/v6
     // slots (the host reports its Tailscale-interface IP as LocalIP when reached over
@@ -153,6 +176,7 @@ void NvComputer::serialize(QSettings& settings, bool serializeApps) const
     settings.setValue(SER_STAGESEED, stageSeedColor);
     settings.setValue(SER_STAGEFROM, stageColorFrom);
     settings.setValue(SER_STAGETO, stageColorTo);
+    settings.setValue(SER_STENABLED, streamTweakEnabled);
 
     // Avoid deleting an existing applist if we couldn't get one
     if (!appList.isEmpty() && serializeApps) {
@@ -185,6 +209,7 @@ bool NvComputer::isEqualSerialized(const NvComputer &that) const
            this->stageSeedColor == that.stageSeedColor &&
            this->stageColorFrom == that.stageColorFrom &&
            this->stageColorTo == that.stageColorTo &&
+           this->streamTweakEnabled == that.streamTweakEnabled &&
            this->appList == that.appList;
 }
 
@@ -214,6 +239,12 @@ NvComputer::NvComputer(NvHTTP& http, QString serverInfo)
     }
 
     this->uuid = NvHTTP::getXmlString(serverInfo, "uniqueid");
+
+    // A freshly discovered host starts with the integration off: nothing has told us this
+    // machine runs StreamTweak, and the Settings tab is where that gets decided. The
+    // "upgrade from an older build" case is the QSettings constructor's, not this one.
+    this->streamTweakEnabled = false;
+
     QString newMacString = NvHTTP::getXmlString(serverInfo, "mac");
     if (newMacString != "00:00:00:00:00:00") {
         QStringList macOctets = newMacString.split(':');

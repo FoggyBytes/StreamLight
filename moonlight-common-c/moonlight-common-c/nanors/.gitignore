@@ -1,0 +1,10 @@
+*.o
+*.a
+
+/t/00util/test
+/t/00util/bench
+/t/00util/test16
+/t/00util/test16_afft
+/t/00util/bench16
+/t/00util/bench16_afft
+/t/00util/bench_compare

@@ -39,7 +39,7 @@ FocusScope {
     readonly property color _bg2:      "#1a1a1a"
     readonly property color _text:     "#f0f0f0"
     readonly property color _textDim:  "#a0a0a0"
-    readonly property string _version: "5.1.3"
+    readonly property string _version: "5.2.0"
     readonly property string _mono:    "DM Sans"
 
     // 0 = Home, 1 = Apps, 2 = Settings
@@ -182,6 +182,19 @@ FocusScope {
     property var    _settingsProfileOverride: ({})
     property string _settingsProfileName: ""
 
+    // The same host context, used by the StreamTweak tab. The model so the tab can list every
+    // configured host and switch each one; the name and flag of the highlighted host so the
+    // settings that depend on the integration can grey themselves and say which host they
+    // mean — the same shape as the profile locks above, and for the same reason: a global row
+    // that quietly does nothing is worse than one that says why.
+    //
+    // Defaults to true so that with no host context nothing greys: "I don't know which host"
+    // must never read as "the integration is off".
+    property var    _settingsHostModel: null
+    property string _settingsHostName: ""
+    property int    _settingsHostIndex: -1
+    property bool   _settingsHostStEnabled: true
+
     // Also called by main.qml Keys.onMenuPressed.
     function openSettings() {
         if (currentPage !== 2) {
@@ -200,10 +213,24 @@ FocusScope {
             if (mdl && idx >= 0) {
                 _settingsProfileOverride = mdl.hostActiveOverride(idx)
                 _settingsProfileName     = mdl.hostActiveProfileName(idx)
+                _settingsHostStEnabled   = mdl.streamTweakEnabled(idx)
+                _settingsHostIndex       = idx
+                _settingsHostName        = currentPage === 1
+                    ? _appsHostName
+                    : (homeLoader.item.currentHost ? homeLoader.item.currentHost.name : "")
             } else {
                 _settingsProfileOverride = ({})
                 _settingsProfileName     = ""
+                _settingsHostStEnabled   = true
+                _settingsHostIndex       = -1
+                _settingsHostName        = ""
             }
+
+            // The whole model, not just the highlighted host: the StreamTweak tab is a list
+            // of every configured host. Resolved from Home whenever it exists, because that
+            // is the one model that holds them all.
+            _settingsHostModel = (homeLoader.item && homeLoader.item.computerModel)
+                                 ? homeLoader.item.computerModel : mdl
         }
         currentPage = 2
     }
@@ -342,6 +369,10 @@ FocusScope {
             onLoaded: {
                 item.activeProfileOverride = appShell._settingsProfileOverride
                 item.activeProfileName     = appShell._settingsProfileName
+                item.hostModel             = appShell._settingsHostModel
+                item.hostName              = appShell._settingsHostName
+                item.hostIndex             = appShell._settingsHostIndex
+                item.hostStreamTweakEnabled = appShell._settingsHostStEnabled
                 item.forceActiveFocus()
             }
         }

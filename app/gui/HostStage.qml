@@ -110,6 +110,77 @@ Item {
     property color backdropFrom: "#1c1c1c"
     property color backdropTo:   "#0d0d0d"
 
+    /*
+     * ── The backdrop, baked into one ramp when there is no picture ───────────────────────
+     *
+     * ⚠️ Two stacked ramps used to draw this: the host's colour pair, and a scrim over it for
+     * the text. Both horizontal, both dithered — and the card banded anyway. The measurement
+     * says why, and it is not the dither: across the LEFT 60% of the card the base ramp offers
+     * 48 distinct values and the composite offers EIGHT. The scrim's alpha throws away forty
+     * of them, so what looks like a gradient there is really a flat field with six or eight
+     * accidental steps in it, each a couple of hundred pixels wide. No dithering can invent
+     * levels the 8-bit output of a blend has already discarded — an ordered tile can only
+     * feather eight pixels of each step, and 1-D error diffusion was tried and measured
+     * (48 px of flat run down to 27) and still did not show.
+     *
+     * So the two ramps become one, which is possible because both run along x: their composite
+     * is a function of x alone and can be written as a single set of stops. And the part that
+     * was nearly flat is made EXACTLY flat, because a region spanning six levels over fourteen
+     * hundred pixels is not a gradient — it is a flat colour that occasionally jumps, and the
+     * jumps are the artefact. One quantisation, one dither, and two fewer effect passes.
+     *
+     * The stops below follow the old composite's own values, so the card looks like it did
+     * apart from the banding: flat at what the blend produced around 30% across, then falling
+     * away through the values it produced at 72% and beyond.
+     *
+     * ⚠️ Only when there is no picture. Over a picture the scrim is veiling an image and has to
+     * stay a separate layer — that case is a different problem, and the colour bias inside the
+     * provider is what addresses it.
+     */
+    function _lerp(a, b, f) { return a + (b - a) * f }
+
+    function _baseAt(p) {
+        var f = Qt.tint(backdropFrom, Qt.rgba(0, 0, 0, 0))
+        var t = Qt.tint(backdropTo,   Qt.rgba(0, 0, 0, 0))
+        var e = Qt.tint("#05080a",     Qt.rgba(0, 0, 0, 0))
+        if (p <= 0.46) {
+            var k = p / 0.46
+            return [ _lerp(f.r, t.r, k), _lerp(f.g, t.g, k), _lerp(f.b, t.b, k) ]
+        }
+        if (p <= 0.90) {
+            var k2 = (p - 0.46) / 0.44
+            return [ _lerp(t.r, e.r, k2), _lerp(t.g, e.g, k2), _lerp(t.b, e.b, k2) ]
+        }
+        return [ e.r, e.g, e.b ]
+    }
+
+    function _scrimAlphaAt(p) {
+        if (p <= 0.30) return _lerp(0xb0 / 255, 0x80 / 255, p / 0.30)
+        if (p <= 0.62) return _lerp(0x80 / 255, 0x30 / 255, (p - 0.30) / 0.32)
+        return _lerp(0x30 / 255, 0.0, (p - 0.62) / 0.38)
+    }
+
+    // What the two layers produced at p, as one colour.
+    function _compositeAt(p) {
+        var b = _baseAt(p)
+        var a = _scrimAlphaAt(p)
+        var s = Qt.tint("#05080a", Qt.rgba(0, 0, 0, 0))
+        return Qt.rgba(s.r * a + b[0] * (1 - a),
+                       s.g * a + b[1] * (1 - a),
+                       s.b * a + b[2] * (1 - a), 1)
+    }
+
+    // Re-derived whenever the host's colours change, which is what a binding on the two
+    // properties gives us — a function result assigned once would freeze on the first host.
+    readonly property color _flatColour: _compositeAt(0.30)
+    readonly property var _bakedStops: [
+        { pos: 0.00, color: _flatColour },
+        { pos: 0.55, color: _flatColour },
+        { pos: 0.72, color: _compositeAt(0.72) },
+        { pos: 0.90, color: _compositeAt(0.92) },
+        { pos: 1.00, color: _compositeAt(1.00) }
+    ]
+
     // Optional picture behind the gradient. Drawn sharp and at full saturation: the earlier
     // version blurred and desaturated it on the theory that this is what makes a picture read
     // as a background, and on screen that theory was wrong — it just looked like a bad copy of
@@ -182,9 +253,12 @@ Item {
      * densest exactly where the name and the fields sit, so this samples the composite at
      * that end rather than at the card's average.
      */
+    // ⚠️ Without a picture this is now the flat colour the ramp actually paints there, not a
+    // blend recomputed here — the two used to be worked out separately and could disagree.
+    // With one, the picture is unknowable and "#202020" stands in for it, as before.
     readonly property color _bgUnderText:
-        Theme.blend(backdropImage !== "" ? "#202020" : backdropFrom,
-                    backdropImage !== "" ? "#e605080a" : "#b005080a")
+        backdropImage !== "" ? Theme.blend("#202020", "#e605080a")
+                             : _flatColour
 
     readonly property color _onBg:    Theme.onColor(_bgUnderText)
     readonly property bool  _bgIsLight: _onBg !== Qt.rgba(1, 1, 1, 1)
@@ -366,11 +440,14 @@ Item {
             DitheredGradient {
                 anchors.fill: parent
                 orientation: Qt.Horizontal
-                stops: [
-                    { pos: 0.0,  color: stage.backdropFrom },
-                    { pos: 0.46, color: stage.backdropTo },
-                    { pos: 0.90, color: "#05080a" }
-                ]
+                // With a picture this is only what shows while the picture loads, so it stays
+                // the plain colour pair. Without one it is the whole backdrop, and it carries
+                // the scrim baked in — see the note on _bakedStops.
+                stops: stage.backdropImage !== ""
+                       ? [ { pos: 0.0,  color: stage.backdropFrom },
+                           { pos: 0.46, color: stage.backdropTo },
+                           { pos: 0.90, color: "#05080a" } ]
+                       : stage._bakedStops
             }
         }
 
@@ -427,19 +504,26 @@ Item {
         // sooner — reaching fully transparent at the right edge matters, the 19% black that
         // used to sit there is what made artwork look washed out. Its alpha ramp is dithered
         // too: a staircase in alpha bands just as visibly as one in a colour channel.
+        // ⚠️ Only over a picture now. Without one the scrim is baked into the ramp above, and
+        // drawing it here as well would veil the card twice. Its alpha values are kept here
+        // verbatim because _scrimAlphaAt() reproduces them — if these change, that changes.
         Item {
             id: scrimLayer
             anchors.fill: parent
-            layer.enabled: true
+            // ⚠️ Gated as well, not just the effect below. An invisible item with layer.enabled
+            // still keeps its FBO — that is exactly how these mask sources work — so leaving it
+            // on would go on rendering a scrim nobody samples on every card without a picture,
+            // which is most of them.
+            layer.enabled: stage.backdropImage !== ""
             visible: false
 
             DitheredGradient {
                 anchors.fill: parent
                 orientation: Qt.Horizontal
                 stops: [
-                    { pos: 0.0,  color: stage.backdropImage !== "" ? "#e605080a" : "#b005080a" },
-                    { pos: 0.30, color: stage.backdropImage !== "" ? "#b005080a" : "#8005080a" },
-                    { pos: 0.62, color: stage.backdropImage !== "" ? "#4005080a" : "#3005080a" },
+                    { pos: 0.0,  color: "#e605080a" },
+                    { pos: 0.30, color: "#b005080a" },
+                    { pos: 0.62, color: "#4005080a" },
                     { pos: 1.0,  color: "#0005080a" }
                 ]
             }
@@ -447,7 +531,7 @@ Item {
 
         MultiEffect {
             anchors.fill: parent
-            visible: !stage.addMode
+            visible: !stage.addMode && stage.backdropImage !== ""
             source: scrimLayer
             autoPaddingEnabled: false
             maskEnabled: true

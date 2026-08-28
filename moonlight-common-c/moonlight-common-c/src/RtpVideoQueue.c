@@ -1,5 +1,6 @@
 #include "Limelight-internal.h"
-#include "rswrapper.h"
+
+#include <rs.h>
 
 #if defined(LC_DEBUG) && !defined(LC_FUZZING)
 // This enables FEC validation mode with a synthetic drop

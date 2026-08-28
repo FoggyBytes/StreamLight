@@ -1,0 +1,100 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  ci-x86:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y clang-tools valgrind
+
+      - name: Tests
+        run: make check
+
+      - name: Tests (Sanitizers)
+        run: make check-asan
+
+      - name: Clang Analyzer
+        run: make scan
+
+      - name: Valgrind
+        run: make valgrind
+
+  ci-arm64:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Tests (ARM64 Native)
+        env:
+          CPPFLAGS: -DOBLAS_NEON
+        run: |
+          make check
+
+  ci-riscv64:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y qemu-user-static binfmt-support gcc-riscv64-linux-gnu libc6-dev-riscv64-cross
+
+      - name: Tests (RISCV64 Emulation)
+        env:
+          QEMU_LD_PREFIX: /usr/riscv64-linux-gnu
+          CI_EMULATION: 1
+        run: |
+          make CC=riscv64-linux-gnu-gcc CFLAGS="-O3 -g -std=c11 -Wall -I. -Ideps/obl -march=rv64gcv -mabi=lp64d -funroll-loops -ftree-vectorize" check
+
+  ci-avx2:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Tests (AVX2)
+        run: make check CPPFLAGS="-DOBLAS_AVX2" CFLAGS="-O3 -g -std=c11 -Wall -I. -Ideps/obl -mavx2"
+
+  ci-avx512:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download Intel SDE
+        run: |
+          wget https://github.com/nihui/ncnn-assets/releases/download/toolchain/sde-external-10.8.0-2026-03-15-lin.tar.xz
+          tar xf sde-external-10.8.0-2026-03-15-lin.tar.xz
+          echo "$PWD/sde-external-10.8.0-2026-03-15-lin" >> $GITHUB_PATH
+
+      - name: Tests (AVX-512 Emulation)
+        run: make RUN="sde64 -skx --" check CPPFLAGS="-DOBLAS_AVX512" CFLAGS="-O3 -g -std=c11 -Wall -I. -Ideps/obl -mavx512f -mavx512bw"
+
+  ci-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Compile (MSVC)
+        run: |
+          cl /c /O2 /W3 /I. /Ideps/obl rs.c rs16.c rs16_afft.c deps/obl/oblas_common.c deps/obl/oblas_lite.c deps/obl/oblas16.c deps/obl/oblas16_afft.c
+          cl t/00util/test.c rs.obj rs16.obj rs16_afft.obj oblas_common.obj oblas_lite.obj oblas16.obj oblas16_afft.obj /Fe:test.exe /I. /Ideps/obl
+          cl t/00util/test16.c rs.obj rs16.obj rs16_afft.obj oblas_common.obj oblas_lite.obj oblas16.obj oblas16_afft.obj /Fe:test16.exe /I. /Ideps/obl
+          cl t/00util/test16_afft.c rs.obj rs16.obj rs16_afft.obj oblas_common.obj oblas_lite.obj oblas16.obj oblas16_afft.obj /Fe:test16_afft.exe /I. /Ideps/obl
+          .\test.exe
+          .\test16.exe
+          .\test16_afft.exe

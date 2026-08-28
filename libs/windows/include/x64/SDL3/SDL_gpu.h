@@ -884,8 +884,8 @@ typedef enum SDL_GPUTextureFormat
 /**
  * Specifies how a texture is intended to be used by the client.
  *
- * A texture must have at least one usage flag. Note that some usage flag
- * combinations are invalid.
+ * A texture must have at least one usage flag. 
+ * Note that combining SAMPLER with STORAGE_READ flags is invalid.
  *
  * With regards to compute storage usage, READ | WRITE means that you can have
  * shader A that only writes into the texture and shader B that only reads
@@ -967,8 +967,10 @@ typedef enum SDL_GPUCubeMapFace
 /**
  * Specifies how a buffer is intended to be used by the client.
  *
- * A buffer must have at least one usage flag. Note that some usage flag
- * combinations are invalid.
+ * A buffer must have at least one usage flag.
+ * 
+ * If a buffer has multiple read usages, this may lead to a performance penalty 
+ * due to more conservative memory barriers, but it also may not necessarily affect the performance.
  *
  * Unlike textures, READ | WRITE can be used for simultaneous read-write
  * usage. The same data synchronization concerns as textures apply.
@@ -1398,12 +1400,12 @@ typedef struct SDL_GPUViewport
  * SDL_DownloadFromGPUTexture are used as default values respectively and data
  * is considered to be tightly packed.
  *
- * **WARNING**: On some older/integrated hardware, Direct3D 12 requires texture
- * data row pitch to be 256 byte aligned, and offsets to be aligned to 512 bytes.
- * If they are not, SDL will make a temporary copy of the data that is properly
- * aligned, but this adds overhead to the transfer process. Apps can avoid this
- * by aligning their data appropriately, or using a different GPU backend than
- * Direct3D 12.
+ * **WARNING**: On some older/integrated hardware, Direct3D 12 requires
+ * texture data row pitch to be 256 byte aligned, and offsets to be aligned to
+ * 512 bytes. If they are not, SDL will make a temporary copy of the data that
+ * is properly aligned, but this adds overhead to the transfer process. Apps
+ * can avoid this by aligning their data appropriately, or using a different
+ * GPU backend than Direct3D 12.
  *
  * \since This struct is available since SDL 3.2.0.
  *

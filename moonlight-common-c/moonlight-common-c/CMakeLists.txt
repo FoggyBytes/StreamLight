@@ -17,6 +17,11 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ${CMAKE_POSITION_INDEPENDENT_CODE_BACKUP})
 unset(CMAKE_POSITION_INDEPENDENT_CODE_BACKUP)
 
 aux_source_directory(src SRC_LIST)
+list(APPEND SRC_LIST
+  nanors/rs.c
+  nanors/deps/obl/oblas_common.c
+  nanors/deps/obl/oblas_lite.c
+)
 
 # Build shared library by default, but allows user override
 if (NOT DEFINED BUILD_SHARED_LIBS)
@@ -112,13 +117,3 @@ target_include_directories(moonlight-common-c SYSTEM PRIVATE
 )
 
 target_compile_definitions(moonlight-common-c PRIVATE HAS_SOCKLEN_T)
-
-# nanors
-if (MSVC)
-    set_source_files_properties("${CMAKE_SOURCE_DIR}/src/rswrapper.c"
-        DIRECTORY "${CMAKE_SOURCE_DIR}")
-else()
-    set_source_files_properties("${CMAKE_SOURCE_DIR}/src/rswrapper.c"
-        DIRECTORY "${CMAKE_SOURCE_DIR}"
-        PROPERTIES COMPILE_FLAGS "-ftree-vectorize -funroll-loops")
-endif()

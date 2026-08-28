@@ -2,7 +2,7 @@
  @file  unix.c
  @brief ENet Unix system specific functions
 */
-#ifndef _WIN32
+#if !defined(_WIN32) || defined(NXDK)
 
 // Required for IPV6_PKTINFO with Darwin headers
 #ifndef __APPLE_USE_RFC_3542
@@ -104,7 +104,37 @@
 #ifndef NO_MSGAPI
 #define NO_MSGAPI 1
 #endif
+#elif defined(NXDK)
+#ifndef HAS_POLL
+#define HAS_POLL 1
+#endif
+#ifndef HAS_FCNTL
+#define HAS_FCNTL 1
+#endif
+#ifndef HAS_IOCTL
+#define HAS_IOCTL 1
+#endif
+#ifndef HAS_INET_PTON
+#define HAS_INET_PTON 1
+#endif
+#ifndef HAS_INET_NTOP
+#define HAS_INET_NTOP 1
+#endif
+#ifndef HAS_SOCKLEN_T
+#define HAS_SOCKLEN_T 1
+#endif
+#ifndef HAS_GETADDRINFO
+#define HAS_GETADDRINFO 1
+#endif
+#ifndef HAS_GETNAMEINFO
+#define HAS_GETNAMEINFO 1
+#endif
+#ifndef NO_MSGAPI
+#define NO_MSGAPI 1
+#endif
 #elif defined(__3DS__)
+#include <3ds/os.h>
+#include <3ds/svc.h>
 #ifdef AF_INET6
 #undef AF_INET6
 #endif
@@ -438,7 +468,7 @@ enet_socket_set_option (ENetSocket socket, ENetSocketOption option, int value)
     {
         case ENET_SOCKOPT_NONBLOCK:
 #ifdef HAS_FCNTL
-            result = fcntl (socket, F_SETFL, (value ? O_NONBLOCK : 0) | (fcntl (socket, F_GETFL) & ~O_NONBLOCK));
+            result = fcntl (socket, F_SETFL, (value ? O_NONBLOCK : 0) | (fcntl (socket, F_GETFL, 0) & ~O_NONBLOCK));
 #else
 #ifdef HAS_IOCTL
             result = ioctl (socket, FIONBIO, & value);
@@ -715,7 +745,9 @@ enet_socket_send (ENetSocket socket,
         case EADDRNOTAVAIL:
         case ENETDOWN:
         case ENETUNREACH:
+#if !defined(EHOSTDOWN) || (EHOSTDOWN != EHOSTUNREACH)
         case EHOSTDOWN:
+#endif
         case EHOSTUNREACH:
             return 0;
 

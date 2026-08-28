@@ -1,4 +1,5 @@
 import Theme 1.0
+import SdlGamepadKeyNavigation 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 
@@ -38,6 +39,13 @@ FocusScope {
 
     activeFocusOnTab: true
 
+    // The focus half of HoverState's rule, written out here because the HoverStates in this
+    // control sit one level down, on the pills, and this border belongs to the container.
+    // Same predicate, so the two cannot drift: while the mouse is in hand the ring is off and
+    // the pill under the pointer washes instead.
+    readonly property bool _keyFocused: selector.activeFocus
+                                        && SdlGamepadKeyNavigation.inputMode !== "pointer"
+
     implicitWidth: row.implicitWidth + 8
     implicitHeight: 36
 
@@ -45,8 +53,8 @@ FocusScope {
         anchors.fill: parent
         radius: 8
         color: selector._bgPill
-        border.color: selector.activeFocus ? selector._accent : selector._border
-        border.width: selector.activeFocus ? 3 : 1
+        border.color: selector._keyFocused ? selector._accent : selector._border
+        border.width: selector._keyFocused ? 3 : 1
     }
 
     Row {
@@ -63,6 +71,13 @@ FocusScope {
 
                 readonly property bool _selected: selector.currentIndex === index
                 readonly property bool _disabled: selector.isDisabled(index)
+
+                // ⚠️ Disabled used to be an opacity on the fill plus `enabled: false` on the
+                // MouseArea alone, which left this Item enabled — so HoverState's guard would
+                // have seen nothing wrong with a greyed pill. Say it on the Item.
+                enabled: !pill._disabled
+
+                HoverState { id: hov }
 
                 Rectangle {
                     anchors.fill: parent
@@ -82,11 +97,31 @@ FocusScope {
                     font.pixelSize: 13
                     font.bold: pill._selected
                 }
+                // The one control in the app whose hover is a wash rather than a border: the
+                // border belongs to the container around these, and a border inside a border
+                // two pixels away is noise. A pill is a filled shape, so it lightens.
+                //
+                // ⚠️ The SELECTED pill does not light up. Hovering the option you already have
+                // chosen has nothing to say, and five percent of white over a full accent
+                // moves red from 0 to 13 and leaves green and blue where they are — it would
+                // have been a promise the pixels could not keep. The cursor still says it is
+                // clickable.
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 2
+                    radius: 5
+                    color: Qt.rgba(1, 1, 1, 0.05)
+                    opacity: (hov.active && !pill._selected) ? 1 : 0
+
+                    Behavior on opacity {
+                        enabled: !Theme.reduceAnimations
+                        NumberAnimation { duration: 120; easing.type: Easing.OutQuad }
+                    }
+                }
+
                 MouseArea {
                     anchors.fill: parent
-                    enabled: !pill._disabled
-                    cursorShape: Qt.PointingHandCursor
-                    hoverEnabled: true
+                    // enabled / cursorShape / hoverEnabled are HoverState's job now.
                     onClicked: {
                         selector.forceActiveFocus()
                         if (selector.currentIndex !== index) {

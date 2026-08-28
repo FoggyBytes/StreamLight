@@ -23,7 +23,7 @@
 
 // Increased any time the API changes. (Note: Does not reset when PL_MAJOR_VER
 // is increased)
-#define PL_API_VER 360
+#define PL_API_VER 371
 
 // Increased any time a fix is made to a given API version.
 #define PL_FIX_VER (pl_fix_ver())

@@ -32,7 +32,6 @@
 #define SER_STARTWINDOWED "startwindowed"
 #define SER_FRAMEPACING "framepacing"
 #define SER_FRAMEPACINGMODE "framepacingmode"
-#define SER_REFRESHRATEMODE "refreshratemode"
 #define SER_CONNWARNINGS "connwarnings"
 #define SER_CONFWARNINGS "confwarnings"
 #define SER_UIDISPLAYMODE "uidisplaymode"
@@ -135,7 +134,6 @@ StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
     p->absoluteMouseMode = absoluteMouseMode;
     p->absoluteTouchMode = absoluteTouchMode;
     p->framePacingMode = framePacingMode;
-    p->refreshRateMode = refreshRateMode;
     p->connectionWarnings = connectionWarnings;
     p->configurationWarnings = configurationWarnings;
     p->richPresence = richPresence;
@@ -212,23 +210,39 @@ void StreamingPreferences::reload()
     quitAppAfter = settings.value(SER_QUITAPPAFTER, false).toBool();
     absoluteMouseMode = settings.value(SER_ABSMOUSEMODE, false).toBool();
     absoluteTouchMode = settings.value(SER_ABSTOUCHMODE, true).toBool();
-    // Frame pacing. New 4-state setting (Off/Automatic/Matched/Multiple). Migrate
-    // from the old boolean: an enabled legacy toggle did automatic HW/SW pacing,
-    // so it maps to FP_AUTO; a disabled one maps to FP_OFF.
+    // Frame pacing. Off, or the software Pacer. Migrate from the old boolean, where
+    // an enabled toggle meant pacing was wanted at all.
+    //
+    // ⚠️ And migrate the two values 3.4.0 - 5.1.3 could store that no longer exist,
+    // or a stored 2 or 3 would match neither FP_OFF nor FP_ON and read as "not on":
+    // silently no pacing, for the two modes whose users had most explicitly asked
+    // for it. Legacy 2 was Matched (always software) and 3 was Multiple (hardware
+    // only, no software fallback).
+    //
+    // ⚠️ Multiple lands on FP_ON only when V-Sync is on. Without V-Sync the software
+    // Pacer has no reference to pace against, so switching it on there would be a
+    // setting that does nothing; with it, software pacing is the closest thing left
+    // to the cadence that user chose. enableVsync is read above, which this needs.
     if (settings.contains(SER_FRAMEPACINGMODE)) {
-        framePacingMode = static_cast<FramePacingMode>(settings.value(SER_FRAMEPACINGMODE,
-                                                       static_cast<int>(FramePacingMode::FP_OFF)).toInt());
+        const int LEGACY_MATCHED = 2, LEGACY_MULTIPLE = 3;
+        int stored = settings.value(SER_FRAMEPACINGMODE,
+                                    static_cast<int>(FramePacingMode::FP_OFF)).toInt();
+        if (stored == LEGACY_MATCHED) {
+            stored = FramePacingMode::FP_ON;
+        }
+        else if (stored == LEGACY_MULTIPLE) {
+            stored = enableVsync ? FramePacingMode::FP_ON : FramePacingMode::FP_OFF;
+        }
+        else if (stored < FramePacingMode::FP_OFF || stored > FramePacingMode::FP_ON) {
+            stored = FramePacingMode::FP_OFF;
+        }
+        framePacingMode = static_cast<FramePacingMode>(stored);
     }
     else {
         framePacingMode = settings.value(SER_FRAMEPACING, false).toBool()
-                              ? FramePacingMode::FP_AUTO
+                              ? FramePacingMode::FP_ON
                               : FramePacingMode::FP_OFF;
     }
-    // Defaults to the inherited behaviour, so nothing changes for anyone who
-    // doesn't go looking for it — deliberately not RR_AUTO, which would move the
-    // default configuration on somebody else's behalf.
-    refreshRateMode = static_cast<RefreshRateMode>(settings.value(SER_REFRESHRATEMODE,
-                                                   static_cast<int>(RefreshRateMode::RR_HIGHEST)).toInt());
     connectionWarnings = settings.value(SER_CONNWARNINGS, true).toBool();
     configurationWarnings = settings.value(SER_CONFWARNINGS, true).toBool();
     richPresence = settings.value(SER_RICHPRESENCE, true).toBool();
@@ -273,13 +287,14 @@ void StreamingPreferences::reload()
     // The set the old "Default" profile drew, so an upgrade shows what it used to.
     overlayItems = settings.value(SER_OVERLAYITEMS,
                                   OI_VIDEO | OI_BITRATE | OI_NET_DROPS | OI_JITTER_DROPS |
-                                  OI_LATENCY | OI_DECODE_TIME | OI_PACING | OI_HOST_METRICS).toInt();
-    // ⚠️ Adding OI_CADENCE moved OI_ALL, so a mask saved as "Full" by an earlier build
-    // no longer equals it and the Overlay tab would report Custom to everyone who had
-    // picked Full. Carry them across; anything else is left exactly as they set it.
-    if (overlayItems == ((1 << 13) - 1)) {
-        overlayItems = OI_ALL;
-    }
+                                  OI_LATENCY | OI_DECODE_TIME | OI_HOST_METRICS).toInt();
+    // ⚠️ Strip the two retired bits, or a mask saved by an older build carries bits no
+    // item answers to any more — and a Full chosen there would no longer equal OI_ALL,
+    // so the Overlay tab would report Custom to everyone who had picked Full. Bit 11 was
+    // OI_PACING (every build up to 5.1.3) and bit 13 was OI_CADENCE (5.1.2 and 5.1.3).
+    // Clearing them first makes the Full case fall out on its own, so there is nothing
+    // else to special-case.
+    overlayItems &= ~((1 << 11) | (1 << 13));
     packetSize = settings.value(SER_PACKETSIZE, 0).toInt();
     swapMouseButtons = settings.value(SER_SWAPMOUSEBUTTONS, false).toBool();
     muteOnFocusLoss = settings.value(SER_MUTEONFOCUSLOSS, false).toBool();
@@ -356,7 +371,6 @@ void StreamingPreferences::save()
     settings.setValue(SER_ABSMOUSEMODE, absoluteMouseMode);
     settings.setValue(SER_ABSTOUCHMODE, absoluteTouchMode);
     settings.setValue(SER_FRAMEPACINGMODE, static_cast<int>(framePacingMode));
-    settings.setValue(SER_REFRESHRATEMODE, static_cast<int>(refreshRateMode));
     settings.setValue(SER_CONNWARNINGS, connectionWarnings);
     settings.setValue(SER_CONFWARNINGS, configurationWarnings);
     settings.setValue(SER_RICHPRESENCE, richPresence);

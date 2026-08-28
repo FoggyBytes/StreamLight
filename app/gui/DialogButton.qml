@@ -27,18 +27,30 @@ Button {
     Keys.onEnterPressed:  btn.activated()
     Keys.onSpacePressed:  btn.activated()
 
+    // This button already brightened its border under the pointer — it is where the app-wide
+    // hover idiom comes from. What HoverState adds is the cursor and the two guards, which it
+    // never had, and one correction: hover no longer touches the fill. It used to REPLACE
+    // "#14ffffff" (alpha 0.078) with rgba(1,1,1,0.05), so the pointer made the button very
+    // slightly darker while the border said the opposite.
+    HoverState { id: hov }
+
     background: Rectangle {
         implicitWidth: Math.round(150 * btn._u)
         implicitHeight: Math.round(42 * btn._u)
         radius: Math.round(8 * btn._u)
-        color: btn.activeFocus ? (btn.danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.20)
+        color: hov.keyFocused ? (btn.danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.20)
                                              : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20))
-             : btn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
              :                   "#14ffffff"
-        border.color: btn.activeFocus ? (btn.danger ? Theme.danger : Theme.accent)
-                    : btn.hovered     ? Theme.lineHigh
+        border.color: hov.keyFocused ? (btn.danger ? Theme.danger : Theme.accent)
+                    : hov.active      ? Theme.lineHigh
                     :                   Theme.line
-        border.width: btn.activeFocus ? 2 : 1
+        border.width: hov.keyFocused ? 2 : 1
+
+        // Colour only, so the width never moves and the pointer cannot nudge the geometry.
+        Behavior on border.color {
+            enabled: !Theme.reduceAnimations
+            ColorAnimation { duration: 120; easing.type: Easing.OutQuad }
+        }
 
         // The same snap the action rows on Home and the host page use. The colour grammar
         // here stays as §22 defined it — accent as a border and a tint, not a fill — but the
@@ -47,7 +59,7 @@ Button {
             enabled: !Theme.reduceAnimations
             NumberAnimation { duration: 130; easing.type: Easing.OutBack; easing.overshoot: 2.2 }
         }
-        scale: btn.activeFocus && !Theme.reduceAnimations ? 1.03 : 1.0
+        scale: hov.keyFocused && !Theme.reduceAnimations ? 1.03 : 1.0
     }
     contentItem: Label {
         text: btn.text

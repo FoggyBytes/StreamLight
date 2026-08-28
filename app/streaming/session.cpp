@@ -47,62 +47,12 @@
 #include <QQuickOpenGLUtils>
 #endif
 
-#ifdef Q_OS_WIN32
-#include <SDL_syswm.h>
-
-// Undo a display mode change that outlived the stream window.
-//
-// SDL is supposed to put the panel back when an exclusive-fullscreen window is
-// destroyed, and normally does. It does not always: with "Refresh rate switching"
-// set to "Match frame rate", a 60 FPS stream leaves a 120 Hz panel sitting at
-// 60 Hz after the session ends (issue #9). That case never showed up before 5.1.0
-// because we always picked the highest refresh rate, which on such a panel is the
-// desktop mode already - there was nothing to put back.
-//
-// Rather than guess which of SDL's restore paths was missed, ask Windows. A mode
-// set for fullscreen is temporary and does not touch the saved settings, so if the
-// display is not running what the user has saved for it, the leftover change is
-// ours and we undo it. When SDL got it right this is a no-op, which is what keeps
-// it from introducing a mode change of its own.
-static void restoreDesktopDisplayModeIfChanged(const WCHAR* deviceName)
-{
-    DEVMODEW currentMode = {};
-    DEVMODEW savedMode = {};
-
-    currentMode.dmSize = sizeof(currentMode);
-    savedMode.dmSize = sizeof(savedMode);
-
-    if (!EnumDisplaySettingsW(deviceName, ENUM_CURRENT_SETTINGS, &currentMode) ||
-        !EnumDisplaySettingsW(deviceName, ENUM_REGISTRY_SETTINGS, &savedMode)) {
-        return;
-    }
-
-    // Both readings have to actually carry a resolution and a refresh rate before
-    // they can be compared. Testing a field the driver never filled in would have
-    // us "restoring" the display after every single session.
-    const DWORD requiredFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
-    if ((currentMode.dmFields & requiredFields) != requiredFields ||
-        (savedMode.dmFields & requiredFields) != requiredFields) {
-        return;
-    }
-
-    if (currentMode.dmPelsWidth == savedMode.dmPelsWidth &&
-        currentMode.dmPelsHeight == savedMode.dmPelsHeight &&
-        currentMode.dmDisplayFrequency == savedMode.dmDisplayFrequency) {
-        return;
-    }
-
-    // A null DEVMODE means "go back to the settings saved for this display".
-    LONG result = ChangeDisplaySettingsExW(deviceName, nullptr, nullptr, 0, nullptr);
-
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                "Display was left at %lux%lu@%lu Hz after the stream - restoring the desktop mode "
-                "%lux%lu@%lu Hz (result %ld)",
-                currentMode.dmPelsWidth, currentMode.dmPelsHeight, currentMode.dmDisplayFrequency,
-                savedMode.dmPelsWidth, savedMode.dmPelsHeight, savedMode.dmDisplayFrequency,
-                result);
-}
-#endif
+// ⚠️ A Windows-only restoreDesktopDisplayModeIfChanged() lived here, with the
+// <SDL_syswm.h> include it needed. It undid a fullscreen mode change that outlived
+// the stream window — a case that only existed because "Refresh rate switching" set
+// to "Match frame rate" could leave a 120 Hz panel at 60 Hz. That setting went in
+// 5.2.0, so mode selection is upstream's again (always the highest multiple, which
+// on such a panel is the desktop mode already) and there is nothing left to put back.
 
 #define CONN_TEST_SERVER "qt.conntest.moonlight-stream.org"
 
@@ -158,11 +108,45 @@ void Session::clConnectionTerminated(int errorCode)
         s_ActiveSession->m_UnexpectedTermination = true;
         s_ActiveSession->m_NoVideoTraffic = true;
 
+        // Audio arrived, video never did. Both travel the same way — UDP from the host to
+        // us — so media from the host demonstrably reaches this machine and the firewall
+        // advice below is not merely unhelpful here, it is provably wrong. It sent one user
+        // (27/08/2026) hunting ports for an NVIDIA driver bug that had left the host's
+        // virtual display unable to produce a picture: the launch was accepted, the RTSP
+        // handshake completed, the first audio packet landed at 0 ms, and the connection
+        // still died for lack of video. What failed sits upstream of the network.
+        //
+        // The read races the audio thread, which owns the counter. It is benign: the value
+        // only ever climbs away from zero, so the worst a stale read can do is fall back to
+        // the message we would have shown anyway.
+        if (s_ActiveSession->hostSideVideoFailure()) {
+            emit s_ActiveSession->displayLaunchError(tr("The host started the session but sent no video.") + "\n\n" +
+                                                     (s_ActiveSession->m_HostVirtualDisplay
+                                                          ? tr("Check the virtual display and graphics drivers on the host PC.")
+                                                          : tr("Check the display and graphics drivers on the host PC.")));
+            break;
+        }
+
         char ports[128];
         SDL_assert(portFlags != 0);
         LiStringifyPortFlags(portFlags, ", ", ports, sizeof(ports));
-        emit s_ActiveSession->displayLaunchError(tr("No video received from host.") + "\n\n"+
-                                                 tr("Check your firewall and port forwarding rules for port(s): %1").arg(ports));
+
+        // Nothing arrived at all, so the media path really is the suspect — but the
+        // connectivity test above already ran, and when it comes back 0 it has validated
+        // those very ports from this machine. Telling the user to check the firewall we
+        // just measured as open is how the old message wasted an evening; send them to the
+        // other end instead. Note what the test does NOT cover: it probes a public server,
+        // not the host, so a clean result clears this side only — the host's firewall and
+        // the path between are exactly what is left. ML_TEST_RESULT_INCONCLUSIVE (-1, the
+        // test server unreachable) proves nothing either way and keeps the old wording.
+        if (s_ActiveSession->m_PortTestResults == 0) {
+            emit s_ActiveSession->displayLaunchError(tr("No video received from host.") + "\n\n"+
+                                                     tr("Check the firewall on the host PC for port(s): %1").arg(ports));
+        }
+        else {
+            emit s_ActiveSession->displayLaunchError(tr("No video received from host.") + "\n\n"+
+                                                     tr("Check your firewall and port forwarding rules for port(s): %1").arg(ports));
+        }
         break;
 
     case ML_ERROR_NO_VIDEO_FRAME:
@@ -663,22 +647,34 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_AudioSampleCount(0),
       m_DropAudioEndTime(0)
 {
+    {
+        QReadLocker lock(&computer->lock);
+        m_StreamTweakEnabled = computer->streamTweakEnabled;
+    }
+
     // Start polling StreamTweak for host metrics immediately.
     // The poller is owned by this Session (parent = this) so it is automatically
     // destroyed when the Session is destroyed. Polling fails gracefully if
     // StreamTweak is not reachable — all metrics stay at -1.
-    m_HostMetricsPoller = new HostMetricsPoller(computer->activeAddress.address(), this);
-    m_HostMetricsPoller->start();
+    //
+    // Not created at all when the integration is off for this host: it would otherwise poll
+    // a port nobody is listening on once a second for the whole session. The overlay's host
+    // section already hides itself when every field reads -1, so nothing downstream needs to
+    // know the poller is absent.
+    if (m_StreamTweakEnabled) {
+        m_HostMetricsPoller = new HostMetricsPoller(computer->activeAddress.address(), this);
+        m_HostMetricsPoller->start();
 
-    // If StreamTweak sends a stop signal via the STATS response, terminate the session
-    // gracefully. We must NOT call interrupt() here because it forcibly aborts ENet via
-    // LiInterruptConnection() before SDL_QUIT, which on an established session leaves the
-    // host without a BYE and corrupts teardown (observed on ROG Ally / AMD: hard hang in
-    // the renderer / WASAPI release path requiring power-cycle). requestGracefulStop()
-    // skips LiInterruptConnection() and only pushes SDL_QUIT, letting the SDL event loop
-    // perform a clean LiStopConnection() — the same path used by the local stop hotkey.
-    connect(m_HostMetricsPoller, &HostMetricsPoller::stopRequested,
-            this,                &Session::requestGracefulStop);
+        // If StreamTweak sends a stop signal via the STATS response, terminate the session
+        // gracefully. We must NOT call interrupt() here because it forcibly aborts ENet via
+        // LiInterruptConnection() before SDL_QUIT, which on an established session leaves the
+        // host without a BYE and corrupts teardown (observed on ROG Ally / AMD: hard hang in
+        // the renderer / WASAPI release path requiring power-cycle). requestGracefulStop()
+        // skips LiInterruptConnection() and only pushes SDL_QUIT, letting the SDL event loop
+        // perform a clean LiStopConnection() — the same path used by the local stop hotkey.
+        connect(m_HostMetricsPoller, &HostMetricsPoller::stopRequested,
+                this,                &Session::requestGracefulStop);
+    }
 
     // Session telemetry sampler: sends per-second client stats to StreamTweak every 10s.
     // start() is called later in exec() once the stream is running (after LiStartConnection).
@@ -1445,6 +1441,14 @@ private:
                 !m_Session->m_UnexpectedTermination &&
                 m_Session->m_Preferences->quitAppAfter;
 
+        // ⚠️ There are two senders of /cancel: this one, and the UI's PendingQuitTask
+        // behind the "Are you sure you want to quit X?" dialog. They are indistinguishable
+        // in a log, which is what made "the host closed my game when I only paused" hard to
+        // pin down on 22/08/2026. A [quit-diag] probe settled it: this path correctly left
+        // the app running every time (quitAppAfter was off), and every /cancel came from
+        // the dialog. If the question ever comes back, log which side fired rather than
+        // reasoning about it.
+
         // Notify the UI
         if (shouldQuit) {
             emit m_Session->quitStarting();
@@ -1568,26 +1572,11 @@ void Session::getWindowDimensions(int& x, int& y,
     x = y = SDL_WINDOWPOS_CENTERED_DISPLAY(displayIndex);
 }
 
-// True when 'candidate' is a better refresh rate than 'current' under the user's
-// policy (Settings → Video → Refresh rate). RR_MATCH_FPS wants the stream's own
-// frame rate, so an exact match beats everything and otherwise the lowest
-// multiple wins; the inherited behaviour wants the highest multiple, because
-// that is what the hardware frame pacing cadence needs.
-static bool refreshRateIsBetter(int candidate, int current,
-                                StreamingPreferences::RefreshRateMode rrMode, int fps)
-{
-    if (rrMode == StreamingPreferences::RR_MATCH_FPS) {
-        if (candidate == fps) {
-            return current != fps;
-        }
-        if (current == fps) {
-            return false;
-        }
-        return candidate < current;
-    }
-
-    return candidate > current;
-}
+// ⚠️ The refreshRateIsBetter() policy helper lived here and was removed in 5.2.0 with
+// the "Refresh rate switching" setting. Mode selection is upstream Moonlight's again:
+// the highest refresh rate the stream's FPS divides into, with no user choice. The
+// Match-frame-rate option it used to implement was the way out of the 2:2 cadence,
+// and the cadence went in the same release.
 
 void Session::updateOptimalWindowDisplayMode()
 {
@@ -1624,32 +1613,11 @@ void Session::updateOptimalWindowDisplayMode()
         matchVideo = WMUtils::isGpuSlow() || QString(SDL_GetCurrentVideoDriver()) == "KMSDRM";
     }
 
-    // RR_OFF skips the search entirely: the panel stays on whatever the user set
-    // it to and we simply fall through to the desktop mode below.
-    //
-    // RR_AUTO resolves here rather than in the renderer, because the pairing it
-    // makes is with the pacing choice: software pacing describes itself as being
-    // for a display running at the stream's own rate, so give it one. Everything
-    // else keeps the highest multiple, which is what the hardware cadence needs.
-    // With V-Sync off nothing is paced at all, so there is no pairing to make.
-    StreamingPreferences::RefreshRateMode rrMode = m_Preferences->refreshRateMode;
-    if (rrMode == StreamingPreferences::RR_AUTO) {
-        rrMode = (m_Preferences->enableVsync &&
-                  m_Preferences->framePacingMode == StreamingPreferences::FP_MATCHED)
-                ? StreamingPreferences::RR_MATCH_FPS
-                : StreamingPreferences::RR_HIGHEST;
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "Automatic refresh rate switching resolved to: %s",
-                    rrMode == StreamingPreferences::RR_MATCH_FPS ? "match frame rate" : "highest");
-    }
-    const bool searchModes = (rrMode != StreamingPreferences::RR_OFF);
-
     bestMode = desktopMode;
     bestMode.refresh_rate = 0;
-    if (searchModes && !matchVideo) {
-        // Start with the native desktop resolution and try to find a refresh
-        // rate that our stream FPS evenly divides — the highest one, or the one
-        // equal to the FPS if the user asked us to match it.
+    if (!matchVideo) {
+        // Start with the native desktop resolution and try to find
+        // the highest refresh rate that our stream FPS evenly divides.
         for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
             if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
                 if (mode.w == desktopMode.w && mode.h == desktopMode.h &&
@@ -1657,9 +1625,7 @@ void Session::updateOptimalWindowDisplayMode()
                     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                                 "Found display mode with desktop resolution: %dx%dx%d",
                                 mode.w, mode.h, mode.refresh_rate);
-                    if (bestMode.refresh_rate == 0 ||
-                            refreshRateIsBetter(mode.refresh_rate, bestMode.refresh_rate,
-                                                rrMode, m_StreamConfig.fps)) {
+                    if (mode.refresh_rate > bestMode.refresh_rate) {
                         bestMode = mode;
                     }
                 }
@@ -1672,7 +1638,7 @@ void Session::updateOptimalWindowDisplayMode()
     // modes that can meet the required refresh rate and minimum video
     // resolution. We will also try to pick a display mode that matches
     // aspect ratio closest to the video stream.
-    if (searchModes && bestMode.refresh_rate == 0) {
+    if (bestMode.refresh_rate == 0) {
         float bestModeAspectRatio = 0;
         float videoAspectRatio = (float)m_ActiveVideoWidth / (float)m_ActiveVideoHeight;
         for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
@@ -1683,11 +1649,7 @@ void Session::updateOptimalWindowDisplayMode()
                     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                                 "Found display mode with video resolution: %dx%dx%d",
                                 mode.w, mode.h, mode.refresh_rate);
-                    // The equal-refresh case is kept so the aspect ratio still
-                    // breaks ties, exactly as the original >= comparison did.
-                    if ((bestMode.refresh_rate == 0 || mode.refresh_rate == bestMode.refresh_rate ||
-                         refreshRateIsBetter(mode.refresh_rate, bestMode.refresh_rate,
-                                             rrMode, m_StreamConfig.fps)) &&
+                    if (mode.refresh_rate >= bestMode.refresh_rate &&
                             (bestModeAspectRatio == 0 || fabs(videoAspectRatio - modeAspectRatio) <= fabs(videoAspectRatio - bestModeAspectRatio))) {
                         bestMode = mode;
                         bestModeAspectRatio = modeAspectRatio;
@@ -1698,19 +1660,12 @@ void Session::updateOptimalWindowDisplayMode()
     }
 
     if (bestMode.refresh_rate == 0) {
-        // Either the user asked us to leave the panel alone, or there is no
-        // match at all — which happens when a 120 FPS stream is moved onto a
-        // 60 Hz monitor, since no refresh rate can divide our FPS setting.
-        // Either way the desktop mode is what we want.
-        if (searchModes) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "No matching display mode found; using desktop mode");
-        }
-        else {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "Leaving the display on its current mode by request: %dx%dx%d",
-                        desktopMode.w, desktopMode.h, desktopMode.refresh_rate);
-        }
+        // We may find no match if the user has moved a 120 FPS
+        // stream onto a 60 Hz monitor (since no refresh rate can
+        // divide our FPS setting). We'll stick to the default in
+        // this case.
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "No matching display mode found; using desktop mode");
         bestMode = desktopMode;
     }
 
@@ -1937,7 +1892,8 @@ bool Session::startConnectionAsync()
                       m_Preferences->playAudioOnHost,
                       m_InputHandler->getAttachedGamepadMask(),
                       !m_Preferences->multiController,
-                      rtspSessionUrl);
+                      rtspSessionUrl,
+                      m_HostVirtualDisplay);
     } catch (const GfeHttpResponseException& e) {
         emit displayLaunchError(tr("Host returned error: %1").arg(e.toQString()));
         return false;
@@ -2048,7 +2004,13 @@ bool Session::startConnectionAsync()
     // always did, and the window appears on the first frame. Left on for a title that opens its
     // own launcher the gate would run to its ninety-second cap with the launcher sitting on
     // screen unseen, which is why the wait is overridable per game as well.
-    if (!m_UnlockMode && m_Preferences->waitForGameOnScreen) {
+    //
+    // And only when this host's integration is on: GAMESTATE is a StreamTweak verb, so with
+    // it off the gate would count five empty replies and reveal anyway. Skipping it outright
+    // means the window appears on the first frame, which is what the user gets on any host
+    // without StreamTweak. Both this and the reveal below go through waitsForGame() so they
+    // cannot disagree — see the note on it.
+    if (!m_UnlockMode && waitsForGame()) {
         QString hostAddr = m_Computer->activeAddress.address();
         QMetaObject::invokeMethod(this, [this, hostAddr]() {
             if (m_LaunchGate == nullptr) {
@@ -2079,7 +2041,13 @@ bool Session::startConnectionAsync()
     // Skipped in unlock mode: there is nothing here worth recording, and leaving the sampler
     // silent means the host has no telemetry to suppress on its side either — including the
     // client-heartbeat watchdog, which only arms once SESSIONDATA has been seen.
-    if (m_TelemetrySampler && !m_UnlockMode) {
+    // Also skipped when this host's integration is off. ⚠️ What that costs is narrower than it
+    // looks, and the narrower version is the one to state: the host still records the session
+    // itself — the row, its duration and the games come from its own reading of the streaming
+    // server's log, not from here. What it loses is everything measured on this side: the
+    // quality grade, the client charts, and the host-metric series too, since those are
+    // sampled once per batch as this feed arrives.
+    if (m_TelemetrySampler && !m_UnlockMode && m_StreamTweakEnabled) {
         QString hostAddr = m_Computer->activeAddress.address();
         int fps = m_StreamConfig.fps;
         int bitrateKbps = m_StreamConfig.bitrate;
@@ -2187,6 +2155,16 @@ void Session::beginLinkMatch()
     // committed to a launch, and from now until the game is on screen there is always
     // something to say.
     m_Curtain.begin(m_App.name);
+
+    // ⚠️ After the curtain, not before: the launch screen takes the game's name from it, so
+    // returning above this line would leave a nameless launch screen on every host whose
+    // integration is off — which is most of them by default.
+    if (!m_StreamTweakEnabled) {
+        // Nothing to ask this host. Reported through the same "finished, nothing changed"
+        // path as the unlock case, because that signal is what releases the launch.
+        emit linkMatchFinished(false, QString());
+        return;
+    }
 
     // One matcher per session; a resume builds a new Session and therefore a new matcher.
     if (m_LinkMatcher == nullptr) {
@@ -2445,7 +2423,7 @@ void Session::exec()
     // Without the wait there is no gate to finish, so the reveal is asked for now and happens
     // as soon as the first frame lands — the behaviour StreamLight has always had. This is the
     // default path; holding the window back is the opt-in.
-    if (!m_UnlockMode && !m_Preferences->waitForGameOnScreen) {
+    if (!m_UnlockMode && !waitsForGame()) {
         revealStreamWindow();
     }
 
@@ -2980,25 +2958,6 @@ DispatchDeferredCleanup:
 
     // This must be called after the decoder is deleted, because
     // the renderer may want to interact with the window
-#ifdef Q_OS_WIN32
-    // Note which display the stream window was on while the window still exists,
-    // so we can check after teardown whether a mode change of ours survived it.
-    WCHAR streamDisplayDevice[CCHDEVICENAME] = {};
-    if (m_Window != nullptr) {
-        SDL_SysWMinfo wmInfo;
-        SDL_VERSION(&wmInfo.version);
-        if (SDL_GetWindowWMInfo(m_Window, &wmInfo) && wmInfo.subsystem == SDL_SYSWM_WINDOWS) {
-            HMONITOR monitor = MonitorFromWindow(wmInfo.info.win.window, MONITOR_DEFAULTTONEAREST);
-            MONITORINFOEXW monitorInfo = {};
-            monitorInfo.cbSize = sizeof(monitorInfo);
-            if (monitor != nullptr && GetMonitorInfoW(monitor, &monitorInfo)) {
-                SDL_memcpy(streamDisplayDevice, monitorInfo.szDevice, sizeof(streamDisplayDevice));
-                streamDisplayDevice[CCHDEVICENAME - 1] = L'\0';
-            }
-        }
-    }
-#endif
-
     SDL_DestroyWindow(m_Window);
 
     if (iconSurface != nullptr) {
@@ -3006,16 +2965,6 @@ DispatchDeferredCleanup:
     }
 
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
-
-#ifdef Q_OS_WIN32
-    // Put the panel back if a fullscreen mode change of ours outlived the window.
-    // Skipped when another session is about to reuse this display (a live settings
-    // change reconnects), because bouncing the mode back and forth between the two
-    // halves of one reconnect would be worse than leaving it where it is.
-    if (streamDisplayDevice[0] != L'\0' && !m_HasPendingReconfigure) {
-        restoreDesktopDisplayModeIfChanged(streamDisplayDevice);
-    }
-#endif
 
     // Terminate Hue Sync if it was launched for this session.
     if (m_HueSyncManager) {

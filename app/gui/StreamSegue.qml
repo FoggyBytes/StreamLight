@@ -59,6 +59,9 @@ Item {
 
     property int  _unlockAttempt : 0
     property int  _unlockPolls : 0
+    // Did StreamTweak answer at all during this attempt's checks? Reset with the poll count
+    // on every submit, because the question is about THIS attempt.
+    property bool _unlockHostAnswered : false
     property bool _unlockFinished : false
 
     function _unlockFinish(ok) {
@@ -348,7 +351,11 @@ Item {
             // error-handling path below.
         }
 
-        if (portTestResult !== 0 && portTestResult !== -1 && streamSegueErrorDialog.text) {
+        // Not when the failure was diagnosed as host-side: audio reached us, so a line about
+        // this network blocking StreamLight contradicts the message it would be appended to.
+        // It stays true in general — it just has nothing to do with this failure.
+        if (portTestResult !== 0 && portTestResult !== -1 && streamSegueErrorDialog.text
+                && !(session && session.hostSideVideoFailure())) {
             streamSegueErrorDialog.text += "\n\n" + qsTr("This PC's Internet connection is blocking StreamLight. Streaming over the Internet may not work while connected to this network.")
         }
 
@@ -560,6 +567,22 @@ Item {
             _unlockPolls++
             if (_unlockPolls > 8) {
                 lockPollTimer.stop()
+
+                // ⚠️ Running out of checks is not evidence of a wrong PIN. If NOT ONE of the
+                // eight replies came back from StreamTweak, the host was silent throughout —
+                // it crashed, was stopped, the link blipped — and we have learned nothing
+                // about the PIN. Saying "wrong" there blames the user for the host, and
+                // because it also burned an attempt a correct PIN could be refused three
+                // times and end at "Too many attempts", locking them out over a hiccup.
+                //
+                // So this case gets its own wording and, deliberately, does NOT count.
+                if (!_unlockHostAnswered) {
+                    unlockPad.state_ = "mute"
+                    unlockPad.pinLength = 0
+                    if (session) session.unlockClearPin()
+                    return
+                }
+
                 _unlockAttempt++
                 unlockPad.attempt = _unlockAttempt
                 if (_unlockAttempt >= unlockPad.maxAttempts) {
@@ -583,6 +606,10 @@ Item {
             if (index !== pcIndex || !lockPollTimer.running) return
             // supported=false here means the host stopped answering mid-check — treat it as
             // "not yet", never as success: unlocking is the one thing we must be sure of.
+            //
+            // But remember that it DID answer at least once, because that is the difference
+            // between "your PIN was wrong" and "the host went quiet" when the checks run out.
+            if (supported) _unlockHostAnswered = true
             if (supported && !locked) _unlockFinish(true)
         }
     }
@@ -800,18 +827,24 @@ Item {
 
         // Cover art. It brightens as the launch advances, which is the progress indicator:
         // a percentage would have to be invented, since nothing can know how long a game
-        // takes to load. True desaturation would read better, but QtQuick.Effects isn't in
-        // the deployed Qt, so this fades and lifts instead of draining colour — same
-        // reading, no new module.
-        Image {
+        // takes to load.
+        //
+        // Same component as the host page's spotlight, so the cover you pressed A on and
+        // the cover you are now waiting behind are the same picture with the same rounded
+        // corners and the same shadow — a second apart, and they used to be drawn by two
+        // different pieces of code.
+        //
+        // ⚠️ The note that used to be here said QtQuick.Effects was not in the deployed Qt
+        // and that is why this was a bare Image. It has been deployed since 5.0.0 and the
+        // host page has used MultiEffect all along.
+        HeroCover {
             id: coverImage
             visible: streamSegue._hasCover
             source: streamSegue.boxArt
             height: _h * 0.36
-            width: height * 2 / 3
-            fillMode: Image.PreserveAspectCrop
+            radius: _h * 0.010
+            shadowOffset: _h * 0.008
             anchors.horizontalCenter: parent.horizontalCenter
-            asynchronous: true
             opacity: 0.4 + 0.6 * streamSegue._bgProgress
             Behavior on opacity { NumberAnimation { duration: 600; easing.type: Easing.OutCubic } }
         }
@@ -1009,6 +1042,7 @@ Item {
             pinLength = 0
             state_ = "checking"
             streamSegue._unlockPolls = 0
+            streamSegue._unlockHostAnswered = false
             lockPollTimer.start()
         }
         onCancelPressed: streamSegue._unlockFinish(false)

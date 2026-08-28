@@ -240,6 +240,10 @@ public:
     // under the host's lock, persist, then tell the model to repaint.
     bool setStageBackground(QString uuid, QString imagePath, QString seedColor);
 
+    // The StreamTweak integration for one host. Persisted immediately: the Settings tab is
+    // a place people leave by killing the app, so waiting for teardown would lose the choice.
+    bool setStreamTweakEnabled(QString uuid, bool enabled);
+
     void addNewHost(NvAddress address, bool mdns, QString name = QString(), NvAddress mdnsIpv6Address = NvAddress(), QString aliasSuffix = QString());
 
     QString generatePinString();

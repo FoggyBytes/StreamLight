@@ -16,13 +16,12 @@ static const int s_ResCustomIdx = s_ResCount - 1;
 static const int s_FpsPresets[] = { 30, 60, 90, 120 };
 static const int s_FpsCount = (int)(sizeof(s_FpsPresets) / sizeof(s_FpsPresets[0]));
 
-// Labels match Settings → Video (FP_MATCHED = "Software", FP_MULTIPLE = "Hardware").
-static const char* const s_PacingLabels[] = { "Off", "Automatic", "Software", "Hardware" };
+// Labels match Settings → Video. Two values since 5.2.0 removed the hardware cadence.
+static const char* const s_PacingLabels[] = { "Off", "On" };
 static const StreamingPreferences::FramePacingMode s_PacingValues[] = {
-    StreamingPreferences::FP_OFF, StreamingPreferences::FP_AUTO,
-    StreamingPreferences::FP_MATCHED, StreamingPreferences::FP_MULTIPLE
+    StreamingPreferences::FP_OFF, StreamingPreferences::FP_ON
 };
-static const int s_PacingCount = 4;
+static const int s_PacingCount = 2;
 
 static const int kCustomMin = 256, kCustomMax = 7680, kCustomStep = 8;
 static const int kBitrateMinKbps = 5000, kBitrateStepKbps = 5000;
@@ -133,8 +132,7 @@ void StreamSettingsOverlay::close()
 bool StreamSettingsOverlay::isRowLocked(int rowId) const
 {
     // Frame pacing does nothing without V-Sync — Session passes FP_OFF to the
-    // decoder whenever V-Sync is disabled, and both pacing paths (DXGI sync
-    // interval, software Pacer) are gated on it. V-Sync is a global preference
+    // decoder whenever V-Sync is disabled, and the software Pacer is gated on it. V-Sync is a global preference
     // that can't be changed from here, so the row is shown read-only instead of
     // advertising a mode that would be silently ignored.
     return rowId == ROW_PACING && !m_Prefs->enableVsync;

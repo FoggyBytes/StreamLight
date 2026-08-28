@@ -712,17 +712,18 @@ FocusScope {
 
     /*
      * A "hero cover regeneration" workaround used to live here — a forced source reload 150 ms
-     * after the window came back from a stream, because the spotlight cover sometimes returned
-     * oversized and stretched. It repaired the symptom without knowing the cause.
+     * after the window came back from a stream, because the spotlight cover returned oversized
+     * and stretched.
      *
-     * It is gone because the cause was found and fixed at the spotlight itself: one MultiEffect
-     * was doing both the rounded mask and the drop shadow, and the shadow's automatic padding
-     * put the source and the mask in two different rects. See the two-pass split further down.
+     * It was removed in 5.1.2 on the belief that the cause had been found and fixed at the
+     * spotlight itself (one MultiEffect doing both the rounded mask and the drop shadow, whose
+     * automatic padding put source and mask in different rects). That split is still there and
+     * is still right, but it was NOT the whole cause: the deformation is back in 5.2.0.
      *
-     * ⚠️ Removed deliberately rather than kept as a net. With a blind repair firing on every
-     * return there is no way to tell whether the real fix works — "it stopped happening" would
-     * prove nothing. If the deformation ever comes back, restore this from git and instrument
-     * before guessing again.
+     * The repair is back too, and it now lives inside HeroCover.qml so the host page and the
+     * launch curtain cannot drift apart on it. Read the block at the top of that file before
+     * touching this area — it says what has already been excluded by measurement, and what
+     * the one remaining unmeasured thing is.
      */
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -749,132 +750,34 @@ FocusScope {
             spacing: 0
 
         // ── The big cover ────────────────────────────────────────────────────
-        Item {
+        HeroCover {
             id: heroArtHolder
             anchors.horizontalCenter: parent.horizontalCenter
 
             /*
-             * A fixed 2:3 box, and the artwork fitted inside it.
+             * ⚠️ 340 is a ceiling as much as a size: the covers themselves top out at
+             * 600x900 (Steam's library capsule, and there is no larger portrait asset),
+             * and on a 4K panel at 200% scaling — where _u is back at 1.32 while the
+             * device pixel ratio is 2 — a design height of 340 asks for exactly 900
+             * physical pixels. Larger than this and the biggest cover on the screen
+             * starts being the softest.
              *
-             * The box used to take the artwork's own shape, which was the right fix for the
-             * 3:4 crop that came before it but is the wrong one here: a square cover made a
-             * square box, so the column changed width as you moved down the list, and at this
-             * size that movement is the most visible thing on the page. 2:3 is not an
-             * arbitrary choice either — it is what the rows below already use, and what every
-             * cover the host produces now is.
-             *
-             * PreserveAspectFit, never Crop: anything off-ratio gets transparent bands rather
-             * than having its edges cut off. The shadow is cast from the image's own alpha, so
-             * it follows the artwork and not the box.
-             *
-             * 340 is the design height. ⚠️ It is a ceiling as much as a size: the covers
-             * themselves top out at 600x900 (Steam's library capsule, and there is no larger
-             * portrait asset), and on a 4K panel at 200% scaling — where _u is back at 1.32
-             * while the device pixel ratio is 2 — a design height of 340 asks for exactly 900
-             * physical pixels. Larger than this and the biggest cover on the screen starts
-             * being the softest.
+             * The width, the 2:3 box, the crop, the rounded corners and the shadow all
+             * live in HeroCover now, shared with the launch curtain so the two screens
+             * cannot drift apart.
              */
             height: Math.min(appsRoot._px(340), hero.height - appsRoot._px(150))
-            width: Math.round(height * 2 / 3)
-
-            // The width no longer moves — the box is a fixed ratio of its own height — so the
-            // Behavior that used to ease it away is gone with the shape it was easing.
-
-            Image {
-                id: heroArt
-                anchors.fill: parent
-                source: appsRoot.focusedBoxArt
-                /*
-                 * ⚠️ Crop and not Fit, and the mask below is the reason. The mask is a rounded
-                 * rectangle the size of the BOX; Fit letterboxes any artwork that is not 2:3,
-                 * which leaves the rounded corners sitting on transparent margin where they
-                 * round nothing, and the artwork keeps its own square corners. That is the
-                 * split Marcello caught between 007 First Light (600x900, corners rounded) and
-                 * Cyberpunk 2077 (342x482, corners square) on the same screen.
-                 *
-                 * Cropping costs 6% of the height on a 342x482 and 11% of the width on the
-                 * 600x800 that Desktop and Steam Big Picture use. That is the trade every other
-                 * masked cover in this app already takes - the host card, the last-session
-                 * strip and the launch curtain are all Crop - and the one StreamTweak took
-                 * deliberately in its own §35: empty bands above and below read worse than a
-                 * crop. ⚠️ The list-row thumbnail below stays Fit on purpose; it has no mask,
-                 * so it has nothing to line up with, and its own comment explains why.
-                 */
-                fillMode: Image.PreserveAspectCrop
-                asynchronous: true
-                smooth: true
-                mipmap: true
-                visible: false
-            }
-
-            // Rounded corners plus a static drop shadow, in TWO passes with one job each.
-            // Static is the point: they are drawn once and never again, which is why they are
-            // the effects that can be on permanently without costing anything per frame.
-            /*
-             * ⚠️ One MultiEffect used to do both, and that is what deformed this cover on the
-             * way back from a stream — the artwork blown up and cropped instead of letterboxed.
-             *
-             * A shadow makes MultiEffect widen its own rendered rect so the blur is not cut
-             * off (`autoPaddingEnabled`, on by default), while the mask below stays the size
-             * of the item. Source and mask then live in two different rects, and the effect
-             * resolves that by stretching. It showed on any artwork whose painted rect was
-             * smaller than the box it sat in, which is where a uniform stretch is visible
-             * rather than invisible.
-             *
-             * ⚠️ This comment used to say that meant "Desktop and Steam Big Picture and
-             * nothing else, because every real cover is 600x900". That was wrong: Cyberpunk
-             * 2077 came through GOG at 342x482. Do not use "every cover is 2:3" as a premise
-             * anywhere - the covers arrive from seven stores and StreamTweak only enforces a
-             * floor on the height (§44). It is moot for the stretch now that the two passes
-             * are split, and moot for the corners now that this one crops, but the premise
-             * itself keeps coming back.
-             *
-             * Every other masked MultiEffect in the project already sets autoPaddingEnabled
-             * false — this was the only one that did not, and the only one carrying a shadow
-             * as well. Splitting them means the masked pass has no padding to disagree about
-             * and the shadow pass has no mask to disagree with.
-             */
-            MultiEffect {
-                id: roundedCover
-                anchors.fill: parent
-                source: heroArt
-                maskEnabled: true
-                maskSource: heroArtMask
-                autoPaddingEnabled: false
-
-                // Its own layer, so the pass below can sample it. Drawn by that pass, not here.
-                layer.enabled: true
-                visible: false
-            }
-
-            MultiEffect {
-                anchors.fill: parent
-                source: roundedCover
-                shadowEnabled: !Theme.reduceAnimations
-                shadowColor: "#000000"
-                shadowBlur: 0.9
-                shadowVerticalOffset: appsRoot._px(8)
-                shadowOpacity: 0.65
-                blurMax: 40
-            }
-
-            Item {
-                id: heroArtMask
-                anchors.fill: parent
-                layer.enabled: true
-                visible: false
-                Rectangle {
-                    anchors.fill: parent
-                    radius: appsRoot._px(8)
-                }
-            }
+            source: appsRoot.focusedBoxArt
+            radius: appsRoot._px(8)
+            shadow: !Theme.reduceAnimations
+            shadowOffset: appsRoot._px(8)
 
             // Placeholder box art carries no title, so the name has to be drawn over it or
             // the spotlight shows an anonymous rectangle.
             Label {
                 anchors.fill: parent
                 anchors.margins: appsRoot._px(10)
-                visible: appsRoot.focusedBoxArt === "" || heroArt.status === Image.Error
+                visible: appsRoot.focusedBoxArt === "" || heroArtHolder.status === Image.Error
                 text: appsRoot.focusedAppName
                 color: Theme.text2
                 font.family: Theme.family

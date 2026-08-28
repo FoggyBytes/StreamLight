@@ -99,6 +99,8 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
         return computer->stageImagePath;
     case StageSeedRole:
         return computer->stageSeedColor;
+    case StreamTweakEnabledRole:
+        return computer->streamTweakEnabled;
     case DetailsRole: {
         QString state, pairState;
 
@@ -181,6 +183,7 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
     names[StageColorToRole] = "stageColorTo";
     names[StageImageRole] = "stageImage";
     names[StageSeedRole] = "stageSeed";
+    names[StreamTweakEnabledRole] = "streamTweakEnabled";
 
     return names;
 }
@@ -347,6 +350,19 @@ QVariantMap ComputerModel::probeLocalLink(int computerIndex)
 
 void ComputerModel::requestHostNetInfo(int computerIndex)
 {
+    // ⚠️ Every bridge call in this class carries this guard, and it is the safety net rather
+    // than the primary gate: the probe timers and the feature UI are already bound to the
+    // role, so nothing should reach here with the switch off. It exists because "should" is
+    // not "cannot" — a path added later would otherwise talk to a host the user has opted
+    // out of, silently. streamTweakEnabled() returns false for an out-of-range index too,
+    // so the failure direction is always "off".
+    //
+    // probeStreamTweakPresence() is the single deliberate exception; see its declaration.
+    //
+    // Where a caller is waiting on a signal, the guard emits the same "nothing" answer the
+    // empty-address path emits. Returning silently would hang the waiter.
+    if (!streamTweakEnabled(computerIndex)) return;
+
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
 
     NvComputer* computer = m_Computers[computerIndex];
@@ -385,6 +401,7 @@ void ComputerModel::requestHostNetInfo(int computerIndex)
 
 void ComputerModel::requestLastSession(int computerIndex)
 {
+    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
 
     NvComputer* computer = m_Computers[computerIndex];
@@ -514,6 +531,7 @@ void ComputerModel::requestLastSession(int computerIndex)
 
 void ComputerModel::restoreHostLink(int computerIndex)
 {
+    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
 
     NvComputer* computer = m_Computers[computerIndex];
@@ -550,8 +568,69 @@ void ComputerModel::setHostStageBackground(int computerIndex, const QString& ima
     emit dataChanged(idx, idx, { StageColorFromRole, StageColorToRole, StageImageRole, StageSeedRole });
 }
 
+bool ComputerModel::streamTweakEnabled(int computerIndex) const
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return false;
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+    return computer->streamTweakEnabled;
+}
+
+void ComputerModel::setStreamTweakEnabled(int computerIndex, bool enabled)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString uuid;
+    {
+        QReadLocker lock(&computer->lock);
+        uuid = computer->uuid;
+    }
+    if (uuid.isEmpty()) return;
+
+    m_ComputerManager->setStreamTweakEnabled(uuid, enabled);
+
+    // Repaint now, not on the next poll tick. Every probe timer and every feature gate is a
+    // binding on this role, so switching off has to take the features away in the same frame
+    // as the click — the alternative is a switch that appears to do nothing until you leave
+    // the screen and come back.
+    QModelIndex idx = createIndex(computerIndex, 0);
+    emit dataChanged(idx, idx, { StreamTweakEnabledRole });
+}
+
+void ComputerModel::probeStreamTweakPresence(int computerIndex)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString address;
+    {
+        QReadLocker lock(&computer->lock);
+        address = computer->activeAddress.address();
+    }
+    if (address.isEmpty()) {
+        // Offline, or no address resolved yet — nothing to ask. The tab distinguishes this
+        // from "asked and got nothing" using the host's own online state.
+        emit streamTweakPresenceReceived(computerIndex, false);
+        return;
+    }
+
+    // CAPS and not STATUS: it is the one verb that needs no authentication, so it answers on
+    // a host that has never approved this client — which is precisely the host the user is
+    // in the tab to ask about. Anything that isn't a CAPS1 line (empty on timeout, "ERR"
+    // from a pre-7.1 host, a plain Sunshine box refusing the port) means not found.
+    m_streamTweakBridge.requestCaps(address,
+        [this, computerIndex](const QString& caps) {
+            emit streamTweakPresenceReceived(computerIndex,
+                                             caps.startsWith(QLatin1String("CAPS1")));
+        });
+}
+
 void ComputerModel::refreshTailscale(int computerIndex)
 {
+    // Note this only drops the endpoint we would have LEARNED from the bridge. Tailscale
+    // itself keeps working: the range classification in NvComputer is independent of us.
+    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
 
     NvComputer* computer = m_Computers[computerIndex];
@@ -640,6 +719,10 @@ void ComputerModel::handleComputerStateChanged(NvComputer* computer)
 
 void ComputerModel::shutdownHost(int computerIndex, bool installUpdates)
 {
+    // Powering off the CLIENT is not a StreamTweak feature and is not affected — that lives
+    // in SystemProperties. Only the host half goes away.
+    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
+
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
 
@@ -655,6 +738,11 @@ void ComputerModel::shutdownHost(int computerIndex, bool installUpdates)
 
 void ComputerModel::requestUpdateState(int computerIndex)
 {
+    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+        emit updateStateReceived(computerIndex, false);
+        return;
+    }
+
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
 
@@ -680,6 +768,13 @@ void ComputerModel::requestUpdateState(int computerIndex)
 
 void ComputerModel::requestLockState(int computerIndex)
 {
+    // supported=false, which every caller already reads as "this host cannot tell us" — the
+    // same conclusion, arrived at without a round trip.
+    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+        emit lockStateReceived(computerIndex, false, false);
+        return;
+    }
+
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
 
@@ -705,6 +800,14 @@ void ComputerModel::requestLockState(int computerIndex)
 
 void ComputerModel::matchHostLinkSpeed(int computerIndex)
 {
+    // ⚠️ Must emit, not just return: the wake flow's last step waits for
+    // linkMatchProgress(running=false) to finish, so a silent return would hang it on a host
+    // whose integration is off.
+    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+        emit linkMatchProgress(computerIndex, false, QString());
+        return;
+    }
+
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
 
@@ -732,6 +835,7 @@ void ComputerModel::matchHostLinkSpeed(int computerIndex)
 
 void ComputerModel::markUnlockSession(int computerIndex, bool begin)
 {
+    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
     NvComputer* computer = m_Computers[computerIndex];
@@ -750,6 +854,7 @@ void ComputerModel::markUnlockSession(int computerIndex, bool begin)
 
 void ComputerModel::startUpdateCheck(int computerIndex)
 {
+    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
     NvComputer* computer = m_Computers[computerIndex];
@@ -762,6 +867,7 @@ void ComputerModel::startUpdateCheck(int computerIndex)
 
 void ComputerModel::startUpdateInstall(int computerIndex, const QString& scope)
 {
+    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
     NvComputer* computer = m_Computers[computerIndex];
@@ -774,6 +880,11 @@ void ComputerModel::startUpdateInstall(int computerIndex, const QString& scope)
 
 void ComputerModel::requestUpdateProgress(int computerIndex)
 {
+    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+        emit updateProgressReceived(computerIndex, QVariantMap{{ "phase", "IDLE" }});
+        return;
+    }
+
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
     NvComputer* computer = m_Computers[computerIndex];
@@ -803,6 +914,11 @@ void ComputerModel::requestUpdateProgress(int computerIndex)
 
 void ComputerModel::requestStreamTweakStatus(int computerIndex)
 {
+    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+        emit streamTweakStatusReceived(computerIndex, QString());
+        return;
+    }
+
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
 
@@ -833,6 +949,14 @@ void ComputerModel::requestStreamTweakStatus(int computerIndex)
 
 void ComputerModel::requestStreamTweakAuth(int computerIndex)
 {
+    // "none" is what a host that doesn't run StreamTweak reports, and it is what hides the
+    // access chip and every Options tile gated on "authorized" — so switching the
+    // integration off takes the whole UI surface with it for free, with no separate gates.
+    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+        emit streamTweakAuthReceived(computerIndex, QStringLiteral("none"), QString());
+        return;
+    }
+
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
 
@@ -857,9 +981,17 @@ void ComputerModel::requestStreamTweakAuth(int computerIndex)
                 emit streamTweakAuthReceived(computerIndex, QStringLiteral("none"), QString());
                 return;
             }
+            // ⚠️ Here, not at the outcomes below. The key means "this host runs StreamTweak",
+            // and a CAPS1 reply is the proof of exactly that; whether the host then approves
+            // us, holds us pending or denies us is a separate question about permission.
+            // Recording it only on open/authorized left a real trap: a client sitting at
+            // "pending" when the user upgraded would be seeded OFF, and with the integration
+            // off it stops enrolling — so the approval could never arrive and the only way
+            // out was finding the switch by hand.
+            rememberStreamTweakSeen(uuid);
+
             if (caps.contains(QLatin1String("auth=optional"))) {
                 m_streamTweakPins.remove(uuid);
-                rememberStreamTweakSeen(uuid);
                 emit streamTweakAuthReceived(computerIndex, QStringLiteral("open"), QString());
                 return;
             }
@@ -882,21 +1014,24 @@ void ComputerModel::requestStreamTweakAuth(int computerIndex)
                     // re-request starts a fresh attempt with a new PIN.
                     if (state != QLatin1String("pending"))
                         m_streamTweakPins.remove(uuid);
-                    if (state == QLatin1String("authorized"))
-                        rememberStreamTweakSeen(uuid);
+                    // (Nothing to record here: the CAPS1 reply that got us this far already
+                    //  did it.)
                     emit streamTweakAuthReceived(computerIndex, state,
                                                  state == QLatin1String("pending") ? pin : QString());
                 });
         });
 }
 
-// ── "Has this host ever had StreamTweak?" ────────────────────────────────────
+// ── "This host runs StreamTweak" ─────────────────────────────────────────────
 //
-// Persisted, and it has to be: the answer decides how long the wake flow is willing to wait
-// for StreamTweak to come up, and an in-memory flag says "no" on every fresh start of the app
-// — which is not "this host has none", it is "I have not been able to ask yet". Reading the
-// second as the first is what made a wake give up nineteen seconds before the host had even
-// finished booting.
+// ⚠️ This key outlived its original reader and now has exactly one job: seeding the per-host
+// StreamTweak switch for hosts stored by a build that predates it. Without that seed, a
+// default of off would be a regression shipped in a release — everyone already using
+// StreamTweak would upgrade and silently lose the integration. NvComputer's QSettings
+// constructor is the reader; see the note there.
+//
+// (It used to decide how long the wake flow waited for StreamTweak to come up. The switch
+// answers that outright now, so the wake takes one fixed cap and no longer guesses.)
 
 static const QString kSeenGroup = QStringLiteral("streamtweakSeen");
 
@@ -907,24 +1042,13 @@ void ComputerModel::rememberStreamTweakSeen(const QString& uuid)
     settings.setValue(kSeenGroup + QLatin1Char('/') + uuid, true);
 }
 
-bool ComputerModel::hostEverHadStreamTweak(int computerIndex)
-{
-    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return false;
-
-    QString uuid;
-    {
-        NvComputer* computer = m_Computers[computerIndex];
-        QReadLocker lock(&computer->lock);
-        uuid = computer->uuid;
-    }
-    if (uuid.isEmpty()) return false;
-
-    QSettings settings;
-    return settings.value(kSeenGroup + QLatin1Char('/') + uuid, false).toBool();
-}
-
 void ComputerModel::requestAppStores(int computerIndex)
 {
+    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+        emit appStoresReceived(computerIndex, QVariantMap());
+        return;
+    }
+
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
 

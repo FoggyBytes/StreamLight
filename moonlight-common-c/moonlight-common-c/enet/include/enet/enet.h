@@ -12,7 +12,7 @@ extern "C"
 
 #include <stdlib.h>
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(NXDK)
 #include "enet/win32.h"
 #else
 #include "enet/unix.h"

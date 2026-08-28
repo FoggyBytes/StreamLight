@@ -149,6 +149,16 @@ FocusScope {
     // every poll that came back still locked.
     property bool   wakeUnlocking : false
 
+    // Whether this wake has a third step at all. Captured once at the start, because it is a
+    // property of the host rather than of the tick.
+    //
+    // ⚠️ This is what the whole StreamTweak switch buys the wake flow. With the integration
+    // off there is nothing that could answer LOCKSTATE, so the wait for it is time the user
+    // can never get back — and it used to be paid on EVERY wake, behind a modal dialog,
+    // because the client only ever remembered the positive answer. The switch is the answer,
+    // so nothing here has to predict, remember, or investigate anything.
+    property bool   _wakeWaitsForStreamTweak : true
+
     function startWake(idx, hostName) {
         wakeIndex    = idx
         wakeHostName = hostName
@@ -156,6 +166,7 @@ FocusScope {
         wakeDetail    = ""
         wakeActive    = true
         wakeUnlocking = false
+        _wakeWaitsForStreamTweak = computerModel.streamTweakEnabled(idx)
         appListWaitTimer.tries = 0
         appListWaitTimer.stop()
 
@@ -369,19 +380,25 @@ FocusScope {
             }
 
             if (homeScreen.wakeStep < 2) homeScreen.wakeStep = 2
+
+            // The integration is off for this host: the host answering IS the whole wake.
+            // Straight to the end rather than through _wakeMatchLink(), which would only ask
+            // for a link match that is gated off and refused.
+            if (!homeScreen._wakeWaitsForStreamTweak) {
+                stop()
+                homeScreen._endWake(true)
+                return
+            }
+
             onlineFor += 1
 
-            // Two minutes for a host we have seen run StreamTweak before — worth waiting out,
-            // since it takes the better part of a minute to come up after a boot. A host that
-            // never has gets a fraction of that: there is nothing coming, and standing there
-            // for two minutes is the feature pretending to work.
-            // 60 and not 25 for an unknown host: StreamTweak takes the better part of a minute
-            // to come up after a boot, and on the very first wake after installing StreamLight
-            // there is nothing remembered yet. Of the two ways to be wrong, waiting a minute on
-            // a plain Moonlight host is a nuisance; skipping the pad on a host that does have
-            // StreamTweak looks like the feature is broken.
-            var cap = homeScreen.computerModel.hostEverHadStreamTweak(homeScreen.wakeIndex)
-                      ? 120 : 60
+            // Two minutes, and one number rather than two. This used to be 120 for a host we
+            // had watched run StreamTweak and 60 for one we had never been able to ask, which
+            // was an attempt to guess what the switch now states outright: reaching this line
+            // at all means the user has said this host runs StreamTweak, so it gets the full
+            // wait — it takes the better part of a minute to come up after a boot. If they are
+            // wrong, Cancel is right there, which the old guess could not offer.
+            var cap = 120
             if (onlineFor > cap) {
                 stop()
                 console.warn("[unlock] StreamTweak never answered in " + cap
@@ -427,6 +444,7 @@ FocusScope {
         hostName: homeScreen.wakeHostName
         step: homeScreen.wakeStep
         detail: homeScreen.wakeDetail
+        waitForStreamTweak: homeScreen._wakeWaitsForStreamTweak
         onCancelled: homeScreen._endWake()
     }
 
@@ -775,6 +793,10 @@ FocusScope {
             readonly property bool   pPaired:  model.paired
             readonly property bool   pUnknown: model.statusUnknown
 
+            // This host's StreamTweak switch. Every probe below is bound to it, so turning it
+            // off in Settings silences them in the same frame.
+            readonly property bool   stEnabled: model.streamTweakEnabled
+
             property string stAuth: ""
             property bool   stLinkChanging: false
             property double stLinkChangedAt: 0
@@ -890,6 +912,29 @@ FocusScope {
                     homeScreen.computerModel.requestLastSession(index)
             }
 
+            // ⚠️ Asking once on the way back to the host list is too early, and that is the
+            // whole reason this timer exists. Leaving the host page does not end the session
+            // on the host: the streaming server holds it open so it can be resumed, and
+            // StreamTweak only files it once its inactivity grace expires. So the one-shot
+            // above lands while the host still considers the session current, and LASTSESSION
+            // answers with the one BEFORE it — the panel then describes the wrong session
+            // until something else happens to ask again.
+            //
+            // Ten seconds, and only for the host on screen while Home is the page in front:
+            // one request per ten seconds total, none at all while streaming or browsing a
+            // library. The answer is cached host-side per cover, so a repeat that changes
+            // nothing costs almost nothing on either end.
+            Timer {
+                interval: 10000
+                repeat: true
+                running: probe.stEnabled && probe.isCurrent
+                         && model.online && model.paired
+                         && probe.stAuth === "authorized"
+                         && homeScreen.appShell !== null
+                         && homeScreen.appShell.currentPage === 0
+                onTriggered: probe.refreshLastSession()
+            }
+
             function push() { if (isCurrent) homeScreen.currentHost = record() }
 
             // An array binding re-evaluates when any element does, and yields a new object
@@ -906,19 +951,50 @@ FocusScope {
                 stLinkChanging, stSwitched, stAllowsLink, stSessionActive
             ]
             on_WatchChanged: push()
-            onIsCurrentChanged: push()
+            // Refresh on arrival as well as on the timer: a host the user has just tabbed to
+            // stopped being polled while it was off screen, so waiting out the ten seconds
+            // would show them the panel as it was when they last looked at it.
+            onIsCurrentChanged: { push(); if (isCurrent) refreshLastSession() }
+            // Switched off after having been on: the probes stop by themselves, but the values
+            // they left behind would not, so the access chip and every Options tile gated on
+            // "authorized" would stay on screen describing an integration that is gone.
+            onStEnabledChanged: {
+                if (stEnabled) {
+                    if (model.online && model.paired)
+                        homeScreen.computerModel.requestStreamTweakAuth(index)
+                    return
+                }
+                stAuth = ""
+                stSpeedRaw = ""
+                stAllowsLink = false
+                stSwitched = false
+                stSessionActive = false
+                stLinkChanging = false
+                stLocalMbps = 0
+                stLastSession = ({})
+            }
+
             Component.onCompleted: {
                 push()
-                if (model.online && model.paired) {
-                    homeScreen.computerModel.requestStreamTweakStatus(index)
+                // Access only. Asking for STATUS here used to make sense; it no longer can,
+                // because STATUS now requires an access state and there is none yet — the
+                // reply comes back empty and the auth answer starts the STATUS timer anyway.
+                if (stEnabled && model.online && model.paired)
                     homeScreen.computerModel.requestStreamTweakAuth(index)
-                }
             }
 
             Timer {
                 interval: 2000
                 repeat: true
-                running: model.online && model.paired
+                // ⚠️ The access condition is not tidiness: STATUS answers ERR_UNAUTHORIZED to
+                // anyone who isn't approved and nothing at all to a host without StreamTweak,
+                // so without it this asked a question it could not get an answer to — every
+                // two seconds, on every paired host, for as long as the app was open, and
+                // during a stream too, since HomeScreen is never unloaded. The revocation
+                // path still works: it fires while we believe we ARE authorized, which is
+                // exactly when this timer runs.
+                running: probe.stEnabled && model.online && model.paired
+                         && (probe.stAuth === "authorized" || probe.stAuth === "open")
                 onTriggered: homeScreen.computerModel.requestStreamTweakStatus(index)
             }
 
@@ -930,7 +1006,8 @@ FocusScope {
             Timer {
                 interval: 2000
                 repeat: true
-                running: model.online && model.paired && probe.stAuth === "authorized"
+                running: probe.stEnabled && model.online && model.paired
+                         && probe.stAuth === "authorized"
                 onTriggered: homeScreen.computerModel.requestHostNetInfo(index)
             }
 
@@ -940,7 +1017,10 @@ FocusScope {
             Timer {
                 interval: 2500
                 repeat: true
-                running: model.online && model.paired
+                // ⚠️ Without the switch in this condition, this ran forever on any host that
+                // doesn't run StreamTweak: the reply is "none", which is neither "authorized"
+                // nor "open", so the settling condition was never met.
+                running: probe.stEnabled && model.online && model.paired
                          && probe.stAuth !== "authorized" && probe.stAuth !== "open"
                 onTriggered: homeScreen.computerModel.requestStreamTweakAuth(index)
             }

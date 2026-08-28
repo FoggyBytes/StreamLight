@@ -12,7 +12,6 @@
 #include <QThreadPool>
 #include <QCoreApplication>
 #include <QRandomGenerator>
-#include <QElapsedTimer>   // TEMPORARY — for the [poll-diag] probe in tryPollComputer
 
 #define SER_HOSTS "hosts"
 #define SER_HOSTS_BACKUP "hostsbackup"
@@ -36,36 +35,12 @@ private:
     {
         NvHTTP http(address, 0, m_Computer->serverCert, nam);
 
-        // ⚠️ TEMPORARY DIAGNOSTIC — remove once the "host drops straight back to offline"
-        // report is settled. This poll is silent by design (NVLL_NONE plus a catch-all that
-        // swallows everything), which is exactly why the failure could not be told apart
-        // from a slow network: nothing it does is written down. The probe adds the two facts
-        // that decide it — how long the request took, and why it failed.
-        QElapsedTimer pollTimer;
-        pollTimer.start();
-
         QString serverInfo;
         try {
             serverInfo = http.getServerInfo(NvHTTP::NvLogLevel::NVLL_NONE, true);
-        } catch (const GfeHttpResponseException& e) {
-            qInfo() << "[poll-diag]" << address.toString() << "GFE error after"
-                    << pollTimer.elapsed() << "ms:" << e.toQString();
-            return false;
-        } catch (const QtNetworkReplyException& e) {
-            qInfo() << "[poll-diag]" << address.toString() << "network error after"
-                    << pollTimer.elapsed() << "ms:" << e.toQString();
-            return false;
-        } catch (const std::exception& e) {
-            qInfo() << "[poll-diag]" << address.toString() << "exception after"
-                    << pollTimer.elapsed() << "ms:" << e.what();
-            return false;
         } catch (...) {
-            qInfo() << "[poll-diag]" << address.toString() << "unknown failure after"
-                    << pollTimer.elapsed() << "ms";
             return false;
         }
-
-        const qint64 serverInfoMs = pollTimer.elapsed();
 
         // NB: this constructor sits OUTSIDE the try above — upstream shape, kept — so an
         // exception here escapes the polling thread entirely rather than returning false.
@@ -76,11 +51,6 @@ private:
             qInfo() << "Found unexpected PC" << newState.name << "looking for" << m_Computer->name;
             return false;
         }
-
-        qInfo() << "[poll-diag]" << address.toString() << "OK in" << serverInfoMs
-                << "ms; state=" << newState.state << "pair=" << newState.pairState
-                << "local=" << newState.localAddress.toString()
-                << "active=" << newState.activeAddress.toString();
 
         changed = m_Computer->update(newState);
         return true;
@@ -1260,6 +1230,34 @@ bool ComputerManager::setStageBackground(QString uuid, QString imagePath, QStrin
         // the host's own colours rather than showing every such host the same slate blue.
         computer->stageColorFrom = haveColours ? from.name() : QString();
         computer->stageColorTo   = haveColours ? to.name()   : QString();
+    }
+
+    saveHost(computer);
+    emit computerStateChanged(computer);
+    return true;
+}
+
+bool ComputerManager::setStreamTweakEnabled(QString uuid, bool enabled)
+{
+    if (uuid.isEmpty()) {
+        return false;
+    }
+
+    NvComputer* computer = nullptr;
+    {
+        QReadLocker lock(&m_Lock);
+        computer = m_KnownHosts.value(uuid);
+    }
+    if (computer == nullptr) {
+        return false;
+    }
+
+    {
+        QWriteLocker cLock(&computer->lock);
+        if (computer->streamTweakEnabled == enabled) {
+            return true;
+        }
+        computer->streamTweakEnabled = enabled;
     }
 
     saveHost(computer);

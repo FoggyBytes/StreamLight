@@ -123,7 +123,16 @@ class Session : public QObject
 
 public:
     LaunchCurtain* curtain() { return &m_Curtain; }
-    bool waitsForGame() const { return !m_UnlockMode && m_Preferences->waitForGameOnScreen; }
+    // ⚠️ The single answer to "will the launch gate actually run?", and it has to be used
+    // everywhere that question is asked. GAMESTATE is a StreamTweak verb, so a host with the
+    // integration off has no gate no matter what the preference says — and when the gate site
+    // and the reveal site disagreed about that, the window was never revealed at all: nothing
+    // started the gate, and nothing took the reveal-on-first-frame path either. The curtain
+    // stayed up until the user pressed B. It also drives the launch screen's "press B" prompt
+    // and its slow-launch hint, neither of which should appear when nothing is being waited on.
+    bool waitsForGame() const {
+        return !m_UnlockMode && m_StreamTweakEnabled && m_Preferences->waitForGameOnScreen;
+    }
 
     explicit Session(NvComputer* computer, NvApp& app, StreamingPreferences *preferences = nullptr);
     virtual ~Session();
@@ -209,6 +218,12 @@ public:
     // transient host warm-up race (virtual display / HDR / AV1 encoder not yet
     // producing frames on a cold game-session start), so the UI auto-retries once.
     Q_INVOKABLE bool wasNoVideoTraffic() const { return m_NoVideoTraffic; }
+
+    // The same failure, but with audio having arrived first. Audio and video travel the
+    // same way — UDP from the host to us — so the media path demonstrably works and the
+    // fault is at the far end. The single definition of that diagnosis: it picks the error
+    // message in clConnectionTerminated and suppresses the network advice in StreamSegue.
+    Q_INVOKABLE bool hostSideVideoFailure() const { return m_NoVideoTraffic && m_AudioSampleCount > 0; }
 
     // Build a fresh Session for the same host+app, used to auto-resume after a
     // transient no-video failure. The new session resumes since the game session
@@ -470,6 +485,9 @@ private:
     QQuickWindow* m_QtWindow;
     bool m_UnexpectedTermination;
     bool m_NoVideoTraffic = false;
+    // Set from the launch/resume response: the host is capturing a virtual display.
+    // Only used to name the right suspect when no video ever arrives.
+    bool m_HostVirtualDisplay = false;
     // Pending live-reconfigure request (4.4.0). Applied via a resume reconnect.
     bool m_HasPendingReconfigure = false;
     int m_RcWidth = 0, m_RcHeight = 0, m_RcFps = 0, m_RcBitrateKbps = 0, m_RcFramePacing = 0;
@@ -502,6 +520,15 @@ private:
     LaunchCurtain            m_Curtain;
     SessionTelemetrySampler* m_TelemetrySampler       = nullptr;
     HueSyncManager*          m_HueSyncManager         = nullptr;
+
+    // Whether this host's StreamTweak integration is switched on, captured once at
+    // construction. Deliberately a snapshot and not a live read: the flag can only change
+    // from the Settings tab, which is unreachable during a session, and honouring a
+    // mid-session change would be worse than ignoring it — it would mean starting the
+    // telemetry sampler or the launch gate halfway through, or dropping them, at a moment
+    // nothing else expects it. Gates the metrics poller, the telemetry sampler, the launch
+    // gate and the link match.
+    bool m_StreamTweakEnabled = false;
 
     // Remote PIN unlock. The buffer is fixed and small: a Windows Hello PIN is a handful of
     // digits, and a fixed array is something we can actually overwrite afterwards.

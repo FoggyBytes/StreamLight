@@ -531,6 +531,13 @@ struct pl_frame {
     int num_planes;
     struct pl_plane planes[PL_MAX_PLANES];
 
+    // Optional enhancement layer for layered video formats. When set, points
+    // to a fully-described pl_frame whose planes are composed onto this
+    // (base layer) frame. Composition math is driven by metadata on the base
+    // frame. Currently used only for Dolby Vision Profile 7 FEL, gated by
+    // `repr.dovi->nlq_active`; ignored otherwise.
+    const struct pl_frame *enhancement_layer;
+
     // For interlaced frames. If set, this `pl_frame` corresponds to a single
     // field of the underlying source textures. `first_field` indicates which
     // of these fields is ordered first in time. `prev` and `next` should point
@@ -613,6 +620,14 @@ struct pl_frame {
     // right by 90° (so rendering will be rotated 90° to the *right* to
     // compensate).
     pl_rotation rotation;
+
+    // The pixel aspect ratio of this frame. This is informational only, since
+    // the effective DAR is already given by the relative ratio between the
+    // frame crop and the target crop. If left unset, defaults to 1.0.
+    //
+    // Note that this is relative to the raw (encoded) pixels, i.e. before
+    // application of any `rotation`.
+    float pixel_aspect_ratio;
 
     // A list of additional overlays associated with this frame. Note that will
     // be rendered directly onto intermediate/cache frames, so changing any of

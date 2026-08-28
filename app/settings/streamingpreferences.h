@@ -141,58 +141,35 @@ public:
         OI_DECODE_TIME  = 1 << 8,
         OI_QUEUE_DELAY  = 1 << 9,
         OI_RENDER_TIME  = 1 << 10,
-        OI_PACING       = 1 << 11,
         OI_HOST_METRICS = 1 << 12,  // the StreamTweak block
-        // What the display actually did with the cadence the line above asked for.
-        // The only item that costs something to produce — it puts the renderer's
-        // per-present instrumentation to work — so it is also the only one whose
-        // switch turns a measurement on rather than just choosing what to print.
-        OI_CADENCE      = 1 << 13,
-        OI_ALL          = (1 << 14) - 1
+        // ⚠️ Two retired bits, both cleared by reload() and neither to be reused: a new
+        // item sitting on either would arrive switched on for everyone who had the old
+        // one. Bit 11 was OI_PACING, the "Frame pacing:" line, removed in 5.2.0 —
+        // upstream Moonlight has no such line and this one had stopped being able to
+        // say anything upstream would not. Bit 13 was OI_CADENCE, added in 5.1.2 and
+        // removed in the same release.
+        OI_ALL          = ((1 << 13) - 1) & ~(1 << 11)
     };
     Q_ENUM(OverlayItem)
 
-    // Frame pacing mode. FP_OFF = no pacing; FP_AUTO = hardware when the display
-    // refresh is an integer multiple of the stream FPS, software otherwise;
-    // FP_MATCHED = always software (for a display running at the stream's FPS);
-    // FP_MULTIPLE = hardware only, no software fallback (display at a multiple of
-    // the stream's FPS). See FFmpegVideoDecoder and D3D11VARenderer.
+    // Frame pacing: off, or the software Pacer. Two values because two is all the
+    // code can honestly offer — see the note below.
+    //
+    // ⚠️ 5.2.0 removed the hardware 2:2 cadence (the DXGI sync interval) and with it
+    // the four-way choice this used to be. FP_AUTO meant "hardware when the display
+    // is a whole multiple of the stream, software otherwise" and FP_MULTIPLE meant
+    // "hardware only, no software fallback"; with no hardware path left, the first
+    // collapsed onto FP_MATCHED and the second onto FP_OFF. Keeping four labels
+    // would have offered two choices that did the same thing.
+    //
+    // ⚠️ FP_ON is 1, which is what FP_AUTO used to be, so a stored 1 needs no
+    // migration. Stored 2 and 3 do — see reload().
     enum FramePacingMode
     {
         FP_OFF,
-        FP_AUTO,
-        FP_MATCHED,
-        FP_MULTIPLE
+        FP_ON
     };
     Q_ENUM(FramePacingMode)
-
-    // Whether and how to switch the display's refresh rate when the stream window
-    // goes exclusive fullscreen. Only has an effect there — in borderless and
-    // windowed the desktop mode is used as-is and nothing is switched.
-    //
-    // RR_HIGHEST is the inherited Moonlight behaviour and the default: pick the
-    // highest refresh rate the stream's FPS divides into, so a 60 FPS stream on a
-    // 120 Hz panel moves the panel to 120 Hz. That is deliberate — it's what the
-    // 2:2 hardware cadence needs to exist (see D3D11VARenderer) — but it also puts
-    // host and client on two unsynchronised clocks two refreshes apart, which is
-    // where the drifting present latency of issue #9 comes from.
-    //
-    // RR_MATCH_FPS asks for a refresh rate equal to the stream's FPS instead, so
-    // there is no cadence to keep. RR_OFF leaves the panel on whatever the user
-    // set it to, which is what @Soladus was doing by hand.
-    //
-    // RR_AUTO pairs this with the frame pacing choice, which is narrower than it
-    // sounds: FP_MATCHED is documented as software pacing "for a display running
-    // at the stream's FPS", so it gets one, and everything else keeps the highest
-    // multiple. It deliberately does not move the default configuration.
-    enum RefreshRateMode
-    {
-        RR_OFF,
-        RR_AUTO,
-        RR_HIGHEST,
-        RR_MATCH_FPS
-    };
-    Q_ENUM(RefreshRateMode)
 
     // Controller glyph set shown across the gamepad-first UI. GS_AUTO uses the
     // family detected from the connected pad (the historical behaviour); the
@@ -240,7 +217,6 @@ public:
     Q_PROPERTY(bool absoluteMouseMode MEMBER absoluteMouseMode NOTIFY absoluteMouseModeChanged)
     Q_PROPERTY(bool absoluteTouchMode MEMBER absoluteTouchMode NOTIFY absoluteTouchModeChanged)
     Q_PROPERTY(FramePacingMode framePacingMode MEMBER framePacingMode NOTIFY framePacingModeChanged)
-    Q_PROPERTY(RefreshRateMode refreshRateMode MEMBER refreshRateMode NOTIFY refreshRateModeChanged)
     Q_PROPERTY(bool connectionWarnings MEMBER connectionWarnings NOTIFY connectionWarningsChanged)
     Q_PROPERTY(bool configurationWarnings MEMBER configurationWarnings NOTIFY configurationWarningsChanged)
     Q_PROPERTY(bool richPresence MEMBER richPresence NOTIFY richPresenceChanged)
@@ -292,7 +268,6 @@ public:
     bool absoluteMouseMode;
     bool absoluteTouchMode;
     FramePacingMode framePacingMode;
-    RefreshRateMode refreshRateMode;
     bool connectionWarnings;
     bool configurationWarnings;
     bool richPresence;
@@ -357,7 +332,6 @@ signals:
     void uiDisplayModeChanged();
     void windowModeChanged();
     void framePacingModeChanged();
-    void refreshRateModeChanged();
     void connectionWarningsChanged();
     void configurationWarningsChanged();
     void richPresenceChanged();

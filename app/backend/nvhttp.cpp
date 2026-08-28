@@ -194,7 +194,8 @@ NvHTTP::startApp(QString verb,
                  bool localAudio,
                  int gamepadMask,
                  bool persistGameControllersOnDisconnect,
-                 QString& rtspSessionUrl)
+                 QString& rtspSessionUrl,
+                 bool& virtualDisplayReady)
 {
     int riKeyId;
 
@@ -232,6 +233,12 @@ NvHTTP::startApp(QString verb,
     verifyResponseStatus(response);
 
     rtspSessionUrl = getXmlString(response, "sessionUrl0");
+
+    // Hosts that capture a virtual display (Vibeshine, Apollo, Sunshine with the driver)
+    // announce it here. GFE and hosts without it simply omit the element, which reads as
+    // false — so the flag only ever narrows a later diagnosis, it never invents one.
+    virtualDisplayReady = getXmlString(response, "VirtualDisplayDriverReady")
+                              .compare(QLatin1String("true"), Qt::CaseInsensitive) == 0;
 }
 
 void

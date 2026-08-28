@@ -39,8 +39,19 @@ Popup {
     readonly property color _text:   Theme.text
     readonly property color _dim:    Theme.text2
     readonly property color _line:   "#242424"
-    readonly property int   _rowH:   52
-    readonly property int   _padX:   28
+    // ⚠️ Measurements, so they scale — see the note on the same pair in
+    // HostProfilesDialog. Raw pixels here meant the row stopped growing while the
+    // controls inside it kept going, which is what made the profile Name field
+    // overflow its row on a large screen.
+    readonly property int   _rowH:   _px(52)
+    readonly property int   _padX:   _px(28)
+
+    // What the scrolling row list does NOT get: header, footer, and enough margin
+    // that the dialog never touches the top and bottom of the screen. Same note as
+    // HostProfilesDialog — this was a flat 120 px while everything it stands for
+    // scaled, so on a large screen the popup ran off both ends. One row row fewer
+    // than the profiles dialog, which also has the profile tabs.
+    readonly property int   _chromeH: _px(44) + _px(52) + _px(48)
 
     // Label for the index-0 "inherit" option: the active profile's name, or "Global".
     readonly property string _inheritLabel: activeProfileName.length > 0 ? activeProfileName : qsTr("Global")
@@ -54,8 +65,8 @@ Popup {
     readonly property var _hdrLabels: [_inheritLabel, "On", "Off"]
     readonly property var _codecLabels: [_inheritLabel, "H.264", "HEVC", "AV1"]
     readonly property var _codecVals:   [-1, 1, 2, 4]   // VCC_FORCE_H264/HEVC/AV1
-    readonly property var _fpLabels:  [_inheritLabel, "Off", "Automatic", "Software", "Hardware"]
-    readonly property var _fpVals:    [-1, 0, 1, 2, 3]  // FP_OFF/AUTO/MATCHED/MULTIPLE
+    readonly property var _fpLabels:  [_inheritLabel, "Off", "On"]
+    readonly property var _fpVals:    [-1, 0, 1]  // FP_OFF / FP_ON
     readonly property var _audLabels: [_inheritLabel, "Stereo", "5.1", "7.1"]
     readonly property var _audVals:   [-1, 0, 1, 2]     // AC_STEREO/51/71
 
@@ -190,12 +201,32 @@ Popup {
             id: flick
             Layout.fillWidth: true
             Layout.preferredHeight: Math.min(
-                (Overlay.overlay ? Overlay.overlay.height - 120 : 800),
+                (Overlay.overlay ? Overlay.overlay.height - dlg._chromeH : dlg._px(800)),
                 rowsCol.implicitHeight)
             contentHeight: rowsCol.implicitHeight
             clip: true
             interactive: contentHeight > height
-            ScrollBar.vertical: ScrollBar {}
+
+            // Always on when there is more below, off when everything already fits.
+            // Same bar as HostProfilesDialog — the two dialogs mirror each other, and
+            // a scroll hint that appears in one and not the other is worse than none.
+            ScrollBar.vertical: ScrollBar {
+                id: rowsScrollBar
+                policy: flick.contentHeight > flick.height ? ScrollBar.AlwaysOn
+                                                          : ScrollBar.AlwaysOff
+                width: dlg._px(6)
+                anchors.right: parent.right
+                anchors.rightMargin: dlg._px(7)
+                contentItem: Rectangle {
+                    radius: width / 2
+                    color: rowsScrollBar.pressed ? dlg._accent : dlg._dim
+                    opacity: rowsScrollBar.pressed ? 1.0 : 0.7
+                }
+                background: Rectangle {
+                    radius: width / 2
+                    color: dlg._line
+                }
+            }
 
             // Auto-scroll: keep the focused row in view as the D-pad moves down the
             // list. Without this the cursor walks off the bottom of the clipped
@@ -238,7 +269,7 @@ Popup {
                     width: rowsCol.width
                     // Grows only when a reason is shown, so every other row keeps its height.
                     height: row.detail.length > 0
-                            ? Math.max(dlg._rowH, labelCol.implicitHeight + 20)
+                            ? Math.max(dlg._rowH, labelCol.implicitHeight + dlg._px(20))
                             : dlg._rowH
                     property string label: ""
                     // Optional second line, used to say why a row is greyed out. A locked

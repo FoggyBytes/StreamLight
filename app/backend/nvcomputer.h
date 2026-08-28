@@ -154,6 +154,20 @@ public:
     QString stageSeedColor;    // "#rrggbb", empty when the source is a picture or unset
     QString stageColorFrom;    // derived, "#rrggbb"
     QString stageColorTo;      // derived, "#rrggbb"
+
+    // Whether StreamLight may use the StreamTweak integration on this host: link matching,
+    // remote power and Windows Update, the PIN unlock, the last-session panel, store
+    // badges, host metrics, the launch curtain, session telemetry. Streaming is never
+    // affected either way.
+    //
+    // Per host and not global, because the answer differs per host: one global switch
+    // could not tell a StreamTweak host from a plain Sunshine box, so ON would leave the
+    // wake waiting on the wrong one and OFF would kill the features on the right one.
+    // Same reasoning and the same storage as the stage* fields above.
+    //
+    // Off for a newly discovered host. A host stored by an older build has no key at all,
+    // and that case is NOT the same as off — see the seed in the QSettings constructor.
+    bool streamTweakEnabled;
     // Remember to update isEqualSerialized() when adding fields here!
 
     // Set when the QSettings constructor had to repair persisted addresses. Deliberately

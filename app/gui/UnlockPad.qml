@@ -139,7 +139,7 @@ Item {
                     height: width
                     radius: width / 2
                     anchors.verticalCenter: parent.verticalCenter
-                    color: root.state_ === "wrong" ? "#f87171" : "#00d3f2"
+                    color: root.state_ === "wrong" ? "#f87171" : "#00d3f2"   // "mute" is not the user's fault — no red
                 }
             }
         }
@@ -207,7 +207,12 @@ Item {
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
             visible: text !== ""
+            // "mute" is not a wrong PIN and must never be worded as one. It means every check
+            // came back with the host not answering at all — StreamTweak stopped, a network
+            // blip — and the old code concluded "wrong" from it, so a correct PIN could be
+            // rejected three times over a hiccup and end at "Too many attempts".
             text: root.state_ === "checking" ? qsTr("Checking…")
+                : root.state_ === "mute"     ? qsTr("The host stopped answering · try again")
                 : root.state_ === "wrong"    ? qsTr("Wrong PIN · %1 of %2").arg(root.attempt).arg(root.maxAttempts)
                 : root.state_ === "blocked"  ? qsTr("Too many attempts")
                 : ""

@@ -30,9 +30,27 @@ Popup {
     readonly property color _text:   Theme.text
     readonly property color _dim:    Theme.text2
     readonly property color _line:   "#242424"
-    readonly property int   _rowH:   52
-    readonly property int   _padX:   28
-    readonly property int   _tabH:   36
+    // ⚠️ These are measurements, so they scale like everything else in the dialog.
+    // They used to be raw pixels while their contents were already scaled, which meant
+    // the gap between a row and the control inside it shrank as the screen grew: the
+    // Name field (_px(38)) fitted a flat 52 px row at 1.0, touched its edges at 1.32,
+    // and at 1.60 stood 61 px tall in a 52 px row, bleeding over the separators into
+    // the rows above and below. Declaring a constant rather than a binding is what hid
+    // them from both conversion passes in §46 — neither looked at property definitions.
+    readonly property int   _rowH:   _px(52)
+    readonly property int   _padX:   _px(28)
+    readonly property int   _tabH:   _px(36)
+
+    // Everything the scrolling row list does NOT get: the header, the profile tab
+    // row, the footer, and enough margin that the dialog never touches the top and
+    // bottom of the screen.
+    //
+    // ⚠️ This was a flat 170 px while every piece it stands for scaled with the
+    // dialog. At 1.0 that was about right; at 1.60 the chrome really takes ~314 and
+    // the popup ran off the screen at both ends, taking the footer buttons with it.
+    // Derived from the same constants the chrome is built from, so the two cannot
+    // drift apart again.
+    readonly property int   _chromeH: _px(44) + _px(52) + _px(52) + _px(48)
     readonly property int   _maxProfiles: 3
     readonly property int   _maxNameLen: 14
 
@@ -54,12 +72,10 @@ Popup {
     readonly property var _hdrLabels: ["Global", "On", "Off"]
     readonly property var _codecLabels: ["Global", "H.264", "HEVC", "AV1"]
     readonly property var _codecVals:   [-1, 1, 2, 4]
-    readonly property var _fpLabels:  ["Global", "Off", "Automatic", "Software", "Hardware"]
-    readonly property var _fpVals:    [-1, 0, 1, 2, 3]
+    readonly property var _fpLabels:  ["Global", "Off", "On"]
+    readonly property var _fpVals:    [-1, 0, 1]
     readonly property var _audLabels: ["Global", "Stereo", "5.1", "7.1"]
     readonly property var _audVals:   [-1, 0, 1, 2]
-    readonly property var _rrLabels:  ["Global", "Off", "Automatic", "Highest", "Match"]
-    readonly property var _rrVals:    [-1, 0, 1, 2, 3]
     readonly property var _dmLabels:  ["Global", "Fullscreen", "Borderless", "Windowed"]
     readonly property var _dmVals:    [-1, 0, 1, 2]   // WM_FULLSCREEN / _DESKTOP / WINDOWED
 
@@ -158,7 +174,6 @@ Popup {
         hueSel.currentIndex   = (ov.hue !== undefined) ? (ov.hue ? 1 : 2) : 0
         linkSel.currentIndex  = (ov.matchlink !== undefined) ? (ov.matchlink ? 1 : 2) : 0
         waitGameSel.currentIndex = (ov.waitgame !== undefined) ? (ov.waitgame ? 1 : 2) : 0
-        rrSel.currentIndex    = (ov.refreshrate !== undefined) ? _idxByVal(_rrVals, ov.refreshrate) : 0
         dmSel.currentIndex    = (ov.displaymode !== undefined) ? _idxByVal(_dmVals, ov.displaymode) : 0
         vsyncSel.currentIndex = (ov.vsync !== undefined) ? (ov.vsync ? 1 : 2) : 0
         _bitrateOverridden = (ov.bitrate !== undefined && ov.bitrate >= bitrateSlider.from)
@@ -182,7 +197,6 @@ Popup {
         if (hueSel.currentIndex > 0)   m.hue = (hueSel.currentIndex === 1)
         if (linkSel.currentIndex > 0)  m.matchlink = (linkSel.currentIndex === 1)
         if (waitGameSel.currentIndex > 0) m.waitgame = (waitGameSel.currentIndex === 1)
-        if (rrSel.currentIndex > 0)    m.refreshrate = _rrVals[rrSel.currentIndex]
         if (dmSel.currentIndex > 0)    m.displaymode = _dmVals[dmSel.currentIndex]
         if (vsyncSel.currentIndex > 0) m.vsync = (vsyncSel.currentIndex === 1)
         computerModel.setHostProfileSettings(pcIndex, editingSlot, m)
@@ -509,12 +523,36 @@ Popup {
             Layout.fillWidth: true
             visible: dlg._editing
             Layout.preferredHeight: dlg._editing ? Math.min(
-                (Overlay.overlay ? Overlay.overlay.height - 170 : 800),
+                (Overlay.overlay ? Overlay.overlay.height - dlg._chromeH : dlg._px(800)),
                 rowsCol.implicitHeight) : 0
             contentHeight: rowsCol.implicitHeight
             clip: true
             interactive: contentHeight > height
-            ScrollBar.vertical: ScrollBar {}
+
+            // Always on when there is more below, and drawn rather than left to the
+            // stock one: the point of this bar is to say "there is more" to someone
+            // who cannot see the bottom of the list, and a bar that fades out a second
+            // later says it only to whoever happened to be looking. Off — not merely
+            // faded — when everything already fits, so it never implies hidden rows
+            // that do not exist.
+            ScrollBar.vertical: ScrollBar {
+                id: rowsScrollBar
+                policy: flick.contentHeight > flick.height ? ScrollBar.AlwaysOn
+                                                          : ScrollBar.AlwaysOff
+                width: dlg._px(6)
+                anchors.right: parent.right
+                anchors.rightMargin: dlg._px(7)
+                // Sits inside the _padX gutter, so it never covers a control.
+                contentItem: Rectangle {
+                    radius: width / 2
+                    color: rowsScrollBar.pressed ? dlg._accent : dlg._dim
+                    opacity: rowsScrollBar.pressed ? 1.0 : 0.7
+                }
+                background: Rectangle {
+                    radius: width / 2
+                    color: dlg._line
+                }
+            }
 
             // Auto-scroll: keep the focused row in view as the D-pad moves down the
             // list. Without this the cursor walks off the bottom of the clipped
@@ -557,7 +595,7 @@ Popup {
                     width: rowsCol.width
                     // Grows only when a reason is shown, so every other row keeps its height.
                     height: row.detail.length > 0
-                            ? Math.max(dlg._rowH, labelCol.implicitHeight + 20)
+                            ? Math.max(dlg._rowH, labelCol.implicitHeight + dlg._px(20))
                             : dlg._rowH
                     property string label: ""
                     // Optional second line, used to say why a row is greyed out. A locked
@@ -858,26 +896,19 @@ Popup {
                 // to the end from now on has to earn its place here as well — and the
                 // KeyNavigation chain below has to be walked end to end when it moves.
                 //
-                // The last four are in Settings → Video's own order, which is also
-                // dependency order: each of Display mode and V-Sync sits directly above
-                // the row it governs, so a greyed control never sends you hunting for the
-                // reason. Global = follow the setting in Settings → Video.
+                // These three are in Settings → Video's own order, which is also dependency
+                // order: V-Sync sits directly above Frame pacing, the row it governs, so a
+                // greyed control never sends you hunting for the reason. Global = follow the
+                // setting in Settings → Video.
+                //
+                // ⚠️ Refresh rate switching used to sit between Display mode and V-Sync, and
+                // was what made Display mode a dependency here. It went in 5.2.0 with the
+                // setting itself; Display mode now governs nothing in this dialog.
                 SettingRow {
                     label: qsTr("Display mode")
                     SegmentedSelector {
                         id: dmSel; labels: dlg._dmLabels
                         KeyNavigation.up: codecSel
-                        KeyNavigation.down: rrSel
-                        onActivated: dlg.saveOverride()
-                    }
-                }
-                SettingRow {
-                    label: qsTr("Refresh rate switching")
-                    enabled: dlg._effWindowMode === StreamingPreferences.WM_FULLSCREEN
-                    detail: enabled ? "" : qsTr("Needs Fullscreen — the row above is set to something else.")
-                    SegmentedSelector {
-                        id: rrSel; labels: dlg._rrLabels
-                        KeyNavigation.up: dmSel
                         KeyNavigation.down: vsyncSel
                         onActivated: dlg.saveOverride()
                     }
@@ -886,7 +917,7 @@ Popup {
                     label: qsTr("V-Sync")
                     SegmentedSelector {
                         id: vsyncSel; labels: dlg._hdrLabels
-                        KeyNavigation.up: rrSel
+                        KeyNavigation.up: dmSel
                         KeyNavigation.down: fpSel
                         onActivated: dlg.saveOverride()
                     }
@@ -967,7 +998,7 @@ Popup {
                 text: qsTr("Remove")
                 danger: true
                 fontSize: 13
-                width: dlg._px(84); height: dlg._px(36)
+                width: dlg._px(84); height: dlg._tabH
                 onActivated: dlg.removeProfile()
                 KeyNavigation.up: dlg._editing ? hueSel : addBtn
                 KeyNavigation.right: doneBtn
@@ -983,7 +1014,7 @@ Popup {
                     text: qsTr("Done")
                     affirmative: true
                     fontSize: 13
-                    width: dlg._px(76); height: dlg._px(36)
+                    width: dlg._px(76); height: dlg._tabH
                     onActivated: dlg.close()
                     KeyNavigation.up: dlg._editing ? hueSel : addBtn
                     KeyNavigation.left: dlg._editing ? removeBtn : null
@@ -994,7 +1025,7 @@ Popup {
                     visible: dlg._editing
                     text: qsTr("Reset to Global")
                     fontSize: 13
-                    width: dlg._px(128); height: dlg._px(36)
+                    width: dlg._px(128); height: dlg._tabH
                     onActivated: dlg.resetAll()
                     KeyNavigation.up: hueSel
                     KeyNavigation.left: doneBtn

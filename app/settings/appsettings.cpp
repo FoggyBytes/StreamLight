@@ -25,7 +25,6 @@ static AppOverride readOverrideGroup(const QSettings& s)
     if (s.contains("hue"))         { ov.hasHue = true;         ov.hueSync = s.value("hue").toBool(); }
     if (s.contains("matchlink"))   { ov.hasMatchLink = true;   ov.matchLinkSpeed = s.value("matchlink").toBool(); }
     if (s.contains("waitgame"))      { ov.hasWaitForGame = true; ov.waitForGame = s.value("waitgame").toBool(); }
-    if (s.contains("refreshrate"))   { ov.hasRefreshRate = true; ov.refreshRateMode = s.value("refreshrate").toInt(); }
     if (s.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = s.value("displaymode").toInt(); }
     if (s.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = s.value("vsync").toBool(); }
     return ov;
@@ -43,7 +42,6 @@ static void writeOverrideGroup(QSettings& s, const AppOverride& ov)
     if (ov.hasHue)         s.setValue("hue", ov.hueSync);
     if (ov.hasMatchLink)   s.setValue("matchlink", ov.matchLinkSpeed);
     if (ov.hasWaitForGame) s.setValue("waitgame", ov.waitForGame);
-    if (ov.hasRefreshRate) s.setValue("refreshrate", ov.refreshRateMode);
     if (ov.hasDisplayMode) s.setValue("displaymode", ov.windowMode);
     if (ov.hasVsync)       s.setValue("vsync", ov.enableVsync);
 }
@@ -61,7 +59,6 @@ QVariantMap appOverrideToMap(const AppOverride& ov)
     if (ov.hasHue)         m["hue"] = ov.hueSync;
     if (ov.hasMatchLink)   m["matchlink"] = ov.matchLinkSpeed;
     if (ov.hasWaitForGame) m["waitgame"] = ov.waitForGame;
-    if (ov.hasRefreshRate) m["refreshrate"] = ov.refreshRateMode;
     if (ov.hasDisplayMode) m["displaymode"] = ov.windowMode;
     if (ov.hasVsync)       m["vsync"] = ov.enableVsync;
     return m;
@@ -84,7 +81,6 @@ AppOverride appOverrideFromMap(const QVariantMap& m)
     if (m.contains("hue"))         { ov.hasHue = true;         ov.hueSync = m.value("hue").toBool(); }
     if (m.contains("matchlink"))   { ov.hasMatchLink = true;   ov.matchLinkSpeed = m.value("matchlink").toBool(); }
     if (m.contains("waitgame"))      { ov.hasWaitForGame = true; ov.waitForGame = m.value("waitgame").toBool(); }
-    if (m.contains("refreshrate"))   { ov.hasRefreshRate = true; ov.refreshRateMode = m.value("refreshrate").toInt(); }
     if (m.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = m.value("displaymode").toInt(); }
     if (m.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = m.value("vsync").toBool(); }
     return ov;
@@ -97,12 +93,34 @@ void applyAppOverride(StreamingPreferences* p, const AppOverride& ov)
     if (ov.hasBitrate)     p->bitrateKbps = ov.bitrateKbps;
     if (ov.hasHdr)         p->enableHdr = ov.enableHdr;
     if (ov.hasCodec)       p->videoCodecConfig = (StreamingPreferences::VideoCodecConfig)ov.videoCodecConfig;
-    if (ov.hasFramePacing) p->framePacingMode = (StreamingPreferences::FramePacingMode)ov.framePacingMode;
+    // ⚠️ Overrides live in their own store and never pass through reload(), so the
+    // frame-pacing values 3.4.0 - 5.1.3 could write have to be collapsed here too.
+    // Legacy 2 was Matched and 3 was Multiple; both are gone. Same rule reload() uses:
+    // Matched becomes On, Multiple becomes On only where V-Sync gives the software
+    // Pacer something to pace against. p->enableVsync is read rather than the global
+    // because a profile can override V-Sync itself, and that is applied below — so
+    // this deliberately reads the value the session will actually run with only when
+    // the override does not touch it; when it does, the two land in the same profile
+    // and the user chose both.
+    if (ov.hasFramePacing) {
+        const int LEGACY_MATCHED = 2, LEGACY_MULTIPLE = 3;
+        int stored = ov.framePacingMode;
+        bool vsync = ov.hasVsync ? ov.enableVsync : p->enableVsync;
+        if (stored == LEGACY_MATCHED) {
+            stored = StreamingPreferences::FP_ON;
+        }
+        else if (stored == LEGACY_MULTIPLE) {
+            stored = vsync ? StreamingPreferences::FP_ON : StreamingPreferences::FP_OFF;
+        }
+        else if (stored < StreamingPreferences::FP_OFF || stored > StreamingPreferences::FP_ON) {
+            stored = StreamingPreferences::FP_OFF;
+        }
+        p->framePacingMode = (StreamingPreferences::FramePacingMode)stored;
+    }
     if (ov.hasAudio)       p->audioConfig = (StreamingPreferences::AudioConfig)ov.audioConfig;
     if (ov.hasHue)         p->hueSyncIntegration = ov.hueSync;
     if (ov.hasMatchLink)   p->matchHostLinkSpeed = ov.matchLinkSpeed;
     if (ov.hasWaitForGame) p->waitForGameOnScreen = ov.waitForGame;
-    if (ov.hasRefreshRate) p->refreshRateMode = (StreamingPreferences::RefreshRateMode)ov.refreshRateMode;
     if (ov.hasDisplayMode) p->windowMode = (StreamingPreferences::WindowMode)ov.windowMode;
     if (ov.hasVsync)       p->enableVsync = ov.enableVsync;
 }

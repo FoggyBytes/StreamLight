@@ -25,12 +25,23 @@ FocusScope {
     width: implicitWidth
     height: 36
 
+    // Bordered control, so hover goes on the border — see HoverState. The inner pill is the
+    // selected state, not a hover surface.
+    HoverState { id: hov }
+
     Rectangle {
         anchors.fill: parent
         radius: 8
         color: btn._bgPill
-        border.color: btn.activeFocus ? btn._accent : Theme.line
-        border.width: btn.activeFocus ? 3 : 1
+        border.color: hov.keyFocused ? btn._accent
+                    : hov.active     ? Theme.lineHigh
+                    :                  Theme.line
+        border.width: hov.keyFocused ? 3 : 1
+
+        Behavior on border.color {
+            enabled: !Theme.reduceAnimations
+            ColorAnimation { duration: 120; easing.type: Easing.OutQuad }
+        }
     }
 
     Item {
@@ -56,7 +67,8 @@ FocusScope {
 
     MouseArea {
         anchors.fill: parent
-        cursorShape: Qt.PointingHandCursor
+        // cursorShape moved to HoverState: left here it would keep showing a pointing hand
+        // after the state had gone back to an arrow for the pad.
         onClicked: { btn.forceActiveFocus(); btn.clicked() }
     }
 

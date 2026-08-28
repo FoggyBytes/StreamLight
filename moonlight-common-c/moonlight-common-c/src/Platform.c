@@ -20,7 +20,7 @@ static int activeMutexes = 0;
 static int activeEvents = 0;
 static int activeCondVars = 0;
 
-#if defined(LC_WINDOWS)
+#if defined(LC_WINDOWS) && !defined(NXDK)
 
 #pragma pack(push, 8)
 typedef struct tagTHREADNAME_INFO
@@ -65,18 +65,23 @@ void setThreadNameWin32(const char* name) {
     }
 #endif
 }
+#endif
 
+#if defined(LC_WINDOWS)
 DWORD WINAPI ThreadProc(LPVOID lpParameter) {
     struct thread_context* ctx = (struct thread_context*)lpParameter;
 #elif defined(__WIIU__)
 int ThreadProc(int argc, const char** argv) {
     struct thread_context* ctx = (struct thread_context*)argv;
+#elif defined (__3DS__)
+void ThreadProc(void* context) {
+    struct thread_context* ctx = (struct thread_context*)context;
 #else
 void* ThreadProc(void* context) {
     struct thread_context* ctx = (struct thread_context*)context;
 #endif
 
-#if defined(LC_WINDOWS)
+#if defined(LC_WINDOWS) && !defined(NXDK)
     setThreadNameWin32(ctx->name);
 #elif defined(__linux__) || defined(__FreeBSD__)
     pthread_setname_np(pthread_self(), ctx->name);
@@ -88,8 +93,10 @@ void* ThreadProc(void* context) {
 
     free(ctx);
 
-#if defined(LC_WINDOWS) || defined(__vita__) || defined(__WIIU__) || defined(__3DS__)
+#if defined(LC_WINDOWS) || defined(__vita__) || defined(__WIIU__)
     return 0;
+#elif defined(__3DS__)
+    return;
 #else
     return NULL;
 #endif
@@ -298,7 +305,7 @@ int PltCreateThread(const char* name, ThreadEntry entry, void* context, PLT_THRE
             free(ctx);
             return err;
         }
-        
+
     }
 #endif
 
@@ -309,7 +316,7 @@ int PltCreateThread(const char* name, ThreadEntry entry, void* context, PLT_THRE
 
 int PltCreateEvent(PLT_EVENT* event) {
 #if defined(LC_WINDOWS)
-    *event = CreateEventEx(NULL, NULL, CREATE_EVENT_MANUAL_RESET, EVENT_ALL_ACCESS);
+    *event = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (!*event) {
         return -1;
     }
@@ -578,7 +585,7 @@ bool PltSafeStrcpy(char* dest, size_t dest_size, const char* src) {
     memset(dest, 0xFE, dest_size);
 #endif
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && !defined(NXDK)
     // strncpy_s() with _TRUNCATE does what we need for MSVC.
     // We use this rather than strcpy_s() because we don't want
     // the invalid parameter handler invoked upon failure.

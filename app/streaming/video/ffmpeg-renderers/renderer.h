@@ -137,26 +137,9 @@ private:
 #define RENDERER_ATTRIBUTE_NO_BUFFERING 0x08
 #define RENDERER_ATTRIBUTE_FORCE_PACING 0x10
 
-// The renderer paces itself in hardware (e.g. via an integer swapchain sync
-// interval) and does not need (and must not be driven by) the software Pacer's
-// V-sync source. Used to give low-FPS streams a perfect cadence on high-refresh
-// displays (e.g. 60 FPS on a 120 Hz panel) without judder.
-#define RENDERER_ATTRIBUTE_SELF_PACING 0x20
-
-// Measured presentation cadence, read back from the display pipeline by renderers
-// that can (D3D11VA via IDXGISwapChain::GetFrameStatistics). This is diagnostic
-// instrumentation for issue #9 and is only populated when the Cadence overlay line
-// is switched on, or STREAMLIGHT_PACING_DIAG=1 is set.
-typedef struct _PACING_MEASUREMENT {
-    // V-blanks each presented frame actually occupied, or negative where the adapter's
-    // refresh counter cannot be believed. The three fields below are measured without
-    // that counter and stay valid when this one is negative.
-    double vblanksPerFrame;
-    int minVblanks;
-    int maxVblanks;
-    double queueDepthVblanks;  // refreshes elapsed since the last completed present
-    double presentWaitMs;      // average time blocked inside Present()
-} PACING_MEASUREMENT, *PPACING_MEASUREMENT;
+// ⚠️ 0x20 was RENDERER_ATTRIBUTE_SELF_PACING, removed in 5.2.0 along with the
+// hardware 2:2 cadence it announced. Nothing self-paces any more: pacing is the
+// software Pacer or nothing, exactly as upstream Moonlight does it.
 
 class IFFmpegRenderer : public Overlay::IOverlayRenderer {
 public:
@@ -239,28 +222,25 @@ public:
         return 0;
     }
 
-    // Number of V-blanks each frame is held for when the renderer paces itself
-    // in hardware (DXGI sync interval). >=2 means hardware frame pacing is active;
-    // 0 means the renderer does not self-pace. Used by the performance overlay.
-    virtual int getFramePacingSyncInterval() {
-        return 0;
-    }
-
-    // Fills in what the display pipeline actually did with our presents. Returns
-    // false when no measurement is available (renderer can't read it back, or the
-    // pacing diagnostic is off, which is the default).
-    virtual bool getPacingMeasurement(PPACING_MEASUREMENT) {
-        return false;
-    }
-
     virtual int getDecoderColorspace() {
         // Rec 601 is default
         return COLORSPACE_REC_601;
     }
 
     virtual int getDecoderColorRange() {
-        // Limited is the default
-        return COLOR_RANGE_LIMITED;
+        // Full is the default
+        //
+        // ⚠️ A Settings → Video switch between Full and Limited was built here and then
+        // removed, because it could not do the job it appeared to offer. isFrameFullRange()
+        // below branches on the range the HOST tags each frame with, and those branches
+        // take precedence over this value — so on any host that tags its frames (Sunshine,
+        // Apollo and Vibeshine all do) picking Limited only changed what we asked for: the
+        // host encoded limited, tagged MPEG, and we rendered limited. Consistent, fewer
+        // levels, and visually identical to Full. The only case where the switch would have
+        // changed anything visible is a host that both ignores the request AND omits the
+        // tag - and there COLOR_RANGE_OVERRIDE already covers it without a control that
+        // does nothing for everyone else.
+        return COLOR_RANGE_FULL;
     }
 
     virtual int getFrameColorspace(const AVFrame* frame) {
@@ -282,10 +262,16 @@ public:
     }
 
     virtual bool isFrameFullRange(const AVFrame* frame) {
-        // This handles the case where the color range is unknown,
-        // so that we use Limited color range which is the default
-        // behavior for Moonlight.
-        return frame->color_range == AVCOL_RANGE_JPEG;
+        switch (frame->color_range) {
+        case AVCOL_RANGE_JPEG:
+            return true;
+        case AVCOL_RANGE_MPEG:
+            return false;
+        default:
+            // If the color range is not populated, assume the encoder
+            // is sending the color range that we requested.
+            return getDecoderColorRange() == COLOR_RANGE_FULL;
+        }
     }
 
     virtual bool isRenderThreadSupported() {

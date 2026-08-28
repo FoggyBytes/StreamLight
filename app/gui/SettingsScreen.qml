@@ -35,6 +35,16 @@ FocusScope {
     readonly property color _greenLk:   Theme.accent
     readonly property color _focus:     Theme.accent
     readonly property int   _focusBd:   3
+
+    // The fill every button and picker in this screen sits on: the card colour with a trace of
+    // the accent in it, which is what makes them read as a family rather than as grey chrome.
+    // ⚠️ Here rather than repeated, because it had been written out twice — in MiniButton and in
+    // SegmentedSelector — and AboutLinkButton, which never got the memo, used a plain neutral
+    // grey and was visibly the odd one out in the StreamTweak and About tabs.
+    // (SegmentedSelector is a separate file and keeps its own copy; if this changes, so does
+    // its _bgPill.)
+    readonly property color _btnBg: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
+                                                                Theme.accent.b, 0.07))
     readonly property int   _rowHeight: 58
     readonly property int   _rowHeightTall: 76
 
@@ -75,6 +85,13 @@ FocusScope {
     // host with an active profile). Rows whose key the profile overrides are shown
     // greyed + disabled, since editing them here wouldn't affect that host.
     // Direct per-key bindings (not a function) so they react when the map is set.
+    // Host context for the StreamTweak tab and for the settings that depend on it. Set by
+    // AppShell when Settings opens; see the note beside _settingsHostModel there.
+    property var    hostModel: null
+    property string hostName: ""
+    property int    hostIndex: -1
+    property bool   hostStreamTweakEnabled: true
+
     property var    activeProfileOverride: ({})
     property string activeProfileName: ""
 
@@ -91,8 +108,16 @@ FocusScope {
     readonly property bool _lockHue:         activeProfileOverride && activeProfileOverride.hue !== undefined
     readonly property bool _lockMatchLink:   activeProfileOverride && activeProfileOverride.matchlink !== undefined
     readonly property bool _lockWaitForGame: activeProfileOverride && activeProfileOverride.waitgame !== undefined
-    readonly property bool _lockRefreshRate: activeProfileOverride && activeProfileOverride.refreshrate !== undefined
     readonly property bool _lockDisplayMode: activeProfileOverride && activeProfileOverride.displaymode !== undefined
+
+    // Settings that cannot do anything without StreamTweak on the host. Greyed with the
+    // reason rather than left live and inert — an inert switch is indistinguishable from a
+    // broken one. Only when a host is actually in context: with none, hostStreamTweakEnabled
+    // stays true and nothing greys.
+    readonly property bool _stOff: !hostStreamTweakEnabled
+    readonly property string _stOffWhy: hostName.length > 0
+        ? qsTr("StreamTweak is switched off for %1 — turn it on in the StreamTweak tab.").arg(hostName)
+        : qsTr("StreamTweak is switched off for this host — turn it on in the StreamTweak tab.")
     readonly property bool _lockVsync:       activeProfileOverride && activeProfileOverride.vsync !== undefined
 
     // Latest-release tags fetched once per Settings open from the GitHub API.
@@ -159,7 +184,8 @@ FocusScope {
             case 5: if (gameOptSwitch)         gameOptSwitch.forceActiveFocus();         break
             case 6: if (perfOverlaySwitch)     perfOverlaySwitch.forceActiveFocus();     break
             case 7: if (glyphSetSelector)      glyphSetSelector.forceActiveFocus();      break
-            case 8: if (aboutSlGithubBtn)      aboutSlGithubBtn.forceActiveFocus();      break
+            case 8: if (stGithubBtn)           stGithubBtn.forceActiveFocus();           break
+            case 9: if (aboutSlGithubBtn)      aboutSlGithubBtn.forceActiveFocus();      break
         }
     }
 
@@ -277,10 +303,10 @@ FocusScope {
             text: qsTr("Video")
             focusPolicy: Qt.NoFocus
             font.family: "DM Sans"
-            font.pixelSize: 15
+            font.pixelSize: 14
             font.bold: true
             font.capitalization: Font.AllUppercase
-            font.letterSpacing: 1.2
+            font.letterSpacing: 0.8
             background: Rectangle {
                 color: "transparent"
                 Rectangle {
@@ -303,10 +329,10 @@ FocusScope {
             text: qsTr("Audio")
             focusPolicy: Qt.NoFocus
             font.family: "DM Sans"
-            font.pixelSize: 15
+            font.pixelSize: 14
             font.bold: true
             font.capitalization: Font.AllUppercase
-            font.letterSpacing: 1.2
+            font.letterSpacing: 0.8
             background: Rectangle {
                 color: "transparent"
                 Rectangle {
@@ -329,10 +355,10 @@ FocusScope {
             text: qsTr("Input")
             focusPolicy: Qt.NoFocus
             font.family: "DM Sans"
-            font.pixelSize: 15
+            font.pixelSize: 14
             font.bold: true
             font.capitalization: Font.AllUppercase
-            font.letterSpacing: 1.2
+            font.letterSpacing: 0.8
             background: Rectangle {
                 color: "transparent"
                 Rectangle {
@@ -355,10 +381,10 @@ FocusScope {
             text: qsTr("Decoder")
             focusPolicy: Qt.NoFocus
             font.family: "DM Sans"
-            font.pixelSize: 15
+            font.pixelSize: 14
             font.bold: true
             font.capitalization: Font.AllUppercase
-            font.letterSpacing: 1.2
+            font.letterSpacing: 0.8
             background: Rectangle {
                 color: "transparent"
                 Rectangle {
@@ -381,10 +407,10 @@ FocusScope {
             text: qsTr("Network")
             focusPolicy: Qt.NoFocus
             font.family: "DM Sans"
-            font.pixelSize: 15
+            font.pixelSize: 14
             font.bold: true
             font.capitalization: Font.AllUppercase
-            font.letterSpacing: 1.2
+            font.letterSpacing: 0.8
             background: Rectangle {
                 color: "transparent"
                 Rectangle {
@@ -407,10 +433,10 @@ FocusScope {
             text: qsTr("Session")
             focusPolicy: Qt.NoFocus
             font.family: "DM Sans"
-            font.pixelSize: 15
+            font.pixelSize: 14
             font.bold: true
             font.capitalization: Font.AllUppercase
-            font.letterSpacing: 1.2
+            font.letterSpacing: 0.8
             background: Rectangle {
                 color: "transparent"
                 Rectangle {
@@ -433,10 +459,10 @@ FocusScope {
             text: qsTr("Overlay")
             focusPolicy: Qt.NoFocus
             font.family: "DM Sans"
-            font.pixelSize: 15
+            font.pixelSize: 14
             font.bold: true
             font.capitalization: Font.AllUppercase
-            font.letterSpacing: 1.2
+            font.letterSpacing: 0.8
             background: Rectangle {
                 color: "transparent"
                 Rectangle {
@@ -459,10 +485,10 @@ FocusScope {
             text: qsTr("Shortcuts")
             focusPolicy: Qt.NoFocus
             font.family: "DM Sans"
-            font.pixelSize: 15
+            font.pixelSize: 14
             font.bold: true
             font.capitalization: Font.AllUppercase
-            font.letterSpacing: 1.2
+            font.letterSpacing: 0.8
             background: Rectangle {
                 color: "transparent"
                 Rectangle {
@@ -481,14 +507,21 @@ FocusScope {
                 verticalAlignment: Text.AlignVCenter
             }
         }
+        // Before About, not after: About is the app's own identity and stays last. This tab
+        // is where the companion product lives, and it takes the StreamTweak card that used
+        // to sit in About with it.
+        // ⚠️ The mark instead of the word, and it is the one tab that gets one. "STREAMTWEAK"
+        // is eleven characters — the longest label in the app — and TabBar gives every tab an
+        // equal slot and centres the label in it, so it sat flush against SHORTCUTS, the
+        // second longest. A compact mark leaves that slot full of air and the row breathes.
+        //
+        // It is StreamTweak's own logo, not StreamLight's: this tab is about the companion
+        // product and labelling it with our own mark would be wrong. Source is the 672px PNG
+        // from StreamTweak's installer resources, so at 22 logical px it has sixteen times the
+        // pixels it needs even at 4K with 200% scaling — hence `smooth`, which is doing real
+        // work here rather than being decoration.
         TabButton {
-            text: qsTr("About")
             focusPolicy: Qt.NoFocus
-            font.family: "DM Sans"
-            font.pixelSize: 15
-            font.bold: true
-            font.capitalization: Font.AllUppercase
-            font.letterSpacing: 1.2
             background: Rectangle {
                 color: "transparent"
                 Rectangle {
@@ -499,10 +532,46 @@ FocusScope {
                     color: tabBar.currentIndex === 8 ? settingsScreen._green : "transparent"
                 }
             }
+            contentItem: Item {
+                Image {
+                    anchors.centerIn: parent
+                    // A shade taller than the 14px labels beside it, not a badge: a mark has
+                    // to carry at a glance where a word carries by shape, so it needs a
+                    // little more room than the cap height — but only a little, or it stops
+                    // reading as one item in a row of ten.
+                    height: 26
+                    width: 26
+                    source: "qrc:/res/streamtweak_logo.png"
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
+                    // Dimmed like an unselected label, full strength when the tab is current.
+                    opacity: tabBar.currentIndex === 8 ? 1.0 : 0.55
+                }
+            }
+        }
+        TabButton {
+            text: qsTr("About")
+            focusPolicy: Qt.NoFocus
+            font.family: "DM Sans"
+            font.pixelSize: 14
+            font.bold: true
+            font.capitalization: Font.AllUppercase
+            font.letterSpacing: 0.8
+            background: Rectangle {
+                color: "transparent"
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 2
+                    color: tabBar.currentIndex === 9 ? settingsScreen._green : "transparent"
+                }
+            }
             contentItem: Text {
                 text: parent.text
                 font: parent.font
-                color: tabBar.currentIndex === 8 ? settingsScreen._text : settingsScreen._textDim
+                color: tabBar.currentIndex === 9 ? settingsScreen._text : settingsScreen._textDim
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
             }
@@ -525,6 +594,34 @@ FocusScope {
 
     // Notice placed at the top of any settings sub-block that contains rows locked
     // by the active host profile. Collapses to zero height when not active.
+    // Sibling of ProfileLockNotice, same grammar: the rows below cannot act, and this says
+    // why. A different glyph so the two reasons are never mistaken for each other — one is
+    // "another layer owns this", the other is "the host cannot do it".
+    component StreamTweakOffNotice: Item {
+        property bool active: false
+        width: parent ? parent.width : 0
+        visible: active
+        height: visible ? settingsScreen._rowHeight : 0
+        Row {
+            anchors.left: parent.left; anchors.leftMargin: 16
+            anchors.right: parent.right; anchors.rightMargin: 16
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+            Label {
+                text: "🔌"; font.pixelSize: 14
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Label {
+                width: parent.width - 28
+                anchors.verticalCenter: parent.verticalCenter
+                text: settingsScreen._stOffWhy
+                font.family: "DM Sans"; font.pixelSize: 13
+                color: settingsScreen._textDim
+                wrapMode: Text.WordWrap
+            }
+        }
+    }
+
     component ProfileLockNotice: Item {
         property bool active: false
         width: parent ? parent.width : 0
@@ -637,7 +734,8 @@ FocusScope {
                     case 5: return sessionTab.implicitHeight
                     case 6: return overlayTab.implicitHeight
                     case 7: return shortcutsTab.implicitHeight
-                    case 8: return aboutTab.implicitHeight
+                    case 8: return streamTweakTab.implicitHeight
+                    case 9: return aboutTab.implicitHeight
                 }
                 return 0
             }
@@ -690,7 +788,6 @@ FocusScope {
                                     || settingsScreen._lockFps
                                     || settingsScreen._lockBitrate
                                     || settingsScreen._lockDisplayMode
-                                    || settingsScreen._lockRefreshRate
                                     || settingsScreen._lockVsync
                                     || settingsScreen._lockFramePacing
                         }
@@ -1069,78 +1166,6 @@ FocusScope {
                         }
                         Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
 
-                        // ── Refresh rate ──────────────────────────────────────
-                        Item {
-                            width: parent.width
-                            height: Math.max(settingsScreen._rowHeightTall, rrCol.implicitHeight + 16)
-                            // Only exclusive fullscreen sets a display mode at all — in
-                            // Borderless and Windowed the desktop mode is used as it is,
-                            // so there is nothing here to decide. Lock the control rather
-                            // than let it show a choice that is silently ignored, the same
-                            // way Frame Pacing locks when V-Sync is off.
-                            enabled: !settingsScreen._lockRefreshRate
-                                     && StreamingPreferences.windowMode === StreamingPreferences.WM_FULLSCREEN
-                            opacity: enabled ? 1.0 : 0.4
-
-                            Column {
-                                id: rrCol
-                                anchors.left: parent.left
-                                anchors.leftMargin: 16
-                                anchors.right: refreshRateSelector.left
-                                anchors.rightMargin: 16
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 3
-
-                                Label {
-                                    text: qsTr("Refresh rate switching")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: 16
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    width: parent.width
-                                    wrapMode: Text.WordWrap
-                                    text: StreamingPreferences.windowMode === StreamingPreferences.WM_FULLSCREEN
-                                          ? qsTr("What your screen's refresh rate does while streaming. Feed a 120 Hz screen a 60 FPS stream and Highest keeps it at 120 Hz, Match frame rate takes it down to 60 Hz. Automatic picks whichever suits your frame pacing setting.")
-                                          : qsTr("Only applies to Fullscreen — Borderless and Windowed use the desktop's own refresh rate.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: 13
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            SegmentedSelector {
-                                id: refreshRateSelector
-                                anchors.right: parent.right
-                                anchors.rightMargin: 16
-                                anchors.verticalCenter: parent.verticalCenter
-
-                                labels: [qsTr("Off"), qsTr("Automatic"), qsTr("Highest"), qsTr("Match frame rate")]
-                                property var _values: [
-                                    StreamingPreferences.RR_OFF,
-                                    StreamingPreferences.RR_AUTO,
-                                    StreamingPreferences.RR_HIGHEST,
-                                    StreamingPreferences.RR_MATCH_FPS
-                                ]
-
-                                Binding on currentIndex {
-                                    value: {
-                                        var v = StreamingPreferences.refreshRateMode
-                                        for (var i = 0; i < refreshRateSelector._values.length; i++) {
-                                            if (refreshRateSelector._values[i] === v) return i
-                                        }
-                                        // Fall back to Highest, the default — index 0 is Off,
-                                        // and landing on it would misreport a stored value we
-                                        // simply didn't recognise.
-                                        return 2
-                                    }
-                                }
-                                onActivated: function(idx) { StreamingPreferences.refreshRateMode = _values[idx]; StreamingPreferences.save() }
-                            }
-                        }
-                        Rectangle { width: parent.width - 32; height: 1; color: settingsScreen._border; x: 16 }
-
                         // ── V-Sync ────────────────────────────────────────────
                         Item {
                             width: parent.width
@@ -1191,45 +1216,21 @@ FocusScope {
                             width: parent.width
                             height: Math.max(settingsScreen._rowHeightTall, fpCol.implicitHeight + 16)
                             // Frame pacing has no effect without V-Sync: Session passes
-                            // FP_OFF to the decoder whenever V-Sync is disabled, and both
-                            // pacing paths (DXGI sync interval, software Pacer) are gated
-                            // on it. Lock the control instead of letting it show a value
-                            // that is silently ignored. The stored mode is deliberately
-                            // left untouched, so re-enabling V-Sync restores the choice.
+                            // FP_OFF to the decoder whenever V-Sync is disabled, and the
+                            // software Pacer is gated on it. Lock the control instead of
+                            // letting it show a value that is silently ignored. The stored
+                            // mode is deliberately left untouched, so re-enabling V-Sync
+                            // restores the choice.
                             enabled: !settingsScreen._lockFramePacing
                                      && StreamingPreferences.enableVsync
                             opacity: enabled ? 1.0 : 0.4
 
-                            // The 2:2 arrangement is not a setting anyone can see, so work out
-                            // whether these choices actually land on it and say so only then.
-                            // Mirrors the gate in D3D11VARenderer::initialize(): Automatic or
-                            // Hardware, V-Sync on, and a panel running a whole multiple of 2 to 4
-                            // times the stream rate, within a Hz of exact.
-                            //
-                            // ⚠️ getRefreshRate() is a Q_INVOKABLE, so a binding that read it
-                            // inline would never be told to re-evaluate. It is captured once
-                            // instead - the panel does not change rate while this page is open,
-                            // and everything else here is a property that tracks. Display 0: on a
-                            // multi-monitor desk the stream may open elsewhere, which is why this
-                            // line is advisory and gates nothing.
-                            property int _panelHz: 0
-                            Component.onCompleted: _panelHz = SystemProperties.getRefreshRate(0)
-
-                            readonly property int _cadence: {
-                                if (!StreamingPreferences.enableVsync) return 0
-                                if (StreamingPreferences.framePacingMode !== StreamingPreferences.FP_AUTO
-                                        && StreamingPreferences.framePacingMode !== StreamingPreferences.FP_MULTIPLE) return 0
-                                // Match frame rate puts the panel on the stream's own rate, so
-                                // there is no multiple left to warn about - but only in exclusive
-                                // fullscreen, the one place a mode switch actually happens.
-                                if (StreamingPreferences.refreshRateMode === StreamingPreferences.RR_MATCH_FPS
-                                        && StreamingPreferences.windowMode === StreamingPreferences.WM_FULLSCREEN) return 0
-                                var fps = StreamingPreferences.fps
-                                if (fps <= 0 || fpRow._panelHz < fps * 2) return 0
-                                var n = Math.round(fpRow._panelHz / fps)
-                                if (n < 2 || n > 4 || Math.abs(fpRow._panelHz - n * fps) > 1) return 0
-                                return n
-                            }
+                            // ⚠️ The conditional 2:2 warning that stood here went with the
+                            // hardware cadence in 5.2.0. It told the user their settings had
+                            // landed on the arrangement behind issue #9 and pointed at Match
+                            // frame rate as the way out; neither the arrangement nor that
+                            // setting exists any more, so the warning would have nothing to
+                            // warn about and nowhere to send anyone.
 
                             Column {
                                 id: fpCol
@@ -1251,23 +1252,11 @@ FocusScope {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
                                     text: StreamingPreferences.enableVsync
-                                          ? qsTr("Removes judder on high-refresh displays. Software paces every frame itself. Hardware hands the job to the GPU and needs a screen running a whole multiple of the stream, holding each frame for two refreshes on a 120 Hz screen at 60 FPS, or four on a 240 Hz one.")
+                                          ? qsTr("Spaces frames out evenly instead of drawing them the moment they arrive, which removes judder on high-refresh displays.")
                                           : qsTr("Requires V-Sync — with it off the stream renders as fast as it can, so nothing is paced. Your saved mode is kept and comes back as soon as you re-enable V-Sync.")
                                     font.family: "DM Sans"
                                     font.pixelSize: 13
                                     color: settingsScreen._textDim
-                                }
-                                Label {
-                                    visible: fpRow._cadence !== 0
-                                    width: parent.width
-                                    wrapMode: Text.WordWrap
-                                    text: qsTr("At %1 FPS on a %2 Hz screen each frame is held for %3 refreshes, and how much delay that adds is settled when the stream starts. Match frame rate avoids the arrangement instead of managing it.")
-                                          .arg(StreamingPreferences.fps)
-                                          .arg(fpRow._panelHz)
-                                          .arg(["", "", qsTr("two"), qsTr("three"), qsTr("four")][fpRow._cadence])
-                                    font.family: "DM Sans"
-                                    font.pixelSize: 13
-                                    color: Theme.warning
                                 }
                             }
 
@@ -1277,12 +1266,10 @@ FocusScope {
                                 anchors.rightMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
 
-                                labels: [qsTr("Off"), qsTr("Automatic"), qsTr("Software"), qsTr("Hardware")]
+                                labels: [qsTr("Off"), qsTr("On")]
                                 property var _values: [
                                     StreamingPreferences.FP_OFF,
-                                    StreamingPreferences.FP_AUTO,
-                                    StreamingPreferences.FP_MATCHED,
-                                    StreamingPreferences.FP_MULTIPLE
+                                    StreamingPreferences.FP_ON
                                 ]
 
                                 Binding on currentIndex {
@@ -2363,11 +2350,12 @@ FocusScope {
                         spacing: 0
 
                         ProfileLockNotice { active: settingsScreen._lockMatchLink }
+                        StreamTweakOffNotice { active: settingsScreen._stOff }
 
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeight + 18
-                            enabled: !settingsScreen._lockMatchLink
+                            enabled: !settingsScreen._lockMatchLink && !settingsScreen._stOff
                             opacity: enabled ? 1.0 : 0.4
 
                             Column {
@@ -2603,11 +2591,12 @@ FocusScope {
                         // session rather than about the network. It is the bottom of its own
                         // cascade — a host profile, then a per-game override, replace it.
                         ProfileLockNotice { active: settingsScreen._lockWaitForGame }
+                        StreamTweakOffNotice { active: settingsScreen._stOff }
 
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeightTall
-                            enabled: !settingsScreen._lockWaitForGame
+                            enabled: !settingsScreen._lockWaitForGame && !settingsScreen._stOff
                             opacity: enabled ? 1.0 : 0.4
 
                             Column {
@@ -2626,7 +2615,11 @@ FocusScope {
                                     color: settingsScreen._text
                                 }
                                 Label {
-                                    text: qsTr("Keep the launch screen up until the host reports the game is on screen, instead of showing the stream as soon as it starts. Games that open their own launcher never get there — turn it off for those in their per-game settings.")
+                                    // ⚠️ "the host reports" was all this used to say, so the
+                                    // switch could be turned on and quietly do nothing on a
+                                    // host without StreamTweak — the only one of the three
+                                    // StreamTweak-dependent settings that never named it.
+                                    text: qsTr("Keep the launch screen up until the host reports the game is on screen, instead of showing the stream as soon as it starts. Needs StreamTweak on the host. Games that open their own launcher never get there — turn it off for those in their per-game settings.")
                                     font.family: "DM Sans"
                                     font.pixelSize: 13
                                     color: settingsScreen._textDim
@@ -3333,21 +3326,6 @@ FocusScope {
                       desc: qsTr("Drawing, including the wait for the monitor's V-sync"),
                       host: false, sub: false,
                       lines: ["Average rendering time (including monitor V-sync latency): 1.10 ms"] },
-                    { bit: StreamingPreferences.OI_PACING,
-                      name: qsTr("Frame pacing"),
-                      desc: qsTr("Which pacing mechanism is really in effect"),
-                      host: false, sub: false,
-                      lines: ["Frame pacing: Hardware (2:2 cadence)"] },
-                    // ⚠️ The one switch here that does more than choose what to print: it
-                    // turns on the renderer's per-present measurement, and with it the
-                    // [pacing] lines in the log. That is the point — it is what a bug
-                    // report needs, and it used to require setting an environment variable
-                    // from a shell.
-                    { bit: StreamingPreferences.OI_CADENCE,
-                      name: qsTr("Cadence (measured)"),
-                      desc: qsTr("What the display did with the cadence above — how long each frame was really held, how deep the queue sat, how long a frame waited to be handed over. Also records it in the log, which is what to switch on before reporting a stutter. On Intel graphics the V-blank counts are left out, because the driver does not report them correctly; everything else is measured separately and still shown"),
-                      host: false, sub: false,
-                      lines: ["Cadence: 2.00 v/f (2-2), queue 0.0, wait 0.4 ms"] },
                     { bit: StreamingPreferences.OI_HOST_METRICS,
                       name: qsTr("Host metrics"),
                       desc: qsTr("GPU, encoder, temperature, VRAM, CPU and outbound network — needs StreamTweak on the host"),
@@ -3365,7 +3343,7 @@ FocusScope {
                     StreamingPreferences.OI_VIDEO | StreamingPreferences.OI_BITRATE |
                     StreamingPreferences.OI_NET_DROPS | StreamingPreferences.OI_JITTER_DROPS |
                     StreamingPreferences.OI_LATENCY | StreamingPreferences.OI_DECODE_TIME |
-                    StreamingPreferences.OI_PACING | StreamingPreferences.OI_HOST_METRICS,
+                    StreamingPreferences.OI_HOST_METRICS,
 
                     StreamingPreferences.OI_ALL
                 ]
@@ -4040,20 +4018,47 @@ FocusScope {
                                 Keys.onEnterPressed:  function(event) { _toggle(); event.accepted = true }
                                 Keys.onSpacePressed:  function(event) { _toggle(); event.accepted = true }
 
+                                // Disabled on the two section headings and on a row that has
+                                // nothing to switch: a disabled HoverState receives no hover
+                                // at all, so neither the wash nor the pointing hand appears
+                                // over something that cannot be clicked.
+                                HoverState {
+                                    id: lineHov
+                                    enabled: lineRow._pickable && lineRow._usable
+                                }
+
                                 Rectangle {
                                     anchors.fill: parent
                                     anchors.margins: -2
                                     radius: 4
-                                    visible: lineRow.activeFocus
+                                    visible: lineHov.keyFocused
                                     color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.18)
                                     border.color: Theme.accent
                                     border.width: 1
                                 }
 
+                                // These rows had no pointer feedback at all, so the focus ring
+                                // could not simply be suppressed under the mouse — something
+                                // has to take its place. A row inside the preview box is a
+                                // filled shape with no border of its own, so it washes, the
+                                // same way a SegmentedSelector pill does.
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: -2
+                                    radius: 4
+                                    color: Qt.rgba(1, 1, 1, 0.05)
+                                    opacity: lineHov.active ? 1 : 0
+
+                                    Behavior on opacity {
+                                        enabled: !Theme.reduceAnimations
+                                        NumberAnimation { duration: 120; easing.type: Easing.OutQuad }
+                                    }
+                                }
+
                                 MouseArea {
                                     anchors.fill: parent
                                     enabled: lineRow._pickable && lineRow._usable
-                                    cursorShape: Qt.PointingHandCursor
+                                    // cursorShape belongs to HoverState now.
                                     onClicked: { lineRow.forceActiveFocus(); lineRow._toggle() }
                                 }
 
@@ -4128,12 +4133,15 @@ FocusScope {
 
                         function _w(s, px) { return s.length * overlayTab._adv * px }
 
+                        // ⚠️ This is the Stream Settings panel's preview, not the performance
+                        // overlay's — that one lost its Frame pacing line in 5.2.0, the panel
+                        // still has the row. So these are the panel's own labels (s_PacingLabels
+                        // in streamsettingsoverlay.cpp), which the preview exists to match.
+                        // Session forces the mode off without V-Sync.
                         readonly property string _pacing:
                               !StreamingPreferences.enableVsync ? "Off"
-                            : StreamingPreferences.framePacingMode === StreamingPreferences.FP_OFF     ? "Off"
-                            : StreamingPreferences.framePacingMode === StreamingPreferences.FP_AUTO    ? "Automatic"
-                            : StreamingPreferences.framePacingMode === StreamingPreferences.FP_MATCHED ? "Software"
-                            :                                                                            "Hardware"
+                            : StreamingPreferences.framePacingMode === StreamingPreferences.FP_OFF ? "Off"
+                            :                                                                        "On"
 
                         // The same rows the panel builds, in the same order, from the same
                         // preferences. Frame pacing is read-only without V-Sync there, so it is
@@ -4404,13 +4412,437 @@ FocusScope {
 
             }
             // ──────────────────────────────────────────────────────────────────
+            //                          STREAMTWEAK TAB
+            // ──────────────────────────────────────────────────────────────────
+            // Three blocks, in the order the questions arrive: what is this and where do I
+            // get it, which of my hosts should use it, and what does switching it on buy me.
+            //
+            // The switch is per host and there is no global one. A single switch could not
+            // tell a StreamTweak host from a plain Sunshine box, so ON would leave every
+            // wait in place on the wrong one and OFF would take the features away from the
+            // right one. Per host, the question has one answer per row.
+            Column {
+                id: streamTweakTab
+                anchors.left: parent.left
+                anchors.right: parent.right
+                visible: tabBar.currentIndex === 8
+                spacing: 16
+
+                // ⚠️ The only place in the app that asks whether a host runs StreamTweak.
+                // One CAPS per host, while this tab is on screen, because this is the screen
+                // whose whole job is to answer that. Everything else in the app is told by
+                // the switch and never guesses — no stored verdicts, no thresholds, nothing
+                // to keep in step with reality.
+                onVisibleChanged: if (visible) { stHosts.probeAll(); stHosts.wireNavigation() }
+
+                // No section label above the first card: the tab is called StreamTweak and the
+                // card says StreamTweak in 22px directly beneath it. Every other tab's first
+                // label names something the tab title does not.
+                Rectangle {
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: 8
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: stInstallCol.implicitHeight + 36
+
+                    Column {
+                        id: stInstallCol
+                        anchors.left: parent.left
+                        anchors.leftMargin: 18
+                        anchors.right: stGithubRow.left
+                        anchors.rightMargin: 16
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 5
+
+                        Row {
+                            spacing: 12
+                            Label {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "StreamTweak"
+                                font.family: "DM Sans"
+                                font.pixelSize: 22
+                                font.bold: true
+                                color: settingsScreen._text
+                            }
+                            Label {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: settingsScreen.streamTweakLatest.length > 0
+                                      ? settingsScreen.streamTweakLatest
+                                      : qsTr("checking…")
+                                font.family: "DM Sans"
+                                font.pixelSize: 14
+                                color: settingsScreen._greenLk
+                            }
+                            Label {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("by FoggyBytes")
+                                font.family: "DM Sans"
+                                font.pixelSize: 13
+                                color: settingsScreen._textDim
+                            }
+                        }
+                        Label {
+                            width: parent.width
+                            // One sentence, like every other description in this file. The
+                            // first version ran to three and pointed at "the bottom of this
+                            // tab", which the Features section now names for itself.
+                            text: qsTr("A companion app for the host. Install it, switch on the hosts that have it, and StreamLight gains the features below — streaming itself is unaffected either way.")
+                            font.family: "DM Sans"
+                            font.pixelSize: 13
+                            color: settingsScreen._textDim
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+
+                    Row {
+                        id: stGithubRow
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.rightMargin: 16
+                        AboutLinkButton {
+                            id: stGithubBtn
+                            label: qsTr("GitHub releases")
+                            url:   "https://github.com/FoggyBytes/StreamTweak/releases"
+                        }
+                    }
+                }
+
+                // ── Section: HOSTS ────────────────────────────────────────────
+                // ⚠️ AllUppercase and leftPadding 14, like every other section label in this
+                // file. The first version of this tab omitted both, so its labels rendered in
+                // mixed case and flush left while all the others were uppercase and indented.
+                Label {
+                    text: qsTr("Hosts")
+                    font.family: "DM Sans"
+                    font.pixelSize: 13
+                    font.bold: true
+                    font.letterSpacing: 1.4
+                    font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut
+                    leftPadding: 14
+                }
+
+                Rectangle {
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: 8
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: Math.max(stHostCol.implicitHeight, 76)
+
+                    Column {
+                        id: stHostCol
+                        width: parent.width
+
+                        // Nothing paired yet. The tab is still worth being on — the pitch and
+                        // the download are above — so this says what to do rather than
+                        // apologising.
+                        Item {
+                            width: parent.width
+                            height: visible ? 76 : 0
+                            visible: stHosts.count === 0
+                            Label {
+                                anchors.centerIn: parent
+                                horizontalAlignment: Text.AlignHCenter
+                                text: qsTr("No hosts yet.\nAdd one from the home screen.")
+                                font.family: "DM Sans"
+                                font.pixelSize: 14
+                                color: settingsScreen._textDim
+                            }
+                        }
+
+                        Repeater {
+                            id: stHosts
+                            model: settingsScreen.hostModel
+
+                            function probeAll() {
+                                if (!settingsScreen.hostModel) return
+                                for (var i = 0; i < count; i++) {
+                                    var it = itemAt(i)
+                                    if (it) it.probe()
+                                }
+                            }
+
+                            // ⚠️ Wired imperatively, not with a binding on itemAt(): that is
+                            // a function call, so a binding using it would never re-evaluate
+                            // and the chain would be whatever it was at creation time. Called
+                            // when the tab becomes visible, which is the only moment the
+                            // chain can be both complete and about to be used.
+                            //
+                            // Without this the switches are unreachable with a controller —
+                            // focusFirstControl() lands on the GitHub button and there is
+                            // nothing below it. Mouse-only would be the wrong answer in an
+                            // app driven from a couch.
+                            function wireNavigation() {
+                                var first = count > 0 ? itemAt(0) : null
+                                stGithubBtn.KeyNavigation.down = first ? first.switchItem : null
+
+                                for (var i = 0; i < count; i++) {
+                                    var it = itemAt(i)
+                                    if (!it) continue
+                                    var prev = i > 0 ? itemAt(i - 1) : null
+                                    var next = i + 1 < count ? itemAt(i + 1) : null
+                                    it.switchItem.KeyNavigation.up =
+                                        prev ? prev.switchItem : stGithubBtn
+                                    it.switchItem.KeyNavigation.down =
+                                        next ? next.switchItem : null
+                                }
+                            }
+
+                            delegate: Item {
+                                id: stHostRow
+                                width: stHostCol.width
+                                height: settingsScreen._rowHeightTall
+
+                                // "" while we have not asked, then found / missing. Kept per
+                                // row rather than in a shared map so it cannot go out of step
+                                // with the row it describes.
+                                property string presence: ""
+
+                                // Exposed so wireNavigation() can chain the switches without
+                                // reaching into the delegate's internals.
+                                property alias switchItem: stHostSwitch
+
+                                function probe() {
+                                    presence = ""
+                                    if (settingsScreen.hostModel)
+                                        settingsScreen.hostModel.probeStreamTweakPresence(index)
+                                }
+
+                                Connections {
+                                    target: settingsScreen.hostModel
+                                    function onStreamTweakPresenceReceived(idx, found) {
+                                        if (idx === index)
+                                            stHostRow.presence = found ? "found" : "missing"
+                                    }
+                                }
+
+                                Rectangle {
+                                    anchors.top: parent.top
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 16
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 16
+                                    height: 1
+                                    color: settingsScreen._border
+                                    visible: index > 0
+                                }
+
+                                Column {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 16
+                                    anchors.right: stHostSwitch.left
+                                    anchors.rightMargin: 16
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 3
+
+                                    Label {
+                                        text: model.name
+                                        font.family: "DM Sans"
+                                        font.pixelSize: 16
+                                        font.bold: true
+                                        color: settingsScreen._text
+                                        elide: Text.ElideRight
+                                        width: parent.width
+                                    }
+                                    Row {
+                                        spacing: 7
+                                        Rectangle {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: 7; height: 7; radius: 3.5
+                                            color: !model.online          ? settingsScreen._textMut
+                                                 : stHostRow.presence === "found"   ? settingsScreen._green
+                                                 : stHostRow.presence === "missing" ? settingsScreen._textMut
+                                                 : settingsScreen._textDim
+                                        }
+                                        Label {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            // The offline case first: a machine that is not
+                                            // on the network cannot be asked, and reporting
+                                            // "not found" there would be a guess dressed up
+                                            // as a measurement.
+                                            text: !model.online
+                                                    ? qsTr("Offline — can't check right now")
+                                                  : stHostRow.presence === "found"
+                                                    ? qsTr("Found on this host")
+                                                  : stHostRow.presence === "missing"
+                                                    ? qsTr("Not found on this host")
+                                                  : qsTr("Checking…")
+                                            font.family: "DM Sans"
+                                            font.pixelSize: 13
+                                            color: stHostRow.presence === "found" && model.online
+                                                   ? settingsScreen._greenLk
+                                                   : settingsScreen._textDim
+                                        }
+                                    }
+                                }
+
+                                // Never disabled, not even offline: this is the user's
+                                // decision about a host, not an observation of it.
+                                FocusFrame { anchors.fill: stHostSwitch; anchors.margins: -3; target: stHostSwitch }
+                                STSwitch {
+                                    id: stHostSwitch
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 16
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    checked: model.streamTweakEnabled
+                                    onCheckedChanged: {
+                                        if (model.streamTweakEnabled !== checked
+                                            && settingsScreen.hostModel) {
+                                            settingsScreen.hostModel.setStreamTweakEnabled(index, checked)
+                                        }
+                                        // ⚠️ The rows in Network and Session grey themselves
+                                        // from hostStreamTweakEnabled, and AppShell only
+                                        // writes it when Settings opens. Without this line
+                                        // they would keep looking live until the user left
+                                        // the screen and came back — a switch that appears to
+                                        // do nothing. Only for the host actually in context;
+                                        // the others have nothing on this screen to update.
+                                        if (index === settingsScreen.hostIndex)
+                                            settingsScreen.hostStreamTweakEnabled = checked
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Section: FEATURES ─────────────────────────────────────────
+                Label {
+                    text: qsTr("Features")
+                    font.family: "DM Sans"
+                    font.pixelSize: 13
+                    font.bold: true
+                    font.letterSpacing: 1.4
+                    font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut
+                    leftPadding: 14
+                }
+
+                // ⚠️ Three columns, and the reason is navigation rather than taste: this block
+                // has no interactive element in it, so a controller cannot scroll it. Anything
+                // that falls below the fold is unreachable with a pad — it has to fit.
+                //
+                // The groups are distributed by height, not in order, so no column runs long
+                // enough to push the card past the bottom of the screen at 1080p.
+                Rectangle {
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: 8
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: stFeatRow.implicitHeight + 32
+
+                    Row {
+                        id: stFeatRow
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.leftMargin: 16
+                        anchors.rightMargin: 16
+                        anchors.top: parent.top
+                        anchors.topMargin: 16
+                        spacing: 18
+
+                        Repeater {
+                            // Two groups in the outer columns, one in the middle — and the
+                            // middle one is padded rather than anchored. A verticalCenter
+                            // anchor inside a Row whose own height comes from its tallest
+                            // child is the kind of arrangement that produces a binding loop
+                            // warning; a spacer entry is declarative and cannot.
+                            model: [
+                                [ { group: qsTr("Network") },
+                                  { name: qsTr("Host link speed follows this device") },
+                                  { name: qsTr("Speed put back when you are done") },
+                                  { name: qsTr("Host link speed on its card") },
+                                  { group: qsTr("Launch") },
+                                  { name: qsTr("Wait until the game is on screen") } ],
+
+                                [ { gap: 30 },
+                                  { group: qsTr("Remote") },
+                                  { name: qsTr("Power the host off") },
+                                  { name: qsTr("Windows Update: check, install, restart") },
+                                  { name: qsTr("Type your PIN after waking it") } ],
+
+                                [ { group: qsTr("Card & overlay") },
+                                  { name: qsTr("What last session looked like") },
+                                  { name: qsTr("Store badges on the cover art") },
+                                  { name: qsTr("GPU, encoder, temperature, VRAM, CPU, network") },
+                                  { group: qsTr("History") },
+                                  { name: qsTr("Sessions recorded and charted in StreamTweak") } ]
+                            ]
+
+                            delegate: Column {
+                                // Thirds of the row, minus its two gaps. Fixed rather than
+                                // implicit so the three columns line up regardless of how long
+                                // the longest line in each happens to be.
+                                width: (stFeatRow.width - stFeatRow.spacing * 2) / 3
+                                spacing: 0
+
+                                property var entries: modelData
+
+                                Repeater {
+                                    model: parent.entries
+
+                                    delegate: Item {
+                                        width: parent.width
+                                        height: modelData.gap !== undefined
+                                                ? modelData.gap
+                                                : modelData.group !== undefined
+                                                  ? (index === 0 ? 20 : 30)
+                                                  : stEntryText.implicitHeight + 12
+
+                                        Label {
+                                            visible: modelData.group !== undefined
+                                            anchors.left: parent.left
+                                            anchors.bottom: parent.bottom
+                                            anchors.bottomMargin: 3
+                                            text: modelData.group !== undefined ? modelData.group : ""
+                                            font.family: "DM Sans"
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                            font.letterSpacing: 1.2
+                                            font.capitalization: Font.AllUppercase
+                                            color: settingsScreen._textMut
+                                        }
+
+                                        Row {
+                                            visible: modelData.group === undefined
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 9
+
+                                            Label {
+                                                text: "▸"
+                                                font.pixelSize: 12
+                                                color: settingsScreen._green
+                                            }
+                                            Label {
+                                                id: stEntryText
+                                                width: parent.width - 21
+                                                text: modelData.name !== undefined ? modelData.name : ""
+                                                font.family: "DM Sans"
+                                                font.pixelSize: 13
+                                                color: settingsScreen._text
+                                                wrapMode: Text.WordWrap
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // ──────────────────────────────────────────────────────────────────
             //                              ABOUT TAB
             // ──────────────────────────────────────────────────────────────────
             Column {
                 id: aboutTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === 8
+                visible: tabBar.currentIndex === 9
                 spacing: 16
 
                 // StreamLight card — title + version + author on the left,
@@ -4464,7 +4896,6 @@ FocusScope {
                             label: qsTr("GitHub releases")
                             url:   "https://github.com/FoggyBytes/StreamLight/releases"
                             KeyNavigation.right: aboutSlGplBtn
-                            KeyNavigation.down:  aboutStGithubBtn
                         }
                         AboutLinkButton {
                             id: aboutSlGplBtn
@@ -4472,70 +4903,18 @@ FocusScope {
                             url:   "https://www.gnu.org/licenses/gpl-3.0.html"
                             KeyNavigation.left:  aboutSlGithubBtn
                             KeyNavigation.right: aboutSlDonateBtn
-                            KeyNavigation.down:  aboutStGithubBtn
                         }
                         AboutLinkButton {
                             id: aboutSlDonateBtn
                             label: qsTr("Donate")
                             url:   "https://paypal.me/foggypunk"
                             KeyNavigation.left: aboutSlGplBtn
-                            KeyNavigation.down: aboutStGithubBtn
                         }
                     }
                 }
 
-                // StreamTweak card — same single-row layout.
-                Rectangle {
-                    width: parent.width
-                    color: settingsScreen._bg2
-                    radius: 8
-                    border.color: settingsScreen._border
-                    border.width: 1
-                    implicitHeight: 76
-
-                    Row {
-                        anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.leftMargin: 18
-                        spacing: 12
-                        Label {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "StreamTweak"
-                            font.family: "DM Sans"
-                            font.pixelSize: 22
-                            font.bold: true
-                            color: settingsScreen._text
-                        }
-                        Label {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: settingsScreen.streamTweakLatest.length > 0
-                                  ? settingsScreen.streamTweakLatest
-                                  : qsTr("checking…")
-                            font.family: "DM Sans"
-                            font.pixelSize: 14
-                            color: settingsScreen._greenLk
-                        }
-                        Label {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("by FoggyBytes")
-                            font.family: "DM Sans"
-                            font.pixelSize: 13
-                            color: settingsScreen._textDim
-                        }
-                    }
-
-                    Row {
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.rightMargin: 16
-                        AboutLinkButton {
-                            id: aboutStGithubBtn
-                            label: qsTr("GitHub releases")
-                            url:   "https://github.com/FoggyBytes/StreamTweak/releases"
-                            KeyNavigation.up: aboutSlGithubBtn
-                        }
-                    }
-                }
+                // The StreamTweak card that used to sit here now lives in its own tab, where
+                // it can say what the app is for instead of only what version it is at.
             }
 
             // ──────────────────────────────────────────────────────────────────
@@ -4581,6 +4960,7 @@ FocusScope {
                 // Styled to match the standalone "Custom" pill button (PillButton):
                 // same container, geometry and colours.
                 component MiniButton: Button {
+                    id: miniBtn
                     property string label: ""
                     signal triggered()
                     activeFocusOnTab: true
@@ -4589,11 +4969,24 @@ FocusScope {
                     Keys.onReturnPressed: triggered()
                     Keys.onEnterPressed:  triggered()
                     Keys.onSpacePressed:  triggered()
+
+                    HoverState { id: miniHov }
+
                     background: Rectangle {
                         radius: 8
-                        color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-                        border.color: parent.activeFocus ? Theme.accent : "#2a2a2a"
-                        border.width: parent.activeFocus ? 3 : 1
+                        color: settingsScreen._btnBg
+                        // Rest is Theme.line, not the "#2a2a2a" this used to hardcode: the
+                        // pair only reads as a progression if both ends come from the same
+                        // scale. Hover is neutral — the accent stays with the focus.
+                        border.color: miniHov.keyFocused ? Theme.accent
+                                    : miniHov.active     ? Theme.lineHigh
+                                    :                      Theme.line
+                        border.width: miniHov.keyFocused ? 3 : 1
+
+                        Behavior on border.color {
+                            enabled: !Theme.reduceAnimations
+                            ColorAnimation { duration: 120; easing.type: Easing.OutQuad }
+                        }
                     }
                     contentItem: Label {
                         text: parent.label
@@ -4885,22 +5278,51 @@ FocusScope {
         Keys.onEnterPressed:  Qt.openUrlExternally(url)
         Keys.onSpacePressed:  Qt.openUrlExternally(url)
 
-        // Suppress focus highlight in pointer mode, hover highlight in key mode,
-        // so the two never light up two different buttons at the same time.
-        readonly property bool _keyFocused: activeFocus && SdlGamepadKeyNavigation.inputMode !== "pointer"
-        readonly property bool _hoverVisible: hovered && SdlGamepadKeyNavigation.inputMode !== "key"
+        HoverState { id: hov }
+
+        // Kept as a name because three bindings below read it. The rule itself now lives in
+        // HoverState, next to the hover half it has to stay the opposite of.
+        readonly property bool _keyFocused: hov.keyFocused
 
         background: Rectangle {
             implicitWidth:  170
             implicitHeight: 36
-            radius: 6
-            color: btn._keyFocused   ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12)
-                 : btn._hoverVisible ? "#262626"
-                 :                     "#1f1f1f"
-            border.color: (btn._keyFocused || btn._hoverVisible)
-                          ? settingsScreen._greenLk
-                          : settingsScreen._border
-            border.width: btn._keyFocused ? 2 : 1
+            // 8, not 6: MiniButton and SegmentedSelector both use 8, and this was the only
+            // rounding in the screen that differed.
+            radius: 8
+            // ⚠️ Flat, with no state of its own — same as MiniButton. It used to lighten on
+            // hover and tint on focus, and both were grey-family values that ignored the
+            // accent; the outline is what carries state here, as it does on every other button
+            // in the app. Following the accent comes for free: _btnBg is a binding on
+            // Theme.accent, so picking a new accent moves this live.
+            color: settingsScreen._btnBg
+            // The outline carries both, and cannot be confused: the ACCENT is the focus, a
+            // neutral Theme.lineHigh is the pointer. Lending the accent to the mouse was the
+            // thing that had to stop — not lending it the outline. And the two cannot collide,
+            // because in pointer mode the app draws no focus ring at all (`_keyFocused`).
+            //
+            // Rest is Theme.line, not the "#2a2a2a" this used to hardcode: rest and hover only
+            // read as a progression if both ends come from the same scale.
+            border.color: btn._keyFocused ? settingsScreen._greenLk
+                        : hov.active      ? Theme.lineHigh
+                        :                   Theme.line
+            // ⚠️ Three, matching SegmentedSelector, which is the control this has to look like:
+            // it draws its focus the same way — its own border, on its own outline — at
+            // `border.width: activeFocus ? 3 : 1`. This carried a hardcoded 2 and read visibly
+            // thinner beside it.
+            //
+            // ⚠️ And NOT a FocusFrame. That was tried: it is a separate ring three pixels
+            // OUTSIDE the target, which is how the switches and the pickers show focus, and
+            // putting it here made this button the odd one out in the other direction. Two
+            // idioms exist in this file on purpose; the one to copy is whichever the control
+            // beside you uses.
+            border.width: btn._keyFocused ? settingsScreen._focusBd : 1
+
+            // Colour only: the width never moves under the pointer, so nothing shifts.
+            Behavior on border.color {
+                enabled: !Theme.reduceAnimations
+                ColorAnimation { duration: 120; easing.type: Easing.OutQuad }
+            }
         }
         contentItem: Label {
             text: btn.label

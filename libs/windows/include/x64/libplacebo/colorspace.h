@@ -146,6 +146,24 @@ struct pl_dovi_metadata {
         float mmr_constant[8];
         float mmr_coeffs[8][3 /* order */][7];
     } comp[3];
+
+    // Non-linear inverse quantization (NLQ) parameters for FEL composition.
+    // Used only when an enhancement layer is used. Ignored for MEL and non-FEL
+    // profile 7 streams. When `nlq_active` is false the rest of these fields are
+    // unused and only BL-only reshape is performed.
+    //
+    // LINEAR_DZ dequantization:
+    //   residual = sign(el_centered) *
+    //              (|el_centered| * deadzone_slope + deadzone_threshold)
+    // The (2^eld - 1) factor is pre-folded into `deadzone_slope` and the
+    // -0.5*S half-pixel correction (from the spec's (2|rr|-1) rounding) is
+    // absorbed into `deadzone_threshold`.
+    bool nlq_active;
+    struct pl_dovi_nlq_data {
+        float offset;             // normalized to [0.0, 1.0] based on EL bit depth
+        float deadzone_slope;     // (2^el_bit_depth - 1) * S / 2^coef_log2_denom
+        float deadzone_threshold; // (T - S/2) / 2^coef_log2_denom
+    } nlq[3];
 };
 
 // Struct describing the underlying color system and representation. This
@@ -253,6 +271,7 @@ enum pl_color_transfer {
     PL_COLOR_TRC_V_LOG,         // Panasonic V-Log (VARICAM)
     PL_COLOR_TRC_S_LOG1,        // Sony S-Log1
     PL_COLOR_TRC_S_LOG2,        // Sony S-Log2
+    PL_COLOR_TRC_SCRGB,         // IEC 61966-2-2 scRGB (extended linear BT.709)
     PL_COLOR_TRC_COUNT
 };
 
@@ -278,6 +297,13 @@ static inline bool pl_color_transfer_is_hdr(enum pl_color_transfer trc)
 // that is assumed for SDR content, for use when mapping between HDR and SDR in
 // display space. See ITU-R Report BT.2408 for more information.
 #define PL_COLOR_SDR_WHITE 203.0f
+
+// This defines the reference white level for scRGB (IEC 61966-2-2), in cd/m^2.
+// In scRGB, a linear signal value of 1.0 corresponds to exactly 80 cd/m^2.
+// Signal values above 1.0 represent HDR luminance; values below 0.0 represent
+// out-of-gamut colors. This constant is used to convert between libplacebo's
+// internal NORM scale (1.0 = PL_COLOR_SDR_WHITE) and scRGB output values.
+#define PL_COLOR_SCRGB_WHITE 80.0f
 
 // This defines the assumed contrast level of an unknown SDR display. This
 // will be used to determine the black point in the absence of any tagged
@@ -415,7 +441,8 @@ struct pl_hdr_metadata {
     struct pl_raw_primaries prim;   // mastering display primaries
     float min_luma, max_luma;       // min/max luminance (in cd/m²)
 
-    // Content light level. (Note: this is ignored by libplacebo itself)
+    // Content light level. `max_cll` is used as a fallback when mastering
+    // display max luminance metadata is unavailable.
     float max_cll;                  // max content light level (in cd/m²)
     float max_fall;                 // max frame average light level (in cd/m²)
 

@@ -1,0 +1,19 @@
+use strict;
+use warnings;
+use Test::More;
+use t::Util;
+
+sub run_test {
+    my $seed = shift;
+    return run_prog("./t/00util/test $seed");
+}
+
+subtest "robust test battery" => sub {
+    # Run the robust C unit test battery with 5 different deterministic seeds
+    for (my $seed = 100; $seed < 105; $seed++) {
+        my $resp = run_test($seed);
+        like $resp, "/===OK===/", "Battery sweep with seed $seed";
+    }
+};
+        
+done_testing();

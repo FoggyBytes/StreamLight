@@ -402,6 +402,11 @@ extern "C" {
  * - "Movie" - Music or sound with dialog
  * - "Media" - Music or sound without dialog
  *
+ * Android's AAudio target supports this hint as of SDL 3.4.4. Android does
+ * not support the exact same options as WASAPI, but for portability, will
+ * attempt to map these same strings to the `aaudio_usage_t` constants. For
+ * example, "Movie" and "Media" will both map to `AAUDIO_USAGE_MEDIA`, etc.
+ *
  * If your application applies its own echo cancellation, gain control, and
  * noise reduction it should also set SDL_HINT_AUDIO_DEVICE_RAW_STREAM.
  *
@@ -803,6 +808,25 @@ extern "C" {
  * \since This hint is available since SDL 3.2.0.
  */
 #define SDL_HINT_ENABLE_SCREEN_KEYBOARD "SDL_ENABLE_SCREEN_KEYBOARD"
+
+/**
+ * A variable that controls whether the Steam on-screen keyboard should be
+ * shown when text input is active.
+ *
+ * Steam will set this hint via environment variable for games launched in Big
+ * Picture mode. To override this you should call SDL_SetHintWithPriority()
+ * with priority `SDL_HINT_OVERRIDE`.
+ *
+ * The variable can be set to the following values:
+ *
+ * - "0": Do not show the Steam on-screen keyboard.
+ * - "1": Show the Steam on-screen keyboard.
+ *
+ * This hint should be set before SDL is initialized.
+ *
+ * \since This hint is available since SDL 3.4.12.
+ */
+#define SDL_HINT_ENABLE_STEAM_SCREEN_KEYBOARD "SDL_ENABLE_STEAM_SCREEN_KEYBOARD"
 
 /**
  * A variable containing a list of evdev devices to use if udev is not
@@ -1406,6 +1430,26 @@ extern "C" {
  * \since This hint is available since SDL 3.2.0.
  */
 #define SDL_HINT_JOYSTICK_GAMEINPUT "SDL_JOYSTICK_GAMEINPUT"
+
+/**
+ * A variable controlling whether GameInput should be used for handling 
+ * GIP devices that require raw report processing, but aren't supported 
+ * by HIDRAW, such as Xbox One Guitars.
+ * 
+ * Note that this is only supported with GameInput 3 or newer.
+ *
+ * The variable can be set to the following values:
+ *
+ * - "0": GameInput is not used to handle raw GIP devices.
+ * - "1": GameInput is used.
+ *
+ * The default is "1" when using GameInput 3 or newer, and is "0" otherwise.
+ *
+ * This hint should be set before SDL is initialized.
+ *
+ * \since This hint is available since SDL 3.4.4.
+ */
+#define SDL_HINT_JOYSTICK_GAMEINPUT_RAW "SDL_JOYSTICK_GAMEINPUT_RAW"
 
 /**
  * A variable containing a list of devices known to have a GameCube form
@@ -2125,7 +2169,8 @@ extern "C" {
  * - "0": Assume this is a generic controller.
  * - "1": Reset the controller to get metadata.
  *
- * By default the controller is not reset.
+ * By default the controller is reset. This is so we can properly detect
+ * the controller type.
  *
  * This hint should be set before initializing joysticks and gamepads.
  *
@@ -2747,7 +2792,7 @@ extern "C" {
  *   (default)
  * - "1": Cursors will automatically match the display content scale (e.g. a
  *   2x sized cursor will be used when the window is on a monitor with 200%
- *   scale). This is currently implemented on Windows and Wayland.
+ *   scale). This is currently implemented on Windows.
  *
  * This hint needs to be set before creating cursors.
  *
@@ -3033,8 +3078,8 @@ extern "C" {
  *
  * - "0": Force a request for an OpenGL context that is _not_ sRGB-capable.
  * - "1": Force a request for an OpenGL context that _is_ sRGB-capable.
- * - "skip": Don't make any request for an sRGB-capable context
- *   (don't specify the attribute at all during context creation time).
+ * - "skip": Don't make any request for an sRGB-capable context (don't specify
+ *   the attribute at all during context creation time).
  * - any other string is undefined behavior.
  *
  * If unset, or set to an empty string, SDL will make a request using the
@@ -4020,6 +4065,31 @@ extern "C" {
 #define SDL_HINT_VIDEO_WIN_D3DCOMPILER "SDL_VIDEO_WIN_D3DCOMPILER"
 
 /**
+ * A variable controlling whether the X Synchronization Extension is enabled.
+ *
+ * If set, this can result in smoother window resizing when rendering using
+ * OpenGL, however, there are some conditions:
+ *
+ *  - It is only activated on windows created with the `SDL_WINDOW_OPENGL` flag
+ *    (windows using an SDL OpenGL renderer have this automatically set).
+ *  - When activated, presentation must be done with `SDL_GL_SwapWindow()`
+ *    (`SDL_RenderPresent()` calls this internally for OpenGL renderers as well).
+ *
+ * Enabling this and presenting via an external mechanism will result in sync
+ * requests not being acked, and hangs and other odd window behavior may result.
+ *
+ * The variable can be set to the following values:
+ *
+ * - "0": The X Synchronization Extension is disabled. (default)
+ * - "1": The X Synchronization Extension is enabled.
+ *
+ * This hint should be set before creating a window.
+ *
+ * \since This hint is available since SDL 3.4.10.
+ */
+#define SDL_HINT_VIDEO_X11_ENABLE_XSYNC_EXT "SDL_VIDEO_X11_ENABLE_XSYNC_EXT"
+
+/**
  * A variable controlling whether SDL should call XSelectInput() to enable
  * input events on X11 windows wrapped by SDL windows.
  *
@@ -4519,6 +4589,23 @@ extern "C" {
 #define SDL_HINT_WINDOWS_RAW_KEYBOARD_EXCLUDE_HOTKEYS "SDL_WINDOWS_RAW_KEYBOARD_EXCLUDE_HOTKEYS"
 
 /**
+ * A variable controlling whether the RIDEV_INPUTSINK flag is set when
+ * enabling Windows raw keyboard events.
+ *
+ * This enables the window to still receive input even if not in foreground.
+ *
+ * Focused windows that receive text input will still prevent input events from triggering.
+ *
+ * - "0": Input is not received when not in focus or foreground. (default)
+ * - "1": Input will be received even when not in focus or foreground.
+ *
+ * This hint can be set anytime.
+ *
+ * \since This hint is available since SDL 3.4.4.
+ */
+#define SDL_HINT_WINDOWS_RAW_KEYBOARD_INPUTSINK "SDL_WINDOWS_RAW_KEYBOARD_INPUTSINK"
+
+/**
  * A variable controlling whether SDL uses Kernel Semaphores on Windows.
  *
  * Kernel Semaphores are inter-process and require a context switch on every
@@ -4848,7 +4935,8 @@ extern SDL_DECLSPEC bool SDLCALL SDL_GetHintBoolean(const char *name, bool defau
  * A callback used to send notifications of hint value changes.
  *
  * This is called an initial time during SDL_AddHintCallback with the hint's
- * current value, and then again each time the hint's value changes.
+ * current value, and then again each time the hint's value changes. In the
+ * initial call, the current value is in both `oldValue` and `newValue`.
  *
  * \param userdata what was passed as `userdata` to SDL_AddHintCallback().
  * \param name what was passed as `name` to SDL_AddHintCallback().

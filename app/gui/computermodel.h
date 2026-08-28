@@ -33,7 +33,8 @@ class ComputerModel : public QAbstractListModel
         StageColorFromRole,
         StageColorToRole,
         StageImageRole,
-        StageSeedRole
+        StageSeedRole,
+        StreamTweakEnabledRole
     };
 
 public:
@@ -104,14 +105,6 @@ public:
     Q_INVOKABLE void matchHostLinkSpeed(int computerIndex);
 
     /**
-     * Whether this host has ever answered as a StreamTweak host, remembered across runs.
-     * The wake flow uses it to decide how long to wait for StreamTweak to come up — and it
-     * must be persisted, because an in-memory flag reads "no" on every fresh start, which is
-     * "I have not asked yet", not "this host has none".
-     */
-    Q_INVOKABLE bool hostEverHadStreamTweak(int computerIndex);
-
-    /**
      * Remote "Update host" feature. startUpdateCheck kicks off an async scan;
      * startUpdateInstall installs the scanned set for a scope ("SEC"/"ALL") and reboots
      * if required; requestUpdateProgress polls the job state and emits
@@ -162,6 +155,30 @@ public:
      */
     Q_INVOKABLE void setHostStageBackground(int computerIndex, const QString& imagePath,
                                             const QString& seedColor);
+
+    /**
+     * The StreamTweak integration, per host. Everything that talks to the bridge is gated
+     * on this: the probes, link matching, remote power and Windows Update, the PIN unlock,
+     * the last-session panel, store badges, host metrics, the launch curtain, telemetry.
+     * Streaming is never gated either way.
+     *
+     * setStreamTweakEnabled persists immediately and emits dataChanged, so every binding
+     * reading the role follows in the same frame — turning it off has to take the features
+     * away now, not on the next visit to the screen.
+     */
+    Q_INVOKABLE bool streamTweakEnabled(int computerIndex) const;
+    Q_INVOKABLE void setStreamTweakEnabled(int computerIndex, bool enabled);
+
+    /**
+     * One CAPS query, so the Settings tab can tell each host apart: is StreamTweak actually
+     * answering on this machine? Emits streamTweakPresenceReceived(index, found).
+     *
+     * ⚠️ Deliberately NOT gated on streamTweakEnabled, and deliberately called from nowhere
+     * else: it is the one question the tab exists to answer, and a host that has the
+     * integration switched off is exactly the host the user needs an answer about. Every
+     * other bridge call in this class refuses when the switch is off.
+     */
+    Q_INVOKABLE void probeStreamTweakPresence(int computerIndex);
 
     // Wired link speed of the interface that actually routes to this host — the value the
     // host is asked to match. Returns {status, mbps, adapter, reason, usable}; `usable` is
@@ -223,6 +240,11 @@ signals:
     void connectionTestCompleted(int result, QString blockedPorts);
     void streamTweakStatusReceived(int computerIndex, QString status);
     void streamTweakAuthReceived(int computerIndex, QString state, QString pin);
+
+    // Answer to probeStreamTweakPresence(). `found` is false for a host that is offline,
+    // unreachable, or simply not running StreamTweak — the tab says which from what it
+    // already knows about the host, so this stays a single bit.
+    void streamTweakPresenceReceived(int computerIndex, bool found);
 
     /** @param info {allowsLinkControl, currentMbps} — empty map on hosts without NETINFO. */
     void hostNetInfoReceived(int computerIndex, QVariantMap info);

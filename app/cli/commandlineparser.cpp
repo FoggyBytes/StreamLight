@@ -465,11 +465,11 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     preferences->playAudioOnHost = parser.getToggleOptionValue("audio-on-host", preferences->playAudioOnHost);
 
     // Resolve --frame-pacing and --no-frame-pacing options. The CLI is a simple
-    // on/off toggle; map it to the Automatic / Off modes of framePacingMode.
+    // on/off toggle, and framePacingMode is one too since 5.2.0.
     {
         bool fp = parser.getToggleOptionValue("frame-pacing",
                                               preferences->framePacingMode != StreamingPreferences::FP_OFF);
-        preferences->framePacingMode = fp ? StreamingPreferences::FP_AUTO
+        preferences->framePacingMode = fp ? StreamingPreferences::FP_ON
                                           : StreamingPreferences::FP_OFF;
     }
 

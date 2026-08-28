@@ -18,6 +18,13 @@ Popup {
     property int step : 0
     property string detail : ""
 
+    // Whether this host's StreamTweak integration is on. With it off there is no third step
+    // to wait for — the wake is over the moment the host answers — so the row is not drawn
+    // at all rather than drawn and skipped. A step that can never complete is worse than an
+    // absent one: the old dialog spun under the words "StreamTweak ready" for a full minute
+    // on hosts that would never have it.
+    property bool waitForStreamTweak : true
+
     signal cancelled()
 
     // Shared dialog measurements — see Theme.uiScale.
@@ -76,9 +83,12 @@ Popup {
             Repeater {
                 // Three, and it ends here: the link match that follows is shown on the host
                 // card, which is where the user will be looking by then.
-                model: [qsTr("Magic packet sent"),
-                        qsTr("Host on the network"),
-                        qsTr("StreamTweak ready")]
+                model: dialog.waitForStreamTweak
+                       ? [qsTr("Magic packet sent"),
+                          qsTr("Host on the network"),
+                          qsTr("StreamTweak ready")]
+                       : [qsTr("Magic packet sent"),
+                          qsTr("Host on the network")]
 
                 Row {
                     spacing: dialog._px(10)
@@ -135,7 +145,12 @@ Popup {
         DialogButton {
             id: cancelBtn
             anchors.horizontalCenter: parent.horizontalCenter
-            text: qsTr("Cancel")
+            // "Cancel" while there is something of ours to cancel — the wait for StreamTweak
+            // to come up. With the integration off there is nothing running on our side: the
+            // host boots either way and this dialog closes itself the moment it answers, so
+            // the button only dismisses it early. Calling that "Cancel" would claim it aborts
+            // something.
+            text: dialog.waitForStreamTweak ? qsTr("Cancel") : qsTr("Close")
             onActivated: dialog.cancelled()
             Keys.onEscapePressed: dialog.cancelled()
         }

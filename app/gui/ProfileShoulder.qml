@@ -1,4 +1,5 @@
 import QtQuick 2.15
+import Theme 1.0
 
 /*
  * One shoulder button beside the thing it moves: the glyph, a hit area big enough for a
@@ -25,20 +26,28 @@ Item {
     implicitWidth:  Math.round(size * 40 / 26)
     implicitHeight: Math.round(size * 28 / 26)
 
+    // A bare glyph has neither a border to brighten nor a fill to lighten, so its channel is
+    // its own opacity — which is what this already did. Going through HoverState changes
+    // nothing visible and buys the two guards it never had: the glyph no longer lifts while
+    // the user is driving with the pad, and the pointing hand is no longer unconditional.
+    HoverState { id: hov }
+
     ActionHint {
         id: glyph
         anchors.centerIn: parent
         buttonKey: shoulder.buttonKey
         keyLabel:  shoulder.keyLabel
         size:      shoulder.size
-        opacity:   mouse.containsMouse ? 1.0 : 0.85
+        opacity:   hov.active ? 1.0 : 0.85
+
+        Behavior on opacity {
+            enabled: !Theme.reduceAnimations
+            NumberAnimation { duration: 120; easing.type: Easing.OutQuad }
+        }
     }
 
     MouseArea {
-        id: mouse
         anchors.fill: parent
-        hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
         onClicked: shoulder.triggered()
     }
 }

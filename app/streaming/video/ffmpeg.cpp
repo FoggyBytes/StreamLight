@@ -232,7 +232,6 @@ FFmpegVideoDecoder::FFmpegVideoDecoder(bool testOnly)
       m_FramesOut(0),
       m_LastFrameNumber(0),
       m_StreamFps(0),
-      m_FramePacingMode(StreamingPreferences::FP_OFF),
       m_VideoFormat(0),
       m_NeedsSpsFixup(false),
       m_TestOnly(testOnly),
@@ -276,11 +275,12 @@ void FFmpegVideoDecoder::reset()
         m_DecoderThread = nullptr;
     }
 
-    // Log the global stats now, while the Pacer and the renderers are still
-    // alive. stringifyVideoStats() reads the frame pacing mechanism in effect
-    // from both of them, so logging after they're torn down made the summary
-    // always claim "Frame pacing: Off" regardless of what was actually running.
-    // The decoder thread is already joined above, so the counters are final.
+    // Logged here because the decoder thread is joined above, so the counters are
+    // final. That is now the only thing constraining where this goes: it also used to
+    // have to run before the Pacer and the renderers were torn down, because
+    // stringifyVideoStats() read the frame pacing mechanism in effect from both of
+    // them and logging afterwards made the summary always claim "Frame pacing: Off".
+    // That line went in 5.2.0 and the function no longer touches either of them.
     if (m_CurrentTestMode != TestMode::TestFrameOnly) {
         logVideoStats(m_GlobalVideoStats, "Global video stats");
     }
@@ -502,27 +502,17 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
 
     // Remember the user's selected pacing mode so the overlay can distinguish a
     // deliberate Software choice from pacing that was force-enabled by the renderer.
-    m_FramePacingMode = params->framePacingMode;
 
     // Don't bother initializing Pacer if we're not actually going to render
     if (testMode != TestMode::TestFrameOnly) {
         m_Pacer = new Pacer(m_FrontendRenderer, &m_ActiveWndVideoStats);
         int rendererAttributes = m_FrontendRenderer->getRendererAttributes();
-        bool enablePacing;
-        if (rendererAttributes & RENDERER_ATTRIBUTE_SELF_PACING) {
-            // The renderer paces itself in hardware (integer sync interval); the
-            // software Pacer's V-sync source would be redundant and add latency.
-            enablePacing = false;
-        }
-        else {
-            // Software pacing runs for the Matched and Automatic modes. Multiple is
-            // hardware-only (no software fallback) and Off disables pacing. FORCE_PACING
-            // is a renderer requirement (e.g. fullscreen-exclusive D3D11) and always applies.
-            bool wantSoftware = (params->framePacingMode == StreamingPreferences::FP_MATCHED ||
-                                 params->framePacingMode == StreamingPreferences::FP_AUTO);
-            bool forcePacing = params->enableVsync && (rendererAttributes & RENDERER_ATTRIBUTE_FORCE_PACING);
-            enablePacing = wantSoftware || forcePacing;
-        }
+        // The user asked for pacing, or the renderer requires it to synchronise with
+        // VBlank (fullscreen-exclusive D3D11). Identical to upstream Moonlight — 5.2.0
+        // removed the hardware-cadence branch that used to sit in front of this and
+        // suppress the software Pacer entirely.
+        bool enablePacing = (params->framePacingMode != StreamingPreferences::FP_OFF) ||
+                            (params->enableVsync && (rendererAttributes & RENDERER_ATTRIBUTE_FORCE_PACING));
         if (!m_Pacer->initialize(params->window, params->frameRate, enablePacing)) {
             return false;
         }
@@ -1089,80 +1079,12 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
         }
     }
 
-    // Frame pacing status — surfaces which mechanism is actually in effect under
-    // the hood: "Hardware (N:N cadence)" when the renderer self-paces via the DXGI
-    // sync interval, "Software" when the V-sync Pacer is driving frames, or "Off".
-    if (WANT(OI_PACING)) {
-        const char* pacingMode = "Off";
-        char pacingBuf[40];
-        int hwInterval = (m_FrontendRenderer != nullptr) ? m_FrontendRenderer->getFramePacingSyncInterval() : 0;
-        if (hwInterval >= 2) {
-            snprintf(pacingBuf, sizeof(pacingBuf), "Hardware (%d:%d cadence)", hwInterval, hwInterval);
-            pacingMode = pacingBuf;
-        }
-        else if (m_Pacer != nullptr && m_Pacer->isActive()) {
-            // The software Pacer can be force-enabled by a renderer requirement
-            // (fullscreen-exclusive D3D11 with V-Sync) even when the user chose
-            // Off — flag that case so the overlay isn't misleading.
-            pacingMode = (m_FramePacingMode == StreamingPreferences::FP_OFF)
-                    ? "Software (forced by V-Sync)"
-                    : "Software";
-        }
-
-        ret = snprintf(&output[offset], length - offset,
-                       "Frame pacing: %s\n", pacingMode);
-        if (ret < 0 || ret >= length - offset) {
-            SDL_assert(false);
-            return;
-        }
-        offset += ret;
-    }
-
-    // What the display actually did with the cadence the line above asked for.
-    //
-    // ⚠️ A line of its own rather than a suffix on the pacing line, which is what it
-    // used to be. The two are different in kind — one says what was asked for, the
-    // other what happened — and only a real line can be a row in the Settings preview
-    // and be reachable with the pad. The rule this follows is the one OI_BITRATE_PEAK
-    // established from the other side: things that modify a line are not rows.
-    if (WANT(OI_CADENCE)) {
-        PACING_MEASUREMENT measurement;
-        if (m_FrontendRenderer != nullptr && m_FrontendRenderer->getPacingMeasurement(&measurement)) {
-            if (measurement.vblanksPerFrame < 0) {
-                // The adapter's refresh counter disagrees with its panel, so there is no
-                // honest V-blank figure to show. The wait and the queue are measured
-                // without it and are the two that matter anyway.
-                ret = snprintf(&output[offset], length - offset,
-                               "Cadence: queue %.1f, wait %.1f ms (V-blanks not reported)\n",
-                               measurement.queueDepthVblanks, measurement.presentWaitMs);
-            }
-            else {
-                ret = snprintf(&output[offset], length - offset,
-                               "Cadence: %.2f v/f (%d-%d), queue %.1f, wait %.1f ms\n",
-                               measurement.vblanksPerFrame, measurement.minVblanks,
-                               measurement.maxVblanks, measurement.queueDepthVblanks,
-                               measurement.presentWaitMs);
-            }
-        }
-        else if (!forceFullDetail) {
-            // Switched on but nothing measured yet — the first window has not closed,
-            // or this renderer does not instrument. Say so rather than leave a gap
-            // where the user just switched a line on and sees nothing appear.
-            ret = snprintf(&output[offset], length - offset, "Cadence: measuring...\n");
-        }
-        else {
-            // ⚠️ The end-of-session summary asks for every line (forceFullDetail passes
-            // OI_ALL), but this one needs instrumentation that only runs when it was
-            // switched on. With nothing measured there is nothing to record, and
-            // "measuring..." in a log written after the stream ended would be a lie.
-            ret = 0;
-        }
-        if (ret < 0 || ret >= length - offset) {
-            SDL_assert(false);
-            return;
-        }
-        offset += ret;
-    }
+    // ⚠️ A "Frame pacing:" line stood here and was removed in 5.2.0. It reported which
+    // mechanism was really running — Off, Software, or "Software (forced by V-Sync)"
+    // when the renderer required the Pacer despite the user choosing Off, which was the
+    // whole point of 4.4.1. Upstream Moonlight has no such line; with the hardware
+    // cadence gone in the same release there was nothing left for it to say that the
+    // Frame pacing setting did not already say, so it went with it.
 
     // Real-time host metrics from StreamTweak (via the STATS TCP command). Resolved
     // at the top of this function, and drawn only when something answered — an
@@ -2078,6 +2000,29 @@ void FFmpegVideoDecoder::decoderThreadProc()
                 if (err == 0) {
                     SDL_assert(m_FrameInfoQueue.size() == m_FramesIn - m_FramesOut);
                     m_FramesOut++;
+
+                    // ⚠️ Colour-range probe, once on the first decoded frame of a session.
+                    //
+                    // 5.2.0 adopts upstream's full-range default, and the whole point of the
+                    // second half of that change is what to do when the host does NOT tag the
+                    // range: we then assume it sent what we asked for. Whether that assumption
+                    // is ever exercised depends entirely on the host, and no amount of looking
+                    // at the picture answers it - washed-out blacks and a correctly dark scene
+                    // are not reliably distinguishable by eye on someone else's screen.
+                    if (m_FramesOut == 1 && !m_TestOnly) {
+                        const char* tag;
+                        switch (frame->color_range) {
+                        case AVCOL_RANGE_JPEG: tag = "JPEG/full (host tagged it)"; break;
+                        case AVCOL_RANGE_MPEG: tag = "MPEG/limited (host tagged it)"; break;
+                        default:               tag = "UNSPECIFIED (we assume what we requested)"; break;
+                        }
+                        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                    "[color-diag] requested %s; first frame reports %s; rendering as %s",
+                                    m_FrontendRenderer->getDecoderColorRange() == COLOR_RANGE_FULL
+                                        ? "FULL" : "LIMITED",
+                                    tag,
+                                    m_FrontendRenderer->isFrameFullRange(frame) ? "full" : "limited");
+                    }
 
                     // Attach HDR metadata to the frame if it's not already present. We will defer to
                     // any metadata contained in the bitstream itself since that is guaranteed to be
