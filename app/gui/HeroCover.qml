@@ -38,14 +38,19 @@ import QtQuick.Effects
 //   plain Image, no effects       round and centred
 //   this file                     round and centred, DPR 1 and 2, two cycles
 //
-// So: the shadow is cast by a black SILHOUETTE of the same geometry drawn behind,
-// which is the only pass that keeps autoPaddingEnabled — it needs the room, and if
-// its rect ever slips, all that slips is a soft black shape hidden behind an opaque
-// cover. The picture itself goes through one masked pass with padding off, where
-// there is nothing for the rendered rect and the mask to disagree about.
+// So: the shadow is cast by a black SILHOUETTE of the same geometry drawn behind.
+// The picture itself goes through one masked pass with padding off, where there is
+// nothing for the rendered rect and the mask to disagree about.
 //
-// Do not merge the two passes back, and do not turn autoPadding on for the masked
-// one to "let the corners breathe".
+// ⚠️ This block used to end by saying the shadow pass could keep autoPaddingEnabled
+// because "if its rect ever slips, all that slips is a soft black shape hidden behind
+// an opaque cover". THAT WAS WRONG, and it is what shipped the black stripe in 5.3.0:
+// a MultiEffect with shadowEnabled draws its SOURCE as well as the shadow, and the
+// source here is a hard-edged opaque black rectangle, so a slip shows flat black
+// rather than a soft shape. Measured 29/08/2026 — see the block above the silhouette.
+//
+// Do not merge the two passes back, do not turn autoPadding on for the masked one to
+// "let the corners breathe", and do not give the shadow pass any horizontal padding.
 // ═════════════════════════════════════════════════════════════════════════════
 Item {
     id: root
@@ -67,16 +72,69 @@ Item {
     width: Math.round(height * 2 / 3)
 
     // ── The shadow, cast by a silhouette rather than by the picture ───────────
+    //
+    // ⚠️ THE SHADOW PASS ASKS MultiEffect FOR NO PADDING AT ALL. The room the blur needs
+    // is built into this item's own geometry instead, and that is the fix for the black
+    // stripe down the right edge of the cover (issue #11, new in 5.3.0 — before it there
+    // was no opaque black shape behind the picture for a seam to expose).
+    //
+    // MultiEffect's HORIZONTAL padding is computed from a stale width. Measured with a
+    // probe driving this very file: at 320x480 the shadow pass reports itemRect
+    // (-40,-40,400,568), exactly right. Take the same cover to 691x1036.8 and it reports
+    // (-18.5,-40,357,1124.8) — the vertical half is still correct (1036.8+88), the
+    // horizontal half is the correct figure multiplied by 320/691: -40*320/691 = -18.5,
+    // 771*320/691 = 357. The silhouette texture is then sampled at that wrong horizontal
+    // scale, ends up a couple of device pixels wider than the artwork drawn over it, and
+    // flat black shows along the right edge. Confirmed by identity, not inference:
+    // recolouring the rectangle below red turned the stripe red.
+    //
+    // It is NOT autoPaddingEnabled specifically — asking for the same room through an
+    // explicit paddingRect reproduces the identical broken width. ANY horizontal padding
+    // does. And autoPaddingEnabled: false on its own does clear the stripe, but then the
+    // blur is clipped to the item and there is no shadow left at all (measured: "NO
+    // SHADOW" in every state).
+    //
+    // So the silhouette is the padded item, the effect matches it 1:1, and the black
+    // rectangle sits inset within it. Nothing has to agree about a padding rect any more.
+    // ⚠️ ONE number, used as both the blur ceiling and the room reserved for it. They are
+    // the same quantity and were written twice as 40 at first; if they ever disagree the
+    // blur is clipped again (pad too small) or texture is wasted (pad too large), and
+    // nothing would say so.
+    readonly property int  _blurMax: 40
+    readonly property real _shadowPad: _blurMax
+
     Item {
         id: silhouette
-        anchors.fill: parent
-        layer.enabled: true
+        x: -root._shadowPad
+        y: -root._shadowPad
+        width: root.width + root._shadowPad * 2
+        // The extra room at the bottom is the shadow's own downward offset.
+        height: root.height + root._shadowPad * 2 + root.shadowOffset
+        // Tied to root.shadow: with the shadow off (Theme.reduceAnimations on the host
+        // page) the pass below is invisible, and a layer kept enabled would still be
+        // allocating a texture bigger than the cover for something nobody draws.
+        layer.enabled: root.shadow
         visible: false
-        Rectangle { anchors.fill: parent; radius: root.radius; color: "black" }
+        Rectangle {
+            x: root._shadowPad
+            y: root._shadowPad
+            width: root.width
+            height: root.height
+            radius: root.radius
+            color: "black"
+        }
     }
 
     MultiEffect {
-        anchors.fill: parent
+        // Named so a probe can read itemRect off it without a copy of this file that
+        // then drifts. Costs nothing at runtime.
+        objectName: "heroShadowPass"
+        // Matches the silhouette exactly — same origin, same size — so the texture maps
+        // 1:1 and no padding arithmetic happens anywhere.
+        x: silhouette.x
+        y: silhouette.y
+        width: silhouette.width
+        height: silhouette.height
         source: silhouette
         visible: root.shadow
         shadowEnabled: root.shadow
@@ -84,7 +142,8 @@ Item {
         shadowBlur: 0.9
         shadowVerticalOffset: root.shadowOffset
         shadowOpacity: 0.65
-        blurMax: 40
+        blurMax: root._blurMax
+        autoPaddingEnabled: false
     }
 
     // ── The picture ──────────────────────────────────────────────────────────
@@ -100,6 +159,7 @@ Item {
     }
 
     MultiEffect {
+        objectName: "heroArtPass"
         anchors.fill: parent
         source: art
         maskEnabled: true

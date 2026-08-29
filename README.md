@@ -76,6 +76,20 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 
+## ✨ What's New in 5.4.0 — Own House
+
+StreamLight keeps its settings in its own place instead of sharing Moonlight's. Client-side, works with any host.
+
+> ⚠️ **Read before updating.** This version starts from scratch once: no hosts, default settings. Pair each host again; if you use StreamTweak, approve this device on the host **and** switch the integration back on for each host in *Settings* — a newly paired host starts with it off, so the bridge stays silent until you do. Nothing is deleted — the old settings stay where they were, so 5.3.0 still finds them. If you normally wake your host from StreamLight, wake it *before* updating: Wake-on-LAN needs the host's stored address, and that goes with the rest.
+
+- **Its own settings store.** Installed side by side, StreamLight and Moonlight used to share one — the same registry key and the same cache folder — so each one overwrote the other's resolution, bitrate, V-Sync and codec every time it saved
+- **Per-host settings survive having Moonlight installed.** Moonlight rewrites the whole host list whenever it saves, dropping every field it does not know about: the Tailscale address, the stage artwork, the pinned address, the per-host StreamTweak switch. Hosts that kept forgetting their Tailscale endpoint were this
+- **A one-time notice on first launch** says the settings were reset, what to do about it, and that nothing was thrown away — an empty host list with no explanation reads as a fault
+- **"Restart now" actually restarts.** Answering *Yes* to the Tailscale restart prompt used to close StreamLight and leave nothing running: the replacement started while the old one was still shutting down, saw it was there, and stepped aside
+- **GUI mode asks to restart.** *Windowed / Maximized / Fullscreen* is read when the window is built, so it only takes effect on the next launch — it now says so instead of appearing to do nothing. *No* keeps the choice for next time
+- **LB/RB switch profiles on a host with only one.** The cycle runs through *Global* too, so one profile is already two stops — but the shoulders stayed dead until a second profile existed, while the on-screen hints said they would work
+- **No more black stripe down the right edge of the large cover.** The drop shadow draws a black backing plate behind the artwork, and it was coming out a couple of pixels wider than the picture laid over it — which is why the stripe arrived with 5.3.0 and showed at some window sizes and not others. Reported in [issue #11](https://github.com/FoggyBytes/StreamLight/issues/11)
+
 ## ✨ What's New in 5.3.0 — One Scale
 
 The interface is drawn at one scale from end to end, and the settings you override per host or per game now say what they inherit. Client-side, works with any host.
@@ -136,7 +150,9 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
 
 Download the latest installer from the [Releases](https://github.com/FoggyBytes/StreamLight/releases) page and run it.
 
-Settings — paired hosts, video / audio / input preferences, client certificate — live under `HKCU\Software\Moonlight Game Streaming Project\Moonlight`, the same place upstream Moonlight uses, so an upgrade keeps everything. Box art is cached in `%LOCALAPPDATA%\Moonlight Game Streaming Project\Moonlight`.
+Settings — paired hosts, video / audio / input preferences, client certificate — live under `HKCU\Software\FoggyBytes\StreamLight`, and box art is cached in `%LOCALAPPDATA%\FoggyBytes\StreamLight`. Upgrades from 5.4.0 onward keep everything.
+
+Up to 5.3.0 both lived under `Moonlight Game Streaming Project\Moonlight` — upstream Moonlight's own store, shared with it. 5.4.0 moved out of it and does not migrate anything, so the upgrade to 5.4.0 resets settings and pairing once. The old store is left untouched: an older StreamLight, or a Moonlight installation, still finds its data there.
 
 ## 🙏 Support the Project
 [![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://paypal.me/foggypunk)

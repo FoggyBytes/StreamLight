@@ -2799,7 +2799,19 @@ FocusScope {
                                         return -1
                                     }
                                 }
-                                onActivated: function(idx) { StreamingPreferences.uiDisplayMode = _values[idx]; StreamingPreferences.save() }
+                                // Saved right away so the new value survives the restart
+                                // (Yes) or any later quit — same shape as the Tailscale
+                                // toggle. The window is not re-shown in the new mode here:
+                                // the mode is read once when the window is built, so the
+                                // only honest options are "restart now" or "next launch".
+                                onActivated: function(idx) {
+                                    if (StreamingPreferences.uiDisplayMode === _values[idx]) {
+                                        return
+                                    }
+                                    StreamingPreferences.uiDisplayMode = _values[idx]
+                                    StreamingPreferences.save()
+                                    uiModeRestartDialog.open()
+                                }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -5352,6 +5364,19 @@ FocusScope {
         id: tailscaleRestartDialog
         headerText: qsTr("RESTART REQUIRED")
         text: qsTr("StreamLight needs to restart to start Tailscale in the background. Restart now?")
+        standardButtons: Dialog.Yes | Dialog.No
+        onAccepted: SystemProperties.restartApplication()
+    }
+
+    // Shown after GUI mode changes. Same reason as the Tailscale one above: the
+    // window's mode is decided when it is built, so switching between Windowed,
+    // Maximized and Fullscreen takes effect on the next launch and nowhere else.
+    // Without this the setting looks broken — it moves, and nothing happens.
+    // No → the choice is still saved, and applies whenever the app is next started.
+    NavigableMessageDialog {
+        id: uiModeRestartDialog
+        headerText: qsTr("RESTART REQUIRED")
+        text: qsTr("GUI mode changes when StreamLight starts. Restart now?")
         standardButtons: Dialog.Yes | Dialog.No
         onAccepted: SystemProperties.restartApplication()
     }

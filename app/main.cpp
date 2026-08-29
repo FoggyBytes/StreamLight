@@ -46,6 +46,7 @@
 #include "cli/commandlineparser.h"
 #include "singleinstance.h"
 #include "path.h"
+#include "storereset.h"
 #include "utils.h"
 #include "gui/computermodel.h"
 #include "gui/appmodel.h"
@@ -450,9 +451,38 @@ int main(int argc, char *argv[])
     // Set these here to allow us to use the default QSettings constructor.
     // These also ensure that our cache directory is named correctly. As such,
     // it is critical that these be called before Path::initialize().
-    QCoreApplication::setOrganizationName("Moonlight Game Streaming Project");
-    QCoreApplication::setOrganizationDomain("moonlight-stream.com");
-    QCoreApplication::setApplicationName("Moonlight");
+    //
+    // ═════════════════════════════════════════════════════════════════════════
+    // ⚠️ THIS IS NOT MOONLIGHT'S STORE, AND THAT IS THE WHOLE POINT (5.4.0).
+    //
+    // Until 5.3.0 these three lines named Moonlight exactly — organization
+    // "Moonlight Game Streaming Project", application "Moonlight" — so an
+    // installation of Moonlight and an installation of StreamLight shared ONE
+    // settings store and ONE cache directory. That is not a cosmetic overlap:
+    //
+    //   · 31 preference keys are identical in name and meaning between the two
+    //     (width, height, fps, bitrate, vsync, windowmode, videocfg, videodec,
+    //     audiocfg, hdr, yuv444, packetsize, framepacing, …), so each app
+    //     silently rewrote the other's stream settings;
+    //
+    //   · worse, ComputerManager's flush does settings.remove(SER_HOSTS) and
+    //     rewrites the array from scratch — upstream code, present in both. So
+    //     every time Moonlight saved, it DROPPED every per-host field only this
+    //     fork knows: tailscaleaddress/port, stageimage, stageseed, stagefrom,
+    //     stageto, streamtweakenabled, addresspinned, aliassuffix. One-way
+    //     damage, and the likeliest explanation for hosts that kept losing
+    //     their Tailscale endpoint.
+    //
+    // Deliberately NOT migrated: the old store is left exactly where it is and
+    // is never written to, so Moonlight keeps its own data and a downgrade to
+    // 5.3.0 still finds everything. StreamLight starts clean — settings AND
+    // identity — which means paired hosts have to be paired again once. That
+    // cost was accepted knowingly (see changelog 5.4.0); StoreReset below is
+    // what tells the user it happened.
+    // ═════════════════════════════════════════════════════════════════════════
+    QCoreApplication::setOrganizationName("FoggyBytes");
+    QCoreApplication::setOrganizationDomain("foggybytes.dev");
+    QCoreApplication::setApplicationName("StreamLight");
 
     if (QFile(QDir::currentPath() + "/portable.dat").exists()) {
         QSettings::setDefaultFormat(QSettings::IniFormat);
@@ -466,6 +496,13 @@ int main(int argc, char *argv[])
         // Initialize paths for standard installation
         Path::initialize(false);
     }
+
+    // Decide, once, whether this launch is the first one on our own store after an
+    // upgrade from a build that shared Moonlight's. ⚠️ Has to be here and not earlier:
+    // in portable mode the probe resolves through the format and path set just above,
+    // and running before them reads the registry instead of the INI next to the exe.
+    // It is also read-only against the old store — see storereset.h.
+    StoreReset::probe();
 
     // Override the default QML cache directory with the one we chose
     if (qEnvironmentVariableIsEmpty("QML_DISK_CACHE_PATH")) {

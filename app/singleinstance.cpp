@@ -3,6 +3,8 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 
+SingleInstance* SingleInstance::s_Primary = nullptr;
+
 SingleInstance::SingleInstance(const QString& serverName, QObject* parent)
     : QObject(parent), m_ServerName(serverName)
 {
@@ -10,8 +12,24 @@ SingleInstance::SingleInstance(const QString& serverName, QObject* parent)
 
 SingleInstance::~SingleInstance()
 {
+    release();
+}
+
+SingleInstance* SingleInstance::primary()
+{
+    return s_Primary;
+}
+
+void SingleInstance::release()
+{
+    if (s_Primary == this) {
+        s_Primary = nullptr;
+    }
+
     if (m_Server) {
         m_Server->close();
+        delete m_Server;
+        m_Server = nullptr;
     }
 }
 
@@ -46,6 +64,7 @@ bool SingleInstance::attach()
 
     connect(m_Server, &QLocalServer::newConnection,
             this, &SingleInstance::onNewConnection);
+    s_Primary = this;
     return true;
 }
 

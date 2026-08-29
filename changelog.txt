@@ -5,6 +5,30 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 --------------------------------------
+Version 5.4.0 - Own House (29/08/2026)
+--------------------------------------
+
+No StreamTweak update required — everything in 5.4.0 is client-side and works with any host. StreamLight keeps its settings in its own place instead of sharing Moonlight's, which means this version starts from scratch once: your hosts have to be paired again, and StreamTweak has to approve this device again.
+
+⚠️ COMPATIBILITY:
+• Read this before updating — StreamLight starts with no hosts and default settings, so pair each host again; if you use StreamTweak, approve this device on the host and switch the integration back on for each host in Settings, since a newly paired host starts with it off. Nothing is deleted: the old settings are left exactly where they were, so 5.3.0 still finds them if you go back
+• If your host is usually asleep and you wake it from StreamLight, wake it before updating — Wake-on-LAN needs the host's address, and that goes with everything else
+
+✨ IMPROVEMENTS:
+• StreamLight and Moonlight no longer share one settings store — installed side by side they used the same one, so each overwrote the other's resolution, bitrate, V-Sync and codec every time it saved
+• Per-host settings survive having Moonlight installed — Moonlight rewrote the whole host list whenever it saved, silently dropping everything it does not know about: the Tailscale address, the stage artwork, the pinned address and the StreamTweak switch. Hosts that kept forgetting their Tailscale endpoint were this
+• A one-time notice on first launch says the settings were reset, what to do about it, and that nothing was thrown away
+
+🐛 FIXES:
+• "Restart now" actually restarts — answering Yes to the Tailscale restart prompt closed StreamLight and left nothing running, because the replacement started while the old one was still shutting down, found it, and stepped aside
+• GUI mode asks to restart — switching between Windowed, Maximized and Fullscreen only takes effect when StreamLight starts, so it now offers the restart instead of appearing to do nothing. Answering No keeps the choice for the next launch
+• LB/RB switch profiles on a host that has just one — the cycle runs through Global as well, so one profile is already two stops, but the shoulders were dead until a second profile existed while the on-screen hints said otherwise
+• The black stripe down the right edge of the large cover is gone — the drop shadow was drawing its own black backing plate a couple of pixels wider than the artwork laid over it, which is why it arrived with 5.3.0 and showed at some window sizes and not others
+
+🙏 THANKS:
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/11) for the report that started this — a version that kept misbehaving after a downgrade turned out to be two clients writing to one place, and the black stripe he spotted on the cover in the same breath is fixed here too
+
+--------------------------------------
 Version 5.3.0 - One Scale (29/08/2026)
 --------------------------------------
 

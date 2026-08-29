@@ -214,6 +214,7 @@ SOURCES += \
     streaming/bandwidth.cpp \
     streaming/streamutils.cpp \
     path.cpp \
+    storereset.cpp \
     settings/mappingmanager.cpp \
     gui/sdlgamepadkeynavigation.cpp \
     streaming/video/overlaymanager.cpp \
@@ -271,6 +272,7 @@ HEADERS += \
     streaming/bandwidth.h \
     streaming/streamutils.h \
     path.h \
+    storereset.h \
     settings/mappingmanager.h \
     gui/sdlgamepadkeynavigation.h \
     streaming/video/overlaymanager.h \

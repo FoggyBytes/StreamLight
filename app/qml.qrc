@@ -18,6 +18,7 @@
         <file>gui/UnlockPad.qml</file>
         <file>gui/WakeDialog.qml</file>
         <file>gui/LinkRestoreDialog.qml</file>
+        <file>gui/SettingsResetDialog.qml</file>
         <file>gui/GamepadMapper.qml</file>
         <file>gui/QuitSegue.qml</file>
         <file>gui/NavigableItemDelegate.qml</file>

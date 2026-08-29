@@ -27,6 +27,12 @@ public:
     Q_PROPERTY(bool usesMaterial3Theme MEMBER usesMaterial3Theme CONSTANT)
     Q_PROPERTY(QString versionString MEMBER versionString CONSTANT)
 
+    // True on the first launch after upgrading from a build that shared Moonlight's
+    // settings store (5.3.0 and earlier), where nothing carries over. Drives the
+    // one-time notice on the host list — see storereset.h. CONSTANT because the
+    // answer is decided once at startup, before any of this exists.
+    Q_PROPERTY(bool settingsWereReset MEMBER settingsWereReset CONSTANT)
+
     // Properties queried asynchronously (startAsyncLoad() must be called!)
     Q_PROPERTY(bool hasHardwareAcceleration MEMBER hasHardwareAcceleration NOTIFY hasHardwareAccelerationChanged)
     Q_PROPERTY(bool rendererAlwaysFullScreen MEMBER rendererAlwaysFullScreen NOTIFY rendererAlwaysFullScreenChanged)
@@ -76,6 +82,11 @@ public:
     // a fresh binding. Windows-only in effect, harmless elsewhere.
     Q_INVOKABLE void recreateNativeWindow();
 
+    // The user has read the "settings were reset" notice. Stamps the store marker so
+    // it never appears again. Not tied to settingsWereReset staying true for the rest
+    // of this session: the property is CONSTANT and the dialog is shown once anyway.
+    Q_INVOKABLE void acknowledgeSettingsReset();
+
 signals:
     void unmappedGamepadsChanged();
     void hasHardwareAccelerationChanged();
@@ -100,6 +111,7 @@ private:
     bool hasDiscordIntegration;
     QString versionString;
     bool usesMaterial3Theme;
+    bool settingsWereReset;
 
     // Properties only set if startAsyncLoad() is called
     bool hasHardwareAcceleration;

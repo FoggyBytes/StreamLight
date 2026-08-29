@@ -1,5 +1,7 @@
 #include "systemproperties.h"
 #include "linkspeed.h"
+#include "singleinstance.h"
+#include "storereset.h"
 #include "utils.h"
 
 #include <QCoreApplication>
@@ -69,6 +71,7 @@ SystemProperties::SystemProperties()
     isRunningWayland = WMUtils::isRunningWayland();
     isRunningXWayland = isRunningWayland && QGuiApplication::platformName() == "xcb";
     usesMaterial3Theme = QLibraryInfo::version() >= QVersionNumber(6, 5, 0);
+    settingsWereReset = StoreReset::settingsWereReset();
     QString nativeArch = QSysInfo::currentCpuArchitecture();
 
 #ifdef Q_OS_WIN32
@@ -302,11 +305,32 @@ void SystemProperties::restartApplication()
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                 "SystemProperties: restarting (%s)", exePath.toUtf8().constData());
 
+    // ⚠️ Stop listening on the single-instance pipe BEFORE spawning, or the restart
+    // silently turns into a plain quit — which is exactly what it did until 5.4.0.
+    //
+    // The replacement runs SingleInstance::attach() within a few hundred ms, long
+    // before this process has finished tearing down Qt, SDL and FFmpeg. It connects
+    // to the pipe we are still holding, concludes an instance is already running,
+    // sends RAISE and returns 0. We then quit — and there is nothing left. Nobody
+    // sees an error, because from each process's own point of view it did the right
+    // thing. Closing the pipe first makes the child's probe fail, which is what makes
+    // it become the primary instance.
+    //
+    // Ordered so a failed spawn is recoverable: if startDetached fails we are still
+    // running, so re-listen and leave everything as it was.
+    SingleInstance* instance = SingleInstance::primary();
+    if (instance != nullptr) {
+        instance->release();
+    }
+
     // QProcess::startDetached spawns a fully independent child process — it does
     // not wait on the parent exiting, so calling quit() right after is safe.
     if (!QProcess::startDetached(exePath, args)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "SystemProperties: restart failed to spawn detached process");
+        if (instance != nullptr) {
+            instance->attach();
+        }
         return;
     }
 
@@ -365,6 +389,11 @@ void SystemProperties::shutdownClient(bool installUpdates)
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "SystemProperties: shutdownClient is only supported on Windows");
 #endif
+}
+
+void SystemProperties::acknowledgeSettingsReset()
+{
+    StoreReset::acknowledge();
 }
 
 void SystemProperties::recreateNativeWindow()

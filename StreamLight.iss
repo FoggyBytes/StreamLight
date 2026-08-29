@@ -1,8 +1,8 @@
-; StreamLight 5.3.0 — Moonlight fork with StreamTweak integration.
+; StreamLight 5.4.0 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
-#define AppVersion "5.3.0"
+#define AppVersion "5.4.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -79,13 +79,17 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: deskto
 
 ; No [Registry] section on purpose. There used to be an HKCU entry creating
 ; Software\FoggyBytes\StreamLight with uninsdeletekey, but nothing ever wrote to that
-; key — the app's settings live under Software\Moonlight Game Streaming Project\Moonlight
-; (see main.cpp; that path is load-bearing and must not change). The empty key also
-; triggered Inno's UsedUserAreasWarning: this installer runs elevated, so HKCU resolves
-; to the elevating account's hive, which may not be the interactive user's — the same
-; trap the [Run] section below avoids with runasoriginaluser.
-; Deliberately NOT re-pointed at the real settings key: deleting it on uninstall would
-; make a reinstall lose paired hosts and preferences.
+; key. As of 5.4.0 the app's settings DO live under Software\FoggyBytes\StreamLight
+; (main.cpp; before 5.4.0 they were under Software\Moonlight Game Streaming Project\
+; Moonlight, shared with Moonlight itself) — and the section still must not come back:
+;
+;   · uninsdeletekey on the real settings key would make a reinstall lose paired hosts
+;     and preferences;
+;   · this installer runs elevated, so HKCU here resolves to the ELEVATING account's
+;     hive, which may not be the interactive user's. Anything the setup wrote would land
+;     in the wrong place — which is why the store change in 5.4.0 is done by the app at
+;     startup and never by the installer. Same trap the [Run] section below avoids with
+;     runasoriginaluser.
 
 [Run]
 ; If the user opted in to "Add an icon to the Xbox app's My apps", seed the

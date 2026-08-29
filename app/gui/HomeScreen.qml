@@ -68,10 +68,9 @@ FocusScope {
     readonly property bool _clientHasTailscale: computerModel ? computerModel.clientHasTailscale() : false
 
     // ── What the shell reads ─────────────────────────────────────────────────
-    // Number of profiles on the selected host (0 on the add tab). Drives the LB/RB hints,
-    // which hide when ≤ 1.
-    readonly property int focusedProfileCount:
-        (currentHost && currentHost.profileCount !== undefined) ? currentHost.profileCount : 0
+    // (focusedProfileCount lived here and was removed: its only reader was the guard in
+    // cycleFocusedProfile below, and its stated rule — "the LB/RB hints hide when ≤ 1" —
+    // was not what HostStage does. The hints are HostStage's, and it hides them at 0.)
 
     // Moves the selection along the tab strip (dir: -1 prev / +1 next). Public because the
     // trigger legend at the end of the strip is clickable, and a mouse has no triggers.
@@ -88,10 +87,20 @@ FocusScope {
         navRoot._selectTab(tabIndex + dir)
     }
 
+    // ⚠️ No profile-count test here on purpose, and it is not an omission. This used to
+    // read `focusedProfileCount > 1`, which made the shoulders dead on a host with exactly
+    // one profile — the commonest setup — while HostStage still drew the LB/RB hints,
+    // because it asks the right question (>= 1). The cycle's stops are Global plus every
+    // profile, so ONE profile is already two stops.
+    //
+    // The authority on whether the cycle can move is HostProfileManager::cycle(), which
+    // returns without doing anything when a host has no profiles at all. A second copy of
+    // that rule here is what drifted, so there is no second copy any more: the guards left
+    // in HostStage and AppsScreen decide whether to *draw* the hints, not whether the key
+    // works.
     function cycleFocusedProfile(dir) {
         if (!computerModel || currentHostIndex < 0) return
-        if (focusedProfileCount > 1)
-            computerModel.cycleHostProfile(currentHostIndex, dir)
+        computerModel.cycleHostProfile(currentHostIndex, dir)
     }
 
     // Opens the POWER chooser for the selected host. Used by the status-bar "X Shutdown"
@@ -700,6 +709,14 @@ FocusScope {
 
     Component.onCompleted: {
         ComputerManager.computerAddCompleted.connect(addComplete)
+
+        // ⚠️ Deferred by a tick rather than opened here: on the first launch after the
+        // 5.4.0 store change the host list is empty, and opening a modal Popup while
+        // this screen is still being built puts it up before Overlay.overlay has the
+        // size it centres on.
+        if (SystemProperties.settingsWereReset) {
+            Qt.callLater(function() { settingsResetDialog.open() })
+        }
     }
 
     Component.onDestruction: {
@@ -1901,6 +1918,17 @@ FocusScope {
     AddHostDialog {
         id: addPcDialog
         onAccepted: function(ip) { ComputerManager.addNewHostManually(ip) }
+    }
+
+    // ── One-time notice: 5.4.0 moved off Moonlight's shared settings store ────
+    // Opened from Component.onCompleted below, and only ever once — acknowledging it
+    // stamps the marker that makes SystemProperties.settingsWereReset false forever.
+    SettingsResetDialog {
+        id: settingsResetDialog
+        onClosed: {
+            SystemProperties.acknowledgeSettingsReset()
+            navRoot.forceActiveFocus()
+        }
     }
 
     // ── Power-off chooser (host / client / both) ──────────────────────────────
