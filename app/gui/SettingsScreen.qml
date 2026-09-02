@@ -129,7 +129,6 @@ FocusScope {
     readonly property bool _lockMatchLink:   activeProfileOverride && activeProfileOverride.matchlink !== undefined
     readonly property bool _lockWaitForGame: activeProfileOverride && activeProfileOverride.waitgame !== undefined
     readonly property bool _lockDisplayMode: activeProfileOverride && activeProfileOverride.displaymode !== undefined
-    readonly property bool _lockMatchRefresh: activeProfileOverride && activeProfileOverride.matchrefresh !== undefined
 
     // Settings that cannot do anything without StreamTweak on the host. Greyed with the
     // reason rather than left live and inert — an inert switch is indistinguishable from a
@@ -244,6 +243,27 @@ FocusScope {
         StreamingPreferences.save()
     }
 
+    /*
+     * What the Resolution and Frame rate rows offer (5.5.0): our four presets each, plus
+     * whatever this machine's displays report — see SystemProperties::videoOptions() and
+     * settings/videooptions.h.
+     *
+     * Read once into a property rather than called per binding: it is the same answer every
+     * time (refreshDisplays() runs at startup and nothing calls it again), and three
+     * selectors plus two captions read it.
+     */
+    readonly property var _video: SystemProperties.videoOptions()
+
+    // "This display: 165 Hz", or the plural when there is more than one panel attached.
+    // Empty when SDL never got far enough to say — the rows then drop their caption line
+    // rather than print a heading with nothing under it.
+    function _displayHint(value) {
+        if (!value || value.length === 0) return ""
+        return settingsScreen._video.displays > 1
+               ? qsTr("Your displays: %1").arg(value)
+               : qsTr("This display: %1").arg(value)
+    }
+
     // Manual resolution entry — opened by the "Custom" pill in the Video tab.
     CustomResolutionDialog {
         id: customResDialog
@@ -254,6 +274,25 @@ FocusScope {
                 if (StreamingPreferences.autoAdjustBitrate) {
                     StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
                         w, h, StreamingPreferences.fps, StreamingPreferences.enableYUV444)
+                    bitrateSlider.value = StreamingPreferences.bitrateKbps
+                }
+                StreamingPreferences.save()
+            }
+        }
+    }
+
+    // Manual frame-rate entry — the twin of the above, opened by the "Custom" pill on the
+    // Frame rate row. New in 5.5.0: until then the strip was a closed list and a value
+    // outside it could only arrive from the settings store we used to share with Moonlight.
+    CustomFrameRateDialog {
+        id: customFpsDialog
+        onAccepted: function(fps) {
+            if (StreamingPreferences.fps !== fps) {
+                StreamingPreferences.fps = fps
+                if (StreamingPreferences.autoAdjustBitrate) {
+                    StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
+                        StreamingPreferences.width, StreamingPreferences.height,
+                        fps, StreamingPreferences.enableYUV444)
                     bitrateSlider.value = StreamingPreferences.bitrateKbps
                 }
                 StreamingPreferences.save()
@@ -809,29 +848,50 @@ FocusScope {
                                     || settingsScreen._lockFps
                                     || settingsScreen._lockBitrate
                                     || settingsScreen._lockDisplayMode
-                                    || settingsScreen._lockMatchRefresh
                                     || settingsScreen._lockVsync
                                     || settingsScreen._lockFramePacing
                         }
 
-                        // ── Resolution / Frame rate ───────────────────────────
+                        /*
+                         * ── Resolution ────────────────────────────────────────
+                         *
+                         * One row per setting since 5.5.0. They shared one row while both
+                         * strips were four fixed pills wide; with the display's own values
+                         * in them and a Custom pill after each, the pair no longer fits the
+                         * 1280 minimum window — and they were always two settings.
+                         */
                         Item {
                             width: parent.width
-                            height: settingsScreen._rowHeight
+                            height: resolutionHint.text.length > 0 ? settingsScreen._rowHeightTall
+                                                                   : settingsScreen._rowHeight
 
-                            Label {
-                                text: qsTr("Resolution / Frame rate")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
-                                font.bold: true
-                                color: settingsScreen._text
+                            Column {
                                 anchors.left: parent.left
                                 anchors.leftMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Resolution")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: settingsScreen._px(16)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                // Says what the dotted pill is, without a legend: the value
+                                // itself, which is the only thing the user can act on.
+                                Label {
+                                    id: resolutionHint
+                                    text: settingsScreen._displayHint(settingsScreen._video.resHint)
+                                    visible: text.length > 0
+                                    font.family: "DM Sans"
+                                    font.pixelSize: settingsScreen._px(13)
+                                    color: settingsScreen._textDim
+                                }
                             }
 
                             Row {
-                                id: resFpsRow
+                                id: resRow
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
@@ -843,17 +903,25 @@ FocusScope {
                                     enabled: !settingsScreen._lockRes
                                     opacity: enabled ? 1.0 : 0.4
 
-                                    property var _widths:  [1280, 1920, 2560, 3840]
-                                    property var _heights: [720,  1080, 1440, 2160]
-                                    labels: ["720p", "1080p", "1440p", "4K"]
+                                    // Presets plus this machine's own panels — one table,
+                                    // built in C++, shared with the two override dialogs.
+                                    readonly property var _entries: settingsScreen._video.res
 
-                                    // Highlight the matching preset, or -1 (none) when the
+                                    labels: _entries.map(function(e) { return e.label })
+                                    nativeIndices: {
+                                        var out = []
+                                        for (var i = 0; i < _entries.length; i++)
+                                            if (_entries[i].isNative) out.push(i)
+                                        return out
+                                    }
+
+                                    // Highlight the matching entry, or -1 (none) when the
                                     // current resolution is a custom one — the Custom pill
                                     // then shows the actual value instead.
                                     function _resync() {
-                                        for (var i = 0; i < _widths.length; i++) {
-                                            if (_widths[i] === StreamingPreferences.width
-                                             && _heights[i] === StreamingPreferences.height) {
+                                        for (var i = 0; i < _entries.length; i++) {
+                                            if (_entries[i].width === StreamingPreferences.width
+                                             && _entries[i].height === StreamingPreferences.height) {
                                                 currentIndex = i
                                                 return
                                             }
@@ -870,7 +938,7 @@ FocusScope {
                                     }
 
                                     onActivated: function(idx) {
-                                        var w = _widths[idx], h = _heights[idx]
+                                        var w = _entries[idx].width, h = _entries[idx].height
                                         if (StreamingPreferences.width !== w || StreamingPreferences.height !== h) {
                                             StreamingPreferences.width  = w
                                             StreamingPreferences.height = h
@@ -887,7 +955,7 @@ FocusScope {
                                 }
 
                                 // Standalone "Custom" pill — opens the manual-entry dialog.
-                                // Selected (and shows the value) when no preset matches.
+                                // Selected (and shows the value) when no entry matches.
                                 PillButton {
                                     id: customResBtn
                                     anchors.verticalCenter: parent.verticalCenter
@@ -904,13 +972,45 @@ FocusScope {
                                     KeyNavigation.left:  resolutionSelector
                                     KeyNavigation.right: fpsSelector
                                 }
+                            }
+                        }
+                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
 
-                                // Visual separator between the resolution and frame-rate blocks.
-                                Rectangle {
-                                    width: 1; height: settingsScreen._px(24)
-                                    color: "#3a3a3a"
-                                    anchors.verticalCenter: parent.verticalCenter
+                        // ── Frame rate ────────────────────────────────────────
+                        Item {
+                            width: parent.width
+                            height: fpsHint.text.length > 0 ? settingsScreen._rowHeightTall
+                                                            : settingsScreen._rowHeight
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Frame rate")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: settingsScreen._px(16)
+                                    font.bold: true
+                                    color: settingsScreen._text
                                 }
+                                Label {
+                                    id: fpsHint
+                                    text: settingsScreen._displayHint(settingsScreen._video.fpsHint)
+                                    visible: text.length > 0
+                                    font.family: "DM Sans"
+                                    font.pixelSize: settingsScreen._px(13)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            Row {
+                                id: fpsRow
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(12)
 
                                 SegmentedSelector {
                                     id: fpsSelector
@@ -918,12 +1018,28 @@ FocusScope {
                                     enabled: !settingsScreen._lockFps
                                     opacity: enabled ? 1.0 : 0.4
 
-                                    property var _fps: [30, 60, 90, 120]
-                                    property var _presetLabels: ["30", "60", "90", "120"]
+                                    readonly property var _entries: settingsScreen._video.fps
 
+                                    labels: _entries.map(function(e) { return e.label })
+                                    nativeIndices: {
+                                        var out = []
+                                        for (var i = 0; i < _entries.length; i++)
+                                            if (_entries[i].isNative) out.push(i)
+                                        return out
+                                    }
+
+                                    /*
+                                     * ⚠️ There used to be a second path here: a value that was
+                                     * not one of the four presets was prepended to the strip as
+                                     * an extra pill. That is what displayed the 165 this row
+                                     * could not otherwise produce — a value that had arrived
+                                     * from Moonlight's settings store, back when we shared it.
+                                     * It is gone: an off-list value now lives on the Custom
+                                     * pill, exactly as the resolution row has always done it.
+                                     */
                                     function _resync() {
-                                        for (var i = 0; i < _fps.length; i++) {
-                                            if (_fps[i] === StreamingPreferences.fps) {
+                                        for (var i = 0; i < _entries.length; i++) {
+                                            if (_entries[i].value === StreamingPreferences.fps) {
                                                 currentIndex = i
                                                 return
                                             }
@@ -931,18 +1047,7 @@ FocusScope {
                                         currentIndex = -1
                                     }
 
-                                    Component.onCompleted: {
-                                        for (var i = 0; i < _fps.length; i++) {
-                                            if (_fps[i] === StreamingPreferences.fps) {
-                                                labels = _presetLabels
-                                                currentIndex = i
-                                                return
-                                            }
-                                        }
-                                        labels = [String(StreamingPreferences.fps)].concat(_presetLabels)
-                                        _fps   = [StreamingPreferences.fps].concat(_fps)
-                                        currentIndex = 0
-                                    }
+                                    Component.onCompleted: _resync()
 
                                     Connections {
                                         target: StreamingPreferences
@@ -950,7 +1055,7 @@ FocusScope {
                                     }
 
                                     onActivated: function(idx) {
-                                        var f = _fps[idx]
+                                        var f = _entries[idx].value
                                         if (StreamingPreferences.fps !== f) {
                                             StreamingPreferences.fps = f
                                             if (StreamingPreferences.autoAdjustBitrate) {
@@ -963,7 +1068,22 @@ FocusScope {
                                         }
                                     }
 
-                                    KeyNavigation.left: customResBtn
+                                    KeyNavigation.left:  customResBtn
+                                    KeyNavigation.right: customFpsBtn
+                                }
+
+                                PillButton {
+                                    id: customFpsBtn
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    enabled: !settingsScreen._lockFps
+                                    opacity: enabled ? 1.0 : 0.4
+                                    selected: fpsSelector.currentIndex < 0
+                                    text: selected ? String(StreamingPreferences.fps) : qsTr("Custom")
+                                    onClicked: {
+                                        customFpsDialog.initFps = StreamingPreferences.fps
+                                        customFpsDialog.open()
+                                    }
+                                    KeyNavigation.left: fpsSelector
                                 }
                             }
                         }
@@ -1184,66 +1304,6 @@ FocusScope {
                                     }
                                 }
                                 onActivated: function(idx) { StreamingPreferences.windowMode = _values[idx]; StreamingPreferences.save() }
-                            }
-                        }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
-
-                        // ── Match refresh rate ────────────────────────────────
-                        Item {
-                            id: matchRrRow
-                            width: parent.width
-                            height: Math.max(settingsScreen._rowHeightTall, matchRrCol.implicitHeight + settingsScreen._px(16))
-                            // The mode change only ever happens in exclusive fullscreen:
-                            // in Borderless and Windowed the panel keeps the desktop
-                            // refresh rate and the switch would be a promise the window
-                            // cannot keep. Lock it and say why, the same shape Frame
-                            // Pacing uses when V-Sync is off. The stored value is left
-                            // alone and comes back with Fullscreen.
-                            enabled: !settingsScreen._lockMatchRefresh
-                                     && StreamingPreferences.windowMode === StreamingPreferences.WM_FULLSCREEN
-                            opacity: enabled ? 1.0 : 0.4
-
-                            Column {
-                                id: matchRrCol
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.right: matchRrSwitch.left
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Match refresh rate")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    width: parent.width
-                                    wrapMode: Text.WordWrap
-                                    // ⚠️ On the window mode, not on the row's `enabled`: a
-                                    // profile lock also disables the row, and it has its own
-                                    // notice at the top of the card. Reading "Requires
-                                    // Fullscreen" while sitting in Fullscreen would send the
-                                    // user to fix the wrong thing.
-                                    text: StreamingPreferences.windowMode === StreamingPreferences.WM_FULLSCREEN
-                                          ? qsTr("Runs your display at the stream's frame rate, and puts it back when the stream ends.")
-                                          : qsTr("Requires Fullscreen — in Borderless and Windowed your display stays at its desktop refresh rate.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            FocusFrame { anchors.fill: matchRrSwitch; anchors.margins: -3; target: matchRrSwitch }
-                            STSwitch {
-                                id: matchRrSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.matchRefreshRate
-                                onCheckedChanged: { if (StreamingPreferences.matchRefreshRate !== checked) { StreamingPreferences.matchRefreshRate = checked; StreamingPreferences.save() } }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }

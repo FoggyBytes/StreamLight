@@ -2001,29 +2001,6 @@ void FFmpegVideoDecoder::decoderThreadProc()
                     SDL_assert(m_FrameInfoQueue.size() == m_FramesIn - m_FramesOut);
                     m_FramesOut++;
 
-                    // ⚠️ Colour-range probe, once on the first decoded frame of a session.
-                    //
-                    // 5.2.0 adopts upstream's full-range default, and the whole point of the
-                    // second half of that change is what to do when the host does NOT tag the
-                    // range: we then assume it sent what we asked for. Whether that assumption
-                    // is ever exercised depends entirely on the host, and no amount of looking
-                    // at the picture answers it - washed-out blacks and a correctly dark scene
-                    // are not reliably distinguishable by eye on someone else's screen.
-                    if (m_FramesOut == 1 && !m_TestOnly) {
-                        const char* tag;
-                        switch (frame->color_range) {
-                        case AVCOL_RANGE_JPEG: tag = "JPEG/full (host tagged it)"; break;
-                        case AVCOL_RANGE_MPEG: tag = "MPEG/limited (host tagged it)"; break;
-                        default:               tag = "UNSPECIFIED (we assume what we requested)"; break;
-                        }
-                        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                                    "[color-diag] requested %s; first frame reports %s; rendering as %s",
-                                    m_FrontendRenderer->getDecoderColorRange() == COLOR_RANGE_FULL
-                                        ? "FULL" : "LIMITED",
-                                    tag,
-                                    m_FrontendRenderer->isFrameFullRange(frame) ? "full" : "limited");
-                    }
-
                     // Attach HDR metadata to the frame if it's not already present. We will defer to
                     // any metadata contained in the bitstream itself since that is guaranteed to be
                     // correctly synchronized to each frame, unlike our async HDR metadata message.

@@ -1,7 +1,9 @@
 #include "appsettings.h"
+#include "videooptions.h"
 
 #include <QCoreApplication>
 #include <QSettings>
+#include <QSize>
 #include <QVector>
 #include <algorithm>
 
@@ -26,7 +28,6 @@ static AppOverride readOverrideGroup(const QSettings& s)
     if (s.contains("hue"))         { ov.hasHue = true;         ov.hueSync = s.value("hue").toBool(); }
     if (s.contains("matchlink"))   { ov.hasMatchLink = true;   ov.matchLinkSpeed = s.value("matchlink").toBool(); }
     if (s.contains("waitgame"))      { ov.hasWaitForGame = true; ov.waitForGame = s.value("waitgame").toBool(); }
-    if (s.contains("matchrefresh"))  { ov.hasMatchRefreshRate = true; ov.matchRefreshRate = s.value("matchrefresh").toBool(); }
     if (s.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = s.value("displaymode").toInt(); }
     if (s.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = s.value("vsync").toBool(); }
     return ov;
@@ -44,7 +45,6 @@ static void writeOverrideGroup(QSettings& s, const AppOverride& ov)
     if (ov.hasHue)         s.setValue("hue", ov.hueSync);
     if (ov.hasMatchLink)   s.setValue("matchlink", ov.matchLinkSpeed);
     if (ov.hasWaitForGame) s.setValue("waitgame", ov.waitForGame);
-    if (ov.hasMatchRefreshRate) s.setValue("matchrefresh", ov.matchRefreshRate);
     if (ov.hasDisplayMode) s.setValue("displaymode", ov.windowMode);
     if (ov.hasVsync)       s.setValue("vsync", ov.enableVsync);
 }
@@ -62,7 +62,6 @@ QVariantMap appOverrideToMap(const AppOverride& ov)
     if (ov.hasHue)         m["hue"] = ov.hueSync;
     if (ov.hasMatchLink)   m["matchlink"] = ov.matchLinkSpeed;
     if (ov.hasWaitForGame) m["waitgame"] = ov.waitForGame;
-    if (ov.hasMatchRefreshRate) m["matchrefresh"] = ov.matchRefreshRate;
     if (ov.hasDisplayMode) m["displaymode"] = ov.windowMode;
     if (ov.hasVsync)       m["vsync"] = ov.enableVsync;
     return m;
@@ -85,7 +84,6 @@ AppOverride appOverrideFromMap(const QVariantMap& m)
     if (m.contains("hue"))         { ov.hasHue = true;         ov.hueSync = m.value("hue").toBool(); }
     if (m.contains("matchlink"))   { ov.hasMatchLink = true;   ov.matchLinkSpeed = m.value("matchlink").toBool(); }
     if (m.contains("waitgame"))      { ov.hasWaitForGame = true; ov.waitForGame = m.value("waitgame").toBool(); }
-    if (m.contains("matchrefresh"))  { ov.hasMatchRefreshRate = true; ov.matchRefreshRate = m.value("matchrefresh").toBool(); }
     if (m.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = m.value("displaymode").toInt(); }
     if (m.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = m.value("vsync").toBool(); }
     return ov;
@@ -98,16 +96,15 @@ QVariantMap inheritedValueLabels(const StreamingPreferences* p)
         return m;
     }
 
-    // Resolution reads back as the preset name when it is one, because that is what the
-    // pill next to it says. Anything else — a custom resolution, or a preset we do not
-    // offer — is printed as itself rather than rounded to the nearest label.
-    QString res;
-    if      (p->width == 1280 && p->height == 720)  res = QStringLiteral("720p");
-    else if (p->width == 1920 && p->height == 1080) res = QStringLiteral("1080p");
-    else if (p->width == 2560 && p->height == 1440) res = QStringLiteral("1440p");
-    else if (p->width == 3840 && p->height == 2160) res = QStringLiteral("4K");
-    else res = QString::number(p->width) + QChar(0x00D7) + QString::number(p->height);
-    m.insert(QStringLiteral("resolution"), res);
+    // Resolution reads back as the name on the pill next to it — a preset's, or a native
+    // display's "1600p". Anything else is printed as itself rather than rounded to the
+    // nearest label.
+    //
+    // ⚠️ It has to be VideoOptions and not a copy of its table: _dupIndices() in the two
+    // override panels hides the duplicate pill by comparing this string to the pill's own
+    // label, so the day the two spellings differ the duplicate silently comes back.
+    m.insert(QStringLiteral("resolution"),
+             VideoOptions::resolutionLabel(QSize(p->width, p->height)));
 
     m.insert(QStringLiteral("fps"), QString::number(p->fps));
 
@@ -122,7 +119,6 @@ QVariantMap inheritedValueLabels(const StreamingPreferences* p)
     m.insert(QStringLiteral("hue"),          p->hueSyncIntegration ? on : off);
     m.insert(QStringLiteral("matchlink"),    p->matchHostLinkSpeed ? on : off);
     m.insert(QStringLiteral("waitgame"),     p->waitForGameOnScreen ? on : off);
-    m.insert(QStringLiteral("matchrefresh"), p->matchRefreshRate ? on : off);
     m.insert(QStringLiteral("vsync"),        p->enableVsync ? on : off);
     m.insert(QStringLiteral("framepacing"),
              p->framePacingMode == StreamingPreferences::FP_ON ? on : off);
@@ -198,7 +194,6 @@ void applyAppOverride(StreamingPreferences* p, const AppOverride& ov)
     // deliberately does not read the `refreshrate` one that 5.1.0 - 5.1.3 profiles could
     // hold. That was a four-value enum for a setting that no longer exists, and Session
     // decides on its own whether exclusive fullscreen makes this actionable at all.
-    if (ov.hasMatchRefreshRate) p->matchRefreshRate = ov.matchRefreshRate;
     if (ov.hasDisplayMode) p->windowMode = (StreamingPreferences::WindowMode)ov.windowMode;
     if (ov.hasVsync)       p->enableVsync = ov.enableVsync;
 }

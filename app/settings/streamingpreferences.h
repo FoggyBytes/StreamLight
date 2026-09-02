@@ -224,7 +224,6 @@ public:
     Q_PROPERTY(bool detectNetworkBlocking MEMBER detectNetworkBlocking NOTIFY detectNetworkBlockingChanged)
     Q_PROPERTY(bool autoReconnectNoVideo MEMBER autoReconnectNoVideo NOTIFY autoReconnectNoVideoChanged)
     Q_PROPERTY(bool matchHostLinkSpeed MEMBER matchHostLinkSpeed NOTIFY matchHostLinkSpeedChanged)
-    Q_PROPERTY(bool matchRefreshRate MEMBER matchRefreshRate NOTIFY matchRefreshRateChanged)
     Q_PROPERTY(bool waitForGameOnScreen MEMBER waitForGameOnScreen NOTIFY waitForGameOnScreenChanged)
     Q_PROPERTY(bool showPerfOverlay MEMBER showPerfOverlay NOTIFY overlayChanged)
     Q_PROPERTY(OverlayPosition overlayPosition MEMBER overlayPosition NOTIFY overlayChanged)
@@ -277,11 +276,6 @@ public:
     bool autoReconnectNoVideo;
     // Ask the host to match its wired link speed to this device before connecting.
     bool matchHostLinkSpeed;
-    // Run the display at the stream's own frame rate for the session, instead of the
-    // highest refresh the FPS divides. Off by default, and only ever acts in exclusive
-    // fullscreen. Applied as a post-pass over upstream's mode choice — see
-    // streaming/refreshratematch.h.
-    bool matchRefreshRate;
     // Hold the launch screen until the host reports the game is on screen, instead of showing
     // the stream as soon as there is a picture. Off by default — the opt-in is the wait, not
     // the other way round. Overridable per host profile and per game.
@@ -345,7 +339,6 @@ signals:
     void detectNetworkBlockingChanged();
     void autoReconnectNoVideoChanged();
     void matchHostLinkSpeedChanged();
-    void matchRefreshRateChanged();
     void waitForGameOnScreenChanged();
     // One signal for the whole overlay group: the settings page redraws its preview
     // from all six at once, so six signals would only mean six ways to forget one.

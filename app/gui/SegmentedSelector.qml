@@ -27,6 +27,23 @@ FocusScope {
      */
     property var hiddenIndices: []
 
+    /*
+     * Indices carrying a small accent dot: the values that came from this machine's own
+     * display rather than from our preset list (5.5.0). Empty by default.
+     *
+     * A marker and not a different label, because the pill has to stay a pill — "165" is
+     * the value, and the dot is why it is on offer here and not on someone else's screen.
+     * Selection and navigation ignore this entirely.
+     */
+    property var nativeIndices: []
+
+    function isNative(i) {
+        for (var k = 0; k < nativeIndices.length; ++k)
+            if (nativeIndices[k] === i)
+                return true
+        return false
+    }
+
     function isDisabled(i) {
         for (var k = 0; k < disabledIndices.length; ++k)
             if (disabledIndices[k] === i)
@@ -130,6 +147,21 @@ FocusScope {
                     radius: selector._px(5)
                     color: pill._selected ? selector._accent : "transparent"
                     opacity: pill._disabled ? 0.4 : 1.0
+                }
+                // The native marker. Inside the pill's own rounded corner rather than
+                // floating over the strip, so it moves and disappears with its pill.
+                // On the selected pill it is drawn in the text colour: an accent dot on
+                // an accent fill would be invisible.
+                Rectangle {
+                    visible: selector.isNative(index)
+                    width: selector._px(4); height: width
+                    radius: width / 2
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.topMargin: selector._px(5)
+                    anchors.rightMargin: selector._px(6)
+                    color: pill._selected ? selector._textOn : selector._accent
+                    opacity: pill._disabled ? 0.4 : (pill._selected ? 0.5 : 1.0)
                 }
                 Label {
                     id: pillLabel

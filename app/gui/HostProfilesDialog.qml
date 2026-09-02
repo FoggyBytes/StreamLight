@@ -5,6 +5,7 @@ import QtQuick.Layouts 1.15
 import QtQuick.Window 2.2
 
 import StreamingPreferences 1.0
+import SystemProperties 1.0
 
 // Per-host streaming profiles (StreamLight 4.0.0). Up to 3 named profiles per
 // host, each overriding a subset of the global StreamingPreferences (same model
@@ -95,13 +96,33 @@ Popup {
     // ⚠️ One table per row, even where two rows offer the same three words. Six of these
     // used to share _hdrLabels because they were all "Global / On / Off"; now that index 0
     // carries a value, sharing would print HDR's answer on the V-Sync row.
-    readonly property var _resLabels: [_globalText("resolution"), "720p", "1080p", "1440p", "4K"]
-    readonly property var _resW:      [0, 1280, 1920, 2560, 3840]
-    readonly property var _resH:      [0, 720, 1080, 1440, 2160]
-    readonly property var _fpsLabels: [_globalText("fps"), "30", "60", "90", "120"]
-    readonly property var _fpsVals:   [0, 30, 60, 90, 120]
+    /*
+     * The resolution and frame-rate values on offer (5.5.0): our presets plus whatever this
+     * machine's displays report, built in C++ and shared with the per-game panel and the
+     * Settings screen — see settings/videooptions.h.
+     *
+     * ⚠️ Index 0 stays the Global placeholder and the tables stay index-parallel: every
+     * lookup here is by index, so the offset is applied once and never again.
+     */
+    readonly property var _video: SystemProperties.videoOptions()
+
+    function _nativeIndices(entries) {
+        var out = []
+        for (var i = 0; i < entries.length; i++)
+            if (entries[i].isNative) out.push(i + 1)
+        return out
+    }
+
+    readonly property var _resLabels: [_globalText("resolution")].concat(
+        _video.res.map(function(e) { return e.label }))
+    readonly property var _resW:      [0].concat(_video.res.map(function(e) { return e.width }))
+    readonly property var _resH:      [0].concat(_video.res.map(function(e) { return e.height }))
+    readonly property var _resNative: _nativeIndices(_video.res)
+    readonly property var _fpsLabels: [_globalText("fps")].concat(
+        _video.fps.map(function(e) { return e.label }))
+    readonly property var _fpsVals:   [0].concat(_video.fps.map(function(e) { return e.value }))
+    readonly property var _fpsNative: _nativeIndices(_video.fps)
     readonly property var _hdrLabels: [_globalText("hdr"), "On", "Off"]
-    readonly property var _matchRrLabels: [_globalText("matchrefresh"), "On", "Off"]
     readonly property var _vsyncLabels:   [_globalText("vsync"), "On", "Off"]
     readonly property var _linkLabels:    [_globalText("matchlink"), "On", "Off"]
     readonly property var _waitLabels:    [_globalText("waitgame"), "On", "Off"]
@@ -130,6 +151,8 @@ Popup {
     // Custom resolution override for the edited slot (0 == none / using a preset).
     property int _customResW: 0
     property int _customResH: 0
+    // Custom frame-rate override, same tri-state (5.5.0).
+    property int _customFps: 0
     readonly property bool _hasProfiles: profileCount > 0
 
     modal: true
@@ -197,8 +220,16 @@ Popup {
         // Resolution is tri-state: Global (0) / preset (>0) / custom (-1 + _customRes*).
         _customResW = 0; _customResH = 0
         if (ov.width !== undefined) {
-            var rpi = _resW.indexOf(ov.width)
-            if (rpi > 0 && _resH[rpi] === ov.height) {
+            // ⚠️ Matched on the pair, not by width — see the same spot in
+            // AppSettingsDialog.qml for what a native 2560x1600 did to indexOf().
+            var rpi = -1
+            for (var ri = 1; ri < _resW.length; ri++) {
+                if (_resW[ri] === ov.width && _resH[ri] === ov.height) {
+                    rpi = ri
+                    break
+                }
+            }
+            if (rpi > 0) {
                 resSel.currentIndex = rpi
             } else {
                 resSel.currentIndex = -1
@@ -208,7 +239,20 @@ Popup {
         } else {
             resSel.currentIndex = 0
         }
-        fpsSel.currentIndex   = (ov.fps !== undefined) ? _idxByVal(_fpsVals, ov.fps) : 0
+        // Frame rate is tri-state exactly like resolution: Global (0) / listed (>0) /
+        // custom (-1 + _customFps).
+        _customFps = 0
+        if (ov.fps !== undefined) {
+            var fpi = _fpsVals.indexOf(ov.fps)
+            if (fpi > 0) {
+                fpsSel.currentIndex = fpi
+            } else {
+                fpsSel.currentIndex = -1
+                _customFps = ov.fps
+            }
+        } else {
+            fpsSel.currentIndex = 0
+        }
         hdrSel.currentIndex   = (ov.hdr !== undefined) ? (ov.hdr ? 1 : 2) : 0
         codecSel.currentIndex = (ov.codec !== undefined) ? _idxByVal(_codecVals, ov.codec) : 0
         fpSel.currentIndex    = (ov.framepacing !== undefined) ? _idxByVal(_fpVals, ov.framepacing) : 0
@@ -217,7 +261,6 @@ Popup {
         linkSel.currentIndex  = (ov.matchlink !== undefined) ? (ov.matchlink ? 1 : 2) : 0
         waitGameSel.currentIndex = (ov.waitgame !== undefined) ? (ov.waitgame ? 1 : 2) : 0
         dmSel.currentIndex    = (ov.displaymode !== undefined) ? _idxByVal(_dmVals, ov.displaymode) : 0
-        matchRrSel.currentIndex = (ov.matchrefresh !== undefined) ? (ov.matchrefresh ? 1 : 2) : 0
         vsyncSel.currentIndex = (ov.vsync !== undefined) ? (ov.vsync ? 1 : 2) : 0
         _bitrateOverridden = (ov.bitrate !== undefined && ov.bitrate >= bitrateSlider.from)
         bitrateSlider.value = _bitrateOverridden ? ov.bitrate
@@ -230,7 +273,8 @@ Popup {
         var m = {}
         if (_customResW > 0)              { m.width = _customResW; m.height = _customResH }
         else if (resSel.currentIndex > 0) { m.width = _resW[resSel.currentIndex]; m.height = _resH[resSel.currentIndex] }
-        if (fpsSel.currentIndex > 0)   m.fps = _fpsVals[fpsSel.currentIndex]
+        if (_customFps > 0)               m.fps = _customFps
+        else if (fpsSel.currentIndex > 0) m.fps = _fpsVals[fpsSel.currentIndex]
         if (_bitrateOverridden && bitrateSlider.value >= bitrateSlider.from)
                                        m.bitrate = Math.round(bitrateSlider.value)
         if (hdrSel.currentIndex > 0)   m.hdr = (hdrSel.currentIndex === 1)
@@ -245,7 +289,6 @@ Popup {
         // V-Sync it does not have: the profile keeps the choice it was given, and it
         // starts acting the day the display mode above it becomes Fullscreen. Dropping
         // it here would silently rewrite the profile the moment the condition lapsed.
-        if (matchRrSel.currentIndex > 0) m.matchrefresh = (matchRrSel.currentIndex === 1)
         if (vsyncSel.currentIndex > 0) m.vsync = (vsyncSel.currentIndex === 1)
         computerModel.setHostProfileSettings(pcIndex, editingSlot, m)
     }
@@ -731,6 +774,7 @@ Popup {
                         spacing: dlg._px(12)
                         SegmentedSelector {
                             id: resSel; labels: dlg._resLabels
+                            nativeIndices: dlg._resNative
                             hiddenIndices: dlg._dupIndices(dlg._resLabels, "resolution", currentIndex)
                             KeyNavigation.up: nameField
                             KeyNavigation.down: resCustomBtn
@@ -757,12 +801,32 @@ Popup {
                 }
                 SettingRow {
                     label: qsTr("Frame rate")
-                    SegmentedSelector {
-                        id: fpsSel; labels: dlg._fpsLabels
-                        hiddenIndices: dlg._dupIndices(dlg._fpsLabels, "fps", currentIndex)
-                        KeyNavigation.up: resCustomBtn
-                        KeyNavigation.down: bitrateGlobalBtn
-                        onActivated: dlg.saveOverride()
+                    Row {
+                        spacing: dlg._px(12)
+                        SegmentedSelector {
+                            id: fpsSel; labels: dlg._fpsLabels
+                            nativeIndices: dlg._fpsNative
+                            hiddenIndices: dlg._dupIndices(dlg._fpsLabels, "fps", currentIndex)
+                            KeyNavigation.up: resCustomBtn
+                            KeyNavigation.down: fpsCustomBtn
+                            KeyNavigation.right: fpsCustomBtn
+                            // Selecting Global or a listed value clears any custom override.
+                            onActivated: { dlg._customFps = 0; dlg.saveOverride() }
+                        }
+                        PillButton {
+                            id: fpsCustomBtn
+                            selected: dlg._customFps > 0
+                            text: selected ? String(dlg._customFps) : qsTr("Custom")
+                            onClicked: {
+                                customFpsDialog.initFps = dlg._customFps > 0 ? dlg._customFps
+                                    : (fpsSel.currentIndex > 0 ? dlg._fpsVals[fpsSel.currentIndex]
+                                                               : StreamingPreferences.fps)
+                                customFpsDialog.open()
+                            }
+                            KeyNavigation.up: fpsSel
+                            KeyNavigation.down: bitrateGlobalBtn
+                            KeyNavigation.left: fpsSel
+                        }
                     }
                 }
 
@@ -917,32 +981,16 @@ Popup {
                 // greyed control never sends you hunting for the reason. Global = follow the
                 // setting in Settings → Video.
                 //
-                // ⚠️ Match refresh rate sits between them because that is what makes Display
-                // mode a dependency here: it acts only in exclusive fullscreen, so the row
-                // that decides the window mode has to be the row directly above it.
+                // ⚠️ Display mode sits here because Match refresh rate used to follow it and
+                // depended on it. That row is gone as of 5.5.0; this one stays as an override
+                // in its own right, and V-Sync directly above Frame pacing is now the only
+                // live dependency in the group.
                 SettingRow {
                     label: qsTr("Display mode")
                     SegmentedSelector {
                         id: dmSel; labels: dlg._dmLabels
                         hiddenIndices: dlg._dupIndices(dlg._dmLabels, "displaymode", currentIndex)
                         KeyNavigation.up: codecSel
-                        KeyNavigation.down: matchRrSel
-                        onActivated: dlg.saveOverride()
-                    }
-                }
-                SettingRow {
-                    label: qsTr("Match refresh rate")
-                    enabled: dlg._effWindowMode === StreamingPreferences.WM_FULLSCREEN
-                    // ⚠️ Both dependency notes in this dialog state the bare condition — no row
-                    // named, no full stop. The row a condition points at can read Global, and
-                    // then the answer is in Settings → Video rather than in this dialog at all,
-                    // so naming a row that may not hold the reason is worse than naming none.
-                    // Keep this row and Frame pacing below in the same form.
-                    detail: enabled ? "" : qsTr("Needs Fullscreen")
-                    SegmentedSelector {
-                        id: matchRrSel; labels: dlg._matchRrLabels
-                        hiddenIndices: dlg._dupIndices(dlg._matchRrLabels, "matchrefresh", currentIndex)
-                        KeyNavigation.up: dmSel
                         KeyNavigation.down: vsyncSel
                         onActivated: dlg.saveOverride()
                     }
@@ -952,7 +1000,7 @@ Popup {
                     SegmentedSelector {
                         id: vsyncSel; labels: dlg._vsyncLabels
                         hiddenIndices: dlg._dupIndices(dlg._vsyncLabels, "vsync", currentIndex)
-                        KeyNavigation.up: matchRrSel
+                        KeyNavigation.up: dmSel
                         KeyNavigation.down: fpSel
                         onActivated: dlg.saveOverride()
                     }
@@ -1081,6 +1129,16 @@ Popup {
             dlg._customResW = w
             dlg._customResH = h
             resSel.currentIndex = -1
+            dlg.saveOverride()
+        }
+    }
+
+    // Manual frame-rate entry for the edited profile slot (5.5.0).
+    CustomFrameRateDialog {
+        id: customFpsDialog
+        onAccepted: function(fps) {
+            dlg._customFps = fps
+            fpsSel.currentIndex = -1
             dlg.saveOverride()
         }
     }

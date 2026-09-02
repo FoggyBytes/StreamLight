@@ -33,6 +33,29 @@ public:
     // answer is decided once at startup, before any of this exists.
     Q_PROPERTY(bool settingsWereReset MEMBER settingsWereReset CONSTANT)
 
+    /*
+     * True when this machine is configured for the Xbox full screen experience — a handheld
+     * device form, or a gaming home app set. Windows-only; false everywhere else.
+     *
+     * It gates rebuilding the native window on the way out of a stream (main.qml), which is
+     * the only known cure for the grey screen that shell leaves behind and a pointless step
+     * anywhere else.
+     *
+     * ⚠️ It says DEVICE, not SESSION, and that is not a shortcut — it is what the data
+     * allows. Measured on 01/09/2026, an Ally in the Xbox experience and an ordinary desktop
+     * are indistinguishable from inside the process: explorer.exe is the shell in both,
+     * GetShellWindow, the taskbar, Progman and Winlogon all read the same. The only thing
+     * that moved with the shell was Progman's visibility, and only when the device had
+     * BOOTED into the experience — not when it was entered from the desktop, which is the
+     * case where the grey screen was actually observed. So a session detector would have
+     * skipped the fix exactly where it is needed.
+     *
+     * The consequence, stated rather than hidden: on a handheld the rebuild runs even in
+     * desktop mode. That errs towards the working behaviour and away from the hitch, which
+     * is the right way round for a defect that reads as a broken app.
+     */
+    Q_PROPERTY(bool isGamingPostureDevice MEMBER isGamingPostureDevice CONSTANT)
+
     // Properties queried asynchronously (startAsyncLoad() must be called!)
     Q_PROPERTY(bool hasHardwareAcceleration MEMBER hasHardwareAcceleration NOTIFY hasHardwareAccelerationChanged)
     Q_PROPERTY(bool rendererAlwaysFullScreen MEMBER rendererAlwaysFullScreen NOTIFY rendererAlwaysFullScreenChanged)
@@ -44,6 +67,18 @@ public:
     Q_INVOKABLE QRect getNativeResolution(int displayIndex);
     Q_INVOKABLE QRect getSafeAreaResolution(int displayIndex);
     Q_INVOKABLE int getRefreshRate(int displayIndex);
+
+    /*
+     * What the resolution and frame-rate pickers offer (5.5.0): the presets plus whatever
+     * this machine's displays report, already deduplicated, sorted and labelled.
+     *
+     *   { fps: [{value, label, isNative}], res: [{width, height, label, isNative}],
+     *     fpsHint: "165 Hz", resHint: "2560x1600", displays: 1 }
+     *
+     * Read once when a picker is built. The answer cannot change while it is on screen —
+     * refreshDisplays() runs at startup and nothing calls it again.
+     */
+    Q_INVOKABLE QVariantMap videoOptions();
 
     Q_INVOKABLE void startAsyncLoad();
     Q_INVOKABLE void waitForAsyncLoad();
@@ -112,6 +147,7 @@ private:
     QString versionString;
     bool usesMaterial3Theme;
     bool settingsWereReset;
+    bool isGamingPostureDevice;
 
     // Properties only set if startAsyncLoad() is called
     bool hasHardwareAcceleration;

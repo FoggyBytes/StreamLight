@@ -5,18 +5,21 @@
 #include "utils.h"
 
 #include <QCoreApplication>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QWindow>
 #include <QLibraryInfo>
 #include <QProcess>
 #include <QStringList>
 
+#include "settings/videooptions.h"
 #include "streaming/session.h"
 #include "streaming/streamutils.h"
 
 #ifdef Q_OS_WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <QSettings>
 // Advapi32: OpenProcessToken / LookupPrivilegeValue / AdjustTokenPrivileges /
 // InitiateShutdownW (SeShutdownPrivilege handling in shutdownClient()).
 #pragma comment(lib, "Advapi32.lib")
@@ -30,6 +33,55 @@
 #ifndef SHUTDOWN_INSTALL_UPDATES
 #define SHUTDOWN_INSTALL_UPDATES 0x00000040
 #endif
+#endif
+
+#ifdef Q_OS_WIN32
+namespace
+{
+    /*
+     * Is this machine set up for the Xbox full screen experience? Two independent markers,
+     * either of which is enough: the handheld device form, and a gaming home app pointing at
+     * the Xbox app. Both are what the community tools write to turn the experience on, so a
+     * desktop that has been converted counts too.
+     *
+     * ⚠️ Either, not both: this gate must never say "no" where the grey screen can happen.
+     * An unnecessary window rebuild is a hitch; a skipped necessary one is an app that looks
+     * broken.
+     *
+     * ⚠️ And it says DEVICE, not SESSION, which is what the data allows and not a shortcut.
+     * Measured 01/09/2026 across four cases: an Ally in the Xbox experience and an ordinary
+     * desktop are indistinguishable from inside the process — explorer.exe is the shell in
+     * both, and GetShellWindow, the taskbar, Progman and the Winlogon shell value all read
+     * the same. The one signal that moved with the shell was Progman's visibility, and only
+     * when the device had BOOTED into the experience; entering it from the desktop looked
+     * exactly like a desktop — and that is the case where the grey screen was observed. A
+     * session detector would therefore have skipped the fix precisely where it is needed.
+     *
+     * Measured values. Ally: DeviceForm 46 (0x2E), GamingHomeApp set. Desktop PC: neither.
+     */
+    bool detectGamingPostureDevice()
+    {
+        const QSettings oem(QStringLiteral("HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\OEM"),
+                            QSettings::NativeFormat);
+        const QString deviceForm = oem.value(QStringLiteral("DeviceForm")).toString();
+
+        const QSettings gaming(QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\GamingConfiguration"),
+                               QSettings::NativeFormat);
+        const QString gamingHomeApp = gaming.value(QStringLiteral("GamingHomeApp")).toString();
+
+        // 0x2E is the handheld device form. Stored as a number, read back as text.
+        const bool handheld = (deviceForm.toInt() == 0x2E);
+        const bool gamingHome = !gamingHomeApp.isEmpty();
+        const bool result = handheld || gamingHome;
+
+        qInfo() << "[gaming posture] DeviceForm:" << deviceForm
+                << " GamingHomeApp:" << (gamingHome ? gamingHomeApp : QStringLiteral("<none>"))
+                << " => window rebuild after a full-screen stream:"
+                << (result ? "ON" : "off");
+
+        return result;
+    }
+}
 #endif
 
 class SystemPropertyQueryThread : public QThread
@@ -67,6 +119,14 @@ private:
 SystemProperties::SystemProperties()
 {
     versionString = QString(VERSION_STR);
+
+#ifdef Q_OS_WIN32
+    // Read once: it describes the machine, and the machine does not change under us.
+    isGamingPostureDevice = detectGamingPostureDevice();
+#else
+    isGamingPostureDevice = false;
+#endif
+
     hasDesktopEnvironment = WMUtils::isRunningDesktopEnvironment();
     isRunningWayland = WMUtils::isRunningWayland();
     isRunningXWayland = isRunningWayland && QGuiApplication::platformName() == "xcb";
@@ -290,7 +350,63 @@ void SystemProperties::refreshDisplays()
         }
     }
 
+    // Hand the pickers what the displays reported (5.5.0). Here rather than at each call
+    // site so there is exactly one moment where "what this machine can do" is decided, and
+    // it is the moment the numbers are read.
+    QList<QSize> nativeSizes;
+    for (const QRect& r : monitorNativeResolutions) {
+        nativeSizes.append(r.size());
+    }
+    VideoOptions::setNativeDisplays(nativeSizes, monitorRefreshRates);
+
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
+}
+
+QVariantMap SystemProperties::videoOptions()
+{
+    /*
+     * Normally the snapshot is already there: startAsyncLoad() takes it during startup.
+     * It is not on the paths where that never runs — a launch straight into a stream, where
+     * runConfigChecks is false — and a picker built then would silently offer the presets
+     * alone, which is precisely the bug this feature exists to end.
+     *
+     * ⚠️ Only when it is empty. refreshDisplays() clears monitorNativeResolutions but
+     * APPENDS to monitorRefreshRates (upstream's asymmetry, untouched here), so calling it
+     * a second time over a populated list would duplicate every rate.
+     */
+    if (VideoOptions::displayCount() == 0) {
+        refreshDisplays();
+    }
+
+    QVariantMap map;
+
+    QVariantList frameRates;
+    for (int fps : VideoOptions::frameRates()) {
+        QVariantMap entry;
+        entry.insert(QStringLiteral("value"), fps);
+        entry.insert(QStringLiteral("label"), VideoOptions::frameRateLabel(fps));
+        // isNative, not native: the latter is a reserved word in some ECMAScript editions
+        // and this map is read from QML.
+        entry.insert(QStringLiteral("isNative"), VideoOptions::isNativeFrameRate(fps));
+        frameRates.append(entry);
+    }
+
+    QVariantList resolutions;
+    for (const QSize& size : VideoOptions::resolutions()) {
+        QVariantMap entry;
+        entry.insert(QStringLiteral("width"), size.width());
+        entry.insert(QStringLiteral("height"), size.height());
+        entry.insert(QStringLiteral("label"), VideoOptions::resolutionLabel(size));
+        entry.insert(QStringLiteral("isNative"), VideoOptions::isNativeResolution(size));
+        resolutions.append(entry);
+    }
+
+    map.insert(QStringLiteral("fps"), frameRates);
+    map.insert(QStringLiteral("res"), resolutions);
+    map.insert(QStringLiteral("fpsHint"), VideoOptions::nativeRefreshHint());
+    map.insert(QStringLiteral("resHint"), VideoOptions::nativeResolutionHint());
+    map.insert(QStringLiteral("displays"), VideoOptions::displayCount());
+    return map;
 }
 
 void SystemProperties::restartApplication()

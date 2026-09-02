@@ -41,7 +41,8 @@ Everything below is in the current release, whichever version first introduced i
 **🎬 In-stream**
 - **Performance overlay, built line by line** — eleven lines to choose from, switched on and off *on the overlay itself* in Settings, plus corner, text colour, font size and transparency. Minimal / Default / Full remain as starting points
 - **Stream Settings panel** — change resolution, frame rate, bitrate, HDR and frame pacing **while streaming**, applied with a brief reconnect and host-agnostic. It takes the corner the performance overlay is not using
-- **Custom resolutions** — any width and height, not just the presets, from Settings or the in-stream panel
+- **Custom resolutions and frame rates** — any width and height, and any rate, not just the presets, from Settings or the in-stream panel
+- **Your display's own values are offered too** *(5.5.0+)* — the resolution and refresh rate this machine reports appear in the pickers, so a 165 Hz or 16:10 screen needs nothing typed in. Marked with a dot in *Settings* and with the words *this display* in the in-stream panel, which offers the same list
 - **Frame pacing** — Off or On, evening frames out with the same software pacer Moonlight uses
 
 **⚙️ Settings and profiles**
@@ -75,6 +76,18 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Remote Windows Update** *(7.3.0+)* — scan, classify and install updates on the host, rebooting only if required, with a backgroundable progress view. Updates can also be installed before a shutdown
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
+
+## ✨ What's New in 5.5.0 — Your Display
+
+The resolution and frame rate pickers offer what your own screen can actually do, and a frame rate outside the presets can be typed in. Client-side, works with any host.
+
+- **The frame rates your display can run.** A 165 Hz screen is offered 165, beside the usual 30 / 60 / 90 / 120, and a small dot marks the values that came from your display rather than from the list. Nothing changes on a 60 Hz screen — the row comes out exactly as before
+- **A Custom pill beside the frame rate**, the one the resolution row has always had, for a rate no display reports or a deliberate cap. It is in the host profile and per-game panels too, so a rate you set globally can be overridden anywhere
+- **Your display's own resolution is offered as well** — a 16:10 or ultrawide panel no longer has to be entered by hand
+- **Resolution and Frame rate are two rows** instead of one, each showing what was found on this display underneath its name. Both custom-value windows say the same thing, so there is a number to aim at before typing one
+- **The in-stream panel offers the same list.** *Stream Settings* kept its own copy of the presets, so a resolution or frame rate you could pick in *Settings* was not necessarily there mid-session. It reads the same values now, your display's own included, and says *this display* on the row carrying them
+- **A frame rate outside the presets stays put.** Until 5.4.0 such a value could only arrive from the settings store shared with Moonlight; the in-stream *Stream Settings* panel did not know what to do with one and quietly fell back to 120, which it then wrote back the next time anything was applied. Reported in [issue #13](https://github.com/FoggyBytes/StreamLight/issues/13)
+- ⚠️ **Match refresh rate has been removed**, one release after it arrived. Put to the test against the tools it was meant to replace, on the hardware it was meant to help, it lost: taking a 120 Hz panel down to 60 brought occasional stutters, slightly worse control latency and clearly worse rendering times, where leaving the panel high and presenting at half rate did not. If your screen runs faster than your stream, halving the refresh at the driver level — NVIDIA Profile Inspector, or Special-K elsewhere — remains the way to do it. It was off by default, and it is gone from *Settings* and from host profiles
 
 ## ✨ What's New in 5.4.0 — Own House
 

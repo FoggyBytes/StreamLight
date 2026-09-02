@@ -191,6 +191,7 @@ SOURCES += \
     settings/inputhints.cpp \
     settings/streamingpreferences.cpp \
     settings/appsettings.cpp \
+    settings/videooptions.cpp \
     settings/shortcutmanager.cpp \
     streaming/input/abstouch.cpp \
     streaming/input/gamepad.cpp \
@@ -199,7 +200,6 @@ SOURCES += \
     streaming/input/mouse.cpp \
     streaming/input/reltouch.cpp \
     streaming/session.cpp \
-    streaming/refreshratematch.cpp \
     streaming/audio/audio.cpp \
     streaming/audio/renderers/sdlaud.cpp \
     gui/computermodel.cpp \
@@ -253,10 +253,10 @@ HEADERS += \
     settings/inputhints.h \
     settings/streamingpreferences.h \
     settings/appsettings.h \
+    settings/videooptions.h \
     settings/shortcutmanager.h \
     streaming/input/input.h \
     streaming/session.h \
-    streaming/refreshratematch.h \
     streaming/audio/renderers/renderer.h \
     streaming/audio/renderers/sdl.h \
     gui/computermodel.h \
@@ -582,3 +582,9 @@ macx {
 
 VERSION = "$$cat(version.txt)"
 DEFINES += VERSION_STR=\\\"$$cat(version.txt)\\\"
+
+# ⚠️ VERSION_STR arrives as a -D, which jom cannot see change: after bumping
+# version.txt, delete release\main.obj, release\systemproperties.obj and
+# release\autoupdatechecker.obj (or clean-build), or the app keeps printing the
+# old number out of stale objects. The exe's FileVersion updates either way, so
+# it is not a valid check — read the string out of systemproperties.obj instead.

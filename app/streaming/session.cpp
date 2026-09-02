@@ -1,7 +1,6 @@
 #include "session.h"
 #include "settings/streamingpreferences.h"
 #include "streaming/streamutils.h"
-#include "streaming/refreshratematch.h"
 #include "backend/nvhttp.h"
 #include "backend/richpresencemanager.h"
 
@@ -48,12 +47,12 @@
 #include <QQuickOpenGLUtils>
 #endif
 
-// ⚠️ A Windows-only restoreDesktopDisplayModeIfChanged() lived here, with the
-// <SDL_syswm.h> include it needed. It went in 5.2.0 along with "Refresh rate
-// switching", and came back in 5.2.1 with "Match refresh rate" — but in
-// streaming/refreshratematch.cpp, not here. That is the point of the rewrite:
-// the whole feature sits beside the engine instead of inside it, and this file
-// carries three call lines and nothing else.
+// ⚠️ Display mode selection here is upstream Moonlight's, and nothing of ours sits on
+// top of it any more. A Windows-only restoreDesktopDisplayModeIfChanged() lived here
+// until 5.2.0; "Match refresh rate" then put the same idea back in 5.2.1 as a post-pass
+// at the tail of this function, and 5.5.0 removed it — measured as worse than what it
+// replaced, by the user it was built for, on his own hardware. Do not put it back
+// without a measurement that says otherwise.
 
 #define CONN_TEST_SERVER "qt.conntest.moonlight-stream.org"
 
@@ -1689,27 +1688,6 @@ void Session::updateOptimalWindowDisplayMode()
                                       "and never in borderless or windowed");
 
     SDL_SetWindowDisplayMode(m_Window, &bestMode);
-
-    // ⚠️ Here, at the tail of the function, and NOT at the call sites: there are three
-    // of them — the window setup and the two paths that fire when the window lands on
-    // another display mid-session — and a post-pass that only ran on the first would
-    // quietly stop matching the moment the user dragged the stream to another monitor.
-    // Everything above this line is upstream's, untouched.
-    //
-    // Never for an unlock session: that one exists to put a PIN into a logon screen and
-    // is over in seconds, so matching it would only bounce the panel down and back up
-    // before the real session arrives and does it again.
-    //
-    // And only in exclusive fullscreen, which is the only place a display mode recorded
-    // on the window ever reaches the panel. Borderless and windowed sessions keep the
-    // desktop refresh rate no matter what is stored here — the Settings row says as much
-    // — so the match stays quiet there rather than writing a mode and a log line that
-    // nothing will act on.
-    const bool matchRefresh = m_Preferences->matchRefreshRate
-                              && !m_UnlockMode
-                              && m_IsFullScreen
-                              && m_FullScreenFlag == SDL_WINDOW_FULLSCREEN;
-    RefreshRateMatch::apply(m_Window, m_StreamConfig.fps, matchRefresh);
 }
 
 void Session::toggleFullscreen()
@@ -1806,11 +1784,26 @@ void Session::revealWindowNow()
     }
     m_Curtain.finish();
 
-    // Showing it applies the full-screen mode recorded at creation time, which resizes the
-    // window; the resulting SDL_WINDOWEVENT_SIZE_CHANGED is handled by the renderer as a
-    // swapchain resize, not a recreation, so the picture already flowing stays flowing.
-    SDL_ShowWindow(m_Window);
-    SDL_RaiseWindow(m_Window);
+    /*
+     * ⚠️ Only for a window that was actually held back. On the default path the window was
+     * created visible and at its final size, so there is nothing here to show and nothing to
+     * resize — and showing and raising it anyway meant grabbing focus at the first decoded
+     * frame, which upstream never does on that path.
+     *
+     * On the path that does hold it back, showing it is what applies the full-screen mode
+     * recorded at creation time, which resizes the window; the resulting
+     * SDL_WINDOWEVENT_SIZE_CHANGED is handled by the renderer as a swapchain resize, not a
+     * recreation, so the picture already flowing stays flowing.
+     *
+     * ⚠️ The rest of this function is NOT conditional, and must not become so: it is also
+     * what tells the GUI the stream is up. streamWindowRevealed() is what makes StreamSegue
+     * pop and what calls window.hideForStream() — so an early return here would leave the
+     * launch screen and the Qt window standing behind the stream on every launch.
+     */
+    if (m_UnlockMode || waitsForGame()) {
+        SDL_ShowWindow(m_Window);
+        SDL_RaiseWindow(m_Window);
+    }
 
     // Reported after the fact, not before: whether the window came up full screen is the
     // one thing about this that can silently be wrong, and "the mode was applied on show"
@@ -2365,12 +2358,39 @@ void Session::exec()
 
     // We always want a resizable window with High DPI enabled.
     //
-    // It is born hidden: until the host says the game is on screen there is nothing here
-    // worth showing — the stream carries a desktop still reconfiguring itself — and the
-    // launch curtain in QML is already saying what is happening. Staying hidden means that
-    // curtain is the only one, so there is no second rendition of the same screen to keep
-    // in step with it across resolutions, DPI settings and scaling factors.
-    Uint32 defaultWindowFlags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN;
+    // It is born hidden ONLY when something is actually going to hold it back: until the host
+    // says the game is on screen there is nothing here worth showing — the stream carries a
+    // desktop still reconfiguring itself — and the launch curtain in QML is already saying
+    // what is happening. Staying hidden means that curtain is the only one, so there is no
+    // second rendition of the same screen to keep in step with it across resolutions, DPI
+    // settings and scaling factors.
+    //
+    // ⚠️ THE CONDITION IS THE POINT, AND IT USED TO BE MISSING. This flag was set on every
+    // launch from 5.0.0 to 5.5.0, including the default path where nothing holds the window
+    // back — the wait is opt-in and off by default. So everyone paid for a feature almost
+    // nobody had switched on, and what they paid is not free:
+    //
+    //   born hidden -> SDL_SetWindowFullscreen only RECORDS the mode (see below)
+    //               -> the decoder is built immediately, on purpose, so frames flow
+    //               -> SDL_ShowWindow at the reveal applies the mode and RESIZES the window
+    //               -> the renderer takes that as a swapchain resize, mid-stream
+    //
+    // A swapchain resized while frames are already being presented is exactly what an
+    // overlay injector hooked into DXGI cannot survive, and StreamLight is the only client
+    // that does it — upstream Moonlight creates this window visible and at its final size.
+    // Reported by @Soladus on issue #11: freezes about a second into every stream, on two
+    // different handhelds, with Special-K injected; no freeze with Special-K removed; no
+    // freeze on the Moonlight nightly with the same injector; and no freeze on our own
+    // 4.5.1, which is the last release built before this flag existed.
+    //
+    // Created visible, the mode is applied at creation instead — before the decoder exists
+    // and before a single frame has been presented — and there is nothing to resize later.
+    const bool holdWindowBack = m_UnlockMode || waitsForGame();
+
+    Uint32 defaultWindowFlags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE;
+    if (holdWindowBack) {
+        defaultWindowFlags |= SDL_WINDOW_HIDDEN;
+    }
 
     // If we're starting in windowed mode and the Moonlight GUI is maximized or
     // minimized, match that with the streaming window.
@@ -2435,7 +2455,10 @@ void Session::exec()
     m_InputHandler->setWindow(m_Window);
 
     // Nothing the user does reaches the host until they can see it, and B ends the wait.
-    m_InputHandler->setStreamWindowHidden(true);
+    // Tied to the same condition as the flag above: a window that was never hidden must not
+    // start with its input suppressed, or the default path would swallow everything until
+    // the first frame lands.
+    m_InputHandler->setStreamWindowHidden(holdWindowBack);
 
     // Make up for the arrival events SDL never sent, now that the connection is up and the
     // host can be told what kind of controller it is. A no-op on the ordinary path where SDL
@@ -2476,10 +2499,14 @@ void Session::exec()
 
     // Enter full screen if requested.
     //
-    // On a hidden window SDL only records the flag — the mode set and the resize happen when
-    // the window is shown. That is deliberate: doing it now would light up the display while
-    // the curtain is still up, and doing it later is the same work at the moment it becomes
-    // visible anyway.
+    // On a HIDDEN window SDL only records the flag — the mode set and the resize happen when
+    // the window is shown. That is deliberate on the path that holds the window back: doing
+    // it now would light up the display while the curtain is still up.
+    //
+    // ⚠️ On the default path the window is visible by now, so this applies the mode HERE —
+    // before the decoder is built a few lines down and before any frame has been presented.
+    // That is the whole point of the condition above: the resize happens on an idle
+    // swapchain instead of one mid-stream.
     if (m_IsFullScreen) {
         SDL_SetWindowFullscreen(m_Window, m_FullScreenFlag);
     }
@@ -2978,10 +3005,6 @@ DispatchDeferredCleanup:
 #endif
     }
 
-    // Note which display we are on while the window still exists. Records nothing
-    // unless the match actually wrote a mode.
-    RefreshRateMatch::rememberDisplay(m_Window);
-
     // This must be called after the decoder is deleted, because
     // the renderer may want to interact with the window
     SDL_DestroyWindow(m_Window);
@@ -2991,16 +3014,6 @@ DispatchDeferredCleanup:
     }
 
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
-
-    // Put the panel back if a fullscreen mode change of ours outlived the window.
-    //
-    // ⚠️ Skipped when another session is about to reuse this display: a live settings
-    // change reconnects, and bouncing the mode back and forth between the two halves of
-    // one reconnect would be worse than leaving it where it is. The second half sets the
-    // mode again on its way in, and restores on its own way out.
-    if (!m_HasPendingReconfigure) {
-        RefreshRateMatch::restoreIfChanged();
-    }
 
     // Terminate Hue Sync if it was launched for this session.
     if (m_HueSyncManager) {

@@ -2,19 +2,17 @@
 #include "streaming/session.h"
 #include "streaming/video/overlaymanager.h"
 #include "settings/appsettings.h"
+#include "settings/videooptions.h"
 #include "backend/nvcomputer.h"
 #include "backend/nvapp.h"
 
 #include <QByteArray>
 
-static const struct { int w, h; } s_ResPresets[] = {
-    { 1280, 720 }, { 1920, 1080 }, { 2560, 1440 }, { 3840, 2160 }, { 0, 0 } // {0,0} = Custom
-};
-static const int s_ResCount = (int)(sizeof(s_ResPresets) / sizeof(s_ResPresets[0]));
-static const int s_ResCustomIdx = s_ResCount - 1;
+#include <algorithm>
 
-static const int s_FpsPresets[] = { 30, 60, 90, 120 };
-static const int s_FpsCount = (int)(sizeof(s_FpsPresets) / sizeof(s_FpsPresets[0]));
+// The resolution and frame-rate tables live in settings/videooptions.h since 5.5.0 and are
+// read in open(). The Custom entry is not one of them: it is always the slot one past the
+// last real resolution — see resCustomIndex().
 
 // Labels match Settings → Video. Two values since 5.2.0 removed the hardware cadence.
 static const char* const s_PacingLabels[] = { "Off", "On" };
@@ -33,24 +31,24 @@ StreamSettingsOverlay::StreamSettingsOverlay(StreamingPreferences* prefs)
 
 bool StreamSettingsOverlay::isCustom() const
 {
-    return m_ResIndex == s_ResCustomIdx;
+    return m_ResIndex == resCustomIndex();
 }
 
 int StreamSettingsOverlay::effectiveWidth() const
 {
-    return isCustom() ? m_CustomW : s_ResPresets[m_ResIndex].w;
+    return isCustom() ? m_CustomW : m_ResValues.value(m_ResIndex).width();
 }
 
 int StreamSettingsOverlay::effectiveHeight() const
 {
-    return isCustom() ? m_CustomH : s_ResPresets[m_ResIndex].h;
+    return isCustom() ? m_CustomH : m_ResValues.value(m_ResIndex).height();
 }
 
 int StreamSettingsOverlay::changeCount() const
 {
     int n = 0;
     if (effectiveWidth() != m_BaseW || effectiveHeight() != m_BaseH) n++;
-    if (s_FpsPresets[m_FpsIndex] != m_BaseFps) n++;
+    if (currentFps() != m_BaseFps) n++;
     if (m_BitrateKbps != m_BaseKbps) n++;
     if (m_Hdr != m_BaseHdr) n++;
     if (static_cast<int>(s_PacingValues[m_PacingIndex]) != m_BasePacing) n++;
@@ -79,21 +77,39 @@ void StreamSettingsOverlay::rebuildRows()
 
 void StreamSettingsOverlay::open()
 {
+    // What this panel offers, read here so it matches what Settings offered before the
+    // session started — including this machine's own display values.
+    m_ResValues = VideoOptions::resolutions();
+    m_FpsValues = VideoOptions::frameRates();
+
     // Seed the model from the current effective preferences.
     int idx = -1;
-    for (int i = 0; i < s_ResCustomIdx; i++) {
-        if (s_ResPresets[i].w == m_Prefs->width && s_ResPresets[i].h == m_Prefs->height) {
+    for (int i = 0; i < m_ResValues.count(); i++) {
+        if (m_ResValues[i].width() == m_Prefs->width && m_ResValues[i].height() == m_Prefs->height) {
             idx = i;
             break;
         }
     }
     m_CustomW = m_Prefs->width;
     m_CustomH = m_Prefs->height;
-    m_ResIndex = (idx >= 0) ? idx : s_ResCustomIdx;
+    m_ResIndex = (idx >= 0) ? idx : resCustomIndex();
 
-    m_FpsIndex = s_FpsCount - 1;
-    for (int i = 0; i < s_FpsCount; i++) {
-        if (s_FpsPresets[i] == m_Prefs->fps) { m_FpsIndex = i; break; }
+    /*
+     * ⚠️ A frame rate that is not on the list used to fall back to the LAST entry, and the
+     * baseline was then read from that fallback — so opening the panel at 165 fps showed
+     * 120, called it "no changes", and wrote 120 into the profile the moment anything else
+     * on the panel was applied. A setting the user never touched, silently downgraded.
+     *
+     * It could only happen to a value inherited from the store we shared with Moonlight,
+     * which is why it went unseen; 5.5.0 hands out such values deliberately, so the fallback
+     * had to go. The rate is now appended to the list instead: unknown, but never lost, and
+     * the row shows what is actually running.
+     */
+    m_FpsIndex = m_FpsValues.indexOf(m_Prefs->fps);
+    if (m_FpsIndex < 0) {
+        m_FpsValues.append(m_Prefs->fps);
+        std::sort(m_FpsValues.begin(), m_FpsValues.end());
+        m_FpsIndex = m_FpsValues.indexOf(m_Prefs->fps);
     }
 
     m_BitrateKbps = m_Prefs->bitrateKbps;
@@ -107,7 +123,7 @@ void StreamSettingsOverlay::open()
     // Baseline = the values we'd apply right now (so opening shows "no changes").
     m_BaseW = effectiveWidth();
     m_BaseH = effectiveHeight();
-    m_BaseFps = s_FpsPresets[m_FpsIndex];
+    m_BaseFps = currentFps();
     m_BaseKbps = m_BitrateKbps;
     m_BaseHdr = m_Hdr;
     m_BasePacing = static_cast<int>(s_PacingValues[m_PacingIndex]);
@@ -191,7 +207,7 @@ void StreamSettingsOverlay::changeFocused(int delta)
 
     switch (row) {
     case ROW_RES:
-        m_ResIndex = (m_ResIndex + delta + s_ResCount) % s_ResCount;
+        m_ResIndex = (m_ResIndex + delta + resOptionCount()) % resOptionCount();
         rebuildRows();
         break;
     case ROW_CUSTOM_W:
@@ -201,7 +217,7 @@ void StreamSettingsOverlay::changeFocused(int delta)
         m_CustomH = clampEven(m_CustomH + delta * kCustomStep);
         break;
     case ROW_FPS:
-        m_FpsIndex = (m_FpsIndex + delta + s_FpsCount) % s_FpsCount;
+        m_FpsIndex = (m_FpsIndex + delta + m_FpsValues.count()) % m_FpsValues.count();
         break;
     case ROW_BITRATE: {
         int maxKbps = m_Prefs->unlockBitrate ? 500000 : 150000;
@@ -238,7 +254,7 @@ void StreamSettingsOverlay::apply()
         // forces FP_OFF), and the locked row already displays "Off", so nothing
         // here is misreported.
         Session::get()->requestReconfigure(effectiveWidth(), effectiveHeight(),
-                                           s_FpsPresets[m_FpsIndex], m_BitrateKbps,
+                                           currentFps(), m_BitrateKbps,
                                            m_Hdr, static_cast<int>(s_PacingValues[m_PacingIndex]));
     }
     close();
@@ -303,7 +319,7 @@ void StreamSettingsOverlay::writeCurrentTo(SaveTarget target, int hostSlot)
 {
     const int w = effectiveWidth();
     const int h = effectiveHeight();
-    const int fps = s_FpsPresets[m_FpsIndex];
+    const int fps = currentFps();
     const int kbps = m_BitrateKbps;
     const int pacing = static_cast<int>(s_PacingValues[m_PacingIndex]);
     const bool hdr = m_Hdr;
@@ -455,9 +471,14 @@ void StreamSettingsOverlay::render()
         case ROW_RES: {
             QString v = isCustom()
                 ? QStringLiteral("%1x%2").arg(m_CustomW).arg(m_CustomH)
-                : QStringLiteral("%1x%2").arg(s_ResPresets[m_ResIndex].w).arg(s_ResPresets[m_ResIndex].h);
-            addRow(ROW_RES, QStringLiteral("Resolution"), v,
-                   isCustom() ? QStringLiteral("custom") : QString());
+                : QStringLiteral("%1x%2").arg(m_ResValues[m_ResIndex].width()).arg(m_ResValues[m_ResIndex].height());
+            // The hint carries what the Settings strip says with its dot: this value is
+            // the client display's own. Same information in both places, because the
+            // lists are now the same list.
+            QString hint = isCustom() ? QStringLiteral("custom")
+                         : VideoOptions::isNativeResolution(m_ResValues[m_ResIndex])
+                           ? QStringLiteral("this display") : QString();
+            addRow(ROW_RES, QStringLiteral("Resolution"), v, hint);
             break;
         }
         case ROW_CUSTOM_W:
@@ -471,7 +492,9 @@ void StreamSettingsOverlay::render()
             break;
         case ROW_FPS:
             addRow(ROW_FPS, QStringLiteral("Frame rate"),
-                   QStringLiteral("%1 fps").arg(s_FpsPresets[m_FpsIndex]));
+                   QStringLiteral("%1 fps").arg(currentFps()),
+                   VideoOptions::isNativeFrameRate(currentFps())
+                       ? QStringLiteral("this display") : QString());
             break;
         case ROW_BITRATE:
             addRow(ROW_BITRATE, QStringLiteral("Bitrate"),

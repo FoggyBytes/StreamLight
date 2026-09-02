@@ -4,6 +4,36 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-----------------------------------------
+Version 5.5.0 - Your Display (01/09/2026)
+-----------------------------------------
+
+No StreamTweak update required — everything in 5.5.0 is client-side and works with any host. The resolution and frame rate pickers now offer what your own screen can do, and a frame rate outside the presets can be typed in.
+
+✨ NEW FEATURES:
+• The frame rates your display can actually run — a 165 Hz screen is offered 165, next to the usual 30/60/90/120, and a small dot marks the values that came from your display rather than from the list
+• A Custom pill beside the frame rate, the same one the resolution row has always had — for a rate no display reports, or a deliberate cap. It is there in the host profile and per-game panels too, so a rate you set globally can be overridden anywhere
+• Your display's own resolution is offered as well — a 16:10 or ultrawide panel no longer has to be entered by hand
+• The in-stream Stream Settings panel offers the same values as Settings, your display's own included, so changing resolution or frame rate mid-session no longer means a shorter list than the one you started from
+
+🎨 UI:
+• Resolution and Frame rate are two rows instead of one, each showing what was found on this display underneath its name
+• The custom resolution and custom frame rate windows both say what this display reports, so there is a number to aim at before typing one
+• In the in-stream panel the resolution and frame rate rows read "this display" when the value on them is your screen's own, the same thing the dot says in Settings
+
+🐛 FIXES:
+• A frame rate outside the four presets can be chosen again — until 5.4.0 one could only arrive from the settings store shared with Moonlight, so after that release the row could still display an unusual value but never produce one
+• The custom resolution window is drawn at the same scale as everything else — it was missed when the interface moved to a single scale in 5.3.0, and stayed small on large screens
+• A frame rate outside the presets is no longer lost by the in-stream Stream Settings panel — it had nowhere to put one, showed 120 instead, and wrote that back to your profile as soon as anything else on the panel was applied
+• Leaving a full-screen stream is one step shorter on an ordinary PC — the app used to rebuild its own window on the way out, which exists to clear the grey screen the Xbox full screen experience leaves behind on handhelds, and now runs only on devices set up for that shell
+
+⚠️ COMPATIBILITY:
+• Match refresh rate has been removed, one release after it arrived — putting the panel on the stream's own rate measured worse than leaving it high and presenting at half rate: occasional stutters, slightly worse control latency, and clearly worse rendering times. If your screen runs faster than your stream, halving the refresh at the driver level with NVIDIA Profile Inspector or Special-K is still the way to do it. The setting is gone from Settings and from host profiles; nothing else changes, and it was off by default
+
+🙏 THANKS:
+• Thanks to @markmghali (https://github.com/FoggyBytes/StreamLight/issues/13) for reporting that his 165 Hz laptop dropped to 60 after 5.4.0, and to @Soladus for pinning down that the picker had never offered it
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/11) for measuring Match refresh rate against the tools it was meant to replace, on his own hardware, and reporting exactly where it fell short
+
 --------------------------------------
 Version 5.4.0 - Own House (29/08/2026)
 --------------------------------------

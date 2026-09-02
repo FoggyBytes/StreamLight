@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QList>
+#include <QSize>
 #include <QString>
 #include <QVector>
 #include "settings/streamingpreferences.h"
@@ -68,10 +70,24 @@ private:
     bool m_Active = false;
 
     // model
-    int m_ResIndex = 0;     // index into s_ResPresets (last entry = Custom)
+    /*
+     * The values this panel offers, filled at open() from VideoOptions (5.5.0): our presets
+     * plus whatever the client's displays report, exactly the lists Settings and the two
+     * override panels show. They were two static tables here — a fourth copy of the same
+     * four numbers — and that is what made a 165 Hz setting unreachable in-stream.
+     */
+    QList<QSize> m_ResValues;
+    QList<int>   m_FpsValues;
+
+    // Index of the Custom entry: it always sits one past the real resolutions.
+    int resCustomIndex() const { return m_ResValues.count(); }
+    int resOptionCount() const { return m_ResValues.count() + 1; }
+    int currentFps() const { return m_FpsValues.value(m_FpsIndex, 60); }
+
+    int m_ResIndex = 0;     // index into m_ResValues (one past the end = Custom)
     int m_CustomW = 1920;
     int m_CustomH = 1080;
-    int m_FpsIndex = 0;     // index into s_FpsPresets
+    int m_FpsIndex = 0;     // index into m_FpsValues
     int m_BitrateKbps = 20000;
     bool m_Hdr = false;
     int m_PacingIndex = 0;  // index into s_PacingValues (FP_OFF/AUTO/MATCHED/MULTIPLE)

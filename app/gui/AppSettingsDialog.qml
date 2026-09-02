@@ -5,6 +5,7 @@ import QtQuick.Layouts 1.15
 import QtQuick.Window 2.2
 
 import StreamingPreferences 1.0
+import SystemProperties 1.0
 
 // Per-game settings overrides (StreamLight 4.0.0). Each control has a "Global"
 // option meaning "inherit the global setting". SegmentedSelector rows use index 0
@@ -101,12 +102,35 @@ Popup {
         return []
     }
 
+    /*
+     * The resolution and frame-rate values on offer (5.5.0): our presets plus whatever this
+     * machine's displays report, built in C++ so this panel, the host-profile panel and the
+     * Settings screen cannot drift apart — see settings/videooptions.h.
+     *
+     * ⚠️ The tables below stay index-parallel, and index 0 stays the inherit placeholder.
+     * Every lookup in this file is by index, so the offset has to be applied once, here,
+     * and never again.
+     */
+    readonly property var _video: SystemProperties.videoOptions()
+
+    // Native entries, shifted by the inherit pill sitting at index 0.
+    function _nativeIndices(entries) {
+        var out = []
+        for (var i = 0; i < entries.length; i++)
+            if (entries[i].isNative) out.push(i + 1)
+        return out
+    }
+
     // value tables (index 0 == inherit placeholder, labelled by _inheritText)
-    readonly property var _resLabels: [_inheritText("resolution"), "720p", "1080p", "1440p", "4K"]
-    readonly property var _resW:      [0, 1280, 1920, 2560, 3840]
-    readonly property var _resH:      [0, 720, 1080, 1440, 2160]
-    readonly property var _fpsLabels: [_inheritText("fps"), "30", "60", "90", "120"]
-    readonly property var _fpsVals:   [0, 30, 60, 90, 120]
+    readonly property var _resLabels: [_inheritText("resolution")].concat(
+        _video.res.map(function(e) { return e.label }))
+    readonly property var _resW:      [0].concat(_video.res.map(function(e) { return e.width }))
+    readonly property var _resH:      [0].concat(_video.res.map(function(e) { return e.height }))
+    readonly property var _resNative: _nativeIndices(_video.res)
+    readonly property var _fpsLabels: [_inheritText("fps")].concat(
+        _video.fps.map(function(e) { return e.label }))
+    readonly property var _fpsVals:   [0].concat(_video.fps.map(function(e) { return e.value }))
+    readonly property var _fpsNative: _nativeIndices(_video.fps)
     readonly property var _hdrLabels: [_inheritText("hdr"), "On", "Off"]
     // ⚠️ The wait-for-game and Hue rows used to borrow _hdrLabels, since all three are
     // On/Off. They cannot any more: the tables now carry a value, and HDR's is not the
@@ -125,6 +149,8 @@ Popup {
     // Custom resolution override (0 == none / inheriting or using a preset).
     property int _customResW: 0
     property int _customResH: 0
+    // Custom frame-rate override, same tri-state (5.5.0).
+    property int _customFps: 0
 
     modal: true
     dim: true
@@ -177,8 +203,21 @@ Popup {
         // Resolution is tri-state: inherit (0) / preset (>0) / custom (-1 + _customRes*).
         _customResW = 0; _customResH = 0
         if (ov.width !== undefined) {
-            var rpi = _resW.indexOf(ov.width)
-            if (rpi > 0 && _resH[rpi] === ov.height) {
+            /*
+             * ⚠️ Matched on the pair, not by width. This was `_resW.indexOf(ov.width)`
+             * checked against the height afterwards, which was safe only while the four
+             * presets had four different widths. A native 2560x1600 shares its width with
+             * the 1440p preset, so indexOf would answer 1440p, the height check would fail,
+             * and a perfectly listed resolution would come back as "Custom".
+             */
+            var rpi = -1
+            for (var ri = 1; ri < _resW.length; ri++) {
+                if (_resW[ri] === ov.width && _resH[ri] === ov.height) {
+                    rpi = ri
+                    break
+                }
+            }
+            if (rpi > 0) {
                 resSel.currentIndex = rpi
             } else {
                 resSel.currentIndex = -1
@@ -188,7 +227,20 @@ Popup {
         } else {
             resSel.currentIndex = 0
         }
-        fpsSel.currentIndex   = (ov.fps !== undefined) ? _idxByVal(_fpsVals, ov.fps) : 0
+        // Frame rate is tri-state exactly like resolution: inherit (0) / listed (>0) /
+        // custom (-1 + _customFps).
+        _customFps = 0
+        if (ov.fps !== undefined) {
+            var fpi = _fpsVals.indexOf(ov.fps)
+            if (fpi > 0) {
+                fpsSel.currentIndex = fpi
+            } else {
+                fpsSel.currentIndex = -1
+                _customFps = ov.fps
+            }
+        } else {
+            fpsSel.currentIndex = 0
+        }
         hdrSel.currentIndex   = (ov.hdr !== undefined) ? (ov.hdr ? 1 : 2) : 0
         codecSel.currentIndex = (ov.codec !== undefined) ? _idxByVal(_codecVals, ov.codec) : 0
         fpSel.currentIndex    = (ov.framepacing !== undefined) ? _idxByVal(_fpVals, ov.framepacing) : 0
@@ -206,7 +258,8 @@ Popup {
         var m = {}
         if (_customResW > 0)              { m.width = _customResW; m.height = _customResH }
         else if (resSel.currentIndex > 0) { m.width = _resW[resSel.currentIndex]; m.height = _resH[resSel.currentIndex] }
-        if (fpsSel.currentIndex > 0)   m.fps = _fpsVals[fpsSel.currentIndex]
+        if (_customFps > 0)               m.fps = _customFps
+        else if (fpsSel.currentIndex > 0) m.fps = _fpsVals[fpsSel.currentIndex]
         if (_bitrateOverridden && bitrateSlider.value >= bitrateSlider.from)
                                        m.bitrate = Math.round(bitrateSlider.value)
         if (hdrSel.currentIndex > 0)   m.hdr = (hdrSel.currentIndex === 1)
@@ -390,6 +443,7 @@ Popup {
                         spacing: dlg._px(12)
                         SegmentedSelector {
                             id: resSel; labels: dlg._resLabels
+                            nativeIndices: dlg._resNative
                             hiddenIndices: dlg._dupIndices(dlg._resLabels, "resolution", currentIndex)
                             KeyNavigation.up: doneBtn
                             KeyNavigation.down: resCustomBtn
@@ -416,12 +470,32 @@ Popup {
                 }
                 SettingRow {
                     label: qsTr("Frame rate")
-                    SegmentedSelector {
-                        id: fpsSel; labels: dlg._fpsLabels
-                        hiddenIndices: dlg._dupIndices(dlg._fpsLabels, "fps", currentIndex)
-                        KeyNavigation.up: resCustomBtn
-                        KeyNavigation.down: bitrateGlobalBtn
-                        onActivated: dlg.saveToModel()
+                    Row {
+                        spacing: dlg._px(12)
+                        SegmentedSelector {
+                            id: fpsSel; labels: dlg._fpsLabels
+                            nativeIndices: dlg._fpsNative
+                            hiddenIndices: dlg._dupIndices(dlg._fpsLabels, "fps", currentIndex)
+                            KeyNavigation.up: resCustomBtn
+                            KeyNavigation.down: fpsCustomBtn
+                            KeyNavigation.right: fpsCustomBtn
+                            // Selecting inherit or a listed value clears any custom override.
+                            onActivated: { dlg._customFps = 0; dlg.saveToModel() }
+                        }
+                        PillButton {
+                            id: fpsCustomBtn
+                            selected: dlg._customFps > 0
+                            text: selected ? String(dlg._customFps) : qsTr("Custom")
+                            onClicked: {
+                                customFpsDialog.initFps = dlg._customFps > 0 ? dlg._customFps
+                                    : (fpsSel.currentIndex > 0 ? dlg._fpsVals[fpsSel.currentIndex]
+                                                               : StreamingPreferences.fps)
+                                customFpsDialog.open()
+                            }
+                            KeyNavigation.up: fpsSel
+                            KeyNavigation.down: bitrateGlobalBtn
+                            KeyNavigation.left: fpsSel
+                        }
                     }
                 }
 
@@ -686,6 +760,16 @@ Popup {
             dlg._customResW = w
             dlg._customResH = h
             resSel.currentIndex = -1
+            dlg.saveToModel()
+        }
+    }
+
+    // Manual frame-rate entry for this game's override (5.5.0).
+    CustomFrameRateDialog {
+        id: customFpsDialog
+        onAccepted: function(fps) {
+            dlg._customFps = fps
+            fpsSel.currentIndex = -1
             dlg.saveToModel()
         }
     }

@@ -78,11 +78,55 @@ ApplicationWindow {
     // all change nothing — every one of them keeps the same HWND. Rebuilding the native window
     // is what fixes it; measured on an Ally, 03/08/2026. Full-screen path only.
     //
-    // NB: showNormal() + showFullScreen() below is redundant in theory, since
-    // recreateNativeWindow() re-applies the visibility itself — but this is the sequence that
-    // was verified on hardware, so dropping it needs another runtime test, not a reading.
+    // NB: showNormal() + showFullScreen() below was called redundant here, on the grounds
+    // that recreateNativeWindow() re-applied the visibility itself. ⚠️ That call is gone in
+    // this build, so the pair is no longer redundant on that reasoning — it is now the only
+    // thing putting the window back into full screen, and it stays.
+    //
+    // (Measured separately on 29/08: after visible=false → visible=true the window already
+    // reports FullScreen, so the pair may still be redundant for a different reason. Not
+    // acted on — that measurement was taken on a normal desktop, not under the Xbox shell,
+    // which is the only place any of this matters.)
     property int _preStreamVisibility: Window.Windowed
 
+    /*
+     * ⚠️ THE ANSWER, 01/09/2026. The diagnostic build that stood here tried curing the grey
+     * screen with graphics persistence alone — releasing the window's graphics resources,
+     * swap chain included, without touching the HWND — on the theory that the 5.0.0 note
+     * ("only a new HWND gets a new swap chain and a fresh binding") had fused two things
+     * that nobody had separated.
+     *
+     * Tested on the Ally, under the Xbox full screen experience, from the installed build:
+     * the grey screen came back, identical. And the mechanism itself was not at fault — it
+     * had been measured working beforehand (sceneGraphInvalidated 5/5 on hide with
+     * persistence off, 0/5 with Qt's default). So the resources are genuinely released and
+     * rebuilt, and it changes nothing.
+     *
+     * That separates the two halves and names the guilty one: what does not survive the
+     * shell taking exclusive full screen is bound to the HWND, not to the graphics
+     * resources. The demolition stays.
+     *
+     * setGraphicsPersistence() was written and measured for that experiment and removed in
+     * the same release: it had no callers left, and a Qt call kept "in case" is a call
+     * nobody can date. It is in the 5.5.0 history if the idea is ever worth reopening.
+     *
+     * And it no longer runs everywhere. It used to fire on EVERY full-screen exit, including
+     * on ordinary desktops where the grey screen never happens. It is now gated on
+     * isGamingPostureDevice: this machine is set up for the Xbox experience.
+     *
+     * ⚠️ Do NOT read this as a fix for the exit trouble on issue #11 — an earlier version of
+     * this comment did, and it was wrong twice over. That issue reports a freeze at the START
+     * of a stream, and the separate exit symptom @Soladus describes ("the GUI stays in full
+     * screen and doesn't switch to windowed") turned up on a 4.5.1 rebuild, which does not
+     * contain recreateNativeWindow at all — checked against the tag. Whatever the exit
+     * trouble is, this is not the thing causing it.
+     *
+     * ⚠️ That gate is per DEVICE, not per session, because four measured cases showed the two
+     * shells are indistinguishable from inside the process — see the note on the property in
+     * systemproperties.h. So on a handheld the rebuild also runs in desktop mode. That is the
+     * deliberate direction of the error: a hitch where it was not needed, never a grey screen
+     * where it was.
+     */
     function hideForStream() {
         _preStreamVisibility = window.visibility
         window.visible = false
@@ -92,12 +136,16 @@ ApplicationWindow {
         window.visible = true
 
         if (_preStreamVisibility === Window.FullScreen) {
+            // Full-screen path only: this is the only path where the binding is lost.
+            if (SystemProperties.isGamingPostureDevice) {
+                SystemProperties.recreateNativeWindow()
+            }
+
             window.showNormal()
             // Deferred by one event-loop tick on purpose: applied in the same tick, Qt
             // coalesces the two state changes into one.
             Qt.callLater(function() {
                 window.showFullScreen()
-                SystemProperties.recreateNativeWindow()
             })
         }
     }

@@ -40,6 +40,7 @@
         <file>gui/HostProfilesDialog.qml</file>
         <file>gui/PillButton.qml</file>
         <file>gui/CustomResolutionDialog.qml</file>
+        <file>gui/CustomFrameRateDialog.qml</file>
         <file>gui/PadGlyph.qml</file>
         <file>gui/ActionHint.qml</file>
         <file>gui/ProfileShoulder.qml</file>

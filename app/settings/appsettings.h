@@ -37,19 +37,18 @@ struct AppOverride
     // inherit the level below.
     bool hasWaitForGame = false;  bool waitForGame = false; // StreamingPreferences::waitForGameOnScreen
 
-    // Whether to run the panel at the stream's own frame rate in exclusive fullscreen.
-    // Host-profile only, for the same reason as link matching: it describes the
-    // situation the device is in — docked to a 120 Hz TV wants a different answer from
-    // the same handheld in your hands — and never varies by game.
-    bool hasMatchRefreshRate = false; bool matchRefreshRate = false; // StreamingPreferences::matchRefreshRate
-
-    // ⚠️ The two below are dependencies, not features: Match refresh rate only
-    // means anything in exclusive fullscreen, and Frame pacing only means anything
-    // with V-Sync on. Both dependents were already overridable per profile while
-    // these were global-only, so a profile could hold a setting whose condition it
-    // had no way to express — and nothing said so. They are host-profile only, like
-    // the settings that need them: a window mode and a V-Sync choice describe the
-    // device and the situation, never a particular game.
+    // ⚠️ The two below are dependencies, not features: Frame pacing only means anything
+    // with V-Sync on, and a window mode decides whether a session is in exclusive
+    // fullscreen at all. The dependent was already overridable per profile while these
+    // were global-only, so a profile could hold a setting whose condition it had no way
+    // to express — and nothing said so. They are host-profile only, like the settings
+    // that need them: a window mode and a V-Sync choice describe the device and the
+    // situation, never a particular game.
+    //
+    // ⚠️ Display mode arrived here as Match refresh rate's condition, and that setting is
+    // gone as of 5.5.0. It stays because it is a useful override in its own right — but if
+    // it is ever reviewed, this is why it exists and V-Sync is the one with a live
+    // dependent.
     bool hasDisplayMode = false;  int windowMode = 0;       // StreamingPreferences::WindowMode
     bool hasVsync = false;        bool enableVsync = false; // StreamingPreferences::enableVsync
 
@@ -57,7 +56,7 @@ struct AppOverride
     {
         return !(hasResolution || hasFps || hasBitrate || hasHdr ||
                  hasCodec || hasFramePacing || hasAudio || hasHue || hasMatchLink ||
-                 hasWaitForGame || hasMatchRefreshRate || hasDisplayMode || hasVsync);
+                 hasWaitForGame || hasDisplayMode || hasVsync);
     }
 };
 
