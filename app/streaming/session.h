@@ -401,7 +401,8 @@ private:
                        int frameRate, bool enableVsync, bool enableFramePacing,
                        bool testOnly,
                        IVideoDecoder*& chosenDecoder,
-                       int framePacingMode = 0);
+                       int framePacingMode = 0,
+                       bool fractionalVsync = false);
 
     static
     void clStageStarting(int stage);

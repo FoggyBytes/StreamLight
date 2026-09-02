@@ -24,6 +24,7 @@ public:
     virtual void notifyOverlayUpdated(Overlay::OverlayType) override;
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO stateInfo) override;
     virtual int getRendererAttributes() override;
+    virtual bool getPacingMeasurement(PPACING_MEASUREMENT measurement) override;
     virtual int getDecoderCapabilities() override;
     virtual InitFailureReason getInitFailureReason() override;
 
@@ -37,6 +38,8 @@ public:
 private:
     static void lockContext(void* lock_ctx);
     static void unlockContext(void* lock_ctx);
+    void sampleCadence(uint64_t presentStartUs, uint64_t presentEndUs);
+    void flushCadenceWindow(uint64_t nowUs);
 
     bool setupRenderingResources();
     std::vector<DXGI_FORMAT> getVideoTextureSRVFormats();
@@ -94,19 +97,81 @@ private:
     bool m_AllowTearing;
 
     // V-blanks to hold each presented frame (DXGI sync interval). 0 = present
-    // immediately (default). >=2 gives low-FPS streams a hardware-locked cadence
-    // on high-refresh displays when "Smooth low-FPS streams" is enabled.
+    // immediately, which is upstream Moonlight's behaviour and still the default.
+    // 2..4 when the 5.6.0 fractional V-Sync experiment is on and the panel runs at a
+    // whole multiple of the stream's frame rate.
+    int m_SyncInterval;
 
-    // ⚠️ The frame-pacing diagnostic that lived here (issue #9) was removed in 5.2.0.
-    // It sampled DXGI frame statistics on every present and wrote its summary with
-    // SDL_LogInfo, which is a locked, flushed file write - from inside renderFrame(),
-    // which is the span the Pacer measures as "rendering time". So it inflated the very
-    // number it existed to explain, and its cost was worst exactly when the fault was
-    // present, because a window that blocked or slipped logs and a quiet one does not.
-    // A probe whose price rises with the fault biases the comparison it is there to make.
+    // --- Presentation cadence diagnostics (issues #9 and #11) ------------------
+    // Measures what the display pipeline actually did with our presents: how many
+    // V-blanks each frame occupied, how deep the DXGI present queue settled, and how
+    // long Present() blocked. Inert unless the Cadence overlay line is switched on or
+    // STREAMLIGHT_PACING_DIAG=1 is set.
     //
-    // If this is ever needed again, build it OUTSIDE the render thread: publish the
-    // window under the existing lock and let another thread write the line. See §54.
+    // ⚠️ The 5.2.0 removal note said, correctly, that the old version of this wrote its
+    // summary with SDL_LogInfo from inside renderFrame() — a locked, flushed file write
+    // inside the very span the Pacer reports as "rendering time", costing most exactly
+    // when the fault was present. That is fixed here rather than reintroduced: nothing
+    // on this path logs. Each closed window is published under m_CadenceLock and the
+    // line is written by whoever reads it (ffmpeg.cpp, on the decoder thread). What
+    // remains on the render thread is a QPC pair and one GetFrameStatistics() call.
+    struct CadenceDiag {
+        DXGI_FRAME_STATISTICS lastStats;
+        bool haveBaseline;          // lastStats is usable for a delta
+        int consecutiveFailures;
+
+        uint64_t windowStartUs;
+        uint32_t presentCalls;      // Present() calls made in this window
+        uint64_t sumRefreshes;      // V-blanks consumed by completed presents
+        uint64_t sumPresents;       // completed presents those V-blanks belong to
+        // ⚠️ 5.1.x also kept a histogram of V-blanks per frame here. It is not back: min,
+        // max and the slip count answer the question it was built for — "did every frame
+        // get the same number of V-blanks" — and a buffer nobody reads is how the last
+        // version of this file grew fields the log had stopped printing.
+        int minVblanks;
+        int maxVblanks;
+
+        uint64_t waitSumUs;
+        uint64_t waitMinUs;
+        uint64_t waitMaxUs;
+        uint32_t waitOverCount;     // presents blocked for more than half a frame period
+        uint32_t slips;             // frames held for a different count than we asked for
+
+        // Present() calls made since the baseline, against the count DXGI reports
+        // as completed: the difference is how deep the present queue is sitting.
+        uint64_t presentsSubmitted;
+        uint32_t baselinePresentCount;
+
+        int64_t queueSum;
+        uint32_t queueSamples;
+        int queueMin;
+        int queueMax;
+
+        uint32_t disjointCount;
+    };
+
+    // PCI vendor of the adapter we ended up rendering on, captured where the adapter is
+    // chosen because that is the only place it is known. Used to decide whether the
+    // refresh counter can be believed - see initialize().
+    UINT m_AdapterVendorId;
+
+    bool m_CadenceDiagEnabled;
+
+    // False when the adapter's presentation refresh counter disagrees with the panel, in
+    // which case the V-blank figures are omitted while the wait and queue figures - which
+    // do not come from that counter - are still reported.
+    bool m_CadenceRefreshTrusted;
+
+    int m_DisplayHz;
+    CadenceDiag m_Cadence;
+
+    // Published once per window for whoever wants to read it, which is the decoder
+    // thread while renderFrame() writes from the render thread.
+    SDL_SpinLock m_CadenceLock;
+    PACING_MEASUREMENT m_PublishedCadence;
+    bool m_HavePublishedCadence;
+    unsigned long long m_CadenceSequence;
+
     std::array<Microsoft::WRL::ComPtr<ID3D11PixelShader>, PixelShaders::_COUNT> m_VideoPixelShaders;
     Microsoft::WRL::ComPtr<ID3D11Buffer> m_VideoVertexBuffer;
 

@@ -1336,18 +1336,19 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: vsyncSwitch; anchors.margins: -3; target: vsyncSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: vsyncSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.enableVsync
-                                // ⚠️ The guard is not tidiness: onCheckedChanged also fires when the
-                                // binding above first evaluates, so an unguarded save() here would
-                                // write the whole preference set once per switch every time this
-                                // page opens. Every switch below follows the same shape.
-                                onCheckedChanged: { if (StreamingPreferences.enableVsync !== checked) { StreamingPreferences.enableVsync = checked; StreamingPreferences.save() } }
+                                // ⚠️ No guard, and there used to be one on every row here. The
+                                // switches signalled on `checked` changing, which included the
+                                // binding's first evaluation, so an unguarded save() wrote the
+                                // whole preference set once per switch every time this page
+                                // opened. `onToggled` fires only on a click or the d-pad — see
+                                // the note in OnOffSelector. Every row below follows this shape.
+                                onToggled: function(v) { StreamingPreferences.enableVsync = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -1434,6 +1435,67 @@ FocusScope {
                                     }
                                 }
                                 onActivated: function(idx) { StreamingPreferences.framePacingMode = _values[idx]; StreamingPreferences.save() }
+                            }
+                        }
+                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+
+                        // ── Fractional V-Sync (5.6.0 experiment) ──────────────
+                        //
+                        // ⚠️ Experimental, off by default, and it needs BOTH V-Sync and
+                        // Frame Pacing: without the Pacer this is the 5.1.x arrangement
+                        // that produced issue #9, so the row locks rather than letting
+                        // the pair be reached. The renderer gates on the same two again.
+                        Item {
+                            id: fracVsyncRow
+                            width: parent.width
+                            height: Math.max(settingsScreen._rowHeightTall, fracVsyncCol.implicitHeight + settingsScreen._px(16))
+                            enabled: StreamingPreferences.enableVsync
+                                     && StreamingPreferences.framePacingMode !== StreamingPreferences.FP_OFF
+                            opacity: enabled ? 1.0 : 0.4
+
+                            Column {
+                                id: fracVsyncCol
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: fracVsyncSwitch.left
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Fractional V-Sync (experimental)")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: settingsScreen._px(16)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: fracVsyncRow.enabled
+                                          // ⚠️ The condition is the ratio between the two, not the
+                                          // screen on its own. Said as "144 Hz does not work" it
+                                          // reads as a blacklist of panels, and @Soladus pointed
+                                          // out that it is nothing of the kind: 144 Hz at 72 FPS
+                                          // is a clean 2x. Naming the frame rate as the thing to
+                                          // move is also the actionable half — the screen is not
+                                          // something the user can change from here, and the
+                                          // Custom pill on the row above is.
+                                          ? qsTr("Shows each frame for a whole number of refreshes instead of once per refresh — 60 FPS on a 120 Hz screen becomes one frame every two. Needs the screen to run at an exact multiple of the frame rate: at 60 FPS that means 120, 180 or 240 Hz, and on a 144 Hz screen it takes 72 FPS instead.")
+                                          : qsTr("Requires V-Sync and Frame Pacing.")
+                                    font.family: "DM Sans"
+                                    font.pixelSize: settingsScreen._px(13)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: fracVsyncSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.fractionalVsync
+                                onToggled: function(v) { StreamingPreferences.fractionalVsync = v; StreamingPreferences.save() }
                             }
                         }
                     }
@@ -1550,8 +1612,7 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: muteHostSwitch; anchors.margins: -3; target: muteHostSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: muteHostSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
@@ -1559,7 +1620,7 @@ FocusScope {
                                 checked: !StreamingPreferences.playAudioOnHost
                                 // Inverted switch: the stored value is the opposite of the checkbox,
                                 // so the guard has to compare against that, not against `checked`.
-                                onCheckedChanged: { var v = !checked; if (StreamingPreferences.playAudioOnHost !== v) { StreamingPreferences.playAudioOnHost = v; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.playAudioOnHost = !v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -1590,14 +1651,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: muteFocusSwitch; anchors.margins: -3; target: muteFocusSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: muteFocusSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.muteOnFocusLoss
-                                onCheckedChanged: { if (StreamingPreferences.muteOnFocusLoss !== checked) { StreamingPreferences.muteOnFocusLoss = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.muteOnFocusLoss = v; StreamingPreferences.save() }
                             }
                         }
                     }
@@ -1668,14 +1728,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: absMouseSwitch; anchors.margins: -3; target: absMouseSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: absMouseSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.absoluteMouseMode
-                                onCheckedChanged: { if (StreamingPreferences.absoluteMouseMode !== checked) { StreamingPreferences.absoluteMouseMode = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.absoluteMouseMode = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -1759,14 +1818,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: touchSwitch; anchors.margins: -3; target: touchSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: touchSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: !StreamingPreferences.absoluteTouchMode
-                                onCheckedChanged: { var v = !checked; if (StreamingPreferences.absoluteTouchMode !== v) { StreamingPreferences.absoluteTouchMode = v; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.absoluteTouchMode = !v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -1787,14 +1845,13 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
 
-                            FocusFrame { anchors.fill: swapMouseSwitch; anchors.margins: -3; target: swapMouseSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: swapMouseSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.swapMouseButtons
-                                onCheckedChanged: { if (StreamingPreferences.swapMouseButtons !== checked) { StreamingPreferences.swapMouseButtons = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.swapMouseButtons = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -1815,14 +1872,13 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
 
-                            FocusFrame { anchors.fill: revScrollSwitch; anchors.margins: -3; target: revScrollSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: revScrollSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.reverseScrollDirection
-                                onCheckedChanged: { if (StreamingPreferences.reverseScrollDirection !== checked) { StreamingPreferences.reverseScrollDirection = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.reverseScrollDirection = v; StreamingPreferences.save() }
                             }
                         }
                     }
@@ -1881,14 +1937,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: swapFaceSwitch; anchors.margins: -3; target: swapFaceSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: swapFaceSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.swapFaceButtons
-                                onCheckedChanged: { if (StreamingPreferences.swapFaceButtons !== checked) { StreamingPreferences.swapFaceButtons = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.swapFaceButtons = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -1918,14 +1973,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: singleCtrlSwitch; anchors.margins: -3; target: singleCtrlSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: singleCtrlSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: !StreamingPreferences.multiController
-                                onCheckedChanged: { var v = !checked; if (StreamingPreferences.multiController !== v) { StreamingPreferences.multiController = v; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.multiController = !v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -1945,14 +1999,13 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
 
-                            FocusFrame { anchors.fill: gamepadMouseSwitch; anchors.margins: -3; target: gamepadMouseSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: gamepadMouseSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.gamepadMouse
-                                onCheckedChanged: { if (StreamingPreferences.gamepadMouse !== checked) { StreamingPreferences.gamepadMouse = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.gamepadMouse = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -1982,14 +2035,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: bgGamepadSwitch; anchors.margins: -3; target: bgGamepadSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: bgGamepadSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.backgroundGamepad
-                                onCheckedChanged: { if (StreamingPreferences.backgroundGamepad !== checked) { StreamingPreferences.backgroundGamepad = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.backgroundGamepad = v; StreamingPreferences.save() }
                             }
                         }
                     }
@@ -2154,14 +2206,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: hdrSwitch; anchors.margins: -3; target: hdrSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: hdrSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.enableHdr
-                                onCheckedChanged: { if (StreamingPreferences.enableHdr !== checked) { StreamingPreferences.enableHdr = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.enableHdr = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -2192,24 +2243,21 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: yuv444Switch; anchors.margins: -3; target: yuv444Switch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: yuv444Switch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.enableYUV444
-                                onCheckedChanged: {
-                                    if (StreamingPreferences.enableYUV444 !== checked) {
-                                        StreamingPreferences.enableYUV444 = checked
-                                        if (StreamingPreferences.autoAdjustBitrate) {
-                                            StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
-                                                StreamingPreferences.width, StreamingPreferences.height,
-                                                StreamingPreferences.fps, StreamingPreferences.enableYUV444)
-                                            bitrateSlider.value = StreamingPreferences.bitrateKbps
-                                        }
-                                        StreamingPreferences.save()
+                                onToggled: function(v) {
+                                    StreamingPreferences.enableYUV444 = v
+                                    if (StreamingPreferences.autoAdjustBitrate) {
+                                        StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
+                                            StreamingPreferences.width, StreamingPreferences.height,
+                                            StreamingPreferences.fps, StreamingPreferences.enableYUV444)
+                                        bitrateSlider.value = StreamingPreferences.bitrateKbps
                                     }
+                                    StreamingPreferences.save()
                                 }
                             }
                         }
@@ -2241,22 +2289,31 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: vbrSwitch; anchors.margins: -3; target: vbrSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: vbrSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.unlockBitrate
-                                onCheckedChanged: {
-                                    // Only the save is guarded here, not the body: the clamp has to
-                                    // run on the binding's first evaluation too, or a bitrate stored
-                                    // above the locked ceiling would stay there.
-                                    var changed = (StreamingPreferences.unlockBitrate !== checked)
-                                    StreamingPreferences.unlockBitrate = checked
+
+                                // ⚠️ The one row on this screen that keeps a `checked` handler as
+                                // well, and it is deliberate. The clamp has to run whenever the
+                                // ceiling moves — including when this binding evaluates rather
+                                // than only when a person clicks — or a bitrate stored above the
+                                // locked ceiling would stay there. `onToggled` alone would never
+                                // see that. The write and the save stay in `onToggled`, where
+                                // they belong; this one only re-clamps and never persists.
+                                onCheckedChanged: clampToCeiling()
+
+                                function clampToCeiling() {
                                     StreamingPreferences.bitrateKbps = Math.min(StreamingPreferences.bitrateKbps, bitrateSlider.to)
                                     bitrateSlider.value = StreamingPreferences.bitrateKbps
-                                    if (changed) { StreamingPreferences.save() }
+                                }
+
+                                onToggled: function(v) {
+                                    StreamingPreferences.unlockBitrate = v
+                                    clampToCeiling()
+                                    StreamingPreferences.save()
                                 }
                             }
                         }
@@ -2316,18 +2373,15 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
 
-                            FocusFrame { anchors.fill: mdnsSwitch; anchors.margins: -3; target: mdnsSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: mdnsSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.enableMdns
-                                onCheckedChanged: {
-                                    if (StreamingPreferences.enableMdns !== checked) {
-                                        StreamingPreferences.enableMdns = checked
-                                        StreamingPreferences.save()
-                                    }
+                                onToggled: function(v) {
+                                    StreamingPreferences.enableMdns = v
+                                    StreamingPreferences.save()
                                 }
                             }
                         }
@@ -2348,14 +2402,13 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
 
-                            FocusFrame { anchors.fill: blockDetectSwitch; anchors.margins: -3; target: blockDetectSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: blockDetectSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.detectNetworkBlocking
-                                onCheckedChanged: { if (StreamingPreferences.detectNetworkBlocking !== checked) { StreamingPreferences.detectNetworkBlocking = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.detectNetworkBlocking = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -2390,17 +2443,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: autoReconnectSwitch; anchors.margins: -3; target: autoReconnectSwitch }
-                            // STSwitch like every other row in this screen. It was the one plain
-                            // Switch left, so it rendered in Material's default look while its
-                            // twenty-six neighbours used the app's.
-                            STSwitch {
+                            OnOffSelector {
                                 id: autoReconnectSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.autoReconnectNoVideo
-                                onCheckedChanged: { if (StreamingPreferences.autoReconnectNoVideo !== checked) { StreamingPreferences.autoReconnectNoVideo = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.autoReconnectNoVideo = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -2438,24 +2487,21 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: tailscaleSwitch; anchors.margins: -3; target: tailscaleSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: tailscaleSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.tailscaleAutoStart
-                                onCheckedChanged: {
-                                    if (StreamingPreferences.tailscaleAutoStart !== checked) {
-                                        StreamingPreferences.tailscaleAutoStart = checked
-                                        // Persist immediately so the new value survives
-                                        // the imminent restart (Yes) or any later quit.
-                                        StreamingPreferences.save()
-                                        if (checked) {
-                                            tailscaleRestartDialog.open()
-                                        } else {
-                                            tailscaleStopNoticeDialog.open()
-                                        }
+                                onToggled: function(v) {
+                                    StreamingPreferences.tailscaleAutoStart = v
+                                    // Persist immediately so the new value survives
+                                    // the imminent restart (Yes) or any later quit.
+                                    StreamingPreferences.save()
+                                    if (v) {
+                                        tailscaleRestartDialog.open()
+                                    } else {
+                                        tailscaleStopNoticeDialog.open()
                                     }
                                 }
                             }
@@ -2536,22 +2582,19 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: linkSwitch; anchors.margins: -3; target: linkSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: linkSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.matchHostLinkSpeed
-                                onCheckedChanged: {
-                                    if (StreamingPreferences.matchHostLinkSpeed !== checked) {
-                                        StreamingPreferences.matchHostLinkSpeed = checked
-                                        // Persist now rather than leaving it to this screen's
-                                        // Component.onDestruction: a session that ends by killing
-                                        // the app never runs that, and the setting silently
-                                        // reverts to its default on the next launch.
-                                        StreamingPreferences.save()
-                                    }
+                                onToggled: function(v) {
+                                    StreamingPreferences.matchHostLinkSpeed = v
+                                    // Persist now rather than leaving it to this screen's
+                                    // Component.onDestruction: a session that ends by killing
+                                    // the app never runs that, and the setting silently
+                                    // reverts to its default on the next launch.
+                                    StreamingPreferences.save()
                                 }
                             }
                         }
@@ -2676,14 +2719,13 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
 
-                            FocusFrame { anchors.fill: gameOptSwitch; anchors.margins: -3; target: gameOptSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: gameOptSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.gameOptimizations
-                                onCheckedChanged: { if (StreamingPreferences.gameOptimizations !== checked) { StreamingPreferences.gameOptimizations = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.gameOptimizations = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -2714,14 +2756,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: quitAppSwitch; anchors.margins: -3; target: quitAppSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: quitAppSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.quitAppAfter
-                                onCheckedChanged: { if (StreamingPreferences.quitAppAfter !== checked) { StreamingPreferences.quitAppAfter = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.quitAppAfter = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -2770,21 +2811,18 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: waitForGameSwitch; anchors.margins: -3; target: waitForGameSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: waitForGameSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.waitForGameOnScreen
-                                onCheckedChanged: {
-                                    if (StreamingPreferences.waitForGameOnScreen !== checked) {
-                                        StreamingPreferences.waitForGameOnScreen = checked
-                                        // Persisted on the toggle, not at this screen's
-                                        // Component.onDestruction: an app killed rather than
-                                        // closed never runs that, and the setting would revert.
-                                        StreamingPreferences.save()
-                                    }
+                                onToggled: function(v) {
+                                    StreamingPreferences.waitForGameOnScreen = v
+                                    // Persisted on the toggle, not at this screen's
+                                    // Component.onDestruction: an app killed rather than
+                                    // closed never runs that, and the setting would revert.
+                                    StreamingPreferences.save()
                                 }
                             }
                         }
@@ -2892,14 +2930,13 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
 
-                            FocusFrame { anchors.fill: connWarnSwitch; anchors.margins: -3; target: connWarnSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: connWarnSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.connectionWarnings
-                                onCheckedChanged: { if (StreamingPreferences.connectionWarnings !== checked) { StreamingPreferences.connectionWarnings = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.connectionWarnings = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -2920,14 +2957,13 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
 
-                            FocusFrame { anchors.fill: configWarnSwitch; anchors.margins: -3; target: configWarnSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: configWarnSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.configurationWarnings
-                                onCheckedChanged: { if (StreamingPreferences.configurationWarnings !== checked) { StreamingPreferences.configurationWarnings = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.configurationWarnings = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -2958,14 +2994,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: discordSwitch; anchors.margins: -3; target: discordSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: discordSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.richPresence
-                                onCheckedChanged: { if (StreamingPreferences.richPresence !== checked) { StreamingPreferences.richPresence = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.richPresence = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -2996,14 +3031,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: keepAwakeSwitch; anchors.margins: -3; target: keepAwakeSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: keepAwakeSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.keepAwake
-                                onCheckedChanged: { if (StreamingPreferences.keepAwake !== checked) { StreamingPreferences.keepAwake = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.keepAwake = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -3036,14 +3070,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: hueSyncSwitch; anchors.margins: -3; target: hueSyncSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: hueSyncSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.hueSyncIntegration
-                                onCheckedChanged: { if (StreamingPreferences.hueSyncIntegration !== checked) { StreamingPreferences.hueSyncIntegration = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.hueSyncIntegration = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -3074,14 +3107,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: hideIpsSwitch; anchors.margins: -3; target: hideIpsSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: hideIpsSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.hideHostIps
-                                onCheckedChanged: { if (StreamingPreferences.hideHostIps !== checked) { StreamingPreferences.hideHostIps = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.hideHostIps = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -3352,14 +3384,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: reduceAnimSwitch; anchors.margins: -3; target: reduceAnimSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: reduceAnimSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: Theme.reduceAnimations
-                                onCheckedChanged: { Theme.reduceAnimations = checked }
+                                onToggled: function(v) { Theme.reduceAnimations = v }
                             }
                         }
                     }
@@ -3480,6 +3511,11 @@ FocusScope {
                       desc: qsTr("Drawing, including the wait for the monitor's V-sync"),
                       host: false, sub: false,
                       lines: ["Average rendering time (including monitor V-sync latency): 1.10 ms"] },
+                    { bit: StreamingPreferences.OI_CADENCE,
+                      name: qsTr("Presentation cadence"),
+                      desc: qsTr("How long each frame is held on screen and how long presenting it blocks — the measurement behind Fractional V-Sync"),
+                      host: false, sub: false,
+                      lines: ["Cadence: 2:2 asked, 2.00 v/f (2-2), queue 1.0 (0-2), wait 0.31 ms (max 0.90, 0 blocked, 0 slips)"] },
                     { bit: StreamingPreferences.OI_HOST_METRICS,
                       name: qsTr("Host metrics"),
                       desc: qsTr("GPU, encoder, temperature, VRAM, CPU and outbound network — needs StreamTweak on the host"),
@@ -3622,14 +3658,13 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: perfOverlaySwitch; anchors.margins: -3; target: perfOverlaySwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: perfOverlaySwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.showPerfOverlay
-                                onCheckedChanged: { if (StreamingPreferences.showPerfOverlay !== checked) { StreamingPreferences.showPerfOverlay = checked; StreamingPreferences.save() } }
+                                onToggled: function(v) { StreamingPreferences.showPerfOverlay = v; StreamingPreferences.save() }
                             }
                         }
                         Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
@@ -3915,17 +3950,14 @@ FocusScope {
                                 }
                             }
 
-                            FocusFrame { anchors.fill: bitratePeakSwitch; anchors.margins: -3; target: bitratePeakSwitch }
-                            STSwitch {
+                            OnOffSelector {
                                 id: bitratePeakSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: (overlayTab._itemMask & StreamingPreferences.OI_BITRATE_PEAK) !== 0
-                                onCheckedChanged: {
-                                    var on = (StreamingPreferences.overlayItems & StreamingPreferences.OI_BITRATE_PEAK) !== 0
-                                    if (on === checked) return
-                                    StreamingPreferences.overlayItems = checked
+                                onToggled: function(v) {
+                                    StreamingPreferences.overlayItems = v
                                             ? (StreamingPreferences.overlayItems | StreamingPreferences.OI_BITRATE_PEAK)
                                             : (StreamingPreferences.overlayItems & ~StreamingPreferences.OI_BITRATE_PEAK)
                                     StreamingPreferences.save()
@@ -4836,27 +4868,25 @@ FocusScope {
 
                                 // Never disabled, not even offline: this is the user's
                                 // decision about a host, not an observation of it.
-                                FocusFrame { anchors.fill: stHostSwitch; anchors.margins: -3; target: stHostSwitch }
-                                STSwitch {
+                                OnOffSelector {
                                     id: stHostSwitch
                                     anchors.right: parent.right
                                     anchors.rightMargin: settingsScreen._px(16)
                                     anchors.verticalCenter: parent.verticalCenter
                                     checked: model.streamTweakEnabled
-                                    onCheckedChanged: {
-                                        if (model.streamTweakEnabled !== checked
-                                            && settingsScreen.hostModel) {
-                                            settingsScreen.hostModel.setStreamTweakEnabled(index, checked)
+                                    onToggled: function(v) {
+                                        if (settingsScreen.hostModel) {
+                                            settingsScreen.hostModel.setStreamTweakEnabled(index, v)
                                         }
                                         // ⚠️ The rows in Network and Session grey themselves
                                         // from hostStreamTweakEnabled, and AppShell only
                                         // writes it when Settings opens. Without this line
                                         // they would keep looking live until the user left
-                                        // the screen and came back — a switch that appears to
+                                        // the screen and came back — a control that appears to
                                         // do nothing. Only for the host actually in context;
                                         // the others have nothing on this screen to update.
                                         if (index === settingsScreen.hostIndex)
-                                            settingsScreen.hostStreamTweakEnabled = checked
+                                            settingsScreen.hostStreamTweakEnabled = v
                                     }
                                 }
                             }

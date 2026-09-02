@@ -44,10 +44,11 @@ Everything below is in the current release, whichever version first introduced i
 - **Custom resolutions and frame rates** — any width and height, and any rate, not just the presets, from Settings or the in-stream panel
 - **Your display's own values are offered too** *(5.5.0+)* — the resolution and refresh rate this machine reports appear in the pickers, so a 165 Hz or 16:10 screen needs nothing typed in. Marked with a dot in *Settings* and with the words *this display* in the in-stream panel, which offers the same list
 - **Frame pacing** — Off or On, evening frames out with the same software pacer Moonlight uses
+- **Fractional V-Sync** *(5.6.0+)* — shows each frame for a whole number of refreshes instead of once per refresh, so 60 FPS on a 120 Hz screen becomes one frame every two. Needs V-Sync and frame pacing, and a screen running at an exact multiple of the frame rate: at 60 FPS that is 120 / 180 / 240 Hz, and a 144 Hz screen wants 72 FPS. Off by default
 
 **⚙️ Settings and profiles**
 - Ten tabs, pill-style selectors instead of dropdowns, inline subtitles instead of tooltips, and a bitrate slider with hold-to-accelerate and a **Default** prompt
-- **Per-host profiles** — up to three named profiles per host, each overriding resolution, frame rate, bitrate, HDR, codec, display mode, V-Sync, frame pacing, audio, link matching, launch wait and Hue. Switchable from Home or the host page
+- **Per-host profiles** — up to three named profiles per host, each overriding resolution, frame rate, bitrate, HDR, codec, display mode, V-Sync, frame pacing, fractional V-Sync, audio, link matching, launch wait and Hue. Switchable from Home or the host page
 - **Per-game overrides** on top of the active profile, for the settings that vary by title
 - A setting that cannot act says so wherever you meet it — greyed, with the reason on the line beneath, in Settings, in the profile and in the per-game dialog alike
 - Every change is written to disk the moment you make it
@@ -76,6 +77,17 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Remote Windows Update** *(7.3.0+)* — scan, classify and install updates on the host, rebooting only if required, with a backgroundable progress view. Updates can also be installed before a shutdown
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
+
+## ✨ What's New in 5.6.0 — Half Rate
+
+A 60 FPS stream on a 120 Hz screen can be shown one frame every two refreshes — what NVIDIA Profile Inspector and Special-K were being used for. Client-side, works with any host, and with the switch off nothing behaves differently from 5.5.0.
+
+- **Fractional V-Sync.** A switch in *Settings → Video* holds each frame for a whole number of refreshes instead of presenting once per refresh. Off by default, and it needs V-Sync and *Frame pacing* on — with either off the row greys out and says which one
+- **Only where the numbers divide.** The screen has to run at an exact multiple of the stream's frame rate — and it is the *ratio* that matters, not the screen. At 60 FPS that means 120, 180 or 240 Hz; a **144 Hz** screen is 2.4× at 60 and does nothing, but 2× at **72 FPS**, which the Custom pill on the frame rate row will give you. The log says at the start of every stream whether it applied and what it decided on
+- **Overridable per host profile**, on the row directly under *Frame pacing*, since that and V-Sync are what decide whether it can act. A profile missing either greys the row and names the one to fix — and keeps the choice, which starts working the day that profile has both. Deliberately not a per-game override: its conditions live on the profile, so a per-game copy could hold a value it had no way to satisfy
+- **A *Presentation cadence* line for the overlay** — how many refreshes each frame was really held for, how deep the queue to the display is sitting, and how long presenting a frame blocked. It measures the same way with the switch off, so the two states can be compared on the same numbers
+- **Every on/off setting is now a pair of *Off / On* pills** instead of a switch — the control the host profile and per-game panels have always used, so a yes-or-no answer looks the same wherever it is asked. They also grow with the interface scale, which the switches did not: a switch is sized by the theme rather than by us, so on a handheld every row grew around a control that stayed desktop-sized
+- ⚠️ **This is not *Frame pacing → Hardware***, the setting 5.1.3 was the last to carry. That one also switched frame pacing off and left presentation as the only thing timing the stream, which is where the drifting delay of [issue #9](https://github.com/FoggyBytes/StreamLight/issues/9) came from. This one leaves frame pacing running and requires it
 
 ## ✨ What's New in 5.5.0 — Your Display
 

@@ -148,7 +148,14 @@ public:
         // upstream Moonlight has no such line and this one had stopped being able to
         // say anything upstream would not. Bit 13 was OI_CADENCE, added in 5.1.2 and
         // removed in the same release.
-        OI_ALL          = ((1 << 13) - 1) & ~(1 << 11)
+        //
+        // ⚠️ The Cadence line is back in 5.6.0 on bit 14, NOT on its old bit 13 — reload()
+        // still clears 13 on every start, so an item living there would be switched off
+        // again a moment after the user switched it on. That clearing line is what makes
+        // a retired bit permanently unusable, and it is cheaper to spend a new bit than
+        // to reason about who might still have the old one set.
+        OI_CADENCE      = 1 << 14,  // presentation cadence, queue depth, Present() wait
+        OI_ALL          = ((1 << 15) - 1) & ~(1 << 11) & ~(1 << 13)
     };
     Q_ENUM(OverlayItem)
 
@@ -209,6 +216,7 @@ public:
     Q_PROPERTY(bool unlockBitrate MEMBER unlockBitrate NOTIFY unlockBitrateChanged)
     Q_PROPERTY(bool autoAdjustBitrate MEMBER autoAdjustBitrate NOTIFY autoAdjustBitrateChanged)
     Q_PROPERTY(bool enableVsync MEMBER enableVsync NOTIFY enableVsyncChanged)
+    Q_PROPERTY(bool fractionalVsync MEMBER fractionalVsync NOTIFY fractionalVsyncChanged)
     Q_PROPERTY(bool gameOptimizations MEMBER gameOptimizations NOTIFY gameOptimizationsChanged)
     Q_PROPERTY(bool playAudioOnHost MEMBER playAudioOnHost NOTIFY playAudioOnHostChanged)
     Q_PROPERTY(bool multiController MEMBER multiController NOTIFY multiControllerChanged)
@@ -260,6 +268,13 @@ public:
     bool unlockBitrate;
     bool autoAdjustBitrate;
     bool enableVsync;
+
+    // 5.6.0 EXPERIMENT (issue #11). Present each frame for a whole number of V-blanks
+    // when the panel runs at an exact multiple of the stream's frame rate. See the note
+    // on DECODER_PARAMETERS::fractionalVsync for what this is and, more importantly,
+    // what it is not.
+    bool fractionalVsync;
+
     bool gameOptimizations;
     bool playAudioOnHost;
     bool multiController;
@@ -316,6 +331,7 @@ signals:
     void unlockBitrateChanged();
     void autoAdjustBitrateChanged();
     void enableVsyncChanged();
+    void fractionalVsyncChanged();
     void gameOptimizationsChanged();
     void playAudioOnHostChanged();
     void multiControllerChanged();

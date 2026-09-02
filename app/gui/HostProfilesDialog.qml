@@ -124,6 +124,7 @@ Popup {
     readonly property var _fpsNative: _nativeIndices(_video.fps)
     readonly property var _hdrLabels: [_globalText("hdr"), "On", "Off"]
     readonly property var _vsyncLabels:   [_globalText("vsync"), "On", "Off"]
+    readonly property var _fracVsyncLabels: [_globalText("fractionalvsync"), "On", "Off"]
     readonly property var _linkLabels:    [_globalText("matchlink"), "On", "Off"]
     readonly property var _waitLabels:    [_globalText("waitgame"), "On", "Off"]
     readonly property var _hueLabels:     [_globalText("hue"), "On", "Off"]
@@ -146,6 +147,16 @@ Popup {
     readonly property bool _effVsync:      vsyncSel.currentIndex > 0
                                            ? (vsyncSel.currentIndex === 1)
                                            : StreamingPreferences.enableVsync
+
+    // Frame pacing resolved the same way, for the row below it. ⚠️ It carries V-Sync's
+    // answer with it rather than reporting the stored value on its own: with V-Sync off
+    // the session runs FP_OFF whatever the profile holds, so a row that read this as "on"
+    // would offer a choice that could not act. This is the same collapse Session performs
+    // when it builds the decoder parameters.
+    readonly property bool _effPacing:     _effVsync &&
+                                           (fpSel.currentIndex > 0
+                                            ? (_fpVals[fpSel.currentIndex] === StreamingPreferences.FP_ON)
+                                            : StreamingPreferences.framePacingMode !== StreamingPreferences.FP_OFF)
 
     property bool _bitrateOverridden: false
     // Custom resolution override for the edited slot (0 == none / using a preset).
@@ -262,6 +273,7 @@ Popup {
         waitGameSel.currentIndex = (ov.waitgame !== undefined) ? (ov.waitgame ? 1 : 2) : 0
         dmSel.currentIndex    = (ov.displaymode !== undefined) ? _idxByVal(_dmVals, ov.displaymode) : 0
         vsyncSel.currentIndex = (ov.vsync !== undefined) ? (ov.vsync ? 1 : 2) : 0
+        fracVsyncSel.currentIndex = (ov.fractionalvsync !== undefined) ? (ov.fractionalvsync ? 1 : 2) : 0
         _bitrateOverridden = (ov.bitrate !== undefined && ov.bitrate >= bitrateSlider.from)
         bitrateSlider.value = _bitrateOverridden ? ov.bitrate
                             : Math.max(bitrateSlider.from, StreamingPreferences.bitrateKbps)
@@ -290,6 +302,10 @@ Popup {
         // starts acting the day the display mode above it becomes Fullscreen. Dropping
         // it here would silently rewrite the profile the moment the condition lapsed.
         if (vsyncSel.currentIndex > 0) m.vsync = (vsyncSel.currentIndex === 1)
+        // Same rule again, one level further down the chain: kept even while the row is
+        // greyed, so turning V-Sync or Frame pacing back on restores the choice the
+        // profile was given instead of a silently rewritten one.
+        if (fracVsyncSel.currentIndex > 0) m.fractionalvsync = (fracVsyncSel.currentIndex === 1)
         computerModel.setHostProfileSettings(pcIndex, editingSlot, m)
     }
 
@@ -1013,6 +1029,32 @@ Popup {
                         id: fpSel; labels: dlg._fpLabels
                         hiddenIndices: dlg._dupIndices(dlg._fpLabels, "framepacing", currentIndex)
                         KeyNavigation.up: vsyncSel
+                        KeyNavigation.down: fracVsyncSel
+                        onActivated: dlg.saveOverride()
+                    }
+                }
+                // Third in the dependency chain, and placed directly under the row it
+                // needs so the greyed control never sends anyone hunting: V-Sync governs
+                // Frame pacing, and the two of them together govern this. _effPacing
+                // already folds V-Sync in, so switching either one off greys this row.
+                //
+                // ⚠️ The detail names the missing condition rather than saying "needs
+                // V-Sync and Frame pacing" always: with V-Sync off, Frame pacing above is
+                // greyed too, and pointing at a greyed row as the thing to fix is a dead
+                // end. Whichever row is still actionable is the one named.
+                //
+                // ⚠️ It is NOT in the per-game panel, and must not be added there — see the
+                // note on AppOverride::hasFractionalVsync. Its conditions live at this
+                // level, so a per-game copy could hold a value it had no way to satisfy.
+                SettingRow {
+                    label: qsTr("Fractional V-Sync")
+                    enabled: dlg._effPacing
+                    detail: enabled ? ""
+                          : (dlg._effVsync ? qsTr("Needs Frame pacing") : qsTr("Needs V-Sync"))
+                    SegmentedSelector {
+                        id: fracVsyncSel; labels: dlg._fracVsyncLabels
+                        hiddenIndices: dlg._dupIndices(dlg._fracVsyncLabels, "fractionalvsync", currentIndex)
+                        KeyNavigation.up: fpSel
                         KeyNavigation.down: audSel
                         onActivated: dlg.saveOverride()
                     }
@@ -1022,7 +1064,7 @@ Popup {
                     SegmentedSelector {
                         id: audSel; labels: dlg._audLabels
                         hiddenIndices: dlg._dupIndices(dlg._audLabels, "audio", currentIndex)
-                        KeyNavigation.up: fpSel
+                        KeyNavigation.up: fracVsyncSel
                         KeyNavigation.down: linkSel
                         onActivated: dlg.saveOverride()
                     }

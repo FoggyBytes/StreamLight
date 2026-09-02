@@ -322,7 +322,7 @@ void Session::clSetAdaptiveTriggers(uint16_t controllerNumber, uint8_t eventFlag
 bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
                             SDL_Window* window, int videoFormat, int width, int height,
                             int frameRate, bool enableVsync, bool enableFramePacing, bool testOnly, IVideoDecoder*& chosenDecoder,
-                            int framePacingMode)
+                            int framePacingMode, bool fractionalVsync)
 {
     DECODER_PARAMETERS params;
 
@@ -339,6 +339,22 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
     params.enableVsync = enableVsync;
     params.enableFramePacing = enableFramePacing;
     params.framePacingMode = framePacingMode;
+
+    // 5.6.0 (issue #11). Passed in by the caller, exactly like enableVsync and
+    // framePacingMode above and for the same reason: a host profile can override it, and
+    // profile overrides are applied to the session's *cloned* preferences. This function
+    // is static, so it has no clone to read.
+    //
+    // ⚠️ An earlier version of this read StreamingPreferences::get() here. That was wrong
+    // the moment the setting became overridable per profile — the global singleton never
+    // carries an override, so a profile that switched this on would have been ignored and
+    // a profile that switched it off would have run with it on. Nothing would have said so
+    // except the `Fractional V-Sync:` log line disagreeing with the profile.
+    //
+    // The eight probe call sites leave this at its default false; they pass V-sync off, so
+    // the renderer's gate would reject it anyway.
+    params.fractionalVsync = !testOnly && fractionalVsync;
+
     params.testOnly = testOnly;
     params.vds = vds;
 
@@ -2844,7 +2860,19 @@ void Session::exec()
                                    false,
                                    s_ActiveSession->m_VideoDecoder,
                                    enableVsync ? (int)m_Preferences->framePacingMode
-                                               : (int)StreamingPreferences::FP_OFF)) {
+                                               : (int)StreamingPreferences::FP_OFF,
+                                   // 5.6.0. The cascade is resolved here rather than in the
+                                   // renderer so that all three arrive already agreeing:
+                                   // V-Sync (which the refresh-rate check just above can
+                                   // force off whatever the profile says), frame pacing,
+                                   // and the setting itself — all read from the session's
+                                   // preferences, which is where a host profile's overrides
+                                   // have been applied. The renderer gates on the same three
+                                   // again plus the refresh ratio; it is the only thing that
+                                   // knows the ratio, and nothing here tries to guess it.
+                                   enableVsync &&
+                                   m_Preferences->framePacingMode != StreamingPreferences::FP_OFF &&
+                                   m_Preferences->fractionalVsync)) {
                     SDL_UnlockMutex(m_DecoderLock);
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                                  "Failed to recreate decoder after reset");

@@ -52,11 +52,28 @@ struct AppOverride
     bool hasDisplayMode = false;  int windowMode = 0;       // StreamingPreferences::WindowMode
     bool hasVsync = false;        bool enableVsync = false; // StreamingPreferences::enableVsync
 
+    // Fractional V-Sync (5.6.0). Host-profile only, and for two reasons that point the
+    // same way.
+    //
+    // ⚠️ It is a *dependent* of the two above — V-Sync, and Frame pacing — and both of
+    // those can be expressed at this level. A per-game copy could not express either, so
+    // a game could carry "on" under a profile whose V-Sync is off: the same defect the
+    // note above describes, built the other way round. It is deliberately absent from the
+    // per-game panel and must stay absent.
+    //
+    // ⚠️ What makes it a profile setting rather than a global one is VRR: a sync interval
+    // above 1 turns variable refresh off, so a handheld profile on a VRR panel and a
+    // docked profile on a fixed-refresh screen want opposite answers at the same frame
+    // rate. Everything else that varies by situation — a panel that is not a whole
+    // multiple of the stream, a profile that streams at 120 instead of 60 — the renderer
+    // already decides on its own, and needs no knob to do it.
+    bool hasFractionalVsync = false; bool fractionalVsync = false; // StreamingPreferences::fractionalVsync
+
     bool isEmpty() const
     {
         return !(hasResolution || hasFps || hasBitrate || hasHdr ||
                  hasCodec || hasFramePacing || hasAudio || hasHue || hasMatchLink ||
-                 hasWaitForGame || hasDisplayMode || hasVsync);
+                 hasWaitForGame || hasDisplayMode || hasVsync || hasFractionalVsync);
     }
 };
 

@@ -75,6 +75,11 @@ private:
 
     void logVideoStats(VIDEO_STATS& stats, const char* title);
 
+    // Writes the renderer's last closed presentation-cadence window to the log, if there
+    // is a new one and it has something to say. Called on the decoder thread on purpose —
+    // see the call site.
+    void logPacingWindow();
+
     void addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst);
 
     bool createFrontendRenderer(PDECODER_PARAMETERS params, bool useAlternateFrontend);
@@ -140,6 +145,13 @@ private:
     VIDEO_STATS m_GlobalVideoStats;
     mutable SDL_SpinLock m_LastWndLock = 0; // protects m_LastWndVideoStats for cross-thread reads
     std::set<IFFmpegRenderer::RendererType> m_FailedRenderers;
+
+    // Emission state for the [pacing] log. The sequence number is what keeps this honest:
+    // the renderer closes a window on its own clock and this runs on another, so without
+    // it a window would be logged twice or skipped roughly at random.
+    unsigned long long m_LastPacingSeq = 0;
+    uint64_t m_LastPacingLogUs = 0;
+    double m_LastPacingLogWaitMs = 0.0;
 
     int m_FramesIn;
     int m_FramesOut;

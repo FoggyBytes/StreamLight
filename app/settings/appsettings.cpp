@@ -30,6 +30,7 @@ static AppOverride readOverrideGroup(const QSettings& s)
     if (s.contains("waitgame"))      { ov.hasWaitForGame = true; ov.waitForGame = s.value("waitgame").toBool(); }
     if (s.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = s.value("displaymode").toInt(); }
     if (s.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = s.value("vsync").toBool(); }
+    if (s.contains("fractionalvsync")) { ov.hasFractionalVsync = true; ov.fractionalVsync = s.value("fractionalvsync").toBool(); }
     return ov;
 }
 
@@ -47,6 +48,7 @@ static void writeOverrideGroup(QSettings& s, const AppOverride& ov)
     if (ov.hasWaitForGame) s.setValue("waitgame", ov.waitForGame);
     if (ov.hasDisplayMode) s.setValue("displaymode", ov.windowMode);
     if (ov.hasVsync)       s.setValue("vsync", ov.enableVsync);
+    if (ov.hasFractionalVsync) s.setValue("fractionalvsync", ov.fractionalVsync);
 }
 
 QVariantMap appOverrideToMap(const AppOverride& ov)
@@ -64,6 +66,7 @@ QVariantMap appOverrideToMap(const AppOverride& ov)
     if (ov.hasWaitForGame) m["waitgame"] = ov.waitForGame;
     if (ov.hasDisplayMode) m["displaymode"] = ov.windowMode;
     if (ov.hasVsync)       m["vsync"] = ov.enableVsync;
+    if (ov.hasFractionalVsync) m["fractionalvsync"] = ov.fractionalVsync;
     return m;
 }
 
@@ -86,6 +89,7 @@ AppOverride appOverrideFromMap(const QVariantMap& m)
     if (m.contains("waitgame"))      { ov.hasWaitForGame = true; ov.waitForGame = m.value("waitgame").toBool(); }
     if (m.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = m.value("displaymode").toInt(); }
     if (m.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = m.value("vsync").toBool(); }
+    if (m.contains("fractionalvsync")) { ov.hasFractionalVsync = true; ov.fractionalVsync = m.value("fractionalvsync").toBool(); }
     return ov;
 }
 
@@ -122,6 +126,11 @@ QVariantMap inheritedValueLabels(const StreamingPreferences* p)
     m.insert(QStringLiteral("vsync"),        p->enableVsync ? on : off);
     m.insert(QStringLiteral("framepacing"),
              p->framePacingMode == StreamingPreferences::FP_ON ? on : off);
+    // ⚠️ The global value as stored, not "what it would do here". Whether the sync interval
+    // actually applies depends on the panel and the stream's frame rate, which this function
+    // knows nothing about — and the Global pill has to say what it inherits, not predict an
+    // outcome. The renderer logs the resolved answer at the start of every stream.
+    m.insert(QStringLiteral("fractionalvsync"), p->fractionalVsync ? on : off);
 
     QString codec;
     switch (p->videoCodecConfig) {
@@ -196,6 +205,12 @@ void applyAppOverride(StreamingPreferences* p, const AppOverride& ov)
     // decides on its own whether exclusive fullscreen makes this actionable at all.
     if (ov.hasDisplayMode) p->windowMode = (StreamingPreferences::WindowMode)ov.windowMode;
     if (ov.hasVsync)       p->enableVsync = ov.enableVsync;
+    // No condition applied here on purpose, in step with frame pacing above: the profile
+    // keeps the choice it was given, and the renderer is the one place that decides whether
+    // it is actionable — it re-gates on V-Sync, frame pacing, tearing and the refresh ratio
+    // before it will use a sync interval at all. Collapsing it here would only mean two
+    // places had to agree.
+    if (ov.hasFractionalVsync) p->fractionalVsync = ov.fractionalVsync;
 }
 
 // ── AppSettingsManager (per-game) ────────────────────────────────────────────

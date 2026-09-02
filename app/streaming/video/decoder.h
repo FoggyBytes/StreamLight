@@ -44,6 +44,20 @@ typedef struct _DECODER_PARAMETERS {
     bool enableVsync;
     bool enableFramePacing;
     int  framePacingMode;   // StreamingPreferences::FramePacingMode
+
+    // 5.6.0 EXPERIMENT (issue #11). Ask DXGI to hold each presented frame for a whole
+    // number of V-blanks, so a 60 FPS stream on a 120 Hz panel is presented once every
+    // two refreshes instead of once per refresh with the panel repeating it. This is
+    // what Special-K's "PresentationInterval = 2" does from outside our process, and
+    // what @Soladus has been using instead of anything we ship.
+    //
+    // ⚠️ NOT the 5.1.x "hardware pacing". That one also switched the software Pacer OFF
+    // (RENDERER_ATTRIBUTE_SELF_PACING) and left Present() as the render loop's only
+    // clock, which is the arrangement issue #9 came out of. This flag changes the sync
+    // interval and nothing else: the Pacer keeps running on its V-blank source, exactly
+    // as it does with Special-K injected. That combination has never shipped either way.
+    bool fractionalVsync;
+
     bool testOnly;
 } DECODER_PARAMETERS, *PDECODER_PARAMETERS;
 

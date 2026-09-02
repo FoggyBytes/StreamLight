@@ -140,6 +140,52 @@ private:
 // ⚠️ 0x20 was RENDERER_ATTRIBUTE_SELF_PACING, removed in 5.2.0 along with the
 // hardware 2:2 cadence it announced. Nothing self-paces any more: pacing is the
 // software Pacer or nothing, exactly as upstream Moonlight does it.
+//
+// ⚠️ It stays retired in 5.6.0, deliberately, and that is the whole point of the
+// experiment: fractional V-Sync sets a sync interval WITHOUT taking the Pacer away.
+// If you find yourself reaching for this bit again, you are rebuilding 5.1.x.
+
+// Measured presentation cadence, read back from the display pipeline by renderers
+// that can (D3D11VA via IDXGISwapChain::GetFrameStatistics). Instrumentation for
+// issue #9 / #11, populated only while the Cadence overlay line is switched on or
+// STREAMLIGHT_PACING_DIAG=1 is set.
+//
+// ⚠️ This is the instrument the 5.1.x investigation was decided with, brought back
+// unchanged in what it measures. `presentWaitMs` is the number that matters: with a
+// sync interval of 2 and a healthy pipeline it sits well under a millisecond, and the
+// failure mode of issue #9 was it settling at a whole frame period and staying there.
+typedef struct _PACING_MEASUREMENT {
+    // V-blanks each presented frame actually occupied, or negative where the adapter's
+    // refresh counter cannot be believed. Everything below is measured without that
+    // counter and stays valid when this one is negative.
+    double vblanksPerFrame;
+    int minVblanks;
+    int maxVblanks;
+
+    // Presents handed to DXGI that it has not reported done. ⚠️ The range matters more
+    // than the mean here: issue #9 was a queue that settled at a depth and stayed, and an
+    // average alone cannot tell that apart from one that breathes.
+    double queueDepthVblanks;
+    int queueMin;
+    int queueMax;
+
+    double presentWaitMs;      // average time blocked inside Present()
+    double presentWaitMinMs;
+    double presentWaitMaxMs;
+
+    double windowSecs;
+    unsigned int presentCalls;
+    unsigned int blockedPresents;  // presents that waited longer than half a frame period
+    unsigned int cadenceSlips;     // frames held for a different number of V-blanks than asked
+    unsigned int disjointCount;    // session total, not per window
+
+    int syncInterval;              // what was asked for, so the reader can compare
+
+    // Bumped once per closed window. The consumer runs on its own clock, so this is how
+    // it tells a fresh window from the one it has already seen — without it, a log line
+    // written on a 1 Hz tick would double-count or skip windows more or less at random.
+    unsigned long long sequence;
+} PACING_MEASUREMENT, *PPACING_MEASUREMENT;
 
 class IFFmpegRenderer : public Overlay::IOverlayRenderer {
 public:
@@ -220,6 +266,13 @@ public:
     virtual int getRendererAttributes() {
         // No special attributes by default
         return 0;
+    }
+
+    // Fills in what the display pipeline did with our presents. False when this
+    // renderer has no instrumentation, or has it switched off, or has not closed
+    // its first measurement window yet.
+    virtual bool getPacingMeasurement(PPACING_MEASUREMENT) {
+        return false;
     }
 
     virtual int getDecoderColorspace() {

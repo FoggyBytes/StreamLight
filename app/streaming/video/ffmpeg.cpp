@@ -1086,6 +1086,65 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
     // cadence gone in the same release there was nothing left for it to say that the
     // Frame pacing setting did not already say, so it went with it.
 
+    // What the display pipeline actually did with our presents. The instrument the 5.1.x
+    // investigation was decided with, back for the 5.6.0 fractional V-Sync experiment.
+    //
+    // It reads what it asked for next to what happened, in one line, because the pair is
+    // the finding: a flawless 2.00 v/f with the wait sitting at a frame period is issue
+    // #9 exactly, and a cadence figure on its own says everything is fine there.
+    if (WANT(OI_CADENCE)) {
+        PACING_MEASUREMENT measurement;
+        if (m_FrontendRenderer != nullptr && m_FrontendRenderer->getPacingMeasurement(&measurement)) {
+            // ⚠️ "immediate" and not "1:1": a sync interval of 0 does not ask for one
+            // V-blank per frame, it asks for no wait at all and lets DWM decide when the
+            // frame is shown. Printing 1:1 there would invent a cadence we never asked for
+            // and make the OFF baseline look like a weaker version of the ON case.
+            char askedBuf[32];
+            if (measurement.syncInterval >= 2) {
+                snprintf(askedBuf, sizeof(askedBuf), "%d:%d asked", measurement.syncInterval, measurement.syncInterval);
+            }
+            else {
+                snprintf(askedBuf, sizeof(askedBuf), "immediate");
+            }
+
+            if (measurement.vblanksPerFrame < 0) {
+                // The adapter's refresh counter disagrees with its panel, so there is no
+                // honest V-blank figure to show. The wait and the queue are measured
+                // without it and are the two that matter anyway.
+                ret = snprintf(&output[offset], length - offset,
+                               "Cadence: %s, queue %.1f (%d-%d), wait %.2f ms (max %.2f, %u blocked) [V-blanks not reported]\n",
+                               askedBuf, measurement.queueDepthVblanks,
+                               measurement.queueMin, measurement.queueMax,
+                               measurement.presentWaitMs,
+                               measurement.presentWaitMaxMs, measurement.blockedPresents);
+            }
+            else {
+                ret = snprintf(&output[offset], length - offset,
+                               "Cadence: %s, %.2f v/f (%d-%d), queue %.1f (%d-%d), wait %.2f ms (max %.2f, %u blocked, %u slips)\n",
+                               askedBuf, measurement.vblanksPerFrame, measurement.minVblanks,
+                               measurement.maxVblanks, measurement.queueDepthVblanks,
+                               measurement.queueMin, measurement.queueMax,
+                               measurement.presentWaitMs, measurement.presentWaitMaxMs,
+                               measurement.blockedPresents, measurement.cadenceSlips);
+            }
+        }
+        else if (!forceFullDetail) {
+            // Switched on but nothing measured yet — the first window has not closed, or
+            // this renderer does not instrument. Say so rather than leave a gap where the
+            // user just switched a line on and sees nothing appear.
+            ret = snprintf(&output[offset], length - offset, "Cadence: measuring...\n");
+        }
+        else {
+            // ⚠️ The end-of-session summary asks for every line (forceFullDetail passes
+            // OI_ALL), but this one needs instrumentation that only runs when it was
+            // switched on. With nothing measured there is nothing to record, and
+            // "measuring..." in a log written after the stream ended would be a lie.
+            ret = 0;
+        }
+        if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
+        offset += ret;
+    }
+
     // Real-time host metrics from StreamTweak (via the STATS TCP command). Resolved
     // at the top of this function, and drawn only when something answered — an
     // empty "Host Metrics" heading would tell the user their host is broken when
@@ -1140,6 +1199,69 @@ void FFmpegVideoDecoder::logVideoStats(VIDEO_STATS& stats, const char* title)
                     "\n%s\n------------------\n%s",
                     title, videoStatsStr);
     }
+}
+
+void FFmpegVideoDecoder::logPacingWindow()
+{
+    PACING_MEASUREMENT m;
+    if (m_FrontendRenderer == nullptr || !m_FrontendRenderer->getPacingMeasurement(&m)) {
+        return;
+    }
+
+    // Nothing new closed since the last tick.
+    if (m.sequence == m_LastPacingSeq) {
+        return;
+    }
+    m_LastPacingSeq = m.sequence;
+
+    uint64_t nowUs = LiGetMicroseconds();
+
+    // The window is measured every second but only written out when it says something.
+    // A line per second was right while hunting issue #9 and is wrong for an instrument
+    // that ships: it would put a few hundred KB an hour into the log for a metric that
+    // is flat almost all of the time.
+    //
+    // Three reasons to write, and between them they keep everything the 5.1.x
+    // investigation actually used:
+    //   • a window that blocked or slipped, which is the event itself;
+    //   • a change of regime — the wait settling somewhere new is THE symptom of issue
+    //     #9, and at one second of resolution the move is still pinned to the second it
+    //     happened;
+    //   • a heartbeat, so a quiet session still shows what quiet looked like.
+    double waitDelta = m.presentWaitMs - m_LastPacingLogWaitMs;
+    if (waitDelta < 0) {
+        waitDelta = -waitDelta;
+    }
+
+    bool anomaly      = (m.blockedPresents != 0) || (m.cadenceSlips != 0);
+    bool regimeChange = (m_LastPacingLogUs != 0) && (waitDelta >= 1.0);
+    bool heartbeat    = (m_LastPacingLogUs == 0) ||
+                        (nowUs - m_LastPacingLogUs >= 30000000);
+
+    if (!anomaly && !regimeChange && !heartbeat) {
+        return;
+    }
+
+    // The V-blank half of the line is left out rather than printed wrong where the
+    // adapter's refresh counter disagrees with the panel.
+    char cadence[96] = "";
+    if (m.vblanksPerFrame >= 0) {
+        snprintf(cadence, sizeof(cadence), "v/f %.2f min %d max %d | ",
+                 m.vblanksPerFrame, m.minVblanks, m.maxVblanks);
+    }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "[pacing] %.1fs: interval %d | %u presents | %s"
+                "wait %.2f/%.2f/%.2f ms min/avg/max, %u blocked, %u slips | "
+                "queue %.1f (%d-%d) | disjoint %u%s",
+                m.windowSecs, m.syncInterval, m.presentCalls, cadence,
+                m.presentWaitMinMs, m.presentWaitMs, m.presentWaitMaxMs,
+                m.blockedPresents, m.cadenceSlips,
+                m.queueDepthVblanks, m.queueMin, m.queueMax, m.disjointCount,
+                regimeChange ? "  <-- wait changed" : "");
+
+    m_LastPacingLogUs = nowUs;
+    m_LastPacingLogWaitMs = m.presentWaitMs;
 }
 
 IFFmpegRenderer* FFmpegVideoDecoder::createHwAccelRenderer(const AVCodecHWConfig* hwDecodeCfg, int pass)
@@ -2183,6 +2305,14 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
                                 Session::get()->getOverlayManager().getOverlayMaxTextLength());
             Session::get()->getOverlayManager().setOverlayTextUpdated(Overlay::OverlayDebug);
         }
+
+        // The presentation cadence line, written from here rather than from where it is
+        // measured. ⚠️ This is the whole reason the 5.2.0 removal note gave for deleting
+        // the old probe: it logged from inside renderFrame(), which is the span the Pacer
+        // reports as "rendering time", so it inflated the number it existed to explain
+        // and cost most exactly when the fault was present. This runs on the decoder
+        // thread, which nothing measures.
+        logPacingWindow();
 
         // Accumulate these values into the global stats
         addVideoStats(m_ActiveWndVideoStats, m_GlobalVideoStats);

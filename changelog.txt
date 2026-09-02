@@ -4,6 +4,28 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+--------------------------------------
+Version 5.6.0 - Half Rate (02/09/2026)
+--------------------------------------
+
+No StreamTweak update required — everything in 5.6.0 is client-side and works with any host. A 60 FPS stream on a 120 Hz screen can be shown one frame every two refreshes, which is what NVIDIA Profile Inspector and Special-K were being used for.
+
+✨ NEW FEATURES:
+• Fractional V-Sync — a switch in Settings → Video that shows each frame for a whole number of refreshes instead of once per refresh, so 60 FPS on a 120 Hz screen becomes one frame every two. Off by default, and it needs V-Sync and Frame pacing on
+• It acts only where the screen runs at an exact multiple of the frame rate, and it is the ratio that matters rather than the screen — at 60 FPS that means 120, 180 or 240 Hz, while a 144 Hz screen is 2.4x at 60 and a clean 2x at 72, which the Custom pill on the frame rate row will give you. The log says at the start of every stream whether it applied, with the numbers it decided on
+• Overridable per host profile, on the row directly under Frame pacing, since that and V-Sync are what decide whether it can act at all — a profile missing either greys the row and names the one to fix, and keeps the choice for the day that changes
+• A Presentation cadence line for the overlay: how many refreshes each frame was really held for, how deep the queue to the display is sitting, and how long presenting a frame blocked. It measures the same way with Fractional V-Sync off, so the two can be compared on the same numbers
+
+🎨 UI:
+• Every on/off setting is a pair of Off/On pills instead of a switch — the same control the host profile and per-game panels have always used, so a yes-or-no answer looks the same wherever it is asked
+• Those pills grow with the interface scale and the switches did not — a switch was sized by the theme rather than by us, so on a handheld every row grew around a control that stayed the size it is on a desktop
+
+⚠️ COMPATIBILITY:
+• This is not the Frame pacing → Hardware setting that 5.1.3 was the last to carry. That one also switched the frame pacing off and left presentation as the only thing timing the stream, which is where the drifting delay of issue #9 came from; this one leaves frame pacing running and requires it. Nothing else about the picture path changes, and with the switch off the app behaves exactly as 5.5.0 did
+
+🙏 THANKS:
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/11) for running half-rate V-Sync through an injector for months and saying so plainly — that is what identified the one arrangement never shipped here — and for testing this build the day it was written
+
 -----------------------------------------
 Version 5.5.0 - Your Display (01/09/2026)
 -----------------------------------------
