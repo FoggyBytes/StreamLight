@@ -584,7 +584,14 @@ VERSION = "$$cat(version.txt)"
 DEFINES += VERSION_STR=\\\"$$cat(version.txt)\\\"
 
 # ⚠️ VERSION_STR arrives as a -D, which jom cannot see change: after bumping
-# version.txt, delete release\main.obj, release\systemproperties.obj and
-# release\autoupdatechecker.obj (or clean-build), or the app keeps printing the
-# old number out of stale objects. The exe's FileVersion updates either way, so
-# it is not a valid check — read the string out of systemproperties.obj instead.
+# version.txt, delete release\main.obj and release\systemproperties.obj (or
+# clean-build), or the app keeps printing the old number out of stale objects.
+# The exe's FileVersion updates either way, so it is not a valid check — read
+# the string out of systemproperties.obj instead.
+#
+# Those two are the whole list: main.cpp and backend/systemproperties.cpp are
+# the only files that use VERSION_STR. This comment also named
+# release\autoupdatechecker.obj until 07/09/2026, and that object cannot exist —
+# backend/autoupdatechecker.cpp is not in SOURCES, does not appear in the
+# generated Makefile, and nothing includes its header. The file is in the tree
+# but no build compiles it.

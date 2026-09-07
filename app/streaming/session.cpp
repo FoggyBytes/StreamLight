@@ -2330,7 +2330,13 @@ void Session::exec()
     }
 
     // Launch Hue Sync minimized on the client if the feature is enabled.
-    if (m_Preferences->hueSyncIntegration) {
+    //
+    // Never during an unlock. That session is plumbing for a PIN pad: the window stays hidden,
+    // nobody is watching anything, and it lasts as long as typing four digits — so lighting the
+    // room for it is wrong twice over. The setting, global or per-host, means "a real streaming
+    // session is starting". Guarded here rather than at the setting, which the unlock path
+    // inherits like every other preference.
+    if (m_Preferences->hueSyncIntegration && !m_UnlockMode) {
         QString huePath = HueSyncManager::discoverExecutable();
         if (!huePath.isEmpty()) {
             m_HueSyncManager = new HueSyncManager();

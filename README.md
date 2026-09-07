@@ -78,6 +78,12 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 
+## ✨ What's New in 5.6.1 — Lights Off
+
+One fix, to the PIN pad that appears after waking a host. Client-side, works with any host, and nothing else behaves differently from 5.6.0.
+
+- **The PIN pad no longer starts Hue Sync.** Unlocking a host after a wake-up opens a hidden session whose only job is to carry four digits to the logon screen — and the *Philips Hue* setting, global or from a host profile, was reading that as a stream starting. It now acts only on a session you actually watch
+
 ## ✨ What's New in 5.6.0 — Half Rate
 
 A 60 FPS stream on a 120 Hz screen can be shown one frame every two refreshes — what NVIDIA Profile Inspector and Special-K were being used for. Client-side, works with any host, and with the switch off nothing behaves differently from 5.5.0.
@@ -88,68 +94,6 @@ A 60 FPS stream on a 120 Hz screen can be shown one frame every two refreshes �
 - **A *Presentation cadence* line for the overlay** — how many refreshes each frame was really held for, how deep the queue to the display is sitting, and how long presenting a frame blocked. It measures the same way with the switch off, so the two states can be compared on the same numbers
 - **Every on/off setting is now a pair of *Off / On* pills** instead of a switch — the control the host profile and per-game panels have always used, so a yes-or-no answer looks the same wherever it is asked. They also grow with the interface scale, which the switches did not: a switch is sized by the theme rather than by us, so on a handheld every row grew around a control that stayed desktop-sized
 - ⚠️ **This is not *Frame pacing → Hardware***, the setting 5.1.3 was the last to carry. That one also switched frame pacing off and left presentation as the only thing timing the stream, which is where the drifting delay of [issue #9](https://github.com/FoggyBytes/StreamLight/issues/9) came from. This one leaves frame pacing running and requires it
-
-## ✨ What's New in 5.5.0 — Your Display
-
-The resolution and frame rate pickers offer what your own screen can actually do, and a frame rate outside the presets can be typed in. Client-side, works with any host.
-
-- **The frame rates your display can run.** A 165 Hz screen is offered 165, beside the usual 30 / 60 / 90 / 120, and a small dot marks the values that came from your display rather than from the list. Nothing changes on a 60 Hz screen — the row comes out exactly as before
-- **A Custom pill beside the frame rate**, the one the resolution row has always had, for a rate no display reports or a deliberate cap. It is in the host profile and per-game panels too, so a rate you set globally can be overridden anywhere
-- **Your display's own resolution is offered as well** — a 16:10 or ultrawide panel no longer has to be entered by hand
-- **Resolution and Frame rate are two rows** instead of one, each showing what was found on this display underneath its name. Both custom-value windows say the same thing, so there is a number to aim at before typing one
-- **The in-stream panel offers the same list.** *Stream Settings* kept its own copy of the presets, so a resolution or frame rate you could pick in *Settings* was not necessarily there mid-session. It reads the same values now, your display's own included, and says *this display* on the row carrying them
-- **A frame rate outside the presets stays put.** Until 5.4.0 such a value could only arrive from the settings store shared with Moonlight; the in-stream *Stream Settings* panel did not know what to do with one and quietly fell back to 120, which it then wrote back the next time anything was applied. Reported in [issue #13](https://github.com/FoggyBytes/StreamLight/issues/13)
-- ⚠️ **Match refresh rate has been removed**, one release after it arrived. Put to the test against the tools it was meant to replace, on the hardware it was meant to help, it lost: taking a 120 Hz panel down to 60 brought occasional stutters, slightly worse control latency and clearly worse rendering times, where leaving the panel high and presenting at half rate did not. If your screen runs faster than your stream, halving the refresh at the driver level — NVIDIA Profile Inspector, or Special-K elsewhere — remains the way to do it. It was off by default, and it is gone from *Settings* and from host profiles
-
-## ✨ What's New in 5.4.0 — Own House
-
-StreamLight keeps its settings in its own place instead of sharing Moonlight's. Client-side, works with any host.
-
-> ⚠️ **Read before updating.** This version starts from scratch once: no hosts, default settings. Pair each host again; if you use StreamTweak, approve this device on the host **and** switch the integration back on for each host in *Settings* — a newly paired host starts with it off, so the bridge stays silent until you do. Nothing is deleted — the old settings stay where they were, so 5.3.0 still finds them. If you normally wake your host from StreamLight, wake it *before* updating: Wake-on-LAN needs the host's stored address, and that goes with the rest.
-
-- **Its own settings store.** Installed side by side, StreamLight and Moonlight used to share one — the same registry key and the same cache folder — so each one overwrote the other's resolution, bitrate, V-Sync and codec every time it saved
-- **Per-host settings survive having Moonlight installed.** Moonlight rewrites the whole host list whenever it saves, dropping every field it does not know about: the Tailscale address, the stage artwork, the pinned address, the per-host StreamTweak switch. Hosts that kept forgetting their Tailscale endpoint were this
-- **A one-time notice on first launch** says the settings were reset, what to do about it, and that nothing was thrown away — an empty host list with no explanation reads as a fault
-- **"Restart now" actually restarts.** Answering *Yes* to the Tailscale restart prompt used to close StreamLight and leave nothing running: the replacement started while the old one was still shutting down, saw it was there, and stepped aside
-- **GUI mode asks to restart.** *Windowed / Maximized / Fullscreen* is read when the window is built, so it only takes effect on the next launch — it now says so instead of appearing to do nothing. *No* keeps the choice for next time
-- **LB/RB switch profiles on a host with only one.** The cycle runs through *Global* too, so one profile is already two stops — but the shoulders stayed dead until a second profile existed, while the on-screen hints said they would work
-- **No more black stripe down the right edge of the large cover.** The drop shadow draws a black backing plate behind the artwork, and it was coming out a couple of pixels wider than the picture laid over it — which is why the stripe arrived with 5.3.0 and showed at some window sizes and not others. Reported in [issue #11](https://github.com/FoggyBytes/StreamLight/issues/11)
-
-## ✨ What's New in 5.3.0 — One Scale
-
-The interface is drawn at one scale from end to end, and the settings you override per host or per game now say what they inherit. Client-side, works with any host.
-
-- **Every override says what it inherits.** The first option in the per-game and host profile panels carries the value it stands for — *Global · 1080p* instead of *Global* — so choosing it no longer means leaving for *Settings* to find out what it meant. Where a host profile is active, the per-game panel names that profile and the value it hands down
-- **And the row stops offering that value twice.** With *Global* at 1080p the resolution row reads *Global · 1080p | 720p | 1440p | 4K*: the option that would only repeat the inherited answer is gone, and comes back as soon as it stops being a repetition. A value you pinned yourself is never hidden
-- **One scale, everywhere.** *Settings* was written in fixed pixels while the host page and every dialog already grew with the window, so on a large screen the same row came out one size there and another in a dialog opened on top of it. The segmented pickers and the pill buttons follow now too — they were the last controls left at a fixed size
-- **The per-game and host profile panels are wider**, using the space they were leaving empty at both sides rather than getting taller
-- **The cover no longer comes back deformed from a stream.** The drop shadow's automatic padding was resizing the effect under the artwork; the shadow is now cast by a separate silhouette and the picture never passes through a padded pass. Reported in [issue #10](https://github.com/FoggyBytes/StreamLight/issues/10)
-- **The version in the corner is read from the app itself** — it had been typed by hand at every release, and 5.2.1 shipped saying 5.2.0
-
-## ✨ What's New in 5.2.1 — One To One
-
-The refresh rate match is back, as an addition on top of Moonlight's presentation code rather than a change to it. Client-side, works with any host, and with the switch off nothing behaves differently from 5.2.0.
-
-- **Match refresh rate.** A switch in *Settings → Video* runs your display at the stream's frame rate for the session and puts it back when the stream ends, so 60 FPS on a 120 Hz screen is shown one frame per refresh instead of two — the judder 5.2.0 warned about, without NVIDIA Profile Inspector or Special-K. Off by default
-- **It acts only in Fullscreen.** Borderless and Windowed keep the desktop refresh rate, so there the switch greys out and says why rather than pretending. Your setting is kept and comes back with Fullscreen
-- **Overridable per host profile**, on the row directly under *Display mode*, since that is what decides whether it can act at all. A profile that is not on Fullscreen greys it out and names the reason — and keeps the choice, which starts working the day that profile goes back to Fullscreen
-- **The streaming engine is untouched.** The display mode is chosen exactly as Moonlight chooses it; the setting only edits that choice in the moment between the window being made and it going fullscreen, so the panel still sees a single change and nothing in the picture path is different
-
-## ✨ What's New in 5.2.0 — Hands Off
-
-StreamLight stops taking the presentation of frames into its own hands: between the decoder and your screen it now runs Moonlight's own code, with Moonlight's current protocol and video libraries alongside it. And everything that needs StreamTweak on the host moves behind one switch per host, in a Settings tab of its own.
-
-- **A StreamTweak tab in Settings.** Everything StreamLight can do only with StreamTweak on the host, listed in one place, with a switch for each of your hosts and the download link that used to sit in About. Each row says whether StreamTweak is actually answering on that host
-- **Frame pacing is Moonlight's again.** The half-rate cadence added in 3.4.0 smoothed 60 FPS on a 120 Hz screen by holding each frame for two refreshes — but holding frames that way makes them pile up in the graphics driver, and that is the drifting delay behind [issue #9](https://github.com/FoggyBytes/StreamLight/issues/9). Frames are now presented the moment they are ready, and any evening out is the same software pacer Moonlight uses
-- **Frame pacing is now Off or On.** *Automatic* and *Software* both meant the same thing once there was no hardware path left, and *Hardware* meant nothing at all. Your setting carries over
-- ⚠️ **Refresh rate switching has been removed**, and with it *Match frame rate*. Your screen goes to the highest refresh rate your frame rate divides into, as Moonlight does. Stated plainly: a 60 FPS stream on a 120 Hz screen can judder on camera pans again, and the fix is to halve the refresh rate at the driver level — NVIDIA Profile Inspector, or Special-K elsewhere
-- **The code that talks to your host is Moonlight's current version again**, after six months behind — error correction on the processor's own instructions, malformed replies turned away rather than parsed, and Windows socket failures reported for what they are
-- **The video libraries move up for the first time since March** — FFmpeg goes up a major version and the Vulkan renderer with it
-- **The picture is asked for at full colour range** — all 256 levels per channel instead of the 16-235 broadcast range, which keeps detail in dark scenes. If your host answers with limited range instead, StreamLight follows what it actually sends
-- **Everything in Settings answers the mouse now.** The outline under the pointer brightens, in a neutral colour so it can never be confused with the accent the pad and keyboard use, and the focus ring steps aside while you are pointing. The pointer itself gets out of the way when you pick up the controller
-- **The settings that need StreamTweak grey themselves out**, naming the host, when that host has the integration switched off — and *Wait for the game to appear* now states the dependency it always had
-- **The performance overlay has no Frame pacing line any more**, and the *Cadence* line added in 5.1.2 is gone with the measurement behind it. Nothing else about your overlay changes
-- **Fixes** — the host-page cover is no longer left stretched after a stream, the PIN pad no longer blames your PIN when the host simply stopped answering, the banded stripes across host cards are gone, a stream that ends with no picture points at the host's graphics drivers rather than your own firewall, and StreamLight stops knocking on the StreamTweak port on hosts that do not run it
 
 *Older releases are in [changelog.txt](changelog.txt).*
 

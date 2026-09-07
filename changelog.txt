@@ -4,6 +4,15 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+---------------------------------------
+Version 5.6.1 - Lights Off (07/09/2026)
+---------------------------------------
+
+No StreamTweak update required — 5.6.1 is client-side and works with any host. One fix, to the PIN pad that appears after waking a host.
+
+🐛 FIXES:
+• Unlocking a host with the PIN pad no longer starts Hue Sync on the client — the pad is carried by a hidden session that exists only to type four digits, and the Philips Hue setting, global or from a host profile, was reading it as a stream starting. It now acts only on a session you actually watch
+
 --------------------------------------
 Version 5.6.0 - Half Rate (02/09/2026)
 --------------------------------------
