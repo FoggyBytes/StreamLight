@@ -69,12 +69,12 @@ Popup {
     function _bodyText() {
         switch (selector.currentIndex) {
         case 0:
-            return qsTr("Shut down the host PC%1. The streaming session will end.")
+            return qsTr("Shut down the host%1. The streaming session will end.")
                      .arg(pop.hostName.length > 0 ? (" (" + pop.hostName + ")") : "")
         case 1:
-            return qsTr("Shut down this PC (the device you're using now).")
+            return qsTr("Shut down this device (the one you are using now).")
         case 2:
-            return qsTr("Shut down the host PC%1, then shut down this PC.")
+            return qsTr("Shut down the host%1, then this device.")
                      .arg(pop.hostName.length > 0 ? (" (" + pop.hostName + ")") : "")
         }
         return ""
@@ -99,7 +99,7 @@ Popup {
         return ""
     }
     function _pillColor(state) {
-        return state === "pending" ? "#f59e0b" : state === "none" ? Theme.accent : "#909090"
+        return state === "pending" ? Theme.warning : state === "none" ? Theme.accent : Theme.text2
     }
 
     contentItem: ColumnLayout {
@@ -107,8 +107,8 @@ Popup {
 
         Label {
             text: qsTr("POWER")
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(13)
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontSmall)
             font.bold: true
             font.letterSpacing: 1.6
             color: Theme.text3
@@ -127,9 +127,9 @@ Popup {
 
         Label {
             text: pop._bodyText()
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(18)
-            color: "#f0f0f0"
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontTitle)
+            color: Theme.text
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
@@ -141,9 +141,9 @@ Popup {
         Label {
             visible: !pop.hostAllowed && !pop.clientOnly
             text: qsTr("Host shutdown needs StreamTweak access. Approve this device on the host (Settings → Bridge security) to enable Host and Both.")
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(13)
-            color: "#a0a0a0"
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontSmall)
+            color: Theme.text2
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
@@ -158,8 +158,8 @@ Popup {
 
             Label {
                 text: qsTr("WINDOWS UPDATES")
-                font.family: "DM Sans"; font.pixelSize: pop._px(11); font.bold: true; font.letterSpacing: 1.2
-                color: "#606060"
+                font.family: Theme.family; font.pixelSize: pop._px(Theme.fontCaption); font.bold: true; font.letterSpacing: 1.2
+                color: Theme.text3
                 Layout.alignment: Qt.AlignHCenter
             }
             RowLayout {
@@ -168,11 +168,11 @@ Popup {
                 spacing: pop._px(10)
                 Label {
                     text: "🖥  " + qsTr("Host") + (pop.hostName.length ? " (" + pop.hostName + ")" : "")
-                    font.family: "DM Sans"; font.pixelSize: pop._px(13); color: "#c0c0c0"
+                    font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall); color: Theme.text2
                 }
                 Label {
                     text: pop._pillText(pop.hostUpdateState)
-                    font.family: "DM Sans"; font.pixelSize: pop._px(13); color: pop._pillColor(pop.hostUpdateState)
+                    font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall); color: pop._pillColor(pop.hostUpdateState)
                 }
             }
             RowLayout {
@@ -180,12 +180,12 @@ Popup {
                 Layout.alignment: Qt.AlignHCenter
                 spacing: pop._px(10)
                 Label {
-                    text: "💻  " + qsTr("This PC")
-                    font.family: "DM Sans"; font.pixelSize: pop._px(13); color: "#c0c0c0"
+                    text: "💻  " + qsTr("This device")
+                    font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall); color: Theme.text2
                 }
                 Label {
                     text: pop._pillText(pop.clientUpdateState)
-                    font.family: "DM Sans"; font.pixelSize: pop._px(13); color: pop._pillColor(pop.clientUpdateState)
+                    font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall); color: pop._pillColor(pop.clientUpdateState)
                 }
             }
         }
@@ -215,22 +215,22 @@ Popup {
                 radius: pop._px(4)
                 y: updatesCheck.height / 2 - height / 2
                 color: updatesCheck.checked ? Theme.accent : "transparent"
-                border.color: (updatesCheck.activeFocus || updatesCheck.checked) ? Theme.accent : "#3a3a3a"
+                border.color: (updatesCheck.activeFocus || updatesCheck.checked) ? Theme.accent : Theme.lineHigh
                 border.width: updatesCheck.activeFocus ? 2 : 1
                 Label {
                     anchors.centerIn: parent
                     visible: updatesCheck.checked
                     text: "✓"
-                    color: "#0d0d0d"
-                    font.pixelSize: pop._px(14)
+                    color: Theme.ground
+                    font.pixelSize: pop._px(Theme.fontSmall)
                     font.bold: true
                 }
             }
             contentItem: Label {
                 text: updatesCheck.text
-                font.family: "DM Sans"
-                font.pixelSize: pop._px(14)
-                color: "#d0d0d0"
+                font.family: Theme.family
+                font.pixelSize: pop._px(Theme.fontSmall)
+                color: Theme.text2
                 verticalAlignment: Text.AlignVCenter
                 leftPadding: updatesCheck.indicator.width + pop._px(10)
             }
@@ -243,9 +243,9 @@ Popup {
             text: pop._targetChecking
                   ? qsTr("Checking for updates…")
                   : qsTr("Nothing pending for the selected device. For a full check, use \"Windows Update\".")
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(13)
-            color: "#909090"
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontSmall)
+            color: Theme.text2
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
@@ -274,17 +274,17 @@ Popup {
                     radius: pop._px(8)
                     color: confirmBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : confirmBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
-                         :                          "#1f1f1f"
+                         :                          Theme.card
                     border.color: confirmBtn.activeFocus ? Theme.accent
-                                : confirmBtn.hovered     ? "#3a3a3a"
+                                : confirmBtn.hovered     ? Theme.lineHigh
                                 :                          Theme.line
                     border.width: confirmBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: confirmBtn.text
                     color: Theme.accent
-                    font.family: "DM Sans"
-                    font.pixelSize: pop._px(15)
+                    font.family: Theme.family
+                    font.pixelSize: pop._px(Theme.fontBody)
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -308,17 +308,17 @@ Popup {
                     radius: pop._px(8)
                     color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : cancelBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
-                         :                         "#1f1f1f"
+                         :                         Theme.card
                     border.color: cancelBtn.activeFocus ? Theme.accent
-                                : cancelBtn.hovered     ? "#3a3a3a"
+                                : cancelBtn.hovered     ? Theme.lineHigh
                                 :                         Theme.line
                     border.width: cancelBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: cancelBtn.text
-                    color: "#f0f0f0"
-                    font.family: "DM Sans"
-                    font.pixelSize: pop._px(15)
+                    color: Theme.text
+                    font.family: Theme.family
+                    font.pixelSize: pop._px(Theme.fontBody)
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter

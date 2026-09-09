@@ -6,6 +6,7 @@
 
 #include "../bandwidth.h"
 #include "decoder.h"
+#include "settings/playtime.h"
 #include "ffmpeg-renderers/renderer.h"
 #include "ffmpeg-renderers/pacer/pacer.h"
 
@@ -49,6 +50,18 @@ public:
      * Called from the Qt main thread by SessionTelemetrySampler.
      */
     TelemetryWindowStats getLastWindowStats() const;
+
+    /**
+     * The whole session's totals, not a one-second window — what the play-time record keeps
+     * about how the session went.
+     *
+     * Read once, from the main thread, after the input handler is gone and before the
+     * decoder is destroyed. It touches m_GlobalVideoStats without the spin lock on purpose:
+     * that member is only ever written from the decode path, which has already stopped by
+     * the time this is called. Taking m_LastWndLock here would suggest a protection it does
+     * not give, since the lock guards a different member.
+     */
+    PlaytimeSessionStats getSessionStats() const;
 
 private:
     enum class TestMode {

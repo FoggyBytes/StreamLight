@@ -55,6 +55,39 @@ class Theme : public QObject
     Q_PROPERTY(QString family READ family CONSTANT)
 
     /**
+     * The type scale. Seven steps, and nothing outside them.
+     *
+     * <p>A modular scale: base 16 with a minor third (1.2), so every size is a fixed ratio of
+     * every other rather than a number somebody liked at the time. The steps come out at
+     * 11 · 13 · 16 · 19 · 23 · 28 · 34, which is not a coincidence — those seven were already
+     * the most-used sizes in the app. What the scale removes is the <i>other</i> fourteen that
+     * had accumulated beside them: 12, 14, 15, 17, 18, 20, 22, 26 and 30 each existed in one
+     * or two files, a pixel or two from a neighbour, for no reason anybody could state.</p>
+     *
+     * <p><b>Why it belongs here rather than in a QML singleton.</b> Same argument as the
+     * colours: these are read from 47 files, and the day the base or the ratio moves it has to
+     * move once. Written as literals they could not be moved at all — which is exactly the
+     * state they were in.</p>
+     *
+     * <p>⚠️ Design sizes, NOT final pixels. Every caller still multiplies by the interface
+     * scale — <tt>_px(Theme.fontBody)</tt>, not <tt>Theme.fontBody</tt> — except the window
+     * chrome, which is sized in fixed pixels on purpose. Handing out pre-scaled values here
+     * would take that choice away from the call site.</p>
+     *
+     * <p>The four sizes above the scale (40, 52, 64, 68, 100) are deliberately not steps: they
+     * are one-off display figures — the PIN digits, the segue title, the big numbers on the
+     * stage — each used exactly once, where the size <i>is</i> the design rather than a
+     * position in a hierarchy.</p>
+     */
+    Q_PROPERTY(int fontCaption READ fontCaption CONSTANT)
+    Q_PROPERTY(int fontSmall   READ fontSmall   CONSTANT)
+    Q_PROPERTY(int fontBody    READ fontBody    CONSTANT)
+    Q_PROPERTY(int fontTitle   READ fontTitle   CONSTANT)
+    Q_PROPERTY(int fontH2      READ fontH2      CONSTANT)
+    Q_PROPERTY(int fontH1      READ fontH1      CONSTANT)
+    Q_PROPERTY(int fontDisplay READ fontDisplay CONSTANT)
+
+    /**
      * Monospace, kept for one thing only: the pairing PIN. Those four digits exist to be read
      * off one screen and compared against another, and a 1 that looks like an l is precisely
      * the failure a monospaced face exists to prevent. Everywhere else the column alignment
@@ -104,15 +137,45 @@ public:
     QColor lineHigh() const { return QColor(0xff, 0xff, 0xff, 0x30); }
     QColor text()     const { return QColor(0xf3, 0xf7, 0xf8); }
     QColor text2()    const { return QColor(0xa2, 0xb2, 0xba); }
-    QColor text3()    const { return QColor(0x66, 0x76, 0x7e); }
+
+    /**
+     * Tertiary text — captions, section headers, the muted half of a two-tone line.
+     *
+     * ⚠️ It was #66767e, which measures 4.26:1 on the page and 3.90:1 on a card. WCAG AA wants
+     * 4.5:1 for text this size, and this token's whole job is small text: the 11 px
+     * "PLAYED"/"SESSIONS" captions, the uppercase section headers in Settings. #758790 is the
+     * same hue lightened 15%, measuring 5.37:1 and 4.93:1, and it stays clearly below text2
+     * (9.18:1) so the three-step hierarchy is intact. Do not darken it back without measuring.
+     */
+    QColor text3()    const { return QColor(0x75, 0x87, 0x90); }
 
     QColor online()  const { return QColor(0x4a, 0xde, 0x80); }
     QColor warning() const { return QColor(0xf5, 0xa6, 0x23); }
     QColor danger()  const { return QColor(0xf8, 0x71, 0x71); }
+    /**
+     * "This host is off."
+     *
+     * ⚠️ It measures 3.67:1 on the page, which is BELOW the 4.5:1 that text needs — and that is
+     * fine, because it is never text. Every use is either an 8 px dot (a graphical object,
+     * where 3:1 is the bar, and it clears it) or the label of a disabled pill (which WCAG
+     * exempts). Checked, all four sites, on 09/09/2026. If it ever does become the colour of a
+     * live word, it has to be lightened first — and it cannot simply be lightened to match
+     * text3, because the two would then be the same colour and "off" would stop meaning
+     * anything next to "quiet".
+     */
     QColor offline() const { return QColor(0x5b, 0x6c, 0x75); }
 
     QString family()     const { return QStringLiteral("DM Sans"); }
     QString monoFamily() const { return QStringLiteral("JetBrains Mono"); }
+
+    // The type scale — see the note on the properties. Base 16, minor third (1.2).
+    int fontCaption() const { return 11; }   // ms(-2)
+    int fontSmall()   const { return 13; }   // ms(-1)
+    int fontBody()    const { return 16; }   // ms( 0)  — base
+    int fontTitle()   const { return 19; }   // ms( 1)
+    int fontH2()      const { return 23; }   // ms( 2)
+    int fontH1()      const { return 28; }   // ms( 3)
+    int fontDisplay() const { return 34; }   // ms( 4)
 
     bool reduceAnimations() const { return m_ReduceAnimations; }
 

@@ -6,6 +6,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.5
 import QtQuick.Window 2.2
 
+import Theme 1.0
 import SdlGamepadKeyNavigation 1.0
 import Session 1.0
 import ShortcutManager 1.0
@@ -41,8 +42,8 @@ Item {
     property string appName
     property url boxArt
     property string stageText : unlockMode ? qsTr("Connecting…") :
-                                isResume   ? qsTr("Resuming %1...").arg(appName) :
-                                             qsTr("Starting %1...").arg(appName)
+                                isResume   ? qsTr("Resuming %1…").arg(appName) :
+                                             qsTr("Starting %1…").arg(appName)
     property bool isResume : false
     property bool quitAfter : false
 
@@ -146,7 +147,7 @@ Item {
     function stageStarting(stage)
     {
         // Update the spinner text
-        stageText = qsTr("Starting %1...").arg(stage)
+        stageText = qsTr("Starting %1…").arg(stage)
 
         // Something moved, so the host is alive: give it another full window before
         // complaining. A slow-but-progressing connection must never be called stalled.
@@ -356,7 +357,7 @@ Item {
         // It stays true in general — it just has nothing to do with this failure.
         if (portTestResult !== 0 && portTestResult !== -1 && streamSegueErrorDialog.text
                 && !(session && session.hostSideVideoFailure())) {
-            streamSegueErrorDialog.text += "\n\n" + qsTr("This PC's Internet connection is blocking StreamLight. Streaming over the Internet may not work while connected to this network.")
+            streamSegueErrorDialog.text += "\n\n" + qsTr("This network is blocking StreamLight. Streaming over the Internet may not work while you are on it.")
         }
 
         // An unlock session that ends without the pad having decided anything — the launch
@@ -854,7 +855,7 @@ Item {
             text: _c ? _c.gameName : streamSegue.appName
             font.pointSize: Math.max(18, Math.round(_h * 0.042))
             font.bold: true
-            color: "#f2f2f4"
+            color: Theme.text
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             width: parent.width
@@ -882,7 +883,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: _c && _c.title !== "" ? _c.title : stageText
                 font.pointSize: Math.max(13, Math.round(_h * 0.026))
-                color: "#f2f2f4"
+                color: Theme.text
                 verticalAlignment: Text.AlignVCenter
                 wrapMode: Text.Wrap
             }
@@ -893,7 +894,7 @@ Item {
             text: _c ? _c.detail : ""
             visible: text !== ""
             font.pointSize: Math.max(10, Math.round(_h * 0.018))
-            color: "#8f8f9c"
+            color: Theme.text2
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             width: parent.width
@@ -906,7 +907,7 @@ Item {
             text: _c && _c.warning !== "" ? "⚠ " + _c.warning : streamSegue.linkWarning
             visible: text !== "" && text !== "⚠ "
             font.pointSize: Math.max(10, Math.round(_h * 0.017))
-            color: "#f5a623"
+            color: Theme.warning
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             width: parent.width
@@ -933,7 +934,7 @@ Item {
         text: qsTr("Taking longer than usual")
         visible: streamSegue._launchSlow && !streamSegue.unlockMode
         font.pointSize: Math.max(10, Math.round(streamSegue._h * 0.016))
-        color: "#f5a623"
+        color: Theme.warning
     }
 
     // One row for both prompts and both devices. ActionHint draws the vendor glyph or the
@@ -950,7 +951,7 @@ Item {
 
         readonly property int  _glyph: Math.max(22, Math.round(streamSegue._h * 0.028))
         readonly property int  _font:  Math.max(10, Math.round(streamSegue._h * 0.016))
-        readonly property color _dim:  "#8f8f9c"
+        readonly property color _dim:  Theme.text2
 
         // "B" as the app means it, which is what the user's controller calls B on every
         // vendor — the glyph resolver handles that, including Nintendo's swapped faces.
@@ -1013,7 +1014,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("Connecting…")
             font.pointSize: Math.max(13, Math.round(streamSegue._h * 0.026))
-            color: "#f2f2f4"
+            color: Theme.text
         }
     }
 

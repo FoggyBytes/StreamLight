@@ -38,13 +38,25 @@ Button {
         implicitWidth: Math.round(150 * btn._u)
         implicitHeight: Math.round(42 * btn._u)
         radius: Math.round(8 * btn._u)
-        color: hov.keyFocused ? (btn.danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.20)
+        /*
+         * ⚠️ The disabled state is drawn HERE and not on the instance.
+         *
+         * A Button with `enabled: false` was visually identical to one that worked: HoverState
+         * already refuses to light up a disabled control, so the pointer got no promise — but
+         * standing still, at rest, nothing said the button was inert. The first button in the
+         * app that needed to be greyed out would otherwise have carried its own opacity, and
+         * the second one a different opacity.
+         */
+        opacity: btn.enabled ? 1.0 : 0.45
+        color: !btn.enabled   ? "transparent"
+             : hov.keyFocused ? (btn.danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.20)
                                              : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20))
              :                   "#14ffffff"
-        border.color: hov.keyFocused ? (btn.danger ? Theme.danger : Theme.accent)
+        border.color: !btn.enabled    ? Theme.line
+                    : hov.keyFocused ? (btn.danger ? Theme.danger : Theme.accent)
                     : hov.active      ? Theme.lineHigh
                     :                   Theme.line
-        border.width: hov.keyFocused ? 2 : 1
+        border.width: (btn.enabled && hov.keyFocused) ? 2 : 1
 
         // Colour only, so the width never moves and the pointer cannot nudge the geometry.
         Behavior on border.color {
@@ -63,7 +75,11 @@ Button {
     }
     contentItem: Label {
         text: btn.text
-        color: btn.danger      ? Theme.danger
+        // Disabled loses the role colour as well as the strength: a red word at 45% still
+        // reads as "destructive, and available". Theme.offline is the app's inert grey, and a
+        // disabled control is the one place its contrast is not held to the text threshold.
+        color: !btn.enabled    ? Theme.offline
+             : btn.danger      ? Theme.danger
              : btn.affirmative ? Theme.accent
              :                   Theme.text
         font.family: Theme.family; font.pixelSize: Math.round(btn.fontSize * btn._u); font.bold: true

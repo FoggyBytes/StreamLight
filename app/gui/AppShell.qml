@@ -1,6 +1,5 @@
 import Theme 1.0
 import QtQuick 2.9
-import QtQuick.Controls 2.2
 
 import SdlGamepadKeyNavigation 1.0
 import SystemProperties 1.0
@@ -32,21 +31,17 @@ FocusScope {
     onWidthChanged: Theme.uiScale = width / 1330
     Component.onCompleted: Theme.uiScale = width / 1330
 
-    // Design tokens (mirrored from main.qml — id scopes are per-document).
-    readonly property color _bg1:      "#151515"
-    readonly property color _border:   "#2a2a2a"
-    readonly property color _borderS:  "#404040"
-    readonly property color _bgHov:    "#262626"
-    readonly property color _bg2:      "#1a1a1a"
-    readonly property color _text:     "#f0f0f0"
-    readonly property color _textDim:  "#a0a0a0"
+    // (Seven local colour tokens used to sit here, "mirrored from main.qml". Five of them —
+    //  _bg1, _bg2, _border, _borderS, _bgHov — were never read by anything in this file, and
+    //  the two that were are Theme.text and Theme.text2 under other names. The mirror is what
+    //  let this shell drift a shade away from the pages it frames, so there is no mirror now.)
+
     // ⚠️ Read from the binary, never written here. This was a literal from 4.3.0 to
     // 5.2.0 and was bumped by hand at every release — until 5.2.1, where the bump was
     // missed and the app spent a release telling users it was the previous version.
     // SystemProperties.versionString is VERSION_STR, which qmake takes from
     // app/version.txt, so the label and the installer can no longer disagree.
     readonly property string _version: SystemProperties.versionString
-    readonly property string _mono:    "DM Sans"
 
     // 0 = Home, 1 = Apps, 2 = Settings
     property int currentPage: 0
@@ -301,8 +296,8 @@ FocusScope {
         if (currentPage === 0 && homeLoader.item) {
             if (homeLoader.item.clearTailscalePreferences)
                 homeLoader.item.clearTailscalePreferences()
-            if (homeLoader.item.refreshLastSession)
-                homeLoader.item.refreshLastSession()
+            if (homeLoader.item.refreshLastPlayed)
+                homeLoader.item.refreshLastPlayed()
             if (cameFromApps && homeLoader.item.maybeAskLinkRestore)
                 homeLoader.item.maybeAskLinkRestore()
         }
@@ -395,19 +390,29 @@ FocusScope {
      * object, so it hopped a few pixels on every page change. Declared once in the shell it
      * cannot drift again, whatever the pages do to their headers.
      *
-     * Fixed pixels, not the pages' `_u` scale: this is chrome, like the status bar's own
-     * 44px height and 16px gutter, and it belongs to the window rather than to the content.
-     * The margins put its centre on the wordmark's, which is the one header it has to agree
-     * with — the other two are close enough that no one reading them will see a difference.
+     * ⚠️ It used to be in FIXED pixels, on the argument that chrome belongs to the window
+     * rather than to the content. That argument holds on a desktop and fails on a handheld:
+     * the content scales to 1.60 while this stayed at 1.00, so on the Ally the clock and the
+     * battery were drawn at roughly two thirds the size of everything they sat beside — the
+     * one place on the screen where you have to squint, on the device most likely to be at
+     * arm's length.
+     *
+     * Scaled as a whole rather than number by number: this is a small illustration with a
+     * battery drawn in tenths of a pixel (2.1, 5.2, 1.3), and rounding each of those
+     * independently is how a drawing stops lining up with itself. TopRight origin so it
+     * grows down and inward from the corner it is anchored to, which keeps the margin the
+     * margin at every scale.
      *
      * Declared after contentArea so it draws over the pages; popups have their own overlay
      * layer above both.
      */
     StatusCluster {
         anchors.top: parent.top
-        anchors.topMargin: 22
+        anchors.topMargin: Math.round(22 * Theme.uiScale)
         anchors.right: parent.right
-        anchors.rightMargin: 44
+        anchors.rightMargin: Math.round(44 * Theme.uiScale)
+        transformOrigin: Item.TopRight
+        scale: Theme.uiScale
     }
 
     // Status bar — gamepad prompts + version. Glyphs swap by controller type.
@@ -416,7 +421,7 @@ FocusScope {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: 44
+        height: Math.round(44 * Theme.uiScale)
         // Normally transparent, so the page's own ambient gradient runs behind it unbroken.
         //
         // A page that paints its own floor has to say so, though: the host page ends in
@@ -509,21 +514,21 @@ FocusScope {
         Row {
             id: hintRow
             anchors.left: parent.left
-            anchors.leftMargin: 20
+            anchors.leftMargin: Math.round(20 * Theme.uiScale)
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 20
+            spacing: Math.round(20 * Theme.uiScale)
 
             Repeater {
                 model: statusBar._hints
                 delegate: Item {
                     anchors.verticalCenter: parent.verticalCenter
-                    implicitWidth:  promptRow.implicitWidth + 8
-                    implicitHeight: 30
+                    implicitWidth:  promptRow.implicitWidth + Math.round(8 * Theme.uiScale)
+                    implicitHeight: Math.round(30 * Theme.uiScale)
 
                     Row {
                         id: promptRow
                         anchors.centerIn: parent
-                        spacing: 9
+                        spacing: Math.round(9 * Theme.uiScale)
 
                         // ABXY circle 26×26, LB/RB rounded rect 40×24 — the sizes ActionHint
                         // and PadGlyph now share, so a prompt here and a combo in Settings are
@@ -532,15 +537,15 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             buttonKey: modelData.btn
                             keyLabel:  modelData.key
-                            size: 26
+                            size: Math.round(26 * Theme.uiScale)
                         }
 
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: modelData.act
-                            color: appShell._text
-                            font.pixelSize: 15
-                            font.family: "DM Sans"
+                            color: Theme.text
+                            font.pixelSize: Math.round(Theme.fontBody * Theme.uiScale)
+                            font.family: Theme.family
                         }
                     }
 
@@ -566,9 +571,9 @@ FocusScope {
         Row {
             id: rightCluster
             anchors.right: parent.right
-            anchors.rightMargin: 16
+            anchors.rightMargin: Math.round(16 * Theme.uiScale)
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 22
+            spacing: Math.round(22 * Theme.uiScale)
 
             // (The host-link chip used to live here. It was in the status bar because there was
             //  nowhere else to put it; now the host card says it on Home and the header says it
@@ -588,25 +593,25 @@ FocusScope {
                 Row {
                     id: chipContent
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 10
+                    spacing: Math.round(10 * Theme.uiScale)
 
                     Image {
                         anchors.verticalCenter: parent.verticalCenter
                         source: statusBar._iconSelect
-                        width: 40; height: 24
+                        width: Math.round(40 * Theme.uiScale); height: Math.round(24 * Theme.uiScale)
                         sourceSize.width: 80; sourceSize.height: 48
                         fillMode: Image.PreserveAspectFit; smooth: true
                     }
                     Column {
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 3
+                        spacing: Math.round(3 * Theme.uiScale)
                         Text {
-                            width: Math.min(implicitWidth, 260)
+                            width: Math.min(implicitWidth, Math.round(260 * Theme.uiScale))
                             elide: Text.ElideRight
                             text: qsTr("Update")
                                   + (appShell._updateHost.length ? " · " + appShell._updateHost : "")
                                   + "   " + appShell._updatePhaseLabel(appShell._updatePhase)
-                            color: appShell._text; font.pixelSize: 13; font.family: "DM Sans"
+                            color: Theme.text; font.pixelSize: Math.round(Theme.fontSmall * Theme.uiScale); font.family: Theme.family
                         }
                         // (A mini progress bar and a percentage used to sit here. The figure
                         //  behind them only moves between files and stands still through the
@@ -626,9 +631,9 @@ FocusScope {
                 id: versionLabel
                 anchors.verticalCenter: parent.verticalCenter
                 text: "v" + appShell._version
-                color: appShell._textDim
-                font.family: appShell._mono
-                font.pixelSize: 13
+                color: Theme.text2
+                font.family: Theme.family
+                font.pixelSize: Math.round(Theme.fontSmall * Theme.uiScale)
                 font.letterSpacing: 1
             }
         }

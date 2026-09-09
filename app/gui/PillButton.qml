@@ -65,7 +65,7 @@ FocusScope {
             anchors.centerIn: parent
             text: btn.text
             color: btn.selected ? Theme.onAccent : Theme.text2
-            font.family: Theme.family; font.pixelSize: btn._px(13)
+            font.family: Theme.family; font.pixelSize: btn._px(Theme.fontSmall)
             font.bold: btn.selected
         }
     }

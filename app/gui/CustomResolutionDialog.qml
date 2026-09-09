@@ -51,8 +51,8 @@ Popup {
     padding: pop._px(32)
 
     background: Rectangle {
-        color: "#1a1a1a"
-        border.color: "#2a2a2a"
+        color: Theme.card
+        border.color: Theme.line
         border.width: 1
         radius: pop._px(12)
     }
@@ -65,21 +65,21 @@ Popup {
 
         Layout.preferredWidth: _fpx(130)
         implicitHeight: _fpx(48)
-        color: "#f0f0f0"
+        color: Theme.text
         selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
         selectedTextColor: Theme.onAccent
-        font.family: "DM Sans"
-        font.pixelSize: _fpx(20)
+        font.family: Theme.family
+        font.pixelSize: _fpx(Theme.fontTitle)
         font.bold: true
         horizontalAlignment: TextInput.AlignHCenter
         inputMethodHints: Qt.ImhDigitsOnly
         validator: IntValidator { bottom: 0; top: 99999 }
         background: Rectangle {
-            color: "#0f0f0f"
+            color: Theme.ground
             // Not parent._fpx(): a Control's background sees its parent as a bare
             // QQuickItem, so the call resolves at runtime and nowhere earlier.
             radius: Math.round(Theme.uiScale * 8)
-            border.color: parent.activeFocus ? Theme.accent : "#2a2a2a"
+            border.color: parent.activeFocus ? Theme.accent : Theme.line
             border.width: parent.activeFocus ? 2 : 1
         }
     }
@@ -89,19 +89,19 @@ Popup {
 
         Label {
             text: qsTr("CUSTOM RESOLUTION")
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(13)
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontSmall)
             font.bold: true
             font.letterSpacing: pop._u * 1.6
-            color: "#707070"
+            color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
         }
 
         Label {
             text: qsTr("Enter a custom resolution in pixels")
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(18)
-            color: "#f0f0f0"
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontTitle)
+            color: Theme.text
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
@@ -122,9 +122,9 @@ Popup {
             }
             Label {
                 text: "×"
-                color: "#707070"
-                font.family: "DM Sans"
-                font.pixelSize: pop._px(22)
+                color: Theme.text3
+                font.family: Theme.family
+                font.pixelSize: pop._px(Theme.fontH2)
                 Layout.alignment: Qt.AlignVCenter
             }
             DimField {
@@ -148,9 +148,9 @@ Popup {
                   : qsTr("Width and height must be between %1 and %2 px.")
                     .arg(pop._minDim).arg(pop._maxDim)
             visible: text.length > 0
-            color: pop._valid ? "#a0a0a0" : "#ff6b6b"
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(13)
+            color: pop._valid ? Theme.text2 : Theme.danger
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontSmall)
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             Layout.alignment: Qt.AlignHCenter
@@ -181,17 +181,17 @@ Popup {
                     radius: pop._px(8)
                     color: applyBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : applyBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
-                         :                         "#1f1f1f"
+                         :                         Theme.card
                     border.color: applyBtn.activeFocus ? Theme.accent
-                                : applyBtn.hovered     ? "#3a3a3a"
-                                :                         "#2a2a2a"
+                                : applyBtn.hovered     ? Theme.lineHigh
+                                :                         Theme.line
                     border.width: applyBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: applyBtn.text
                     color: Theme.accent
-                    font.family: "DM Sans"
-                    font.pixelSize: pop._px(15)
+                    font.family: Theme.family
+                    font.pixelSize: pop._px(Theme.fontBody)
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -215,17 +215,17 @@ Popup {
                     radius: pop._px(8)
                     color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : cancelBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
-                         :                         "#1f1f1f"
+                         :                         Theme.card
                     border.color: cancelBtn.activeFocus ? Theme.accent
-                                : cancelBtn.hovered     ? "#3a3a3a"
-                                :                         "#2a2a2a"
+                                : cancelBtn.hovered     ? Theme.lineHigh
+                                :                         Theme.line
                     border.width: cancelBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: cancelBtn.text
-                    color: "#f0f0f0"
-                    font.family: "DM Sans"
-                    font.pixelSize: pop._px(15)
+                    color: Theme.text
+                    font.family: Theme.family
+                    font.pixelSize: pop._px(Theme.fontBody)
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter

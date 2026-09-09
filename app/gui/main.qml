@@ -1,7 +1,6 @@
 import Theme 1.0
 import QtQuick 2.9
 import QtQuick.Controls 2.2
-import QtQuick.Layouts 1.3
 import QtQuick.Window 2.2
 import QtQuick.Controls.Material 2.2
 
@@ -156,7 +155,7 @@ ApplicationWindow {
     minimumWidth: 1280
     minimumHeight: 720
     title: "StreamLight"
-    font.family: "DM Sans"
+    font.family: Theme.family
 
     // ── Embedded UI fonts (matches StreamTweak) ───────────────────────────────
     FontLoader { source: "qrc:/res/fonts/DMSans-Regular.ttf" }
@@ -165,28 +164,23 @@ ApplicationWindow {
     FontLoader { source: "qrc:/res/fonts/JetBrainsMono-Regular.ttf" }
     FontLoader { source: "qrc:/res/fonts/JetBrainsMono-Medium.ttf" }
 
-    // ── Design system palette ─────────────────────────────────────────────────
-    readonly property color clrBg:      "#0d0d0d"
-    readonly property color clrBg1:     "#151515"
-    readonly property color clrBg2:     "#1a1a1a"
-    readonly property color clrBg3:     "#212121"
-    readonly property color clrBgHov:   "#262626"
-    readonly property color clrBgPrs:   "#2c2c2c"
-    readonly property color clrBorder:  "#2a2a2a"
-    readonly property color clrBorderL: "#3a3a3a"
-    readonly property color clrBorderS: "#404040"
-    readonly property color clrText:    "#f0f0f0"
-    readonly property color clrTextDim: "#a0a0a0"
-    readonly property color clrTextMut: "#707070"
-    readonly property color clrTextDis: "#555555"
-    readonly property color clrGreen:   Theme.accent
-    readonly property color clrGreenH:  Qt.darker(Theme.accent, 1.15)   // hover: a shade down from the accent
-    readonly property color clrGreenP:  Qt.darker(Theme.accent, 1.45)   // pressed: two shades down
-    readonly property color clrGreenLk: Theme.accent
-    readonly property color clrRed:     "#C42B1C"
-    readonly property color clrBlue:    "#3a96dd"
-    readonly property string monoFont:  "JetBrains Mono"
-    // ─────────────────────────────────────────────────────────────────────────
+    /*
+     * ── The palette that used to be declared here ─────────────────────────────
+     *
+     * Twenty tokens — clrBg, clrBg1…clrBg3, clrBorder, clrText, clrTextDim, clrGreen and the
+     * rest — plus a monoFont. Every one of them was read ZERO times, in this file and in every
+     * other. They were the original design system, and Theme replaced them; what was left was
+     * the definition without a single caller.
+     *
+     * ⚠️ They did real damage while sitting here doing nothing. AppShell carried seven of them
+     * copied out by hand, with a comment saying they were "mirrored from main.qml"; Settings
+     * carried the same seven again as _bg2/_border/_text/_textDim/_textMut. So the app had
+     * three parallel vocabularies for one palette, and only one of them — Theme — was the one
+     * a user's accent could reach. This block was the thing they were all mirroring, and it
+     * had already stopped being used.
+     *
+     * The palette is theme.h. There is no second copy of it anywhere now; keep it that way.
+     */
 
     /*
      * Material's accent, pushed onto the WINDOW.
@@ -213,7 +207,7 @@ ApplicationWindow {
     // This function runs prior to creation of the initial StackView item
     function doEarlyInit() {
         // Force dark background on all Qt versions for the new design
-        Material.background = "#151515"
+        Material.background = Theme.ground
 
         Material.theme = Material.Dark
         window.applyAccentToMaterial()
@@ -462,7 +456,7 @@ ApplicationWindow {
         headerText: qsTr("HARDWARE ACCELERATION")
         text: qsTr("No functioning hardware accelerated video decoder was detected by StreamLight." +
                    "Your streaming performance may be severely degraded in this configuration.")
-        helpText: qsTr("Click the Help button for more information on solving this problem.")
+        helpText: qsTr("Open Help for more on solving this.")
         helpUrl: "https://github.com/moonlight-stream/moonlight-docs/wiki/Fixing-Hardware-Decoding-Problems"
     }
 
@@ -471,7 +465,7 @@ ApplicationWindow {
         headerText: qsTr("DISPLAY SERVER")
         text: qsTr("Hardware acceleration doesn't work on XWayland. Continuing on XWayland may result in poor streaming performance. " +
                    "Try running with QT_QPA_PLATFORM=wayland or switch to X11.")
-        helpText: qsTr("Click the Help button for more information.")
+        helpText: qsTr("Open Help for more.")
         helpUrl: "https://github.com/moonlight-stream/moonlight-docs/wiki/Fixing-Hardware-Decoding-Problems"
     }
 
@@ -479,7 +473,7 @@ ApplicationWindow {
         id: wow64Dialog
         headerText: qsTr("WRONG ARCHITECTURE")
         standardButtons: Dialog.Ok | Dialog.Cancel
-        text: qsTr("This version of StreamLight isn't optimized for your PC. Please download the '%1' version of StreamLight for the best streaming performance.").arg(SystemProperties.friendlyNativeArchName)
+        text: qsTr("This build of StreamLight is not optimised for this device. Download the '%1' build for the best performance.").arg(SystemProperties.friendlyNativeArchName)
         onAccepted: {
             Qt.openUrlExternally("https://github.com/moonlight-stream/moonlight-qt/releases");
         }
@@ -491,7 +485,7 @@ ApplicationWindow {
         property string unmappedGamepads : ""
         text: qsTr("StreamLight detected controllers without a mapping:") + "\n" + unmappedGamepads
         helpTextSeparator: "\n\n"
-        helpText: qsTr("Click the Help button for information on how to map your controllers.")
+        helpText: qsTr("Open Help for how to map controllers.")
         helpUrl: "https://github.com/moonlight-stream/moonlight-docs/wiki/Gamepad-Mapping"
     }
 

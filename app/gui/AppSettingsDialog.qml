@@ -39,7 +39,7 @@ Popup {
     readonly property color _accent: Theme.accent
     readonly property color _text:   Theme.text
     readonly property color _dim:    Theme.text2
-    readonly property color _line:   "#242424"
+    readonly property color _line:   Theme.line
     // ⚠️ Measurements, so they scale — see the note on the same pair in
     // HostProfilesDialog. Raw pixels here meant the row stopped growing while the
     // controls inside it kept going, which is what made the profile Name field
@@ -56,6 +56,29 @@ Popup {
 
     // Label for the index-0 "inherit" option: the active profile's name, or "Global".
     readonly property string _inheritLabel: activeProfileName.length > 0 ? activeProfileName : qsTr("Global")
+
+    /*
+     * ── Play time (5.7.0) ────────────────────────────────────────────────────
+     *
+     * Only whether there IS a record, now. This panel used to print the whole of it — hours,
+     * last session, FPS against target, drops, jitter drops, RTT, host latency, decode — in a
+     * two-row block of eight figures with its own heading and its own Reset button. The panel
+     * is for settings, and eight read-only measurements in the middle of it made it a report
+     * that happened to have switches in it.
+     *
+     * The figures the user actually looks for are the ones on the host page, where the game is
+     * already the subject. What is left here is the button that clears them, in the footer with
+     * the other two, because the panel is still the only place in the app that is about THIS
+     * game and nothing else.
+     *
+     * ⚠️ Keep it a map, not a bool. `playtimeFor` returns an empty map both when the game has
+     * never been streamed and when it is one of the entries that are never tracked, and the
+     * footer button greys itself on exactly that: nothing to clear, nothing to press.
+     */
+    property var _playtime: ({})
+
+    // Whether there is anything for the Reset button to delete.
+    readonly property bool _hasPlaytime: _playtime.total !== undefined
 
     /*
      * What the level below actually holds, keyed the way the override map is:
@@ -199,6 +222,10 @@ Popup {
         // Read once per opening, not per row: the level below cannot change while this
         // dialog is up, and every label table binds to it.
         _inheritedValues = appModel.inheritedLabels()
+        // Same reasoning, same moment: read once per opening. It cannot change while the
+        // dialog is up — a session is the only thing that moves it, and one cannot start
+        // from here.
+        _playtime = appModel.playtimeFor(appIndex)
         var ov = appModel.getAppOverride(appIndex)
         // Resolution is tri-state: inherit (0) / preset (>0) / custom (-1 + _customRes*).
         _customResW = 0; _customResH = 0
@@ -305,19 +332,19 @@ Popup {
                 }
                 Label {
                     text: qsTr("Per-game settings")
-                    font.family: "DM Sans"; font.pixelSize: dlg._px(18); font.bold: true
+                    font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontTitle); font.bold: true
                     color: dlg._text
                 }
                 Label {
                     text: dlg.appName
-                    font.family: "DM Sans"; font.pixelSize: dlg._px(13)
+                    font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall)
                     color: dlg._dim; elide: Text.ElideRight
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
                 }
             }
         }
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.line }
 
         // ── Scrollable rows (content-sized; scrolls only on tiny screens) ────
         Flickable {
@@ -411,7 +438,7 @@ Popup {
                         Label {
                             width: parent.width
                             text: row.label
-                            font.family: "DM Sans"; font.pixelSize: dlg._px(15); font.bold: true
+                            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontBody); font.bold: true
                             color: dlg._text
                             elide: Text.ElideRight
                         }
@@ -419,7 +446,7 @@ Popup {
                             width: parent.width
                             visible: row.detail.length > 0
                             text: row.detail
-                            font.family: "DM Sans"; font.pixelSize: dlg._px(12)
+                            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontCaption)
                             color: dlg._dim
                             wrapMode: Text.WordWrap
                         }
@@ -507,7 +534,7 @@ Popup {
                         anchors.left: parent.left; anchors.leftMargin: dlg._padX
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("Bitrate (Mbps)")
-                        font.family: "DM Sans"; font.pixelSize: dlg._px(15); font.bold: true
+                        font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontBody); font.bold: true
                         color: dlg._text
                     }
 
@@ -602,7 +629,7 @@ Popup {
                                     y: bitrateSlider.topPadding + bitrateSlider.availableHeight / 2 - height / 2
                                     width: bitrateSlider.availableWidth
                                     height: dlg._px(3); radius: dlg._px(2)
-                                    color: "#f0f0f0"
+                                    color: Theme.text
                                 }
                                 handle: Rectangle {
                                     x: bitrateSlider.leftPadding + bitrateSlider.visualPosition * (bitrateSlider.availableWidth - width)
@@ -622,7 +649,7 @@ Popup {
                             width: dlg._px(78)
                             text: (bitrateSlider.value / 1000).toFixed(0) + qsTr(" Mbps")
                             color: dlg._accent
-                            font.family: "DM Sans"; font.pixelSize: dlg._px(13); font.bold: true
+                            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall); font.bold: true
                             horizontalAlignment: Text.AlignRight
                         }
                     }
@@ -718,12 +745,48 @@ Popup {
             }
         }
 
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.line }
 
-        // ── Footer: Done + Reset to Global (right) ──────────────────────────
+        // ── Footer: Reset stats (left) · Done + Reset to Global (right) ─────
         Item {
             Layout.fillWidth: true
             Layout.preferredHeight: dlg._px(52)
+
+            /*
+             * Clears this game's play record — the hours and the session count the host page
+             * shows under its title.
+             *
+             * On the left, away from the two that are not destructive, which is where
+             * HostProfilesDialog already puts Remove. Otherwise it is the same button as its
+             * neighbours in every respect the eye can measure: same component, same fontSize,
+             * same height, same spacing. Red is the ONE difference, and `danger` is what says
+             * it — red text at rest, a red ring and tint on focus. Setting a colour by hand
+             * here would be a fourth red in an app that spent a release getting down to one.
+             *
+             * ⚠️ Greyed, not hidden, when the game has never been streamed. A button that
+             * disappears makes the footer's layout move between two games; a greyed one says
+             * "there is nothing here to clear", which is the actual answer. DialogButton draws
+             * that state itself, so it looks the same wherever it happens next.
+             */
+            DialogButton {
+                id: statsBtn
+                anchors.left: parent.left; anchors.leftMargin: dlg._padX
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Reset stats")
+                danger: true
+                enabled: dlg._hasPlaytime
+                fontSize: 13
+                width: dlg._px(104); height: dlg._px(36)
+                onActivated: {
+                    if (dlg.appModel && dlg.appIndex >= 0)
+                        dlg.appModel.resetPlaytime(dlg.appIndex)
+                    // Re-read rather than assume: this is what greys the button out, and it
+                    // has to agree with the record on disk, not with what we just asked for.
+                    dlg._playtime = dlg.appModel ? dlg.appModel.playtimeFor(dlg.appIndex) : ({})
+                }
+                KeyNavigation.up: hueSel
+                KeyNavigation.right: doneBtn
+            }
 
             Row {
                 anchors.right: parent.right; anchors.rightMargin: dlg._padX
@@ -738,6 +801,7 @@ Popup {
                     width: dlg._px(76); height: dlg._px(36)
                     onActivated: dlg.close()
                     KeyNavigation.up: hueSel
+                    KeyNavigation.left: dlg._hasPlaytime ? statsBtn : null
                     KeyNavigation.right: resetBtn
                 }
                 DialogButton {

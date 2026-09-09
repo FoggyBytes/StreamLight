@@ -1,6 +1,7 @@
 #include "nvcomputer.h"
 #include "nvapp.h"
 #include "settings/compatfetcher.h"
+#include "settings/playtime.h"
 
 #include <QUdpSocket>
 #include <QHostInfo>
@@ -215,14 +216,16 @@ bool NvComputer::isEqualSerialized(const NvComputer &that) const
 
 void NvComputer::sortAppList()
 {
-    auto appOrder = [](const NvApp& app) -> int {
-        if (app.name.compare("Desktop", Qt::CaseInsensitive) == 0) return 0;
-        if (app.name.compare("Steam Big Picture", Qt::CaseInsensitive) == 0) return 1;
-        return 2;
-    };
+    // ⚠️ appSortOrder() lives in nvapp.h because AppModel::updateAppList() inserts against
+    // the same order and asserts that the two agree. Change one and the other must follow —
+    // which is precisely why it is no longer written out twice.
+    //
+    // Read once for the whole sort rather than per comparison: the name comes off disk, and a
+    // comparator is called O(n log n) times.
+    const QString lastPlayed = PlaytimeManager::get()->lastPlayedOn(uuid).name;
 
-    std::stable_sort(appList.begin(), appList.end(), [&appOrder](const NvApp& a, const NvApp& b) {
-        int oa = appOrder(a), ob = appOrder(b);
+    std::stable_sort(appList.begin(), appList.end(), [&lastPlayed](const NvApp& a, const NvApp& b) {
+        int oa = appSortOrder(a.name, lastPlayed), ob = appSortOrder(b.name, lastPlayed);
         if (oa != ob) return oa < ob;
         return a.name.toLower() < b.name.toLower();
     });

@@ -48,7 +48,7 @@ Popup {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             text: qsTr("SETTINGS")
-            font.family: Theme.family; font.pixelSize: dlg._px(13)
+            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall)
             font.bold: true; font.letterSpacing: dlg._u * 1.6
             color: Theme.text3
         }
@@ -59,7 +59,7 @@ Popup {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             text: qsTr("Your settings have been reset")
-            font.family: Theme.family; font.pixelSize: dlg._px(22); font.bold: true
+            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontH2); font.bold: true
             color: Theme.text
             wrapMode: Text.WordWrap
         }
@@ -73,8 +73,14 @@ Popup {
             // everything else works and the bridge just stays silent, because a
             // freshly discovered host record starts with the integration off
             // (nvcomputer.cpp) — the same default any new host gets.
-            text: qsTr("StreamLight no longer shares its settings with Moonlight, so this version starts from scratch. Pair your hosts again; then, if you use StreamTweak, approve this device on the host and switch the integration back on for each host in Settings.")
-            font.family: Theme.family; font.pixelSize: dlg._px(15)
+            // Three steps, and only the steps. Why the settings are gone is a changelog
+            // matter; what the user needs here is the list of things to redo.
+            //
+            // ⚠️ Three, not two. The third is the one that reads as a fault — everything works
+            // and the bridge just stays silent, because a freshly discovered host record starts
+            // with the integration off (nvcomputer.cpp), like any new host.
+            text: qsTr("This version starts from scratch:\n\n1.  Pair your hosts again\n2.  If you use StreamTweak, approve this device on the host\n3.  Switch the integration back on for each host, in Settings")
+            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontBody)
             color: Theme.text2
             wrapMode: Text.WordWrap
         }
@@ -85,7 +91,7 @@ Popup {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             text: qsTr("Nothing was deleted — the old settings are still where they were.")
-            font.family: Theme.family; font.pixelSize: dlg._px(15)
+            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontBody)
             color: Theme.text3
             wrapMode: Text.WordWrap
         }

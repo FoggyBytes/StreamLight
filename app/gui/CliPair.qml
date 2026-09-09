@@ -5,7 +5,7 @@ import ComputerManager 1.0
 
 Item {
     function onSearchingComputer() {
-        stageLabel.text = qsTr("Establishing connection to PC...")
+        stageLabel.text = qsTr("Connecting to the host…")
     }
 
     function onPairing(pcName, pin) {

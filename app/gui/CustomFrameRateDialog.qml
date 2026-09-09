@@ -54,8 +54,8 @@ Popup {
     padding: pop._px(32)
 
     background: Rectangle {
-        color: "#1a1a1a"
-        border.color: "#2a2a2a"
+        color: Theme.card
+        border.color: Theme.line
         border.width: 1
         radius: pop._px(12)
     }
@@ -65,19 +65,19 @@ Popup {
 
         Label {
             text: qsTr("CUSTOM FRAME RATE")
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(13)
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontSmall)
             font.bold: true
             font.letterSpacing: pop._u * 1.6
-            color: "#707070"
+            color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
         }
 
         Label {
             text: qsTr("Enter a frame rate in frames per second")
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(18)
-            color: "#f0f0f0"
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontTitle)
+            color: Theme.text
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
@@ -92,19 +92,19 @@ Popup {
                 id: fpsField
                 Layout.preferredWidth: pop._px(130)
                 implicitHeight: pop._px(48)
-                color: "#f0f0f0"
+                color: Theme.text
                 selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
                 selectedTextColor: Theme.onAccent
-                font.family: "DM Sans"
-                font.pixelSize: pop._px(20)
+                font.family: Theme.family
+                font.pixelSize: pop._px(Theme.fontTitle)
                 font.bold: true
                 horizontalAlignment: TextInput.AlignHCenter
                 inputMethodHints: Qt.ImhDigitsOnly
                 validator: IntValidator { bottom: 0; top: 9999 }
                 background: Rectangle {
-                    color: "#0f0f0f"
+                    color: Theme.ground
                     radius: pop._px(8)
-                    border.color: parent.activeFocus ? Theme.accent : "#2a2a2a"
+                    border.color: parent.activeFocus ? Theme.accent : Theme.line
                     border.width: parent.activeFocus ? 2 : 1
                 }
                 Keys.onReturnPressed: pop._commit()
@@ -114,9 +114,9 @@ Popup {
             }
             Label {
                 text: qsTr("fps")
-                color: "#707070"
-                font.family: "DM Sans"
-                font.pixelSize: pop._px(16)
+                color: Theme.text3
+                font.family: Theme.family
+                font.pixelSize: pop._px(Theme.fontBody)
                 Layout.alignment: Qt.AlignVCenter
             }
         }
@@ -128,9 +128,9 @@ Popup {
                   ? pop._nativeHint
                   : qsTr("Enter a value between %1 and %2.").arg(pop._minFps).arg(pop._maxFps)
             visible: text.length > 0
-            color: pop._valid ? "#a0a0a0" : "#ff6b6b"
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(13)
+            color: pop._valid ? Theme.text2 : Theme.danger
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontSmall)
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             Layout.alignment: Qt.AlignHCenter
@@ -161,17 +161,17 @@ Popup {
                     radius: pop._px(8)
                     color: applyBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : applyBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
-                         :                         "#1f1f1f"
+                         :                         Theme.card
                     border.color: applyBtn.activeFocus ? Theme.accent
-                                : applyBtn.hovered     ? "#3a3a3a"
-                                :                         "#2a2a2a"
+                                : applyBtn.hovered     ? Theme.lineHigh
+                                :                         Theme.line
                     border.width: applyBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: applyBtn.text
                     color: Theme.accent
-                    font.family: "DM Sans"
-                    font.pixelSize: pop._px(15)
+                    font.family: Theme.family
+                    font.pixelSize: pop._px(Theme.fontBody)
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -195,17 +195,17 @@ Popup {
                     radius: pop._px(8)
                     color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : cancelBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
-                         :                         "#1f1f1f"
+                         :                         Theme.card
                     border.color: cancelBtn.activeFocus ? Theme.accent
-                                : cancelBtn.hovered     ? "#3a3a3a"
-                                :                         "#2a2a2a"
+                                : cancelBtn.hovered     ? Theme.lineHigh
+                                :                         Theme.line
                     border.width: cancelBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: cancelBtn.text
-                    color: "#f0f0f0"
-                    font.family: "DM Sans"
-                    font.pixelSize: pop._px(15)
+                    color: Theme.text
+                    font.family: Theme.family
+                    font.pixelSize: pop._px(Theme.fontBody)
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter

@@ -5,6 +5,7 @@
 #include "streaming/session.h"
 
 #include <QAbstractListModel>
+#include <QHash>
 #include <QVariant>
 
 class AppModel : public QAbstractListModel
@@ -21,6 +22,8 @@ class AppModel : public QAbstractListModel
         DirectLaunchRole,
         AppCollectorGameRole,
         OverriddenRole,
+        PlaytimeRole,
+        SectionRole,
     };
 
 public:
@@ -64,6 +67,31 @@ public:
     // for display; see inheritedValueLabels() in settings/appsettings.h.
     Q_INVOKABLE QVariantMap inheritedLabels() const;
 
+    // ── Play time (5.7.0) ────────────────────────────────────────────────────────────────
+    /**
+     * Everything the per-game panel shows about time played: the total, the last session and
+     * how it went. Empty map when this app has no record — a game never streamed, or one of
+     * the two entries that are never counted.
+     */
+    Q_INVOKABLE QVariantMap playtimeFor(int appIndex) const;
+
+    /// Clears one game's play time. The panel offers it because a total nobody can correct
+    /// is a total that is eventually wrong.
+    Q_INVOKABLE void resetPlaytime(int appIndex);
+
+    /**
+     * Drops the cached labels so the rows re-read them.
+     *
+     * ⚠️ Needed because a session does NOT rebuild this model: the host page stays alive
+     * behind the stream and gets its rows back with the same model attached, so without this
+     * every row would still be showing the total from before the session that just ended.
+     */
+    Q_INVOKABLE void refreshPlaytime();
+
+    /// The index of the game this host was last played on, or -1. Drives the "Continue"
+    /// section — see the sort order in updateAppList().
+    Q_INVOKABLE int lastPlayedIndex() const;
+
     QVariant data(const QModelIndex &index, int role) const override;
 
     int rowCount(const QModelIndex &parent) const override;
@@ -81,6 +109,10 @@ signals:
 private:
     void updateAppList(QVector<NvApp> newList);
 
+    /// Puts m_VisibleApps into the order appSortOrder() describes. Returns true when the
+    /// order actually moved (and the model was reset), false when it was already right.
+    bool sortVisibleApps();
+
     QVector<NvApp> getVisibleApps(const QVector<NvApp>& appList);
 
     bool isAppCurrentlyVisible(const NvApp& app);
@@ -94,4 +126,12 @@ private:
     QVector<NvApp> m_VisibleApps, m_AllApps;
     int m_CurrentGameId;
     bool m_ShowHiddenGames;
+
+    // Formatted play time by app id, filled on first read of each row.
+    //
+    // ⚠️ A cache rather than a lookup per data() call, because a ListView asks for a role
+    // many times per repaint and each miss would be a QSettings read. Cleared by
+    // refreshPlaytime() and by resetPlaytime(), which are the only two ways the underlying
+    // value can move while this model is alive.
+    mutable QHash<int, QString> m_PlaytimeLabels;
 };

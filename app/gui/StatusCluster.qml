@@ -68,7 +68,7 @@ Column {
                             StreamingPreferences.clockFormat === StreamingPreferences.CF_12H
                             ? "h:mm AP" : "HH:mm")
         font.family: Theme.family
-        font.pixelSize: 30
+        font.pixelSize: Theme.fontH1
         font.weight: Font.Medium
         color: Theme.text
     }
@@ -90,7 +90,7 @@ Column {
                 }
             }
             font.family: Theme.family
-            font.pixelSize: 13
+            font.pixelSize: Theme.fontSmall
             color: Theme.text3
         }
 
@@ -192,7 +192,7 @@ Column {
                 anchors.verticalCenter: parent.verticalCenter
                 text: PowerStatus.percent + "%"
                 font.family: Theme.family
-                font.pixelSize: 13
+                font.pixelSize: Theme.fontSmall
                 font.weight: Font.Medium
                 color: root._batteryColor
             }

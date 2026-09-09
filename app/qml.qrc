@@ -14,6 +14,7 @@
         <file>gui/Spinner.qml</file>
         <file>gui/CoverAmbient.qml</file>
         <file>gui/HeroCover.qml</file>
+        <file>gui/GameFacts.qml</file>
         <file>gui/HoverState.qml</file>
         <file>gui/UnlockPad.qml</file>
         <file>gui/WakeDialog.qml</file>

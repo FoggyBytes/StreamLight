@@ -6,11 +6,11 @@ import Session 1.0
 
 Item {
     function onSearchingComputer() {
-        stageLabel.text = qsTr("Establishing connection to PC...")
+        stageLabel.text = qsTr("Connecting to the host…")
     }
 
     function onQuittingApp() {
-        stageLabel.text = qsTr("Quitting app...")
+        stageLabel.text = qsTr("Quitting the app…")
     }
 
     function onFailure(message) {

@@ -2,7 +2,6 @@ import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.2
 import QtQuick.Controls.Material 2.2
-import QtQuick.Layouts 1.2
 import QtQuick.Window 2.2
 
 import StreamingPreferences 1.0
@@ -41,17 +40,65 @@ FocusScope {
     readonly property real _u: Theme.uiScale
     function _px(n) { return Math.round(n * _u) }
 
-    readonly property color _bg2:       "#1a1a1a"
-    readonly property color _bg3:       "#202020"
-    readonly property color _border:    "#2a2a2a"
-    readonly property color _borderS:   "#3a3a3a"
-    readonly property color _text:      "#f0f0f0"
-    readonly property color _textDim:   "#a0a0a0"
-    readonly property color _textMut:   "#707070"
-    // Bright-green accent used everywhere (_green/_greenLk kept as aliases).
-    readonly property color _green:     Theme.accent
-    readonly property color _greenLk:   Theme.accent
-    readonly property color _focus:     Theme.accent
+    /*
+     * The hairline between two rows in a card.
+     *
+     * ⚠️ This exact Rectangle was written out 41 times — same width expression, same inset,
+     * same colour, once per row boundary on the whole screen. Forty-one copies of one
+     * decision is forty-one chances for the forty-second to be made differently, and this
+     * repository has already paid for that: §60 found 45 separators left behind by a
+     * conversion that had edited the assignments and missed the operands.
+     *
+     * ⚠️ It reads Theme directly and takes nothing from the screen around it. An inline
+     * component has its own scope, so reaching for `settingsScreen` from in here is exactly
+     * the kind of outer-id access that resolves in some builds and not others; a singleton
+     * is always in scope. The two roundings are kept separate (16 and 32, not inset × 2)
+     * because Math.round(32u) and 2 × Math.round(16u) disagree by a pixel at some scales,
+     * and the point of this change is that nothing moves.
+     *
+     * The hairline stays 1 physical pixel at every scale — a hairline is a hairline — which
+     * is the same rule the rest of the screen follows.
+     */
+    component RowSeparator: Rectangle {
+        width: parent ? parent.width - Math.round(32 * Theme.uiScale) : 0
+        x: Math.round(16 * Theme.uiScale)
+        height: 1
+        color: Theme.line
+    }
+
+    /*
+     * The palette — Theme's, and no longer a copy of it.
+     *
+     * ⚠️ These seven were literals (#1a1a1a, #2a2a2a, #f0f0f0, #707070 …) while every other
+     * screen in the app read Theme. That was not only duplication. Theme's neutrals are COOL,
+     * carrying a trace of blue — #0f1519, #a2b2ba, #75878f — and flat greys are not: this
+     * screen was therefore a measurably different temperature from the one it had just been
+     * opened over, across 257 sites. Pointing the names at the tokens corrects all 257 without
+     * editing one of them.
+     *
+     * The names stay because they are read everywhere; what they MEAN is now defined once, in
+     * theme.h, together with the rest of the interface.
+     */
+    readonly property color _bg2:       Theme.card
+    readonly property color _bg3:       Theme.cardHigh
+    readonly property color _border:    Theme.line
+    readonly property color _borderS:   Theme.lineHigh
+    readonly property color _text:      Theme.text
+    readonly property color _textDim:   Theme.text2
+    /*
+     * ⚠️ Was #707070, which measures 3.51:1 against the row fill — below the 4.5:1 that text
+     * of this size needs. It is the colour of the uppercase SECTION HEADERS on every tab, so
+     * what failed the threshold was the wayfinding. Theme.text3 was lightened to 5:1 for
+     * exactly this; do not point this back at a literal.
+     */
+    readonly property color _textMut:   Theme.text3
+    /*
+     * ⚠️ Three colour aliases used to live here: a "green", a "green locked" and a "focus".
+     * All three resolved to `Theme.accent` — one colour under three names, left over from when
+     * the accent WAS green. So this screen carried a token whose name said green while it
+     * painted cyan, plus two more that were aliases of an alias. The call sites now say
+     * `Theme.accent`, which is what all three always meant.
+     */
     readonly property int   _focusBd:   3
 
     // The fill every button and picker in this screen sits on: the card colour with a trace of
@@ -178,11 +225,18 @@ FocusScope {
         // to send PageUp/PageDown, which collided with the host cycle on Home — see
         // sdlgamepadkeynavigation.cpp), while PgUp/PgDn stay for the keyboard and for the
         // status-bar tab arrows, which drive this through simulateKey.
+        //
+        // ⚠️ The ring WRAPS, and it did not. There are ten tabs reachable only by LB/RB, and
+        // the cycle stopped dead at each end — so from About back to Video was nine presses
+        // of LB, and from Video to About nine of RB, for two tabs that are adjacent in the
+        // ring. A mouse could always jump straight to any tab by clicking it; the pad, which
+        // is how this app is actually driven on a handheld, was the input that had to walk.
+        // Wrapping makes the worst case five presses instead of nine, and costs a modulo.
         if (event.key === Qt.Key_PageUp || event.key === Qt.Key_F16) {
-            if (tabBar.currentIndex > 0) tabBar.currentIndex--
+            tabBar.currentIndex = (tabBar.currentIndex - 1 + tabBar.count) % tabBar.count
             event.accepted = true
         } else if (event.key === Qt.Key_PageDown || event.key === Qt.Key_F17) {
-            if (tabBar.currentIndex < tabBar.count - 1) tabBar.currentIndex++
+            tabBar.currentIndex = (tabBar.currentIndex + 1) % tabBar.count
             event.accepted = true
         } else if ((event.key === Qt.Key_Menu || event.key === Qt.Key_D)
                    && settingsScreen.bitrateNonDefault) {
@@ -324,8 +378,8 @@ FocusScope {
         Label {
             id: headerTitle
             text: qsTr("Settings")
-            font.family: "DM Sans"
-            font.pixelSize: settingsScreen._px(28)
+            font.family: Theme.family
+            font.pixelSize: settingsScreen._px(Theme.fontH1)
             font.bold: true
             color: settingsScreen._text
             anchors.verticalCenter: parent.verticalCenter
@@ -334,6 +388,44 @@ FocusScope {
 
         // (The clock is the shell's — see StatusCluster in AppShell.)
     }
+
+    /*
+     * The ten tabs, declared once.
+     *
+     * ⚠️ This used to be ten TabButtons written out in full — 302 lines of the same 25, with
+     * the tab's own position hardcoded into it thirty times as `tabBar.currentIndex === N`.
+     * Every one of those numbers had to be right, and had to stay right if a tab were ever
+     * inserted or moved: the underline, the label colour and the logo's opacity each carried
+     * their own copy of "which tab am I". Inside a Repeater the delegate is handed `index`,
+     * so the question answers itself and inserting a tab is a line in this list.
+     *
+     * `icon` instead of `label` gives the StreamTweak tab: it is the companion product's own
+     * mark, not ours, and it is a mark rather than a word because "STREAMTWEAK" is eleven
+     * characters — the longest label in the app — and TabBar gives every tab an equal slot,
+     * so it sat flush against SHORTCUTS while the others had air around them.
+     *
+     * ⚠️ TEN TABS IS THE DESIGN. Do not merge them — decided 09/09/2026, and it is the kind of
+     * thing an audit proposes every time, because ten stops is over the "about seven" that
+     * usability rules of thumb like to quote. Measure the alternative before re-proposing it:
+     * Video+Decoder and Network+Session are the two joins anyone reaches for, and either one
+     * produces a tab of roughly 1700 lines. Seven long tabs are worse than ten short ones —
+     * scrolling to find a row is a worse search than stepping to the tab that names it.
+     *
+     * The real cost was never the count, it was that the LB/RB ring did not wrap: About back
+     * to Video was nine presses. That is fixed where it belonged, in Keys.onPressed above.
+     */
+    readonly property var _tabs: [
+        { label: qsTr("Video")     },
+        { label: qsTr("Audio")     },
+        { label: qsTr("Input")     },
+        { label: qsTr("Decoder")   },
+        { label: qsTr("Network")   },
+        { label: qsTr("Session")   },
+        { label: qsTr("Overlay")   },
+        { label: qsTr("Shortcuts") },
+        { icon:  "qrc:/res/streamtweak_logo.png" },
+        { label: qsTr("About")     }
+    ]
 
     TabBar {
         id: tabBar
@@ -359,281 +451,83 @@ FocusScope {
             }
         }
 
-        TabButton {
-            text: qsTr("Video")
-            focusPolicy: Qt.NoFocus
-            font.family: "DM Sans"
-            font.pixelSize: settingsScreen._px(14)
-            font.bold: true
-            font.capitalization: Font.AllUppercase
-            font.letterSpacing: 0.8
-            background: Rectangle {
-                color: "transparent"
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 2
-                    color: tabBar.currentIndex === 0 ? settingsScreen._green : "transparent"
+        Repeater {
+            model: settingsScreen._tabs
+
+            TabButton {
+                id: tabButton
+
+                readonly property bool _current: tabBar.currentIndex === index
+
+                text: modelData.label !== undefined ? modelData.label : ""
+                focusPolicy: Qt.NoFocus
+                font.family: Theme.family
+                font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                font.bold: true
+                font.capitalization: Font.AllUppercase
+                font.letterSpacing: 0.8
+
+                background: Rectangle {
+                    color: "transparent"
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 2
+                        color: tabButton._current ? Theme.accent : "transparent"
+                    }
                 }
-            }
-            contentItem: Text {
-                text: parent.text
-                font: parent.font
-                color: tabBar.currentIndex === 0 ? settingsScreen._text : settingsScreen._textDim
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-        }
-        TabButton {
-            text: qsTr("Audio")
-            focusPolicy: Qt.NoFocus
-            font.family: "DM Sans"
-            font.pixelSize: settingsScreen._px(14)
-            font.bold: true
-            font.capitalization: Font.AllUppercase
-            font.letterSpacing: 0.8
-            background: Rectangle {
-                color: "transparent"
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 2
-                    color: tabBar.currentIndex === 1 ? settingsScreen._green : "transparent"
+
+                /*
+                 * ⚠️ The implicit size is NOT optional, and leaving it out is what crammed every
+                 * tab into the left end of the bar for one build.
+                 *
+                 * A Control takes its own implicitWidth from its contentItem's, and a bare Item
+                 * has an implicitWidth of ZERO — so every TabButton reported itself as nothing
+                 * but padding and TabBar packed ten of them into a couple of hundred pixels.
+                 * The ten hand-written buttons this replaced never hit it because each used
+                 * `contentItem: Text`, and a Text measures its own string.
+                 *
+                 * So the wrapper has to answer the question the Text used to answer, for
+                 * whichever of the two children is actually being drawn.
+                 */
+                contentItem: Item {
+                    implicitWidth:  modelData.icon !== undefined ? tabIcon.width  : tabLabel.implicitWidth
+                    implicitHeight: modelData.icon !== undefined ? tabIcon.height : tabLabel.implicitHeight
+
+                    Text {
+                        id: tabLabel
+                        anchors.fill: parent
+                        visible: modelData.icon === undefined
+                        text: tabButton.text
+                        font: tabButton.font
+                        color: tabButton._current ? settingsScreen._text : settingsScreen._textDim
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    Image {
+                        id: tabIcon
+                        anchors.centerIn: parent
+                        visible: modelData.icon !== undefined
+                        // A shade taller than the labels beside it, not a badge: a mark has to
+                        // carry at a glance where a word carries by shape, so it needs a little
+                        // more room than the cap height — but only a little, or it stops
+                        // reading as one item in a row of ten.
+                        //
+                        // Source is the 672px PNG from StreamTweak's installer resources, so at
+                        // 26 logical px it has many times the pixels it needs even at 4K with
+                        // 200% scaling — hence `smooth`, which is doing real work here rather
+                        // than being decoration.
+                        height: settingsScreen._px(26)
+                        width: settingsScreen._px(26)
+                        source: modelData.icon !== undefined ? modelData.icon : ""
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                        mipmap: true
+                        // Dimmed like an unselected label, full strength when the tab is current.
+                        opacity: tabButton._current ? 1.0 : 0.55
+                    }
                 }
-            }
-            contentItem: Text {
-                text: parent.text
-                font: parent.font
-                color: tabBar.currentIndex === 1 ? settingsScreen._text : settingsScreen._textDim
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-        }
-        TabButton {
-            text: qsTr("Input")
-            focusPolicy: Qt.NoFocus
-            font.family: "DM Sans"
-            font.pixelSize: settingsScreen._px(14)
-            font.bold: true
-            font.capitalization: Font.AllUppercase
-            font.letterSpacing: 0.8
-            background: Rectangle {
-                color: "transparent"
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 2
-                    color: tabBar.currentIndex === 2 ? settingsScreen._green : "transparent"
-                }
-            }
-            contentItem: Text {
-                text: parent.text
-                font: parent.font
-                color: tabBar.currentIndex === 2 ? settingsScreen._text : settingsScreen._textDim
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-        }
-        TabButton {
-            text: qsTr("Decoder")
-            focusPolicy: Qt.NoFocus
-            font.family: "DM Sans"
-            font.pixelSize: settingsScreen._px(14)
-            font.bold: true
-            font.capitalization: Font.AllUppercase
-            font.letterSpacing: 0.8
-            background: Rectangle {
-                color: "transparent"
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 2
-                    color: tabBar.currentIndex === 3 ? settingsScreen._green : "transparent"
-                }
-            }
-            contentItem: Text {
-                text: parent.text
-                font: parent.font
-                color: tabBar.currentIndex === 3 ? settingsScreen._text : settingsScreen._textDim
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-        }
-        TabButton {
-            text: qsTr("Network")
-            focusPolicy: Qt.NoFocus
-            font.family: "DM Sans"
-            font.pixelSize: settingsScreen._px(14)
-            font.bold: true
-            font.capitalization: Font.AllUppercase
-            font.letterSpacing: 0.8
-            background: Rectangle {
-                color: "transparent"
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 2
-                    color: tabBar.currentIndex === 4 ? settingsScreen._green : "transparent"
-                }
-            }
-            contentItem: Text {
-                text: parent.text
-                font: parent.font
-                color: tabBar.currentIndex === 4 ? settingsScreen._text : settingsScreen._textDim
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-        }
-        TabButton {
-            text: qsTr("Session")
-            focusPolicy: Qt.NoFocus
-            font.family: "DM Sans"
-            font.pixelSize: settingsScreen._px(14)
-            font.bold: true
-            font.capitalization: Font.AllUppercase
-            font.letterSpacing: 0.8
-            background: Rectangle {
-                color: "transparent"
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 2
-                    color: tabBar.currentIndex === 5 ? settingsScreen._green : "transparent"
-                }
-            }
-            contentItem: Text {
-                text: parent.text
-                font: parent.font
-                color: tabBar.currentIndex === 5 ? settingsScreen._text : settingsScreen._textDim
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-        }
-        TabButton {
-            text: qsTr("Overlay")
-            focusPolicy: Qt.NoFocus
-            font.family: "DM Sans"
-            font.pixelSize: settingsScreen._px(14)
-            font.bold: true
-            font.capitalization: Font.AllUppercase
-            font.letterSpacing: 0.8
-            background: Rectangle {
-                color: "transparent"
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 2
-                    color: tabBar.currentIndex === 6 ? settingsScreen._green : "transparent"
-                }
-            }
-            contentItem: Text {
-                text: parent.text
-                font: parent.font
-                color: tabBar.currentIndex === 6 ? settingsScreen._text : settingsScreen._textDim
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-        }
-        TabButton {
-            text: qsTr("Shortcuts")
-            focusPolicy: Qt.NoFocus
-            font.family: "DM Sans"
-            font.pixelSize: settingsScreen._px(14)
-            font.bold: true
-            font.capitalization: Font.AllUppercase
-            font.letterSpacing: 0.8
-            background: Rectangle {
-                color: "transparent"
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 2
-                    color: tabBar.currentIndex === 7 ? settingsScreen._green : "transparent"
-                }
-            }
-            contentItem: Text {
-                text: parent.text
-                font: parent.font
-                color: tabBar.currentIndex === 7 ? settingsScreen._text : settingsScreen._textDim
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-        }
-        // Before About, not after: About is the app's own identity and stays last. This tab
-        // is where the companion product lives, and it takes the StreamTweak card that used
-        // to sit in About with it.
-        // ⚠️ The mark instead of the word, and it is the one tab that gets one. "STREAMTWEAK"
-        // is eleven characters — the longest label in the app — and TabBar gives every tab an
-        // equal slot and centres the label in it, so it sat flush against SHORTCUTS, the
-        // second longest. A compact mark leaves that slot full of air and the row breathes.
-        //
-        // It is StreamTweak's own logo, not StreamLight's: this tab is about the companion
-        // product and labelling it with our own mark would be wrong. Source is the 672px PNG
-        // from StreamTweak's installer resources, so at 22 logical px it has sixteen times the
-        // pixels it needs even at 4K with 200% scaling — hence `smooth`, which is doing real
-        // work here rather than being decoration.
-        TabButton {
-            focusPolicy: Qt.NoFocus
-            background: Rectangle {
-                color: "transparent"
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 2
-                    color: tabBar.currentIndex === 8 ? settingsScreen._green : "transparent"
-                }
-            }
-            contentItem: Item {
-                Image {
-                    anchors.centerIn: parent
-                    // A shade taller than the 14px labels beside it, not a badge: a mark has
-                    // to carry at a glance where a word carries by shape, so it needs a
-                    // little more room than the cap height — but only a little, or it stops
-                    // reading as one item in a row of ten.
-                    height: settingsScreen._px(26)
-                    width: settingsScreen._px(26)
-                    source: "qrc:/res/streamtweak_logo.png"
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                    mipmap: true
-                    // Dimmed like an unselected label, full strength when the tab is current.
-                    opacity: tabBar.currentIndex === 8 ? 1.0 : 0.55
-                }
-            }
-        }
-        TabButton {
-            text: qsTr("About")
-            focusPolicy: Qt.NoFocus
-            font.family: "DM Sans"
-            font.pixelSize: settingsScreen._px(14)
-            font.bold: true
-            font.capitalization: Font.AllUppercase
-            font.letterSpacing: 0.8
-            background: Rectangle {
-                color: "transparent"
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 2
-                    color: tabBar.currentIndex === 9 ? settingsScreen._green : "transparent"
-                }
-            }
-            contentItem: Text {
-                text: parent.text
-                font: parent.font
-                color: tabBar.currentIndex === 9 ? settingsScreen._text : settingsScreen._textDim
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
             }
         }
     }
@@ -646,7 +540,7 @@ FocusScope {
         property Item target
         color: "transparent"
         radius: settingsScreen._px(6)
-        border.color: settingsScreen._focus
+        border.color: Theme.accent
         border.width: settingsScreen._focusBd
         visible: target && target.activeFocus && SdlGamepadKeyNavigation.inputMode !== "pointer"
         z: 1
@@ -668,14 +562,14 @@ FocusScope {
             anchors.verticalCenter: parent.verticalCenter
             spacing: settingsScreen._px(8)
             Label {
-                text: "🔌"; font.pixelSize: settingsScreen._px(14)
+                text: "🔌"; font.pixelSize: settingsScreen._px(Theme.fontSmall)
                 anchors.verticalCenter: parent.verticalCenter
             }
             Label {
                 width: parent.width - settingsScreen._px(28)
                 anchors.verticalCenter: parent.verticalCenter
                 text: settingsScreen._stOffWhy
-                font.family: "DM Sans"; font.pixelSize: settingsScreen._px(13)
+                font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontSmall)
                 color: settingsScreen._textDim
                 wrapMode: Text.WordWrap
             }
@@ -693,7 +587,7 @@ FocusScope {
             anchors.verticalCenter: parent.verticalCenter
             spacing: settingsScreen._px(8)
             Label {
-                text: "🔒"; font.pixelSize: settingsScreen._px(14)
+                text: "🔒"; font.pixelSize: settingsScreen._px(Theme.fontSmall)
                 anchors.verticalCenter: parent.verticalCenter
             }
             Label {
@@ -701,14 +595,13 @@ FocusScope {
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("Greyed settings are controlled by the active host profile “%1”.")
                       .arg(settingsScreen.activeProfileName)
-                font.family: "DM Sans"; font.pixelSize: settingsScreen._px(13)
+                font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontSmall)
                 color: settingsScreen._textDim
                 wrapMode: Text.WordWrap
             }
         }
-        Rectangle {
+        RowSeparator {
             anchors.bottom: parent.bottom
-            x: settingsScreen._px(16); width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border
         }
     }
 
@@ -813,8 +706,8 @@ FocusScope {
                 // ── Section: VIDEO ────────────────────────────────────────────
                 Label {
                     text: qsTr("Video")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -873,8 +766,8 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Resolution")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
@@ -884,8 +777,8 @@ FocusScope {
                                     id: resolutionHint
                                     text: settingsScreen._displayHint(settingsScreen._video.resHint)
                                     visible: text.length > 0
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -974,7 +867,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Frame rate ────────────────────────────────────────
                         Item {
@@ -990,8 +883,8 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Frame rate")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
@@ -999,8 +892,8 @@ FocusScope {
                                     id: fpsHint
                                     text: settingsScreen._displayHint(settingsScreen._video.fpsHint)
                                     visible: text.length > 0
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1087,7 +980,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Video bitrate ─────────────────────────────────────
                         Item {
@@ -1104,15 +997,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Video bitrate")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Raise for higher quality on fast connections")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1218,7 +1111,7 @@ FocusScope {
                                     width: bitrateSlider.availableWidth
                                     height: settingsScreen._px(3)
                                     radius: settingsScreen._px(2)
-                                    color: "#f0f0f0"
+                                    color: Theme.text
                                 }
                                 handle: Rectangle {
                                     x: bitrateSlider.leftPadding + bitrateSlider.visualPosition * (bitrateSlider.availableWidth - width)
@@ -1226,10 +1119,10 @@ FocusScope {
                                     implicitWidth: settingsScreen._px(14)
                                     implicitHeight: settingsScreen._px(14)
                                     radius: settingsScreen._px(7)
-                                    color: bitrateSlider.pressed ? Qt.lighter(settingsScreen._green, 1.2)
-                                         : bitrateSlider.hovered ? Qt.lighter(settingsScreen._green, 1.1)
-                                         :                         settingsScreen._green
-                                    border.color: settingsScreen._green
+                                    color: bitrateSlider.pressed ? Qt.lighter(Theme.accent, 1.2)
+                                         : bitrateSlider.hovered ? Qt.lighter(Theme.accent, 1.1)
+                                         :                         Theme.accent
+                                    border.color: Theme.accent
                                     border.width: 1
                                 }
                             }
@@ -1240,15 +1133,15 @@ FocusScope {
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: (StreamingPreferences.bitrateKbps / 1000).toFixed(0) + " Mbps"
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(13)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                 font.bold: true
-                                color: settingsScreen._green
+                                color: Theme.accent
                                 horizontalAlignment: Text.AlignRight
                                 width: settingsScreen._px(80)
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Display mode ──────────────────────────────────────
                         Item {
@@ -1265,15 +1158,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Display mode")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Fullscreen has the best performance. Borderless windowed allows Alt+Tab, screenshots and overlays.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1306,7 +1199,7 @@ FocusScope {
                                 onActivated: function(idx) { StreamingPreferences.windowMode = _values[idx]; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── V-Sync ────────────────────────────────────────────
                         Item {
@@ -1323,15 +1216,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("V-Sync")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Disabling reduces latency but may cause visible tearing")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1351,7 +1244,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.enableVsync = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Frame Pacing ──────────────────────────────────────
                         Item {
@@ -1386,8 +1279,8 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Frame Pacing")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
@@ -1397,8 +1290,8 @@ FocusScope {
                                     text: StreamingPreferences.enableVsync
                                           ? qsTr("Spaces frames out evenly instead of drawing them the moment they arrive, which removes judder on high-refresh displays.")
                                           : qsTr("Requires V-Sync — with it off the stream renders as fast as it can, so nothing is paced. Your saved mode is kept and comes back as soon as you re-enable V-Sync.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1437,7 +1330,7 @@ FocusScope {
                                 onActivated: function(idx) { StreamingPreferences.framePacingMode = _values[idx]; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Fractional V-Sync (5.6.0 experiment) ──────────────
                         //
@@ -1464,8 +1357,8 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Fractional V-Sync (experimental)")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
@@ -1483,8 +1376,8 @@ FocusScope {
                                           // Custom pill on the row above is.
                                           ? qsTr("Shows each frame for a whole number of refreshes instead of once per refresh — 60 FPS on a 120 Hz screen becomes one frame every two. Needs the screen to run at an exact multiple of the frame rate: at 60 FPS that means 120, 180 or 240 Hz, and on a 144 Hz screen it takes 72 FPS instead.")
                                           : qsTr("Requires V-Sync and Frame Pacing.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1514,8 +1407,8 @@ FocusScope {
 
                 Label {
                     text: qsTr("Audio")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -1550,8 +1443,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Audio configuration")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -1584,7 +1477,7 @@ FocusScope {
                                 onActivated: function(idx) { StreamingPreferences.audioConfig = _values[idx]; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Mute host PC speakers ─────────────────────────────
                         Item {
@@ -1598,16 +1491,16 @@ FocusScope {
                                 spacing: settingsScreen._px(3)
 
                                 Label {
-                                    text: qsTr("Mute host PC speakers during streaming")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    text: qsTr("Mute the host's speakers while streaming")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Restart any in-progress game for this to take effect")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1623,7 +1516,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.playAudioOnHost = !v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Mute when window not focused ──────────────────────
                         Item {
@@ -1638,15 +1531,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Mute audio when window is not focused")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
-                                    text: qsTr("Mutes when you Alt+Tab away or click on another window")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    text: qsTr("Mutes when you switch to another window")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1677,8 +1570,8 @@ FocusScope {
                 // ── MOUSE & KEYBOARD section ──────────────────────────────────
                 Label {
                     text: qsTr("Mouse & Keyboard")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -1715,15 +1608,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Optimize mouse for remote desktop")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Seamless cursor without capture. Toggle live with Ctrl+Alt+Shift+M.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1737,7 +1630,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.absoluteMouseMode = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Capture system keyboard shortcuts ─────────────────
                         Item {
@@ -1752,15 +1645,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Capture system keyboard shortcuts")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Forwards shortcuts like Alt+Tab to the host. Ctrl+Alt+Del cannot be intercepted.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1790,7 +1683,7 @@ FocusScope {
                                 onActivated: function(idx) { StreamingPreferences.captureSysKeysMode = _values[idx]; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Use touchscreen as virtual trackpad ───────────────
                         Item {
@@ -1805,15 +1698,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Use touchscreen as virtual trackpad")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("On: behaves like a trackpad.  Off: directly controls the pointer.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1827,7 +1720,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.absoluteTouchMode = !v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Swap mouse buttons ────────────────────────────────
                         Item {
@@ -1836,8 +1729,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Swap left and right mouse buttons")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -1854,7 +1747,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.swapMouseButtons = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Reverse scroll direction ──────────────────────────
                         Item {
@@ -1863,8 +1756,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Reverse scroll direction")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -1887,8 +1780,8 @@ FocusScope {
                 // ── GAMEPAD section ───────────────────────────────────────────
                 Label {
                     text: qsTr("Controller")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -1924,15 +1817,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Swap A/B and X/Y controller buttons")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Nintendo-style button layout")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1946,7 +1839,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.swapFaceButtons = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         Item {
                             width: parent.width
@@ -1960,15 +1853,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Force controller #1 always connected")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Keeps a virtual pad on the host. Enable only for games that don't support hot-plug.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -1982,7 +1875,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.multiController = !v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         Item {
                             width: parent.width
@@ -1990,8 +1883,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Mouse control with controller (Start)")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -2008,7 +1901,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.gamepadMouse = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         Item {
                             width: parent.width
@@ -2022,15 +1915,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Process controller input in background")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Captures controller input even when the window is not focused")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -2060,8 +1953,8 @@ FocusScope {
 
                 Label {
                     text: qsTr("Video decoder & codec")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -2096,8 +1989,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Video decoder")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -2130,7 +2023,7 @@ FocusScope {
                                 onActivated: function(idx) { StreamingPreferences.videoDecoderSelection = _values[idx]; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Video codec ───────────────────────────────────────
                         Item {
@@ -2141,8 +2034,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Video codec")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -2176,7 +2069,7 @@ FocusScope {
                                 onActivated: function(idx) { StreamingPreferences.videoCodecConfig = _values[idx]; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Enable HDR ────────────────────────────────────────
                         Item {
@@ -2193,15 +2086,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Enable HDR")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Some games require an HDR monitor on the host to enable HDR")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -2215,7 +2108,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.enableHdr = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Enable YUV 4:4:4 ──────────────────────────────────
                         Item {
@@ -2230,15 +2123,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Enable YUV 4:4:4 (experimental)")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Better for desktop and text-heavy games. Not recommended for fast-paced action.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -2261,7 +2154,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Unlock bitrate limit ──────────────────────────────
                         Item {
@@ -2276,15 +2169,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Unlock bitrate limit (experimental)")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Allows very high bitrates with Sunshine hosts. Use only over wired LAN.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -2333,8 +2226,8 @@ FocusScope {
 
                 Label {
                     text: qsTr("Network")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -2364,8 +2257,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Automatically discover PCs on local network")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -2385,7 +2278,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         Item {
                             width: parent.width
@@ -2393,8 +2286,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Automatically detect blocked connections")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -2411,7 +2304,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.detectNetworkBlocking = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Auto-reconnect on no video ────────────────────────
                         Item {
@@ -2428,15 +2321,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Automatically reconnect if the host is slow to start")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("If the host doesn't send video right away (e.g. a virtual display or HDR/AV1 encoder still warming up), StreamLight quietly retries once instead of showing an error.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                     width: parent.width
                                     wrapMode: Text.WordWrap
@@ -2452,7 +2345,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.autoReconnectNoVideo = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // Auto-start Tailscale at StreamLight launch. When ON, Tailscale
                         // is started in the background on every StreamLight boot (only
@@ -2474,15 +2367,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Auto-start Tailscale on launch")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Launches Tailscale in the background so remote hosts can be reached via Tailscale IP.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -2512,8 +2405,8 @@ FocusScope {
                 // ── HOST LINK SPEED ───────────────────────────────────────────
                 Label {
                     text: qsTr("Host link speed")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -2556,15 +2449,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Match host link speed to this device")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Before connecting, ask the host to run its wired link at this device's speed. Fixes the packet loss caused by a faster host link feeding a slower one.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                     wrapMode: Text.Wrap
                                     width: parent.width
@@ -2574,8 +2467,8 @@ FocusScope {
                                 // connects as it always did.
                                 Label {
                                     text: qsTr("Requires StreamTweak 8.1.0 or later on the host, with client control allowed. Hosts without it are unaffected.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                     wrapMode: Text.Wrap
                                     width: parent.width
@@ -2598,7 +2491,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // Never inert in silence: when the feature can't act, this row says
                         // why — Wi-Fi, a tunnel, or an adapter that reports no rate. Reads the
@@ -2619,15 +2512,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("This device")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: settingsScreen._linkDetail
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                     wrapMode: Text.Wrap
                                     width: parent.width
@@ -2644,16 +2537,16 @@ FocusScope {
                                 radius: settingsScreen._px(5)
                                 // Matches a selected SegmentedSelector pill: solid accent with dark
                                 // text, so a live value reads the same everywhere in Settings.
-                                color: settingsScreen._linkUsable ? Theme.accent : "#1AA0A0A0"
+                                color: settingsScreen._linkUsable ? Theme.accent : Qt.rgba(Theme.text2.r, Theme.text2.g, Theme.text2.b, 0.10)
                                 border.width: settingsScreen._linkUsable ? 0 : 1
-                                border.color: "#3a3a3a"
+                                border.color: Theme.lineHigh
 
                                 Label {
                                     id: linkPillText
                                     anchors.centerIn: parent
                                     text: settingsScreen._linkPill
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(12)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontCaption)
                                     font.bold: true
                                     color: settingsScreen._linkUsable ? Theme.onAccent : settingsScreen._textMut
                                 }
@@ -2678,8 +2571,8 @@ FocusScope {
                 // ── HOST section ──────────────────────────────────────────────
                 Label {
                     text: qsTr("Host")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -2710,8 +2603,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Optimize game settings for streaming")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -2728,7 +2621,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.gameOptimizations = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Quit app on host after closing the stream ─────────
                         Item {
@@ -2743,15 +2636,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Quit app on host after closing the stream")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Closes the game when the stream ends. Unsaved progress will be lost.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -2765,7 +2658,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.quitAppAfter = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Wait for the game to appear ───────────────────────
                         // Here rather than under Network, where it first landed next to
@@ -2792,8 +2685,8 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Wait for the game to appear")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
@@ -2803,8 +2696,8 @@ FocusScope {
                                     // host without StreamTweak — the only one of the three
                                     // StreamTweak-dependent settings that never named it.
                                     text: qsTr("Keep the launch screen up until the host reports the game is on screen, instead of showing the stream as soon as it starts. Needs StreamTweak on the host. Games that open their own launcher never get there — turn it off for those in their per-game settings.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                     width: parent.width
                                     wrapMode: Text.WordWrap
@@ -2832,8 +2725,8 @@ FocusScope {
                 // ── INTERFACE section ─────────────────────────────────────────
                 Label {
                     text: qsTr("Interface")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -2866,8 +2759,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("GUI mode")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -2912,7 +2805,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Show connection quality warnings ──────────────────
                         Item {
@@ -2921,8 +2814,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Show connection quality warnings")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -2939,7 +2832,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.connectionWarnings = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Show configuration warnings ───────────────────────
                         Item {
@@ -2948,8 +2841,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Show configuration warnings")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -2966,7 +2859,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.configurationWarnings = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Discord Rich Presence ─────────────────────────────
                         Item {
@@ -2981,15 +2874,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Discord Rich Presence")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Shows the streamed game in your Discord status")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -3003,7 +2896,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.richPresence = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Keep display awake while streaming ────────────────
                         Item {
@@ -3018,15 +2911,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Keep display awake while streaming")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Prevents screensaver and display sleep during streaming")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -3040,7 +2933,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.keepAwake = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Launch Philips Hue Sync during streaming ──────────
                         Item {
@@ -3057,15 +2950,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Launch Philips Hue Sync during streaming")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Auto-launches Hue Sync at stream start and closes it at end")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -3079,7 +2972,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.hueSyncIntegration = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Hide host IP addresses ────────────────────────────
                         Item {
@@ -3094,15 +2987,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Hide host IP addresses")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Masks host IPs across the app for privacy (e.g. screenshots)")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -3116,7 +3009,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.hideHostIps = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Clock format ──────────────────────────────────────
                         // Here, with the rows about what the app puts on screen, rather than with
@@ -3130,8 +3023,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Clock format")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -3169,7 +3062,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Date format ───────────────────────────────────────
                         // The patterns are the labels: naming the orders instead ("day first")
@@ -3180,8 +3073,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Date format")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -3217,7 +3110,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Accent colour ─────────────────────────────────────
                         // One colour drives the whole interface: the focus ring, the primary
@@ -3236,15 +3129,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Accent colour")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Used wherever the interface highlights something — status colours don't change")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -3322,11 +3215,11 @@ FocusScope {
                                     selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
                                     selectedTextColor: Theme.onAccent
                                     font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(14)
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     font.bold: true
 
                                     background: Rectangle {
-                                        color: "#0f0f0f"
+                                        color: Theme.ground
                                         radius: settingsScreen._px(8)
                                         border.color: accentHexField.activeFocus ? Theme.accent : Theme.line
                                         border.width: accentHexField.activeFocus ? 2 : 1
@@ -3356,7 +3249,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Reduce animations ─────────────────────────────────
                         Item {
@@ -3371,15 +3264,15 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Reduce animations")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
                                     text: qsTr("Turns off movement and glow outside the stream — worth it on battery")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -3603,8 +3496,8 @@ FocusScope {
                 // ── Section: OVERLAY ──────────────────────────────────────────
                 Label {
                     text: qsTr("Overlay")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -3643,8 +3536,8 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Performance overlay")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
@@ -3652,8 +3545,8 @@ FocusScope {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
                                     text: qsTr("Real-time stats while streaming. The hotkey shows and hides it — set the keyboard and controller combos in Settings → Shortcuts.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -3667,7 +3560,7 @@ FocusScope {
                                 onToggled: function(v) { StreamingPreferences.showPerfOverlay = v; StreamingPreferences.save() }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Preset ────────────────────────────────────────────
                         Item {
@@ -3689,8 +3582,8 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Preset")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
@@ -3698,8 +3591,8 @@ FocusScope {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
                                     text: qsTr("A starting point for the switches below. Change any of them and this reads Custom.")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -3733,8 +3626,8 @@ FocusScope {
                                         id: customLabel
                                         anchors.centerIn: parent
                                         text: qsTr("Custom")
-                                        font.family: "DM Sans"
-                                        font.pixelSize: settingsScreen._px(13)
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                         font.bold: true
                                         color: Theme.accent
                                     }
@@ -3757,7 +3650,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Position ──────────────────────────────────────────
                         // Top edge only. The bottom is where games put their own HUD and where
@@ -3777,8 +3670,8 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Position")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
@@ -3786,8 +3679,8 @@ FocusScope {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
                                     text: qsTr("The in-stream settings panel takes the other corner")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -3819,7 +3712,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Text colour ───────────────────────────────────────
                         Item {
@@ -3828,8 +3721,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Text colour")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -3867,7 +3760,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Font size ─────────────────────────────────────────
                         Item {
@@ -3876,8 +3769,8 @@ FocusScope {
 
                             Label {
                                 text: qsTr("Font size")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(16)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
                                 font.bold: true
                                 color: settingsScreen._text
                                 anchors.left: parent.left
@@ -3913,7 +3806,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Bitrate peak ──────────────────────────────────────
                         // Here and not in the box below, because it is not a line: it appends
@@ -3935,8 +3828,8 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Bitrate peak")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
@@ -3944,8 +3837,8 @@ FocusScope {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
                                     text: qsTr("Adds the highest of the last few seconds to the bitrate line")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -3964,7 +3857,7 @@ FocusScope {
                                 }
                             }
                         }
-                        Rectangle { width: parent.width - settingsScreen._px(32); height: 1; color: settingsScreen._border; x: settingsScreen._px(16) }
+                        RowSeparator { }
 
                         // ── Transparency ──────────────────────────────────────
                         // Five steps rather than a slider: a slider is the one control on this
@@ -3984,8 +3877,8 @@ FocusScope {
 
                                 Label {
                                     text: qsTr("Transparency")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(16)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
@@ -3993,8 +3886,8 @@ FocusScope {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
                                     text: qsTr("How much of the game shows through the box behind the text")
-                                    font.family: "DM Sans"
-                                    font.pixelSize: settingsScreen._px(13)
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
                             }
@@ -4032,8 +3925,8 @@ FocusScope {
                 // ── LINES ─────────────────────────────────────────────────────
                 Label {
                     text: qsTr("Lines")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -4051,8 +3944,8 @@ FocusScope {
                     text: overlayTab.focusedDesc.length > 0
                           ? overlayTab.focusedDesc
                           : qsTr("Select a line to switch it on or off")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     color: settingsScreen._textDim
                 }
 
@@ -4646,8 +4539,8 @@ FocusScope {
                             Label {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "StreamTweak"
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(22)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontH2)
                                 font.bold: true
                                 color: settingsScreen._text
                             }
@@ -4656,15 +4549,15 @@ FocusScope {
                                 text: settingsScreen.streamTweakLatest.length > 0
                                       ? settingsScreen.streamTweakLatest
                                       : qsTr("checking…")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(14)
-                                color: settingsScreen._greenLk
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                color: Theme.accent
                             }
                             Label {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: qsTr("by FoggyBytes")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(13)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                 color: settingsScreen._textDim
                             }
                         }
@@ -4674,8 +4567,8 @@ FocusScope {
                             // first version ran to three and pointed at "the bottom of this
                             // tab", which the Features section now names for itself.
                             text: qsTr("A companion app for the host. Install it, switch on the hosts that have it, and StreamLight gains the features below — streaming itself is unaffected either way.")
-                            font.family: "DM Sans"
-                            font.pixelSize: settingsScreen._px(13)
+                            font.family: Theme.family
+                            font.pixelSize: settingsScreen._px(Theme.fontSmall)
                             color: settingsScreen._textDim
                             wrapMode: Text.WordWrap
                         }
@@ -4700,8 +4593,8 @@ FocusScope {
                 // mixed case and flush left while all the others were uppercase and indented.
                 Label {
                     text: qsTr("Hosts")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -4732,8 +4625,8 @@ FocusScope {
                                 anchors.centerIn: parent
                                 horizontalAlignment: Text.AlignHCenter
                                 text: qsTr("No hosts yet.\nAdd one from the home screen.")
-                                font.family: "DM Sans"
-                                font.pixelSize: settingsScreen._px(14)
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                 color: settingsScreen._textDim
                             }
                         }
@@ -4825,8 +4718,8 @@ FocusScope {
 
                                     Label {
                                         text: model.name
-                                        font.family: "DM Sans"
-                                        font.pixelSize: settingsScreen._px(16)
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._px(Theme.fontBody)
                                         font.bold: true
                                         color: settingsScreen._text
                                         elide: Text.ElideRight
@@ -4840,7 +4733,7 @@ FocusScope {
                                             // and a rounded half-pixel stops being a circle.
                                             width: settingsScreen._px(7); height: settingsScreen._px(7); radius: width / 2
                                             color: !model.online          ? settingsScreen._textMut
-                                                 : stHostRow.presence === "found"   ? settingsScreen._green
+                                                 : stHostRow.presence === "found"   ? Theme.accent
                                                  : stHostRow.presence === "missing" ? settingsScreen._textMut
                                                  : settingsScreen._textDim
                                         }
@@ -4857,10 +4750,10 @@ FocusScope {
                                                   : stHostRow.presence === "missing"
                                                     ? qsTr("Not found on this host")
                                                   : qsTr("Checking…")
-                                            font.family: "DM Sans"
-                                            font.pixelSize: settingsScreen._px(13)
+                                            font.family: Theme.family
+                                            font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                             color: stHostRow.presence === "found" && model.online
-                                                   ? settingsScreen._greenLk
+                                                   ? Theme.accent
                                                    : settingsScreen._textDim
                                         }
                                     }
@@ -4897,8 +4790,8 @@ FocusScope {
                 // ── Section: FEATURES ─────────────────────────────────────────
                 Label {
                     text: qsTr("Features")
-                    font.family: "DM Sans"
-                    font.pixelSize: settingsScreen._px(13)
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
                     font.letterSpacing: 1.4
                     font.capitalization: Font.AllUppercase
@@ -5008,8 +4901,8 @@ FocusScope {
                                             anchors.bottom: parent.bottom
                                             anchors.bottomMargin: settingsScreen._px(3)
                                             text: modelData.group !== undefined ? modelData.group : ""
-                                            font.family: "DM Sans"
-                                            font.pixelSize: settingsScreen._px(11)
+                                            font.family: Theme.family
+                                            font.pixelSize: settingsScreen._px(Theme.fontCaption)
                                             font.bold: true
                                             font.letterSpacing: 1.2
                                             font.capitalization: Font.AllUppercase
@@ -5030,15 +4923,15 @@ FocusScope {
 
                                             Label {
                                                 text: "▸"
-                                                font.pixelSize: settingsScreen._px(12)
-                                                color: settingsScreen._green
+                                                font.pixelSize: settingsScreen._px(Theme.fontCaption)
+                                                color: Theme.accent
                                             }
                                             Label {
                                                 id: stEntryText
                                                 width: parent.width - settingsScreen._px(21)
                                                 text: modelData.name !== undefined ? modelData.name : ""
-                                                font.family: "DM Sans"
-                                                font.pixelSize: settingsScreen._px(13)
+                                                font.family: Theme.family
+                                                font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                                 color: settingsScreen._text
                                                 wrapMode: Text.WordWrap
                                             }
@@ -5078,8 +4971,8 @@ FocusScope {
                         Label {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "StreamLight"
-                            font.family: "DM Sans"
-                            font.pixelSize: settingsScreen._px(22)
+                            font.family: Theme.family
+                            font.pixelSize: settingsScreen._px(Theme.fontH2)
                             font.bold: true
                             color: settingsScreen._text
                         }
@@ -5088,15 +4981,15 @@ FocusScope {
                             text: settingsScreen.streamLightLatest.length > 0
                                   ? settingsScreen.streamLightLatest
                                   : qsTr("checking…")
-                            font.family: "DM Sans"
-                            font.pixelSize: settingsScreen._px(14)
-                            color: settingsScreen._greenLk
+                            font.family: Theme.family
+                            font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                            color: Theme.accent
                         }
                         Label {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("by FoggyBytes")
-                            font.family: "DM Sans"
-                            font.pixelSize: settingsScreen._px(13)
+                            font.family: Theme.family
+                            font.pixelSize: settingsScreen._px(Theme.fontSmall)
                             color: settingsScreen._textDim
                         }
                     }
@@ -5158,16 +5051,16 @@ FocusScope {
                     width: kcl.implicitWidth + settingsScreen._px(16)
                     height: settingsScreen._px(28)
                     radius: settingsScreen._px(6)
-                    color: "#23262e"
-                    border.color: "#3a3f4a"
+                    color: Theme.cardHigh
+                    border.color: Theme.lineHigh
                     border.width: 1
                     Label {
                         id: kcl
                         anchors.centerIn: parent
                         text: parent.text
-                        color: "#dfe2e8"
-                        font.family: "DM Sans"
-                        font.pixelSize: settingsScreen._px(12)
+                        color: Theme.text
+                        font.family: Theme.family
+                        font.pixelSize: settingsScreen._px(Theme.fontCaption)
                         font.bold: true
                     }
                 }
@@ -5205,9 +5098,9 @@ FocusScope {
                     }
                     contentItem: Label {
                         text: parent.label
-                        color: "#a0a0a0"
-                        font.family: "DM Sans"
-                        font.pixelSize: settingsScreen._px(13)
+                        color: Theme.text2
+                        font.family: Theme.family
+                        font.pixelSize: settingsScreen._px(Theme.fontSmall)
                         leftPadding: settingsScreen._px(16)
                         rightPadding: settingsScreen._px(16)
                         horizontalAlignment: Text.AlignHCenter
@@ -5218,7 +5111,7 @@ FocusScope {
                 // ── CONTROLLER GLYPHS ─────────────────────────────────────────
                 Label {
                     text: qsTr("Controller glyphs")
-                    font.family: "DM Sans"; font.pixelSize: settingsScreen._px(13); font.bold: true
+                    font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontSmall); font.bold: true
                     font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
                     color: settingsScreen._textMut; leftPadding: settingsScreen._px(14)
                 }
@@ -5238,12 +5131,12 @@ FocusScope {
                             spacing: settingsScreen._px(3)
                             Label {
                                 text: qsTr("Button icon set")
-                                font.family: "DM Sans"; font.pixelSize: settingsScreen._px(16); font.bold: true
+                                font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontBody); font.bold: true
                                 color: settingsScreen._text
                             }
                             Label {
                                 text: qsTr("Auto follows the connected pad. Force a vendor for generic controllers.")
-                                font.family: "DM Sans"; font.pixelSize: settingsScreen._px(13)
+                                font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                 color: settingsScreen._textDim
                             }
                         }
@@ -5265,7 +5158,7 @@ FocusScope {
                 // ── GAMEPAD ───────────────────────────────────────────────────
                 Label {
                     text: qsTr("Controller")
-                    font.family: "DM Sans"; font.pixelSize: settingsScreen._px(13); font.bold: true
+                    font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontSmall); font.bold: true
                     font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
                     color: settingsScreen._textMut; leftPadding: settingsScreen._px(14)
                 }
@@ -5292,13 +5185,11 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: qsTr("Hold the listed buttons together. A combo must use at least 3 buttons, one of them Start / Select / LB / RB, so it can't fire during normal play.")
                                 wrapMode: Text.WordWrap
-                                font.family: "DM Sans"; font.pixelSize: settingsScreen._px(13)
+                                font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                 color: settingsScreen._textDim
                             }
-                            Rectangle {
+                            RowSeparator {
                                 anchors.bottom: parent.bottom
-                                x: settingsScreen._px(16); width: parent.width - settingsScreen._px(32); height: 1
-                                color: settingsScreen._border
                             }
                         }
                         Repeater {
@@ -5313,7 +5204,7 @@ FocusScope {
                                     width: parent.width * 0.40
                                     text: rd.name
                                     elide: Text.ElideRight
-                                    font.family: "DM Sans"; font.pixelSize: settingsScreen._px(15)
+                                    font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     color: settingsScreen._text
                                 }
                                 Row {
@@ -5345,10 +5236,8 @@ FocusScope {
                                         onTriggered: ShortcutManager.resetGamepad(rd.action)
                                     }
                                 }
-                                Rectangle {
+                                RowSeparator {
                                     anchors.bottom: parent.bottom
-                                    x: settingsScreen._px(16); width: parent.width - settingsScreen._px(32); height: 1
-                                    color: settingsScreen._border
                                     visible: index < shortcutsTab.padModel.length - 1
                                 }
                             }
@@ -5359,7 +5248,7 @@ FocusScope {
                 // ── KEYBOARD ──────────────────────────────────────────────────
                 Label {
                     text: qsTr("Keyboard")
-                    font.family: "DM Sans"; font.pixelSize: settingsScreen._px(13); font.bold: true
+                    font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontSmall); font.bold: true
                     font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
                     color: settingsScreen._textMut; leftPadding: settingsScreen._px(14)
                 }
@@ -5386,13 +5275,11 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: qsTr("Use at least two of Ctrl / Alt / Shift plus one key. Heavier combos are less likely to clash with software running on the host.")
                                 wrapMode: Text.WordWrap
-                                font.family: "DM Sans"; font.pixelSize: settingsScreen._px(13)
+                                font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                 color: settingsScreen._textDim
                             }
-                            Rectangle {
+                            RowSeparator {
                                 anchors.bottom: parent.bottom
-                                x: settingsScreen._px(16); width: parent.width - settingsScreen._px(32); height: 1
-                                color: settingsScreen._border
                             }
                         }
                         Repeater {
@@ -5407,7 +5294,7 @@ FocusScope {
                                     width: parent.width * 0.42
                                     text: rd.name
                                     elide: Text.ElideRight
-                                    font.family: "DM Sans"; font.pixelSize: settingsScreen._px(15)
+                                    font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     color: settingsScreen._text
                                 }
                                 Row {
@@ -5432,10 +5319,8 @@ FocusScope {
                                         onTriggered: ShortcutManager.resetKeyboard(rd.action)
                                     }
                                 }
-                                Rectangle {
+                                RowSeparator {
                                     anchors.bottom: parent.bottom
-                                    x: settingsScreen._px(16); width: parent.width - settingsScreen._px(32); height: 1
-                                    color: settingsScreen._border
                                     visible: index < shortcutsTab.kbModel.length - 1
                                 }
                             }
@@ -5534,7 +5419,7 @@ FocusScope {
             //
             // Rest is Theme.line, not the "#2a2a2a" this used to hardcode: rest and hover only
             // read as a progression if both ends come from the same scale.
-            border.color: btn._keyFocused ? settingsScreen._greenLk
+            border.color: btn._keyFocused ? Theme.accent
                         : hov.active      ? Theme.lineHigh
                         :                   Theme.line
             // ⚠️ Three, matching SegmentedSelector, which is the control this has to look like:
@@ -5558,8 +5443,8 @@ FocusScope {
         contentItem: Label {
             text: btn.label
             color: settingsScreen._text
-            font.family: "DM Sans"
-            font.pixelSize: settingsScreen._px(13)
+            font.family: Theme.family
+            font.pixelSize: settingsScreen._px(Theme.fontSmall)
             font.bold: true
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter

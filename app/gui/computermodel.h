@@ -192,12 +192,6 @@ public:
     // than StreamTweak 8.1.0.
     Q_INVOKABLE void requestHostNetInfo(int computerIndex);
 
-    // The host's last finished session, for the panel on the host card. One-shot, fired when
-    // a host becomes authorized: it describes something that already happened, so polling it
-    // would ask the same question over and over. Emits lastSessionReceived with {has:false}
-    // on hosts older than StreamTweak 8.1.0.
-    Q_INVOKABLE void requestLastSession(int computerIndex);
-
     /// Asks the host to put its link speed back. The host never decides this for itself — it
     /// holds the streaming speed until told — so this is the only thing that ends a switch,
     /// sent when the user answers the prompt on returning to the host list, or picks the
@@ -239,6 +233,25 @@ public:
     // bitrate/hdr/codec/framepacing/audio/hue). Empty when no profile is active.
     Q_INVOKABLE QVariantMap hostActiveOverride(int computerIndex) const;
 
+    // ── Last played (5.7.0) ──────────────────────────────────────────────────────────────
+    /**
+     * What the host card's Last played block is drawn from: the game this client last
+     * streamed on this host, its artwork, and how that session went.
+     *
+     * Everything comes off local disk — the play-time record and the box art cache — so it
+     * answers with a host that has no StreamTweak, and with no host reachable at all.
+     *
+     * Returns an EMPTY map when there is nothing to show, and the card then draws nothing:
+     * no game ever streamed here, the record was reset, or the game is no longer in the
+     * host's app list. That last one is the launchability gate, and it costs nothing extra —
+     * resolving the artwork already needs the app id, and only the app list has it.
+     */
+    Q_INVOKABLE QVariantMap lastPlayedFor(int computerIndex) const;
+
+    /// "2 h ago", "yesterday", "3 days ago" — the wording the host used to send with its own
+    /// last-session reply, kept identical now that the client works it out for itself.
+    static QString formatAgo(const QDateTime& utcStamp);
+
 signals:
     void pairingCompleted(QVariant error);
     void connectionTestCompleted(int result, QString blockedPorts);
@@ -253,10 +266,6 @@ signals:
     /** @param info {allowsLinkControl, currentMbps} — empty map on hosts without NETINFO. */
     void hostNetInfoReceived(int computerIndex, QVariantMap info);
 
-    /** @param s {has, ago, duration, grade, gradeColor, rttMs, rttPeakMs, hostLatMs,
-     *            dropsPct, games:[{name, cover}]} — {has:false} when there is nothing to
-     *            show or the host does not know the command. */
-    void lastSessionReceived(int computerIndex, QVariantMap s);
     void appStoresReceived(int computerIndex, QVariantMap stores);
     void updateStateReceived(int computerIndex, bool pending);
     /** supported=false means the host does not know LOCKSTATE — not that it is unlocked. */

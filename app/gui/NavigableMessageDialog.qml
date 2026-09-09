@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.0
 import QtQuick.Controls 2.5
 import QtQuick.Layouts 1.3
@@ -35,11 +36,11 @@ NavigableDialog {
         Label {
             visible: dialog.headerText.length > 0
             text: dialog.headerText
-            font.family: "DM Sans"
-            font.pixelSize: 13
+            font.family: Theme.family
+            font.pixelSize: Theme.fontSmall
             font.bold: true
             font.letterSpacing: 1.6
-            color: "#707070"
+            color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
         }
 
@@ -57,9 +58,9 @@ NavigableDialog {
             text: dialog.text + ((dialog.helpText && (dialog.standardButtons & Dialog.Help))
                                   ? (dialog.helpTextSeparator + dialog.helpText)
                                   : "")
-            font.family: "DM Sans"
-            font.pixelSize: 18
-            color: "#f0f0f0"
+            font.family: Theme.family
+            font.pixelSize: Theme.fontTitle
+            color: Theme.text
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter

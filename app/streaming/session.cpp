@@ -1,4 +1,5 @@
 #include "session.h"
+#include "settings/playtime.h"
 #include "settings/streamingpreferences.h"
 #include "streaming/streamutils.h"
 #include "backend/nvhttp.h"
@@ -695,6 +696,62 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
     // Session telemetry sampler: sends per-second client stats to StreamTweak every 10s.
     // start() is called later in exec() once the stream is running (after LiStartConnection).
     m_TelemetrySampler = new SessionTelemetrySampler(this);
+
+    // Play time. Created here, with the sampler, because both own a QTimer and both need it
+    // to belong to the Qt main thread — the connection completes on
+    // AsyncConnectionStartThread, and a QTimer created there would never fire.
+    m_PlaytimeFlushTimer = new QTimer(this);
+    m_PlaytimeFlushTimer->setInterval(PlaytimeManager::kMinSessionSeconds * 1000);
+    m_PlaytimeFlushTimer->setSingleShot(false);
+    connect(m_PlaytimeFlushTimer, &QTimer::timeout, this, &Session::flushPlaytime);
+}
+
+void Session::flushPlaytime()
+{
+    if (!m_PlaytimeTracking || !m_PlaytimeTimer.isValid())
+        return;
+
+    const qint64 elapsed = m_PlaytimeTimer.elapsed() / 1000;
+    const qint64 unbanked = elapsed - m_PlaytimeFlushedSecs;
+    if (unbanked <= 0)
+        return;
+
+    PlaytimeManager::get()->addSeconds(m_Computer->uuid, m_App.name, m_App.id, unbanked);
+    m_PlaytimeFlushedSecs = elapsed;
+}
+
+void Session::endPlaytime()
+{
+    if (!m_PlaytimeTracking)
+        return;
+
+    // Stop first: the record below is written once, and a flush landing between the two
+    // would bank the same seconds twice.
+    m_PlaytimeTracking = false;
+    if (m_PlaytimeFlushTimer)
+        m_PlaytimeFlushTimer->stop();
+
+    const qint64 elapsed = m_PlaytimeTimer.isValid() ? m_PlaytimeTimer.elapsed() / 1000 : 0;
+    const qint64 unbanked = qMax<qint64>(0, elapsed - m_PlaytimeFlushedSecs);
+
+    // How the session went, read off the decoder while it is still alive. An empty set of
+    // stats — every field at -1 — is what a session that never rendered a frame leaves
+    // behind, and the panel prints dashes for it rather than zeroes.
+    PlaytimeSessionStats stats;
+    SDL_LockMutex(m_DecoderLock);
+    if (m_VideoDecoder) {
+        auto* ffDec = dynamic_cast<FFmpegVideoDecoder*>(m_VideoDecoder);
+        if (ffDec)
+            stats = ffDec->getSessionStats();
+    }
+    SDL_UnlockMutex(m_DecoderLock);
+    stats.targetFps = m_StreamConfig.fps;
+
+    // Only the tail goes towards the total — the flushes already took the rest — while the
+    // full length is what decides "last played" and what gets stored as the session's
+    // duration.
+    PlaytimeManager::get()->endSession(m_Computer->uuid, m_App.name, m_App.id,
+                                       unbanked, elapsed, stats);
 }
 
 Session::~Session()
@@ -2087,6 +2144,23 @@ bool Session::startConnectionAsync()
         }, Qt::QueuedConnection);
     }
 
+    // The play-time clock starts here too — same moment, deliberately different conditions.
+    //
+    // ⚠️ NOT gated on m_StreamTweakEnabled, unlike everything above: the hours are the
+    // client's own record and belong to a plain Sunshine host as much as to a StreamTweak
+    // one. It is gated on unlock mode, which is a session in every mechanical sense but was
+    // never you playing anything, and on the app being a game at all.
+    if (!m_UnlockMode && PlaytimeManager::isTracked(m_App.name)) {
+        m_PlaytimeTracking = true;
+        m_PlaytimeFlushedSecs = 0;
+        m_PlaytimeTimer.start();
+        // Queued for the same reason as the sampler's start(): the timer belongs to the Qt
+        // main thread and we are not on it.
+        QMetaObject::invokeMethod(m_PlaytimeFlushTimer, [this]() {
+            m_PlaytimeFlushTimer->start();
+        }, Qt::QueuedConnection);
+    }
+
     return true;
 }
 
@@ -3005,6 +3079,10 @@ DispatchDeferredCleanup:
     // so the final batch can still read stats from the live decoder.
     if (m_TelemetrySampler)
         m_TelemetrySampler->flushAndStop();
+
+    // Same window, and for the same reason: the play-time record keeps how the session went,
+    // and those totals live in the decoder that is about to be deleted three lines below.
+    endPlaytime();
 
     // Destroy the decoder, since this must be done on the main thread
     // NB: This must happen before LiStopConnection() for pull-based

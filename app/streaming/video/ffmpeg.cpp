@@ -2446,3 +2446,42 @@ TelemetryWindowStats FFmpegVideoDecoder::getLastWindowStats() const
     return out;
 }
 
+PlaytimeSessionStats FFmpegVideoDecoder::getSessionStats() const
+{
+    PlaytimeSessionStats out;
+
+    const VIDEO_STATS& s = m_GlobalVideoStats;
+
+    // renderedFps, not totalFps: what reached the screen is what you watched. addVideoStats()
+    // recomputes it against the global measurement start every time a window is folded in,
+    // so by here it is already the average over the whole session.
+    if (s.renderedFrames > 0)
+        out.fpsAvg = (float)s.renderedFps;
+
+    // Two drop rates against two different denominators, exactly as the overlay prints them:
+    // network drops are frames that never arrived, out of everything the host sent; pacer
+    // drops are frames that arrived and were thrown away to hold the cadence, out of what was
+    // decoded. Dividing both by the same total would misstate one of them.
+    if (s.totalFrames > 0)
+        out.dropsPct = (float)s.networkDroppedFrames / s.totalFrames * 100.0f;
+    if (s.decodedFrames > 0)
+        out.jitterDropsPct = (float)s.pacerDroppedFrames / s.decodedFrames * 100.0f;
+
+    if (s.decodedFrames > 0)
+        out.decodeMs = (float)(s.totalDecodeTimeUs / 1000.0) / s.decodedFrames;
+
+    if (s.framesWithHostProcessingLatency > 0) {
+        out.hostLatencyMs = (float)s.totalHostProcessingLatency / 10.0f
+                            / s.framesWithHostProcessingLatency;
+    }
+
+    // ⚠️ Left at -1 when the host never sent one. Zero would read as "no latency at all",
+    // which is a claim, where -1 is the absence of a measurement and prints as a dash.
+    if (s.lastRtt > 0)
+        out.rttMs = (float)s.lastRtt;
+
+    out.bitrateMbps = (float)m_BwTracker.GetAverageMbps();
+
+    return out;
+}
+

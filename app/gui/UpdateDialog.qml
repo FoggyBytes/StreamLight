@@ -72,7 +72,7 @@ Popup {
         // Eyebrow
         Label {
             text: qsTr("WINDOWS UPDATE") + (pop.hostName.length ? "  ·  " + pop.hostName : "")
-            font.family: "DM Sans"; font.pixelSize: pop._px(13); font.bold: true; font.letterSpacing: 1.6
+            font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall); font.bold: true; font.letterSpacing: 1.6
             color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
         }
@@ -92,7 +92,7 @@ Popup {
             }
             Label {
                 text: qsTr("Checking for updates on the host…")
-                font.family: "DM Sans"; font.pixelSize: pop._px(17); color: "#f0f0f0"
+                font.family: Theme.family; font.pixelSize: pop._px(Theme.fontBody); color: Theme.text
                 Layout.alignment: Qt.AlignHCenter
             }
         }
@@ -115,8 +115,8 @@ Popup {
                     ]
                     delegate: Label {
                         text: modelData.icon + " " + pop._n(modelData.k) + "  " + modelData.label
-                        font.family: "DM Sans"; font.pixelSize: pop._px(13)
-                        color: pop._n(modelData.k) > 0 ? "#f0f0f0" : "#606060"
+                        font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall)
+                        color: pop._n(modelData.k) > 0 ? Theme.text : Theme.text3
                     }
                 }
             }
@@ -137,8 +137,8 @@ Popup {
                             Layout.fillWidth: true
                             implicitHeight: row.implicitHeight + pop._px(20)
                             radius: pop._px(6)
-                            color: modelData.category === "upgrade" ? "#231a0e" : "#202020"
-                            border.color: modelData.category === "upgrade" ? "#5a4423" : Theme.line
+                            color: modelData.category === "upgrade" ? Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.10) : Theme.cardHigh
+                            border.color: modelData.category === "upgrade" ? Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.35) : Theme.line
                             border.width: 1
                             RowLayout {
                                 id: row
@@ -150,7 +150,7 @@ Popup {
                                     text: modelData.category === "upgrade" ? "⬆️"
                                         : modelData.category === "defender" ? "🛡️"
                                         : modelData.category === "optional" ? "⚙️" : "🔒"
-                                    font.pixelSize: pop._px(14)
+                                    font.pixelSize: pop._px(Theme.fontSmall)
                                 }
                                 ColumnLayout {
                                     Layout.fillWidth: true
@@ -158,8 +158,8 @@ Popup {
                                     // Full title — wraps instead of truncating.
                                     Label {
                                         text: modelData.title
-                                        font.family: "DM Sans"; font.pixelSize: pop._px(13)
-                                        color: modelData.category === "upgrade" ? "#f0c890" : "#e8e8e8"
+                                        font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall)
+                                        color: modelData.category === "upgrade" ? Qt.lighter(Theme.warning, 1.35) : Theme.text
                                         wrapMode: Text.Wrap; Layout.fillWidth: true
                                     }
                                     // KB number · download size, below the title. The size
@@ -173,12 +173,12 @@ Popup {
                                             return (kb && sz) ? (kb + "  ·  " + sz) : (kb || sz)
                                         }
                                         visible: text.length > 0
-                                        font.family: "DM Sans"; font.pixelSize: pop._px(11); color: "#909090"
+                                        font.family: Theme.family; font.pixelSize: pop._px(Theme.fontCaption); color: Theme.text2
                                     }
                                     Label {
                                         visible: modelData.category === "upgrade"
                                         text: qsTr("Feature update — not installed remotely. Run it on the host.")
-                                        font.family: "DM Sans"; font.pixelSize: pop._px(11); color: "#b08850"
+                                        font.family: Theme.family; font.pixelSize: pop._px(Theme.fontCaption); color: Theme.warning
                                         wrapMode: Text.Wrap; Layout.fillWidth: true
                                     }
                                 }
@@ -190,7 +190,7 @@ Popup {
 
             Label {
                 text: qsTr("The host restarts automatically if required.")
-                font.family: "DM Sans"; font.pixelSize: pop._px(12); color: "#909090"
+                font.family: Theme.family; font.pixelSize: pop._px(Theme.fontCaption); color: Theme.text2
                 Layout.alignment: Qt.AlignHCenter
             }
 
@@ -210,7 +210,7 @@ Popup {
             spacing: pop._px(12)
             Label {
                 text: pop.message
-                font.family: "DM Sans"; font.pixelSize: pop._px(17); color: "#f0f0f0"
+                font.family: Theme.family; font.pixelSize: pop._px(Theme.fontBody); color: Theme.text
                 Layout.alignment: Qt.AlignHCenter
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; Layout.fillWidth: true
             }
@@ -243,15 +243,15 @@ Popup {
                 text: pop.phase === "DONE" ? "✓ " + pop.message
                     : pop.phase === "NO_UPDATES" ? "✓ " + pop.message
                     : "⚠ " + pop.message
-                font.family: "DM Sans"; font.pixelSize: pop._px(17)
-                color: pop.phase === "ERROR" ? "#ef4444" : Theme.accent
+                font.family: Theme.family; font.pixelSize: pop._px(Theme.fontBody)
+                color: pop.phase === "ERROR" ? Theme.danger : Theme.accent
                 Layout.alignment: Qt.AlignHCenter
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; Layout.fillWidth: true
             }
             Label {
                 visible: pop.phase === "ERROR" && pop.errorText.length > 0
                 text: pop.errorText
-                font.family: "DM Sans"; font.pixelSize: pop._px(12); color: "#a0a0a0"
+                font.family: Theme.family; font.pixelSize: pop._px(Theme.fontCaption); color: Theme.text2
                 Layout.alignment: Qt.AlignHCenter
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; Layout.fillWidth: true
             }

@@ -1,5 +1,6 @@
 // 2.15, not the 2.0 the neighbouring files declare: activeFocusOnTab on a plain Item arrived
 // in 2.1, and under 2.0 the whole type fails to load rather than just that line.
+import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 
@@ -97,7 +98,7 @@ Item {
                                 ? "h:mm AP" : "HH:mm")
             font.pointSize: Math.max(34, Math.round(root._h * 0.075))
             font.weight: Font.Light
-            color: "#f2f2f4"
+            color: Theme.text
         }
 
         Label {
@@ -106,7 +107,7 @@ Item {
             // English-only by design — an Italian weekday next to "Sign in" reads as a bug.
             text: root._now.toLocaleDateString(Qt.locale("en_GB"), "dddd d MMMM")
             font.pointSize: Math.max(11, Math.round(root._h * 0.020))
-            color: "#b9c3c8"
+            color: Theme.text2
             bottomPadding: root._h * 0.020
         }
 
@@ -115,14 +116,14 @@ Item {
             text: root.hostName
             font.pointSize: Math.max(14, Math.round(root._h * 0.026))
             font.bold: true
-            color: "#f2f2f4"
+            color: Theme.text
         }
 
         Label {
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("Sign in")
             font.pointSize: Math.max(10, Math.round(root._h * 0.017))
-            color: "#8fa3aa"
+            color: Theme.text2
         }
 
         // The dots grow with what has been typed. No empty placeholders: the client does
@@ -139,7 +140,13 @@ Item {
                     height: width
                     radius: width / 2
                     anchors.verticalCenter: parent.verticalCenter
-                    color: root.state_ === "wrong" ? "#f87171" : "#00d3f2"   // "mute" is not the user's fault — no red
+                    // "mute" is not the user's fault — no red.
+                    //
+                    // ⚠️ These were #f87171 and #00d3f2 written out, and the second one is the
+                    // DEFAULT accent: a user who had chosen amber typed their PIN into a cyan
+                    // pad. This whole file used to name its own colours — it did not even
+                    // import Theme — which is the one thing theme.h exists to prevent.
+                    color: root.state_ === "wrong" ? Theme.danger : Theme.accent
                 }
             }
         }
@@ -150,7 +157,10 @@ Item {
             columns: 3
             spacing: root._h * 0.011
             opacity: root._busy ? 0.35 : 1.0
-            Behavior on opacity { NumberAnimation { duration: 140 } }
+            Behavior on opacity {
+                enabled: !Theme.reduceAnimations
+                NumberAnimation { duration: 140 }
+            }
 
             Repeater {
                 id: keys
@@ -167,11 +177,19 @@ Item {
                     width:  root._h * 0.088
                     height: root._h * 0.062
                     radius: root._h * 0.010
-                    color: activeFocus ? "#0d2f37" : "#0c1216"
+                    // Focus is the accent tinting the fill and drawing the border — the same
+                    // grammar DialogButton uses, rather than the two hand-mixed cyans
+                    // (#0d2f37 / #00d3f2) that were here and could not follow the setting.
+                    color: activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g,
+                                                 Theme.accent.b, 0.20)
+                                       : Theme.card
                     border.width: activeFocus ? 2 : 1
-                    border.color: activeFocus ? "#00d3f2" : "#223238"
+                    border.color: activeFocus ? Theme.accent : Theme.line
                     scale: activeFocus ? 1.06 : 1.0
-                    Behavior on scale { NumberAnimation { duration: 110 } }
+                    Behavior on scale {
+                        enabled: !Theme.reduceAnimations
+                        NumberAnimation { duration: 110 }
+                    }
 
                     activeFocusOnTab: true
                     focus: index === 0
@@ -180,8 +198,8 @@ Item {
                         anchors.centerIn: parent
                         text: key.glyph
                         font.pointSize: Math.max(12, Math.round(root._h * 0.024))
-                        color: key.activeFocus ? "#8eecff"
-                             : key.isAction    ? "#8fa3aa" : "#cbdde3"
+                        color: key.activeFocus ? Theme.accent
+                             : key.isAction    ? Theme.text2 : Theme.text
                     }
 
                     // keys.itemAt(), not pad.children[]: the Repeater is itself a child of the
@@ -217,7 +235,7 @@ Item {
                 : root.state_ === "blocked"  ? qsTr("Too many attempts")
                 : ""
             font.pointSize: Math.max(10, Math.round(root._h * 0.017))
-            color: root.state_ === "checking" ? "#8f8f9c" : "#f5a623"
+            color: root.state_ === "checking" ? Theme.text2 : Theme.warning
         }
     }
 
@@ -240,7 +258,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("Cancel")
             font.pointSize: Math.max(10, Math.round(root._h * 0.016))
-            color: "#8f8f9c"
+            color: Theme.text2
         }
     }
 

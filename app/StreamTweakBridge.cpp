@@ -226,11 +226,6 @@ void StreamTweakBridge::requestNetInfo(const QString& hostAddress, ResponseCallb
     sendRequest(hostAddress, QStringLiteral("NETINFO"), std::move(onResult));
 }
 
-void StreamTweakBridge::requestLastSession(const QString& hostAddress, ResponseCallback onResult)
-{
-    sendRequest(hostAddress, QStringLiteral("LASTSESSION"), std::move(onResult));
-}
-
 void StreamTweakBridge::sendRestore(const QString& hostAddress, ResponseCallback onResult)
 {
     // "I have finished" — sent only when the user deliberately stops the session, never on a

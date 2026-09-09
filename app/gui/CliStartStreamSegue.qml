@@ -5,11 +5,11 @@ import ComputerManager 1.0
 
 Item {
     function onSearchingComputer() {
-        stageLabel.text = qsTr("Establishing connection to PC...")
+        stageLabel.text = qsTr("Connecting to the host…")
     }
 
     function onSearchingApp() {
-        stageLabel.text = qsTr("Loading app list...")
+        stageLabel.text = qsTr("Loading the app list…")
     }
 
     function onSessionCreated(appName, session) {

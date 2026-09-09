@@ -1,4 +1,4 @@
-; StreamLight 5.6.1 — Moonlight fork with StreamTweak integration.
+; StreamLight 5.7.0 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
@@ -11,7 +11,7 @@
 ; Reading version.txt from here was considered and left alone: that file carries a UTF-8
 ; BOM and no trailing newline, so an ISPP FileRead would have to skip three bytes by
 ; position, which is a more fragile thing than one line to remember at release time.
-#define AppVersion "5.6.1"
+#define AppVersion "5.7.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"

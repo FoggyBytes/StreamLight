@@ -189,21 +189,28 @@ Item {
     // picture gets to be itself over most of the card.
     property string backdropImage: ""
 
-    // ── The host's last session ──────────────────────────────────────────────
-    // Straight from StreamTweak over the bridge — see LastSessionReport on the host side.
-    // {has:false} or an empty map means there is nothing to show, or the host is older than
-    // 8.1.0 and does not know the command; either way the panel is simply absent.
-    //
-    // ⚠️ This is the HOST's last session, not necessarily one of ours: StreamTweak logs
-    // whatever streamed and keeps no record of which client it belonged to. That is why the
-    // caption says "last session" and not "your last session".
-    property var lastSession: ({})
+    // ── Last played (5.7.0) ──────────────────────────────────────────────────
+    /*
+     * The game this client last streamed on this host, from ComputerModel::lastPlayedFor().
+     *
+     * ⚠️ Nothing here comes from the host. Until 5.6.1 this panel showed the host's last
+     * *session*, fetched over the bridge — which meant it described whatever had streamed,
+     * possibly from another client, and vanished entirely without StreamTweak. It now
+     * describes what YOU played, from a record kept on this machine, and works against a
+     * plain Sunshine host.
+     *
+     * An empty map means draw nothing at all: never streamed here, record reset, or the game
+     * is gone from the host's app list. There is no empty state — the card simply goes back
+     * to what it looks like without one.
+     */
+    property var lastPlayed: ({})
 
-    readonly property bool _hasLastSession: !addMode && lastSession && lastSession.has === true
+    readonly property bool _hasLastPlayed:
+        !addMode && lastPlayed && lastPlayed.name !== undefined && lastPlayed.name !== ""
 
-    // Reserved so the host name and the field row stop short of the panel instead of running
-    // under it. Zero when there is no panel, so a host without one keeps the full width.
-    readonly property int _lastPanelW: _hasLastSession ? _px(620) : 0
+    // The block's own width. It is a column — cover over title over figures — so this is
+    // what the widest of those needs, and the card's left-hand text stops short of it.
+    readonly property int _lastPanelW: _hasLastPlayed ? _px(380) : 0
 
     // ── "Add a host" mode ────────────────────────────────────────────────────
     // The add panel is the same stage with a different face, not a separate screen: it is
@@ -302,6 +309,12 @@ Item {
         }
 
         var list = []
+
+        // (Play again is NOT in here. It is drawn under the cover on the other side of the
+        //  card — see playAgainBtn — because a verb down here had the game it refers to a
+        //  card's width away, and read as generic. It is still one stop past the last button
+        //  in this row: _playAgainReachable and moveAction below.)
+
         if (statusUnknown)
             list.push({ kind: "open", label: qsTr("Open"), danger: false, disabled: true })
         else if (online && paired)
@@ -319,13 +332,27 @@ Item {
         return list
     }
 
-    onActionsChanged: if (actionIndex >= actions.length) actionIndex = Math.max(0, actions.length - 1)
+    // One stop past the last button is Play again, when the card is showing one. Keeping it
+    // on the same index line rather than making it a zone of its own is what lets Right walk
+    // into it and Left walk back out with no new key handling: it sits to the right of the
+    // buttons, which is what Right already means here.
+    readonly property bool _playAgainReachable:
+        _hasLastPlayed && online && paired && !statusUnknown
+    readonly property int _maxActionIndex: actions.length - (_playAgainReachable ? 0 : 1)
+
+    // ⚠️ On the LIMIT, not on `actions`. The focus can be sitting on Play again when the
+    // button goes away without the button row changing at all — the record is reset from the
+    // per-game panel, or the host drops offline — and clamping only on actionsChanged left
+    // the focus on something invisible, so no button on the card looked focused at all.
+    on_MaxActionIndexChanged: if (actionIndex > _maxActionIndex)
+                                  actionIndex = Math.max(0, _maxActionIndex)
+    onActionsChanged: if (actionIndex > _maxActionIndex) actionIndex = Math.max(0, _maxActionIndex)
 
     // Walks the action row. Returns false at the ends so the caller can decide what a
     // further press means (today: nothing — the row does not wrap).
     function moveAction(dir) {
         var next = actionIndex + dir
-        if (next < 0 || next >= actions.length) return false
+        if (next < 0 || next > _maxActionIndex) return false
         actionIndex = next
         return true
     }
@@ -334,6 +361,11 @@ Item {
     // during navigation: an unreachable host still shows "Open", greyed, which says more
     // than a row that quietly loses a button.
     function activateFocused() {
+        // Play again, one past the buttons.
+        if (_playAgainReachable && actionIndex === actions.length) {
+            stage.activated("continue")
+            return
+        }
         if (actionIndex < 0 || actionIndex >= actions.length) return
         var a = actions[actionIndex]
         if (a.disabled) return
@@ -594,7 +626,7 @@ Item {
                             text: modelData.text.toUpperCase()
                             color: stage._onBg2
                             font.family: Theme.family
-                            font.pixelSize: stage._px(15)
+                            font.pixelSize: stage._px(Theme.fontBody)
                             font.weight: Font.DemiBold
                             font.letterSpacing: stage._u * 1.1
                         }
@@ -751,7 +783,7 @@ Item {
                     text: stage._subLine
                     color: stage._onBg2
                     font.family: Theme.family
-                    font.pixelSize: stage._px(18)
+                    font.pixelSize: stage._px(Theme.fontTitle)
                     maximumLineCount: 1
                 }
 
@@ -791,7 +823,7 @@ Item {
                             text: String(modelData.text)
                             color: stage._onBg
                             font.family: Theme.family
-                            font.pixelSize: stage._px(14)
+                            font.pixelSize: stage._px(Theme.fontSmall)
                             font.weight: Font.DemiBold
                         }
                     }
@@ -859,7 +891,7 @@ Item {
                         text: modelData.label.toUpperCase()
                         color: stage._onBg3
                         font.family: Theme.family
-                        font.pixelSize: stage._px(14)
+                        font.pixelSize: stage._px(Theme.fontSmall)
                         font.letterSpacing: stage._u * 1.6
                     }
                     // Full white and semibold, matching the headline numbers in the last-session
@@ -870,309 +902,195 @@ Item {
                         text: modelData.value
                         color: modelData.colour
                         font.family: Theme.family
-                        font.pixelSize: stage._px(26)
+                        font.pixelSize: stage._px(Theme.fontH1)
                         font.weight: Font.DemiBold
                     }
                 }
             }
         }
 
-        // ── Last session ─────────────────────────────────────────────────────
+        // ── Last played ──────────────────────────────────────────────────────
         /*
-         * What StreamTweak's own Dashboard says about the last session, said again here — the
-         * one place where knowing it changes a decision, because this is the screen you are on
-         * when deciding whether to stream again.
+         * The game you last streamed on this host — name, artwork, hours, sessions.
          *
-         * No frame and no fill: it is part of the card, not a box resting on it. A bordered
-         * panel made the same information read as a second, foreign surface — which is exactly
-         * how it looked, because the design it came from is StreamTweak's, not this one's.
-         * Sitting directly on the backdrop it becomes the right-hand half of one card.
+         * ⚠️ Nothing here comes from the host. Until 5.6.1 this panel showed the host's last
+         * *session*, fetched over the bridge, which meant it described whatever had streamed
+         * — possibly from another client — and vanished entirely without StreamTweak. It now
+         * describes what YOU played, from a record kept on this machine, and works against a
+         * plain Sunshine host.
          *
-         * It follows the card's own grid — top aligned with the chip row, right margin the
-         * same as the field row — and the card's own reading tones (_onBg / _onBg2 / _onBg3),
-         * so it flips with a light backdrop like everything else instead of staying
-         * near-white and vanishing.
+         * ⚠️ The layout is GameFacts, the same component the host page's spotlight uses. It
+         * was laid out by hand here first — text beside the cover, no shadow, four figures —
+         * against the spotlight's cover-above-centred-shadowed-two-figures, and one idea
+         * wearing two faces is what that was. Do not re-implement it here.
          *
-         * ⚠️ The scrim is at its thinnest on this side, deliberately, so a host picture gets
-         * to be a picture. With no fill of its own the panel now leans on that: if a bright
-         * photo ever makes it hard to read, the fix is the scrim's right-hand stop, not a box
-         * around this.
+         * An empty map means draw nothing at all: never streamed here, record reset, or the
+         * game is gone from the host's app list. There is no empty state — the card simply
+         * goes back to what it looks like without one.
          */
-        Item {
+        GameFacts {
             id: lastPanel
-            visible: stage._hasLastSession
-            anchors.top: parent.top
+            visible: stage._hasLastPlayed
+            u: stage._u
+
             anchors.right: parent.right
-            anchors.topMargin: stage._px(34)
-            anchors.rightMargin: stage._px(38)
-            width: stage._px(560)
-            height: lastCol.implicitHeight
+            anchors.rightMargin: stage._px(46)
+            anchors.top: parent.top
+            anchors.topMargin: stage._px(30)
+            width: stage._px(380)
 
-            readonly property var _s: stage.lastSession
+            /*
+             * ⚠️ It ends where the Play again button begins, and that button is pinned to the
+             * action row on the other side of the card. So this is not centred in the card and
+             * must not be: the two sides of the bottom edge line up because BOTH are measured
+             * from the same row, and centring this block would put its button a few pixels off
+             * from the ones beside it — which is exactly the kind of near-alignment the eye
+             * reads as a mistake rather than as a choice.
+             */
+            availableHeight: playAgainBtn.y - y - stage._px(16)
 
-            // -1 is the host saying "never measured", which is not the same as zero — a client
-            // that printed 0 ms would be inventing a result it was explicitly not given.
-            function _num(v, decimals) {
-                return (v === undefined || v === null || v < 0)
-                       ? "—" : Number(v).toFixed(decimals)
+            badgeMain: qsTr("Last played for %1")
+                       .arg(stage.lastPlayed.total !== undefined ? stage.lastPlayed.total : "")
+            badgeMuted: stage.lastPlayed.ago !== undefined ? stage.lastPlayed.ago : ""
+
+            title: stage.lastPlayed.name !== undefined ? stage.lastPlayed.name : ""
+            cover: stage.lastPlayed.cover !== undefined ? stage.lastPlayed.cover : ""
+
+            // The title box takes only the lines the name needs, so the cover is biggest on a
+            // one-line title and stands back on a three-line one. Safe here and nowhere else:
+            // this card shows one game until you change host — see titleFitsContent.
+            titleFitsContent: true
+
+            /*
+             * Deliberately all empty: title and cover, nothing else.
+             *
+             * The hours are in the badge above the picture and the age beside them, so
+             * repeating them under the title would be saying them twice. The store's mark
+             * belongs to the host page, where you are choosing between games and the
+             * storefront is one of the things you choose by; here there is one game and the
+             * room is worth more to the artwork.
+             */
+            store: ""
+            metaExtra: ""
+            played: ""
+            sessions: 0
+        }
+
+        /*
+         * ── Play again ───────────────────────────────────────────────────────
+         *
+         * Same body as the buttons in the action row and on the same baseline as them, so the
+         * card has one row of controls that happens to span both halves rather than two rows
+         * at two heights.
+         *
+         * ⚠️ It is not IN the action row, and that is the point of the whole arrangement: down
+         * there it read as a generic verb next to Open and Profiles, with the game it refers
+         * to a card's width away. Under the cover and the title, "Play again" has already been
+         * told what it plays.
+         *
+         * The pad reaches it as one stop past the last button — geometrically it is to the
+         * right of them, which is what Right already means here. That was true of the cover
+         * too, and the cover was still the wrong target: a picture does not look like a
+         * control. A button does.
+         */
+        Rectangle {
+            id: playAgainBtn
+            // The same condition the focus chain uses, read from one place: written out twice
+            // it would eventually be true for the pad and false for the eye.
+            visible: stage._playAgainReachable
+
+            anchors.horizontalCenter: lastPanel.horizontalCenter
+            anchors.verticalCenter: actionRow.verticalCenter
+
+            readonly property bool _focused:
+                stage.zoneActive && stage.actionIndex === stage.actions.length && !stage.pointerMode
+            readonly property bool _hovered: playAgainMouse.containsMouse && stage.pointerMode
+            readonly property bool _lit: _focused || _hovered
+
+            height: stage._px(58)
+            width: playAgainRow.implicitWidth + stage._px(54)
+            radius: stage._px(10)
+
+            color: _lit ? Theme.accent : "#14ffffff"
+            border.width: _focused ? 2 : 1
+            border.color: _lit ? Theme.accent : Theme.lineHigh
+
+            Behavior on color {
+                enabled: !Theme.reduceAnimations
+                ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
             }
+            Behavior on border.color {
+                enabled: !Theme.reduceAnimations
+                ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
+            }
+            Behavior on scale {
+                enabled: !Theme.reduceAnimations
+                NumberAnimation { duration: 130; easing.type: Easing.OutBack; easing.overshoot: 2.2 }
+            }
+            scale: _focused && !Theme.reduceAnimations ? 1.04 : 1.0
 
-            Column {
-                id: lastCol
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                spacing: stage._px(18)
+            Row {
+                id: playAgainRow
+                anchors.centerIn: parent
+                spacing: stage._px(10)
 
-                // A badge, built to the same recipe as the state chips on the left: same
-                // height, radius, border and typography. That is what makes the two sides read
-                // as one row of the card rather than two blocks that happen to start at the
-                // same height — and it makes them line up by construction, instead of by
-                // matching a bare caption's baseline to a box's centre.
-                //
-                // No status dot: the chips carry one because they report a state that can be
-                // good or bad. This reports when, and a coloured dot would imply a verdict the
-                // grade below is already giving.
+                // The same prompt badge the action row draws, on the same terms: it appears
+                // on the focused button and nowhere else, because A activates what has the
+                // focus and only that button can honestly claim it.
                 Rectangle {
-                    // Everything in this panel hangs off the card's right edge: it is the
-                    // right-hand block of the card, and ragged-left is what makes it read as
-                    // one column instead of three rows that happen to be over here.
-                    anchors.right: parent.right
-                    height: stage._px(30)
-                    width: agoRow.implicitWidth + stage._px(26)
-                    radius: stage._px(6)
-                    color: "transparent"
-                    border.color: Theme.line
-                    border.width: 1
+                    id: playBadge
+                    readonly property bool   _padMode: InputHints.padActive
+                    readonly property string _padSet: SdlGamepadKeyNavigation.controllerType
+                    readonly property string _padLetter:
+                        _padSet === "ps"     ? "✕"
+                      : _padSet === "switch" ? "B"
+                      :                        "A"
+                    readonly property string _letter:
+                        !playAgainBtn._focused ? "" : (_padMode ? _padLetter : qsTr("Enter"))
 
-                    Row {
-                        id: agoRow
-                        anchors.centerIn: parent
-                        spacing: stage._px(9)
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("LAST SESSION")
-                            color: stage._onBg2
-                            font.family: Theme.family
-                            font.pixelSize: stage._px(15)
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: stage._u * 1.1
-                        }
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: text.length > 0
-                            text: lastPanel._s.ago !== undefined
-                                  ? String(lastPanel._s.ago).toUpperCase() : ""
-                            color: stage._onBg3
-                            font.family: Theme.family
-                            font.pixelSize: stage._px(15)
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: stage._u * 1.1
-                        }
-                    }
-                }
-
-                // Grade and duration, as two pills — the grade in its own colour, which is the
-                // one thing on this panel worth reading from across the room.
-                Row {
-                    anchors.right: parent.right
-                    spacing: stage._px(10)
-
-                    // The grade keeps its tinted pill: it is a verdict, and the colour is the
-                    // whole point of it. The duration does not — a bordered box around a plain
-                    // fact was the second frame this panel did not need.
-                    Rectangle {
-                        visible: lastPanel._s.hasGrade === true
-                                 && lastPanel._s.grade !== undefined && lastPanel._s.grade !== ""
-                        width: gradeText.implicitWidth + stage._px(30)
-                        height: stage._px(42)
-                        radius: stage._px(8)
-                        color: Qt.rgba(gradeText.color.r, gradeText.color.g, gradeText.color.b, 0.16)
-
-                        Text {
-                            id: gradeText
-                            anchors.centerIn: parent
-                            text: lastPanel._s.grade !== undefined ? lastPanel._s.grade : ""
-                            color: (lastPanel._s.gradeColor !== undefined
-                                    && lastPanel._s.gradeColor !== "") ? lastPanel._s.gradeColor
-                                                                       : stage._onBg
-                            font.family: Theme.family
-                            font.pixelSize: stage._px(21)
-                            font.weight: Font.DemiBold
-                        }
-                    }
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: _letter.length > 0
+                    width: _padMode ? stage._px(26)
+                                    : Math.max(stage._px(26), playBadgeText.implicitWidth + stage._px(14))
+                    height: stage._px(26)
+                    radius: _padMode ? width / 2 : stage._px(7)
+                    color: playAgainBtn._lit ? Theme.onAccent : "#26ffffff"
 
                     Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: lastPanel._s.duration !== undefined && lastPanel._s.duration !== ""
-                        text: lastPanel._s.duration !== undefined ? lastPanel._s.duration : ""
-                        color: stage._onBg2
+                        id: playBadgeText
+                        anchors.centerIn: parent
+                        text: playBadge._letter
+                        color: playAgainBtn._lit ? Theme.accent : stage._onBg
                         font.family: Theme.family
-                        font.pixelSize: stage._px(21)
-                        leftPadding: stage._px(4)
+                        font.pixelSize: stage._px(Theme.fontSmall)
+                        font.weight: Font.Bold
                     }
                 }
 
-                // The three headline numbers.
-                Row {
-                    id: metricRow
-                    anchors.right: parent.right
-                    spacing: stage._px(34)
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Play again")
+                    color: playAgainBtn._lit ? Theme.onAccent : Theme.text
+                    font.family: Theme.family
+                    font.pixelSize: stage._px(Theme.fontTitle)
+                    font.weight: playAgainBtn._lit ? Font.Bold : Font.Normal
 
-                    Repeater {
-                        model: [
-                            { value: lastPanel._num(lastPanel._s.rttMs, 0),     unit: "ms",
-                              caption: lastPanel._num(lastPanel._s.rttPeakMs, 0) === "—"
-                                       ? qsTr("RTT") : lastPanel._num(lastPanel._s.rttPeakMs, 0) + " " + qsTr("peak") },
-                            { value: lastPanel._num(lastPanel._s.hostLatMs, 1), unit: "ms",
-                              caption: qsTr("Host lat.") },
-                            { value: lastPanel._num(lastPanel._s.dropsPct, 1),  unit: "%",
-                              caption: qsTr("Drops") }
-                        ]
-
-                        delegate: Column {
-                            spacing: stage._px(4)
-
-                            Row {
-                                spacing: stage._px(4)
-                                // Full white and semibold, the same treatment the address
-                                // and link values now get: these are the card's numbers,
-                                // and they should read as one family.
-                                Text {
-                                    anchors.bottom: parent.bottom
-                                    text: modelData.value
-                                    color: stage._onBg
-                                    font.family: Theme.family
-                                    font.pixelSize: stage._px(46)
-                                    font.weight: Font.DemiBold
-                                }
-                                Text {
-                                    anchors.bottom: parent.bottom
-                                    anchors.bottomMargin: stage._px(7)
-                                    visible: modelData.value !== "—"
-                                    text: modelData.unit
-                                    color: stage._onBg3
-                                    font.family: Theme.family
-                                    font.pixelSize: stage._px(18)
-                                }
-                            }
-                            Text {
-                                text: modelData.caption.toUpperCase()
-                                color: stage._onBg3
-                                font.family: Theme.family
-                                font.pixelSize: stage._px(14)
-                                font.letterSpacing: stage._u * 1.6
-                            }
-                        }
+                    Behavior on color {
+                        enabled: !Theme.reduceAnimations
+                        ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
                     }
                 }
+            }
 
-                // The covers, on a row of their own under the figures.
-                //
-                // They used to sit beside the numbers, which meant three of them only fitted by
-                // shrinking — and a cover that changes size depending on how many there are is a
-                // cover you cannot compare across sessions. Given the full width of the panel
-                // they all draw at the same size whether there is one or three, and the block
-                // still ends on the same right edge as everything above it.
-                Row {
-                    id: coverStrip
-                    anchors.right: parent.right
-                    spacing: stage._px(8)
-                    height: stage._px(150)
-                    visible: _games.length > 0
-
-                    // All three the host is willing to send.
-                    readonly property var _games:
-                        (lastPanel._s.games !== undefined) ? lastPanel._s.games.slice(0, 3) : []
-
-                    Repeater {
-                        model: coverStrip._games
-
-                            delegate: Item {
-                                width: stage._px(100)
-                                height: stage._px(150)
-
-                                // Usually the full-size artwork already cached for this host
-                                // (600x900), resolved by name in ComputerModel; the host's
-                                // inline thumbnail only when there is nothing cached for it.
-                                //
-                                // ⚠️ mipmap, because the usual case is now MINIFYING rather
-                                // than magnifying: 900 down to somewhere between 144 and 288
-                                // physical pixels depending on the panel. Plain bilinear
-                                // aliases at that ratio, and mipmap is what stops it.
-                                Image {
-                                    id: cover
-                                    anchors.fill: parent
-                                    source: modelData.cover !== undefined ? modelData.cover : ""
-                                    fillMode: Image.PreserveAspectCrop
-                                    asynchronous: true
-                                    smooth: true
-                                    mipmap: true
-                                    visible: false
-                                }
-
-                                MultiEffect {
-                                    anchors.fill: parent
-                                    visible: cover.status === Image.Ready
-                                    source: cover
-                                    maskEnabled: true
-                                    maskSource: coverMask
-                                }
-
-                                Item {
-                                    id: coverMask
-                                    anchors.fill: parent
-                                    layer.enabled: true
-                                    visible: false
-                                    Rectangle { anchors.fill: parent; radius: stage._px(8) }
-                                }
-
-                                // A game with no cover still has a name, and a blank rectangle
-                                // would say less than the name does.
-                                Rectangle {
-                                    anchors.fill: parent
-                                    visible: cover.status !== Image.Ready
-                                    radius: stage._px(8)
-                                    color: "#18ffffff"
-                                    border.color: Theme.line
-                                    border.width: 1
-
-                                    Text {
-                                        anchors.fill: parent
-                                        anchors.margins: stage._px(8)
-                                        text: modelData.name !== undefined ? modelData.name : ""
-                                        color: stage._onBg3
-                                        font.family: Theme.family
-                                        font.pixelSize: stage._px(14)
-                                        wrapMode: Text.Wrap
-                                        elide: Text.ElideRight
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-                                }
-                            }
-                        }
-
-                        // "+2" when the session credited more games than the strip shows.
-                        // Deliberately quiet and outside the tiles: a footnote saying something
-                        // was left out, not a fourth game. The count comes from the host —
-                        // `games` is the capped list, so it could never say this by itself.
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: text.length > 0
-                            text: {
-                                var total = lastPanel._s.gamesTotal !== undefined
-                                            ? lastPanel._s.gamesTotal : 0
-                                var extra = total - coverStrip._games.length
-                                return extra > 0 ? "+" + extra : ""
-                            }
-                            color: stage._onBg3
-                            font.family: Theme.family
-                            font.pixelSize: stage._px(16)
-                            font.weight: Font.DemiBold
-                        }
-                    }
+            MouseArea {
+                id: playAgainMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    stage.actionIndex = stage.actions.length
+                    stage.activated("continue")
+                }
             }
         }
 
@@ -1195,7 +1113,7 @@ Item {
                 text: qsTr("Hosts found on the network appear as tabs above.")
                 color: stage._onBg3
                 font.family: Theme.family
-                font.pixelSize: stage._px(16)
+                font.pixelSize: stage._px(Theme.fontBody)
             }
         }
 
@@ -1237,6 +1155,16 @@ Item {
                     radius: stage._px(10)
                     opacity: modelData.disabled ? 0.4 : 1.0
 
+                    /*
+                     * ── Colour, and only colour (5.7.0) ──────────────────────
+                     * The focus is shown by the fill and the border warming into the accent,
+                     * cross-faded rather than switched. Walking the row then reads as one
+                     * light travelling along it instead of four buttons blinking in turn.
+                     *
+                     * ⚠️ Fades, not a ring that expands past the button: an outline blooming
+                     * outside its own edges reads as an alarm going off, and on a row of four
+                     * it fires every time the stick is nudged.
+                     */
                     color: !_lit                ? "#14ffffff"
                          : modelData.danger     ? Theme.danger
                          :                        Theme.accent
@@ -1244,6 +1172,15 @@ Item {
                     border.color: !_lit            ? Theme.lineHigh
                                 : modelData.danger ? Theme.danger
                                 :                    Theme.accent
+
+                    Behavior on color {
+                        enabled: !Theme.reduceAnimations
+                        ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
+                    }
+                    Behavior on border.color {
+                        enabled: !Theme.reduceAnimations
+                        ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
+                    }
 
                     // Costs nothing and is the difference between the focus moving and the
                     // focus teleporting. Skipped when the user asked for less movement.
@@ -1312,7 +1249,7 @@ Item {
                                        ? (modelData.danger ? Theme.danger : Theme.accent)
                                        : stage._onBg
                                 font.family: Theme.family
-                                font.pixelSize: stage._px(actionBadge._padMode ? 14 : 13)
+                                font.pixelSize: stage._px(Theme.fontSmall)
                                 font.weight: Font.Bold
                             }
                         }
@@ -1324,8 +1261,15 @@ Item {
                                    ? (modelData.danger ? "#1a0505" : Theme.onAccent)
                                    : Theme.text
                             font.family: Theme.family
-                            font.pixelSize: stage._px(19)
+                            font.pixelSize: stage._px(Theme.fontTitle)
                             font.weight: actionBtn._lit ? Font.Bold : Font.Normal
+
+                            // Crossed over with the fill behind it, or the label would flip
+                            // to dark ink a frame before the accent is there to sit on.
+                            Behavior on color {
+                                enabled: !Theme.reduceAnimations
+                                ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
+                            }
                         }
                     }
 

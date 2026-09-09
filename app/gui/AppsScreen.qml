@@ -2,7 +2,6 @@ import QtQuick 2.12
 import QtQuick.Controls 2.2
 import QtQuick.Controls.Material 2.2
 import QtQuick.Window 2.2
-import QtQuick.Effects
 
 import AppModel 1.0
 import Theme 1.0
@@ -125,6 +124,34 @@ FocusScope {
             if (stackView.depth === 1 && appsRoot.goHomeWhenIdle) {
                 appsRoot.goHomeWhenIdle = false
                 if (appsRoot.appShell) appsRoot.appShell.showHome()
+                return
+            }
+
+            /*
+             * Back from a session, onto a page that never went away.
+             *
+             * ⚠️ This is the one moment the play time on screen is certainly stale: the record
+             * was written as the stream tore down, and this page kept its model the whole
+             * time. Without this the row would still show the total from before the session
+             * that just ended — and the game would still be sitting where it was
+             * alphabetically, while Continue named it.
+             */
+            if (stackView.depth === 1 && appGrid && appGrid.appModel) {
+                appGrid.appModel.refreshPlaytime()
+                appGrid.updateContinue()
+                // Makes the spotlight's figures re-read — see focusedPlaytimeRec.
+                appsRoot._playtimeEpoch++
+
+                // Put the cursor back on what was just played, wherever the re-sort moved it.
+                if (appsRoot._resumeCursorTo.length > 0) {
+                    var i = appGrid.appModel.indexOfAppNamed(appsRoot._resumeCursorTo)
+                    if (i >= 0) {
+                        appGrid.currentIndex = i
+                        appGrid.positionViewAtIndex(i, ListView.Contain)
+                    }
+                    appsRoot._resumeCursorTo = ""
+                }
+                appGrid.forceActiveFocus()
             }
         }
     }
@@ -143,7 +170,22 @@ FocusScope {
      * arrived at a dead object, leaving the launch screen up forever with no error and no way
      * out. The delegate passes plain values; the object belongs to the page.
      */
+    /*
+     * What was launched, so the cursor can be put back on it when the stream ends.
+     *
+     * ⚠️ A NAME and not an index. The row moves the moment the session finishes — the game
+     * that just closed is sorted to the top, under Last played — so an index kept across the
+     * stream points at whatever slid into that place instead. That is exactly the fault this
+     * fixes: come back from a game halfway down the library and the cursor was left sitting
+     * on a stranger.
+     *
+     * It works for Desktop and Steam Big Picture too, which never move: neither counts as a
+     * last played game, so nothing re-sorts and the name simply finds the row where it was.
+     */
+    property string _resumeCursorTo: ""
+
     function launchSegue(name, art, session, resume) {
+        appsRoot._resumeCursorTo = name
         var component = Qt.createComponent("StreamSegue.qml")
         if (component.status !== Component.Ready) {
             console.warn("StreamSegue.qml not ready:", component.errorString())
@@ -185,6 +227,30 @@ FocusScope {
     readonly property string focusedStore:
         (appGrid && appGrid.storeMap && focusedAppName.length > 0)
             ? (appGrid.storeMap[focusedAppName] || "") : ""
+
+    // ── Play time for the game in the spotlight (5.7.0) ──────────────────────
+    /*
+     * Read through the model rather than off the row, unlike everything above it: the row
+     * carries the formatted total for its subtitle, but not the session count, and adding a
+     * second role for a figure only one place shows would put it in every delegate.
+     *
+     * ⚠️ Depends on `_playtimeEpoch` so it re-reads after a session. A Q_INVOKABLE has no
+     * NOTIFY behind it, so a binding on the call alone would never re-evaluate and the
+     * spotlight would go on showing the totals from before the stream that just ended — the
+     * same trap the Continue caption fell into.
+     */
+    property int _playtimeEpoch: 0
+    readonly property var focusedPlaytimeRec: {
+        var e = _playtimeEpoch    // dependency, deliberately
+        if (!appGrid || !appGrid.appModel || appGrid.currentIndex < 0) return ({})
+        return appGrid.appModel.playtimeFor(appGrid.currentIndex)
+    }
+    readonly property string focusedPlaytime:
+        (focusedPlaytimeRec && focusedPlaytimeRec.total !== undefined)
+            ? focusedPlaytimeRec.total : ""
+    readonly property int focusedSessions:
+        (focusedPlaytimeRec && focusedPlaytimeRec.sessions !== undefined)
+            ? focusedPlaytimeRec.sessions : 0
 
     // Bound to delegate._running (a property — reactive) so the status-bar prompts and the
     // hero's verb update when the host-side session ends.
@@ -282,16 +348,8 @@ FocusScope {
     // cover tiles, which went away when the library became a list of titles, and the function
     // sat here unused ever since. Empty string for a store we have no artwork for — and for
     // Desktop and Steam Big Picture, which have no store at all.
-    function storeIconSource(store) {
-        if (store === "Steam")           return "qrc:/res/store_steam.svg"
-        if (store === "Epic Games")      return "qrc:/res/store_epic.svg"
-        if (store === "GOG")             return "qrc:/res/store_gog.svg"
-        if (store === "Ubisoft Connect") return "qrc:/res/store_ubisoft.svg"
-        if (store === "Xbox")            return "qrc:/res/store_xbox.svg"
-        if (store === "Battle.net")      return "qrc:/res/store_battlenet.svg"
-        if (store === "EA App")          return "qrc:/res/store_ea.svg"
-        return ""
-    }
+    // (The store → SVG map lived here and is now in GameFacts, which is the only thing that
+    //  draws one. Two screens show the badge; one table answers for both.)
 
     function _formatNicSpeed(raw) {
         if (raw === "" || raw === null) return qsTr("N/A")
@@ -491,7 +549,7 @@ FocusScope {
                 text: appsRoot.hostName
                 color: Theme.text
                 font.family: Theme.family
-                font.pixelSize: appsRoot._px(30)
+                font.pixelSize: appsRoot._px(Theme.fontH1)
                 font.bold: true
                 font.letterSpacing: -appsRoot._u * 0.45
                 elide: Label.ElideRight
@@ -592,7 +650,7 @@ FocusScope {
                                 text: modelData.text.toUpperCase()
                                 color: modelData.fg !== undefined ? modelData.fg : Theme.text2
                                 font.family: Theme.family
-                                font.pixelSize: appsRoot._px(13)
+                                font.pixelSize: appsRoot._px(Theme.fontSmall)
                                 font.weight: Font.DemiBold
                                 font.letterSpacing: appsRoot._u
                             }
@@ -702,7 +760,7 @@ FocusScope {
                     text: cfgChip._isGrp ? String(modelData.text).toUpperCase() : String(modelData.text)
                     color: cfgChip._isGrp ? Theme.text3 : Theme.text
                     font.family: Theme.family
-                    font.pixelSize: appsRoot._px(13)
+                    font.pixelSize: appsRoot._px(Theme.fontSmall)
                     font.weight: cfgChip._isGrp ? Font.Normal : Font.DemiBold
                     font.letterSpacing: cfgChip._isGrp ? appsRoot._u * 1.2 : 0
                 }
@@ -736,141 +794,60 @@ FocusScope {
                - appsRoot._colGap - appsRoot._libraryWidth
         visible: appGrid.count > 0
 
-        // Cover, name, meta and actions as one centred stack. The column is what the
-        // library leaves, so everything in it is laid out from the centre outwards.
+        // Cover, name, meta, figures and actions as one centred stack. The column is what
+        // the library leaves, so everything in it is laid out from the centre outwards.
         Column {
             id: heroStack
             anchors.centerIn: parent
             width: parent.width
             spacing: 0
 
-        // ── The big cover ────────────────────────────────────────────────────
-        HeroCover {
-            id: heroArtHolder
-            anchors.horizontalCenter: parent.horizontalCenter
-
             /*
-             * ⚠️ 340 is a ceiling as much as a size: the covers themselves top out at
-             * 600x900 (Steam's library capsule, and there is no larger portrait asset),
-             * and on a 4K panel at 200% scaling — where _u is back at 1.32 while the
-             * device pixel ratio is 2 — a design height of 340 asks for exactly 900
-             * physical pixels. Larger than this and the biggest cover on the screen
-             * starts being the softest.
+             * ── The game ─────────────────────────────────────────────────────────
              *
-             * The width, the 2:3 box, the crop, the rounded corners and the shadow all
-             * live in HeroCover now, shared with the launch curtain so the two screens
-             * cannot drift apart.
+             * ⚠️ GameFacts, the same component the host card on Home uses. The cover, the
+             * title's never-cut behaviour, the meta line and the two figures were all written
+             * out here by hand and again over there, in two different arrangements, for one
+             * idea. Do not put them back: a change made here and not there is how the two
+             * screens came to disagree in the first place.
+             *
+             * No badge above the cover: the library beside it already says this is the
+             * selected game, and a
+             * label repeating that would be the third thing on the screen saying it.
              */
-            height: Math.min(appsRoot._px(340), hero.height - appsRoot._px(150))
-            source: appsRoot.focusedBoxArt
-            radius: appsRoot._px(8)
-            shadow: !Theme.reduceAnimations
-            shadowOffset: appsRoot._px(8)
+            GameFacts {
+                id: heroFacts
+                anchors.horizontalCenter: parent.horizontalCenter
+                u: appsRoot._u
+                width: parent.width
 
-            // Placeholder box art carries no title, so the name has to be drawn over it or
-            // the spotlight shows an anonymous rectangle.
-            Label {
-                anchors.fill: parent
-                anchors.margins: appsRoot._px(10)
-                visible: appsRoot.focusedBoxArt === "" || heroArtHolder.status === Image.Error
-                text: appsRoot.focusedAppName
-                color: Theme.text2
-                font.family: Theme.family
-                font.pixelSize: appsRoot._px(16)
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-                wrapMode: Text.Wrap
-                elide: Text.ElideRight
+                // What the column has, minus the action row underneath. The 340 ceiling is the
+                // one this spotlight always had — see the note that came with it: the covers
+                // top out at 600x900, and on a 4K panel at 200% a design height of 340 already
+                // asks for exactly 900 physical pixels.
+                availableHeight: hero.height - appsRoot._px(70)
+                maxCoverHeight: appsRoot._px(340)
+
+                title: appsRoot.focusedAppName
+                cover: appsRoot.focusedBoxArt
+                store: appsRoot.focusedStore
+                metaExtra: {
+                    var parts = []
+                    if (appsRoot.focusedAppIsRunning) parts.push(qsTr("running now"))
+                    if (appsRoot.focusedOverridden)   parts.push(qsTr("custom settings"))
+                    return parts.join("  ·  ")
+                }
+                metaColor: appsRoot.focusedAppIsRunning ? Theme.online : Theme.text2
+                played: appsRoot.focusedPlaytime
+                sessions: appsRoot.focusedSessions
             }
-        }
 
-        // ── Name, meta, actions ──────────────────────────────────────────────
-        // Under the cover now rather than beside it, and centred on it: the column is
-        // narrower than the old full-width band, so a name set against its left edge would
-        // sit off to one side of the artwork it belongs to.
-        Item { width: 1; height: appsRoot._px(20) }
+            Item { width: 1; height: appsRoot._px(18) }
 
             Column {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: parent.width
                 spacing: 0
-
-                /*
-                 * The name in full, always — a long title gets smaller, never cut.
-                 *
-                 * It used to elide on one line, which is how "Torment: Tides of Numenera"
-                 * became "Torment: Tides of Numene…" — the one thing on the page whose whole
-                 * job is to say which game this is, saying most of it.
-                 *
-                 * fontSizeMode does the work: Fit shrinks the text until it fits the box, and
-                 * minimumPixelSize is the floor. Two lines are allowed so that past the floor
-                 * it wraps rather than carrying on shrinking — below about 26 the title stops
-                 * reading as the title, and a name long enough to need that has room to wrap.
-                 * Only past both does it finally elide, which no name in a real library reaches.
-                 */
-                Label {
-                    width: parent.width
-                    horizontalAlignment: Text.AlignHCenter
-                    text: appsRoot.focusedAppName
-                    color: Theme.text
-                    font.family: Theme.family
-                    // Down from 54 while everything around it went up — the host name from
-                    // 24 to 30, the setting values from 14 to 16, the list rows from 76 to
-                    // 84. It was never too small: it was out of proportion with the rest,
-                    // and shrinking the one that was shouting was half of fixing that.
-                    font.pixelSize: appsRoot._px(40)
-                    fontSizeMode: Text.Fit
-                    minimumPixelSize: appsRoot._px(26)
-                    font.bold: true
-                    font.letterSpacing: -appsRoot._u * 0.9
-                    wrapMode: Text.Wrap
-                    maximumLineCount: 2
-                    elide: Text.ElideRight
-                }
-
-                Item { width: 1; height: appsRoot._px(4) }
-
-                // The store — its mark and its name — whether the game is running, and whether
-                // it carries settings of its own: three facts the cover grid had no room for.
-                // The mark earns its place by being recognisable before the word is read, which
-                // is the whole reason storefronts have one.
-                Row {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: appsRoot._px(8)
-
-                    Image {
-                        id: heroStoreIcon
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: source != ""
-                        source: appsRoot.storeIconSource(appsRoot.focusedStore)
-                        width: appsRoot._px(19); height: width
-                        sourceSize.width: 38; sourceSize.height: 38
-                        fillMode: Image.PreserveAspectFit
-                        smooth: true
-                    }
-
-                    Label {
-                        anchors.verticalCenter: parent.verticalCenter
-                        // Its natural width, capped by what the column leaves once the mark has
-                        // taken its share — so the row stays centred on short text and still
-                        // elides instead of running past the column on long text.
-                        width: Math.min(implicitWidth,
-                                        hero.width - (heroStoreIcon.visible
-                                                      ? heroStoreIcon.width + parent.spacing : 0))
-                        text: {
-                            var parts = []
-                            if (appsRoot.focusedStore.length > 0) parts.push(appsRoot.focusedStore)
-                            if (appsRoot.focusedAppIsRunning)     parts.push(qsTr("running now"))
-                            if (appsRoot.focusedOverridden)       parts.push(qsTr("custom settings"))
-                            return parts.join(" · ")
-                        }
-                        color: appsRoot.focusedAppIsRunning ? Theme.online : Theme.text2
-                        font.family: Theme.family
-                        font.pixelSize: appsRoot._px(16)
-                        elide: Text.ElideRight
-                        maximumLineCount: 1
-                    }
-                }
 
                 Item { width: 1; height: appsRoot._px(14) }
 
@@ -933,7 +910,11 @@ FocusScope {
 
                             Behavior on color {
                                 enabled: !Theme.reduceAnimations
-                                ColorAnimation { duration: 110 }
+                                ColorAnimation { duration: 140 }
+                            }
+                            Behavior on border.color {
+                                enabled: !Theme.reduceAnimations
+                                ColorAnimation { duration: 140 }
                             }
 
                             Row {
@@ -956,7 +937,7 @@ FocusScope {
                                     text: modelData.label
                                     color: modelData.danger ? Theme.danger : Theme.text
                                     font.family: Theme.family
-                                    font.pixelSize: appsRoot._px(15)
+                                    font.pixelSize: appsRoot._px(Theme.fontBody)
                                     // The launch verb carries a shade more weight — it is the
                                     // primary action — without an accent fill, which would
                                     // read as focus on a button the pad cannot reach.
@@ -978,20 +959,6 @@ FocusScope {
         }
     }
 
-    // ── Rail caption ──────────────────────────────────────────────────────────
-    Label {
-        id: railLabel
-        anchors.top: cfgLine.bottom
-        anchors.left: parent.left
-        anchors.leftMargin: appsRoot._sideMargin
-        anchors.topMargin: appsRoot._px(16)
-        text: qsTr("ALL APPS")
-        color: Theme.text3
-        font.family: Theme.family
-        font.pixelSize: appsRoot._px(13)
-        font.letterSpacing: appsRoot._u * 1.6
-    }
-
     // ═════════════════════════════════════════════════════════════════════════
     // The library — the only zone
     // ═════════════════════════════════════════════════════════════════════════
@@ -1006,10 +973,12 @@ FocusScope {
      */
     ListView {
         id: appGrid
-        anchors.top: railLabel.bottom
+        // Straight under the configuration line: the column's caption is now the list's own
+        // first section header, which scrolls away with the rows it names.
+        anchors.top: cfgLine.bottom
         anchors.left: parent.left
         anchors.bottom: parent.bottom
-        anchors.topMargin: appsRoot._px(6)
+        anchors.topMargin: appsRoot._px(16)
         anchors.leftMargin: appsRoot._sideMargin
         anchors.bottomMargin: appsRoot._px(58)
         width: appsRoot._libraryWidth
@@ -1030,6 +999,74 @@ FocusScope {
         property bool showGames
         property var storeMap: ({})
 
+        // ── Continue (5.7.0) ─────────────────────────────────────────────────
+        /*
+         * The last game this client streamed on this host sits at the top of the list, under
+         * a caption of its own, and the rest follows under "All apps". The order is the
+         * model's — appSortOrder() in nvapp.h — so this file only draws the boundary.
+         *
+         * ⚠️ There is no gate to write here. A game removed from the host is not in the app
+         * list at all, so it cannot be row 0 and the section never appears; the model answers
+         * "all" and the caption above says "ALL APPS", exactly as before the feature existed.
+         */
+        /*
+         * ⚠️ Refreshed by hand rather than bound. A binding on lastPlayedIndex() would look
+         * right and be wrong: it is a plain Q_INVOKABLE with no NOTIFY behind it, so QML has
+         * nothing to re-evaluate on, and after a session — the one moment this changes — the
+         * caption would still be saying what it said before. Every place that can move it
+         * calls updateContinue().
+         */
+        property bool hasContinue: false
+        function updateContinue() {
+            hasContinue = (count > 0 && appModel.lastPlayedIndex() === 0)
+        }
+        onCountChanged: updateContinue()
+
+        section.property: "section"
+        section.criteria: ViewSection.FullString
+        /*
+         * ⚠️ BOTH headings live in here, and that is the fix rather than a tidy-up.
+         *
+         * "LAST PLAYED" was drawn outside the list, anchored above it, so it stayed pinned at
+         * the top of the column while the row it named scrolled away — after a few titles the
+         * screen claimed the game at the top of the view was the last played one, and it was
+         * whatever you had scrolled to.
+         *
+         * A section delegate scrolls with its section (labelPositioning is InlineLabels by
+         * default), so each heading now leaves the screen when its rows do.
+         */
+        section.delegate: Item {
+            width: appGrid.width
+            readonly property bool _isContinue: section === "continue"
+            // The first heading needs no room above it — the caption line already sits there.
+            height: _isContinue ? appsRoot._px(24)
+                                : (appGrid.hasContinue ? appsRoot._px(46) : appsRoot._px(24))
+
+            Label {
+                anchors.left: parent.left
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: appsRoot._px(8)
+                text: parent._isContinue ? qsTr("LAST PLAYED") : qsTr("ALL APPS")
+                color: parent._isContinue ? Theme.accent : Theme.text3
+                font.family: Theme.family
+                font.pixelSize: appsRoot._px(Theme.fontSmall)
+                font.letterSpacing: appsRoot._u * 1.6
+            }
+
+            // The rule runs beside the second heading only: it marks a boundary between two
+            // groups, and above the first there is nothing to divide from.
+            Rectangle {
+                visible: !parent._isContinue && appGrid.hasContinue
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: appsRoot._px(3)
+                anchors.leftMargin: appsRoot._px(96)
+                height: 1
+                color: Theme.line
+            }
+        }
+
         focus: true
         activeFocusOnTab: true
 
@@ -1037,7 +1074,10 @@ FocusScope {
         readonly property int _gap:  appsRoot._px(6)
 
         Component.onCompleted: {
+            // Row 0 is the game you last played whenever there is one — the model sorts it
+            // there — so opening the page already has A pointed at it.
             currentIndex = 0
+            updateContinue()
             appModel.computerLost.connect(computerLost)
             activated = true
 
@@ -1124,7 +1164,10 @@ FocusScope {
                 border.width: appDelegate._lit ? 2 : (appDelegate._selected ? 1 : 0)
                 border.color: appDelegate._lit ? Theme.accent : Theme.line
 
-                Behavior on color { enabled: !Theme.reduceAnimations; ColorAnimation { duration: 120 } }
+                // Both, not just the fill: the border used to snap to the accent while the
+                // fill faded in behind it, so the outline arrived before the light did.
+                Behavior on color { enabled: !Theme.reduceAnimations; ColorAnimation { duration: 140 } }
+                Behavior on border.color { enabled: !Theme.reduceAnimations; ColorAnimation { duration: 140 } }
 
                 // ── Thumbnail ────────────────────────────────────────────────
                 // Fixed box, PreserveAspectFit, no cropping. Box art is not one shape:
@@ -1174,7 +1217,7 @@ FocusScope {
                         text: model.name
                         color: Theme.text
                         font.family: Theme.family
-                        font.pixelSize: appsRoot._px(22)
+                        font.pixelSize: appsRoot._px(Theme.fontH2)
                         font.weight: appDelegate._lit ? Font.DemiBold : Font.Normal
                         elide: Text.ElideRight
                         maximumLineCount: 1
@@ -1184,16 +1227,22 @@ FocusScope {
                         property string store: appGrid.storeMap[model.name] || ""
                         width: parent.width
                         visible: store.length > 0 || model.overridden
+                                 || (model.playtime && model.playtime.length > 0)
                         text: {
                             var parts = []
                             if (store.length > 0)   parts.push(store)
+                            // Empty for a game never streamed, and for Desktop and Steam Big
+                            // Picture, which never accumulate any — the model decides, this
+                            // line just appends what it is given.
+                            if (model.playtime && model.playtime.length > 0)
+                                parts.push(model.playtime)
                             if (model.overridden)   parts.push(qsTr("custom settings"))
                             return parts.join("  ·  ")
                         }
                         color: Theme.text3
                         // The same body as the store line in the spotlight: one size for the
                         // page's secondary text instead of a 15 here and a 17 there.
-                        font.pixelSize: appsRoot._px(16)
+                        font.pixelSize: appsRoot._px(Theme.fontBody)
                         font.family: Theme.family
                         elide: Text.ElideRight
                         maximumLineCount: 1
@@ -1229,7 +1278,7 @@ FocusScope {
                         text: qsTr("STREAMING")
                         color: Theme.onAccent
                         font.family: Theme.family
-                        font.pixelSize: appsRoot._px(13)
+                        font.pixelSize: appsRoot._px(Theme.fontSmall)
                         font.bold: true
                         font.letterSpacing: appsRoot._u
                     }
@@ -1324,10 +1373,10 @@ FocusScope {
         anchors.centerIn: parent
         width: parent.width * 0.6
         visible: appGrid.count === 0
-        text: qsTr("This computer doesn't seem to have any applications or some applications are hidden")
+        text: qsTr("No apps to show — some may be hidden on the host")
         color: Theme.text2
         font.family: Theme.family
-        font.pixelSize: appsRoot._px(20)
+        font.pixelSize: appsRoot._px(Theme.fontTitle)
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
     }
@@ -1382,6 +1431,18 @@ FocusScope {
 
     AppSettingsDialog {
         id: appSettingsDialog
-        onClosedByUser: appsRoot.focusLibrary()
+        onClosedByUser: {
+            // The panel can have reset this game's play time, which changes both the label on
+            // its row and — if it was the last played one — the order and the section heading.
+            // Done here rather than on the reset itself: while the panel is open its appIndex
+            // has to stay valid, and re-sorting under it would point that index at another
+            // game. See AppModel::resetPlaytime().
+            if (appGrid && appGrid.appModel) {
+                appGrid.appModel.refreshPlaytime()
+                appGrid.updateContinue()
+                appsRoot._playtimeEpoch++
+            }
+            appsRoot.focusLibrary()
+        }
     }
 }

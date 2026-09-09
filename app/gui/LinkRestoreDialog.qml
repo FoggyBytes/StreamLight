@@ -53,7 +53,7 @@ Popup {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             text: qsTr("LINK SPEED")
-            font.family: Theme.family; font.pixelSize: dlg._px(13)
+            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall)
             font.bold: true; font.letterSpacing: dlg._u * 1.6
             color: Theme.text3
         }
@@ -64,7 +64,7 @@ Popup {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             text: qsTr("Restore host link speed?")
-            font.family: Theme.family; font.pixelSize: dlg._px(22); font.bold: true
+            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontH2); font.bold: true
             color: Theme.text
             wrapMode: Text.WordWrap
         }
@@ -76,7 +76,7 @@ Popup {
             horizontalAlignment: Text.AlignHCenter
             // What it is and what each answer does. The reasoning lives in the changelog.
             text: qsTr("%1 is still on the speed matched for streaming.").arg(dlg.hostName)
-            font.family: Theme.family; font.pixelSize: dlg._px(15)
+            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontBody)
             color: Theme.text2
             wrapMode: Text.WordWrap
         }

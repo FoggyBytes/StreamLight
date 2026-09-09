@@ -1,8 +1,10 @@
 #pragma once
 
 #include <QAtomicInt>
+#include <QElapsedTimer>
 #include <QSemaphore>
 #include <QQuickWindow>
+#include <QTimer>
 
 #include <Limelight.h>
 #include <opus_multistream.h>
@@ -382,6 +384,12 @@ private:
 
     void notifyMouseEmulationMode(bool enabled);
 
+    /** Banks the seconds streamed since the last flush. Cheap, and safe to call twice. */
+    void flushPlaytime();
+
+    /** Banks the rest and records this as the game last played on this host. */
+    void endPlaytime();
+
     void updateOptimalWindowDisplayMode();
 
     enum class DecoderAvailability {
@@ -521,6 +529,27 @@ private:
     LaunchCurtain            m_Curtain;
     SessionTelemetrySampler* m_TelemetrySampler       = nullptr;
     HueSyncManager*          m_HueSyncManager         = nullptr;
+
+    // ── Play time (5.7.0) ────────────────────────────────────────────────────────────────
+    /*
+     * How long this session has been streaming, for the per-game total the host card and the
+     * host page are drawn from.
+     *
+     * Deliberately NOT the telemetry sampler's clock, and not gated the way it is: the
+     * sampler only runs when this host's StreamTweak integration is on, and hours are ours
+     * to keep whether or not the host has StreamTweak at all. It starts and stops at the same
+     * two moments though — stream up, and just before the decoder is torn down — so a failed
+     * connection or a launch the user cancelled never counts as time played.
+     *
+     * ⚠️ The flush timer is why an app that is killed rather than closed still keeps its
+     * hours: no destructor runs in that case, so a total written only at the end would lose
+     * the whole session. Sixty seconds is also the threshold below which a session does not
+     * become "last played", so the first flush and the first eligible moment coincide.
+     */
+    QElapsedTimer            m_PlaytimeTimer;
+    QTimer*                  m_PlaytimeFlushTimer     = nullptr;
+    qint64                   m_PlaytimeFlushedSecs    = 0;
+    bool                     m_PlaytimeTracking       = false;
 
     // Whether this host's StreamTweak integration is switched on, captured once at
     // construction. Deliberately a snapshot and not a live read: the flag can only change

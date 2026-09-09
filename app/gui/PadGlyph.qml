@@ -1,3 +1,4 @@
+import Theme 1.0
 import QtQuick 2.15
 import SdlGamepadKeyNavigation 1.0
 
@@ -62,14 +63,14 @@ Item {
         visible: glyph._resolved === ""
         anchors.fill: parent
         radius: 5
-        color: "#1e2129"
-        border.color: "#3a3f4a"
+        color: Theme.card
+        border.color: Theme.lineHigh
         border.width: 1
         Text {
             anchors.centerIn: parent
             text: glyph.label
-            color: "#dfe2e8"
-            font.family: "DM Sans"
+            color: Theme.text
+            font.family: Theme.family
             font.pixelSize: Math.max(11, glyph.size - 11)
             font.bold: true
         }

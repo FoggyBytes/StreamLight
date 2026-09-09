@@ -64,7 +64,7 @@ Popup {
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("BACKGROUND") + (dlg.hostName.length ? "  ·  " + dlg.hostName : "")
             font.family: Theme.family
-            font.pixelSize: dlg._px(13)
+            font.pixelSize: dlg._px(Theme.fontSmall)
             font.bold: true
             font.letterSpacing: 1.6
             color: Theme.text3
@@ -121,7 +121,7 @@ Popup {
                             visible: parent._current
                             text: "✓"
                             color: "#ffffff"
-                            font.pixelSize: dlg._px(22)
+                            font.pixelSize: dlg._px(Theme.fontH2)
                             font.bold: true
                         }
 
@@ -182,7 +182,7 @@ Popup {
             text: qsTr("The picture is darkened behind the host's name and details, and left alone everywhere else. Its colours also become the gradient, so the two never clash.")
             color: Theme.text3
             font.family: Theme.family
-            font.pixelSize: dlg._px(12)
+            font.pixelSize: dlg._px(Theme.fontCaption)
         }
     }
 

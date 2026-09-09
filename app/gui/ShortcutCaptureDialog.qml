@@ -65,7 +65,7 @@ Popup {
     padding: 32
 
     background: Rectangle {
-        color: "#1a1a1a"; border.color: "#2a2a2a"; border.width: 1; radius: 12
+        color: Theme.card; border.color: Theme.line; border.width: 1; radius: 12
     }
 
     component ModToggle: Button {
@@ -82,14 +82,14 @@ Popup {
         Keys.onSpacePressed:  flip()
         background: Rectangle {
             radius: 8
-            color: mt.on ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16) : "#15171c"
-            border.color: mt.activeFocus ? Theme.accent : mt.on ? Qt.darker(Theme.accent, 1.55) : "#2a2a2a"
+            color: mt.on ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16) : Theme.card
+            border.color: mt.activeFocus ? Theme.accent : mt.on ? Qt.darker(Theme.accent, 1.55) : Theme.line
             border.width: (mt.activeFocus || mt.on) ? 2 : 1
         }
         contentItem: Label {
             text: mt.lbl
-            color: mt.on ? Theme.accent : "#9aa0a8"
-            font.family: "DM Sans"; font.pixelSize: 15; font.bold: mt.on
+            color: mt.on ? Theme.accent : Theme.text2
+            font.family: Theme.family; font.pixelSize: Theme.fontBody; font.bold: mt.on
             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
         }
     }
@@ -99,21 +99,21 @@ Popup {
 
         Label {
             text: qsTr("REBIND SHORTCUT")
-            font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
-            font.letterSpacing: 1.6; color: "#707070"
+            font.family: Theme.family; font.pixelSize: Theme.fontSmall; font.bold: true
+            font.letterSpacing: 1.6; color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
         }
         Label {
             text: pop.actionName
-            font.family: "DM Sans"; font.pixelSize: 19; color: "#f0f0f0"
+            font.family: Theme.family; font.pixelSize: Theme.fontTitle; color: Theme.text
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
             Layout.alignment: Qt.AlignHCenter; Layout.maximumWidth: 520
         }
 
         Label {
             text: qsTr("MODIFIERS")
-            font.family: "DM Sans"; font.pixelSize: 11; font.bold: true
-            font.letterSpacing: 1.4; color: "#6f7681"
+            font.family: Theme.family; font.pixelSize: Theme.fontCaption; font.bold: true
+            font.letterSpacing: 1.4; color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
         }
         RowLayout {
@@ -126,8 +126,8 @@ Popup {
 
         Label {
             text: qsTr("KEY")
-            font.family: "DM Sans"; font.pixelSize: 11; font.bold: true
-            font.letterSpacing: 1.4; color: "#6f7681"
+            font.family: Theme.family; font.pixelSize: Theme.fontCaption; font.bold: true
+            font.letterSpacing: 1.4; color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: 2
         }
@@ -165,8 +165,8 @@ Popup {
 
             background: Rectangle {
                 radius: 10
-                color: pop._keyListening ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12) : "#0f0f0f"
-                border.color: (pop._keyListening || keyBtn.activeFocus) ? Theme.accent : "#2a2a2a"
+                color: pop._keyListening ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12) : Theme.ground
+                border.color: (pop._keyListening || keyBtn.activeFocus) ? Theme.accent : Theme.line
                 border.width: (pop._keyListening || keyBtn.activeFocus) ? 2 : 1
             }
             contentItem: Item {
@@ -174,15 +174,15 @@ Popup {
                     visible: pop._keyListening
                     anchors.centerIn: parent
                     text: qsTr("Press the key…")
-                    color: Theme.accent; font.family: "DM Sans"; font.pixelSize: 16; font.bold: true
+                    color: Theme.accent; font.family: Theme.family; font.pixelSize: Theme.fontBody; font.bold: true
                 }
                 Label {
                     visible: !pop._keyListening
                     anchors.centerIn: parent
-                    text: pop._haveKey ? pop._label : qsTr("Click or press to set")
-                    color: pop._haveKey ? "#dfe2e8" : "#808080"
-                    font.family: "DM Sans"
-                    font.pixelSize: pop._haveKey ? 18 : 15
+                    text: pop._haveKey ? pop._label : qsTr("Press a key to set")
+                    color: pop._haveKey ? Theme.text : Theme.text3
+                    font.family: Theme.family
+                    font.pixelSize: pop._haveKey ? Theme.fontTitle : Theme.fontBody
                     font.bold: pop._haveKey
                 }
             }
@@ -204,10 +204,10 @@ Popup {
                 }
                 delegate: Rectangle {
                     width: pvl.implicitWidth + 18; height: 30; radius: 6
-                    color: "#23262e"; border.color: "#3a3f4a"; border.width: 1
+                    color: Theme.cardHigh; border.color: Theme.lineHigh; border.width: 1
                     Label {
                         id: pvl; anchors.centerIn: parent; text: modelData
-                        color: "#dfe2e8"; font.family: "DM Sans"; font.pixelSize: 13; font.bold: true
+                        color: Theme.text; font.family: Theme.family; font.pixelSize: Theme.fontSmall; font.bold: true
                     }
                 }
             }
@@ -216,21 +216,21 @@ Popup {
         Label {
             text: pop._err
             visible: pop._err !== ""
-            color: "#ff6b6b"; font.family: "DM Sans"; font.pixelSize: 13
+            color: Theme.danger; font.family: Theme.family; font.pixelSize: Theme.fontSmall
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
             Layout.alignment: Qt.AlignHCenter; Layout.maximumWidth: 380
         }
         Label {
             text: qsTr("Keep at least two modifiers.")
             visible: pop._modCount() < 2
-            color: "#f5a623"; font.family: "DM Sans"; font.pixelSize: 13
+            color: Theme.warning; font.family: Theme.family; font.pixelSize: Theme.fontSmall
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
         }
         Label {
             text: qsTr("Already used by “%1” — pick a different combination.").arg(pop._conflictName)
             visible: pop._conflict >= 0
-            color: "#f5a623"; font.family: "DM Sans"; font.pixelSize: 13
+            color: Theme.warning; font.family: Theme.family; font.pixelSize: Theme.fontSmall
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
             Layout.alignment: Qt.AlignHCenter; Layout.maximumWidth: 380
         }
@@ -252,13 +252,13 @@ Popup {
                 Keys.onRightPressed:  cancelBtn.forceActiveFocus()
                 background: Rectangle {
                     implicitWidth: 140; implicitHeight: 42; radius: 8
-                    color: saveBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20) : "#1f1f1f"
-                    border.color: saveBtn.activeFocus ? Theme.accent : "#2a2a2a"
+                    color: saveBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20) : Theme.card
+                    border.color: saveBtn.activeFocus ? Theme.accent : Theme.line
                     border.width: saveBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: saveBtn.text; color: Theme.accent
-                    font.family: "DM Sans"; font.pixelSize: 15; font.bold: true
+                    font.family: Theme.family; font.pixelSize: Theme.fontBody; font.bold: true
                     horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 }
             }
@@ -273,13 +273,13 @@ Popup {
                 Keys.onLeftPressed:   saveBtn.forceActiveFocus()
                 background: Rectangle {
                     implicitWidth: 140; implicitHeight: 42; radius: 8
-                    color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20) : "#1f1f1f"
-                    border.color: cancelBtn.activeFocus ? Theme.accent : "#2a2a2a"
+                    color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20) : Theme.card
+                    border.color: cancelBtn.activeFocus ? Theme.accent : Theme.line
                     border.width: cancelBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
-                    text: cancelBtn.text; color: "#f0f0f0"
-                    font.family: "DM Sans"; font.pixelSize: 15; font.bold: true
+                    text: cancelBtn.text; color: Theme.text
+                    font.family: Theme.family; font.pixelSize: Theme.fontBody; font.bold: true
                     horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 }
             }

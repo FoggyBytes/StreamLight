@@ -37,7 +37,7 @@ Item {
     property url nextBoxArt : ""
     property var nextSessionEndedFn : null
 
-    property string stageText : qsTr("Quitting %1...").arg(appName)
+    property string stageText : qsTr("Quitting %1…").arg(appName)
 
     function quitAppCompleted(error)
     {

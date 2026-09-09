@@ -1,6 +1,7 @@
 #include "appmodel.h"
 
 #include "settings/appsettings.h"
+#include "settings/playtime.h"
 #include "settings/streamingpreferences.h"
 
 AppModel::AppModel(QObject *parent)
@@ -201,9 +202,152 @@ QVariant AppModel::data(const QModelIndex &index, int role) const
         return app.isAppCollectorGame;
     case OverriddenRole:
         return AppSettingsManager::get()->hasOverride(m_Computer->uuid, app.id);
+    case PlaytimeRole: {
+        // Empty string, not "0 m", when there is nothing to say: the row's subtitle appends
+        // this after the store name, and a game never streamed should read "Steam", not
+        // "Steam · 0 m". Desktop and Steam Big Picture never get one at all.
+        auto it = m_PlaytimeLabels.constFind(app.id);
+        if (it != m_PlaytimeLabels.constEnd())
+            return *it;
+
+        QString label;
+        if (PlaytimeManager::isTracked(app.name)) {
+            PlaytimeRecord rec = PlaytimeManager::get()->recordFor(m_Computer->uuid, app.name);
+            if (rec.valid && rec.totalSeconds > 0)
+                label = PlaytimeManager::formatDuration(rec.totalSeconds);
+        }
+        m_PlaytimeLabels.insert(app.id, label);
+        return label;
+    }
+    case SectionRole: {
+        // What the ListView groups on. Two values only, and the sort order guarantees the
+        // "continue" one is a single row at the top — so the section header is the caption
+        // above it rather than a heading that could repeat further down.
+        //
+        // Only row 0 can be it, which is what keeps this cheap: every other row answers
+        // without reading anything, where asking lastPlayedIndex() per row would be a
+        // settings read and a list scan on every repaint.
+        if (index.row() != 0 || m_Computer == nullptr)
+            return QStringLiteral("all");
+
+        const QString lastPlayed = PlaytimeManager::get()->lastPlayedOn(m_Computer->uuid).name;
+        return (!lastPlayed.isEmpty() && app.name.compare(lastPlayed, Qt::CaseInsensitive) == 0)
+               ? QStringLiteral("continue") : QStringLiteral("all");
+    }
     default:
         return QVariant();
     }
+}
+
+QVariantMap AppModel::playtimeFor(int appIndex) const
+{
+    QVariantMap out;
+    if (appIndex < 0 || appIndex >= m_VisibleApps.count())
+        return out;
+
+    const NvApp& app = m_VisibleApps.at(appIndex);
+    if (!PlaytimeManager::isTracked(app.name))
+        return out;
+
+    PlaytimeRecord rec = PlaytimeManager::get()->recordFor(m_Computer->uuid, app.name);
+    if (!rec.valid)
+        return out;
+
+    out[QStringLiteral("totalSeconds")]  = (qint64)rec.totalSeconds;
+    out[QStringLiteral("total")]         = PlaytimeManager::formatDuration(rec.totalSeconds);
+    out[QStringLiteral("sessions")]      = rec.sessionCount;
+    out[QStringLiteral("lastSeconds")]   = (qint64)rec.lastSessionSeconds;
+    out[QStringLiteral("lastSession")]   = rec.lastSessionSeconds > 0
+                                           ? PlaytimeManager::formatDuration(rec.lastSessionSeconds)
+                                           : QString();
+    // Handed over as a local-time ISO string: QML formats it, because the date format is a
+    // user setting and this file has no business knowing which one is picked.
+    out[QStringLiteral("lastPlayed")]    = rec.lastPlayed.isValid()
+                                           ? rec.lastPlayed.toLocalTime().toString(Qt::ISODate)
+                                           : QString();
+
+    // Metrics stay raw, -1 included: QML draws a dash for those, and rounding a "never
+    // measured" into a number here would throw the distinction away at the only point that
+    // still has it.
+    out[QStringLiteral("fpsAvg")]        = rec.lastFpsAvg;
+    out[QStringLiteral("targetFps")]     = rec.lastTargetFps;
+    out[QStringLiteral("dropsPct")]      = rec.lastDropsPct;
+    out[QStringLiteral("jitterDropsPct")]= rec.lastJitterDropsPct;
+    out[QStringLiteral("rttMs")]         = rec.lastRttMs;
+    out[QStringLiteral("hostLatencyMs")] = rec.lastHostLatencyMs;
+    out[QStringLiteral("decodeMs")]      = rec.lastDecodeMs;
+    out[QStringLiteral("bitrateMbps")]   = rec.lastBitrateMbps;
+
+    return out;
+}
+
+void AppModel::resetPlaytime(int appIndex)
+{
+    if (appIndex < 0 || appIndex >= m_VisibleApps.count())
+        return;
+
+    const NvApp& app = m_VisibleApps.at(appIndex);
+    PlaytimeManager::get()->reset(m_Computer->uuid, app.name);
+
+    /*
+     * ⚠️ Clears the labels but does NOT re-sort, and that is deliberate.
+     *
+     * Clearing a game can also clear the host's "last played" pointer, which changes the
+     * order — and the only caller is the per-game panel, which is open on THIS appIndex while
+     * this runs. Re-sorting under it would leave the dialog holding an index that now points
+     * at a different game, and every setting it wrote afterwards would land on the wrong one.
+     *
+     * The order is put right when the panel closes, which is the first moment the index stops
+     * mattering: AppsScreen calls refreshPlaytime() from onClosedByUser.
+     */
+    m_PlaytimeLabels.clear();
+    if (!m_VisibleApps.isEmpty()) {
+        emit dataChanged(createIndex(0, 0), createIndex(m_VisibleApps.count() - 1, 0),
+                         { PlaytimeRole, SectionRole });
+    }
+}
+
+void AppModel::refreshPlaytime()
+{
+    m_PlaytimeLabels.clear();
+    if (m_VisibleApps.isEmpty() || m_Computer == nullptr)
+        return;
+
+    /*
+     * ⚠️ A full reset, not a dataChanged() over the play-time role, because the ORDER can
+     * have moved: the game that just ended is now the one at the top, under Continue.
+     *
+     * This is the moment that needs it. A session does not rebuild the host page — it stays
+     * alive behind the stream and comes back with the same model — so nothing else would ever
+     * re-sort, and the row would go on sitting wherever it was alphabetically while the
+     * Continue section named it.
+     */
+    if (sortVisibleApps())
+        return;   // the reset already redrew every row, labels included
+
+    emit dataChanged(createIndex(0, 0), createIndex(m_VisibleApps.count() - 1, 0),
+                     { PlaytimeRole, SectionRole });
+}
+
+int AppModel::lastPlayedIndex() const
+{
+    if (m_Computer == nullptr)
+        return -1;
+
+    PlaytimeRecord rec = PlaytimeManager::get()->lastPlayedOn(m_Computer->uuid);
+    if (!rec.valid)
+        return -1;
+
+    // Matched by name, not by the id stored with the record: the id is a hint that goes
+    // stale when the host rebuilds apps.json, and the name is the key everything else here
+    // is built on. A game since removed from the host simply does not match, which is
+    // exactly the "is it still launchable" gate — no separate check needed.
+    for (int i = 0; i < m_VisibleApps.count(); i++) {
+        if (m_VisibleApps.at(i).name.compare(rec.name, Qt::CaseInsensitive) == 0)
+            return i;
+    }
+
+    return -1;
 }
 
 QHash<int, QByteArray> AppModel::roleNames() const
@@ -218,6 +362,8 @@ QHash<int, QByteArray> AppModel::roleNames() const
     names[DirectLaunchRole] = "directLaunch";
     names[AppCollectorGameRole] = "appCollectorGame";
     names[OverriddenRole] = "overridden";
+    names[PlaytimeRole] = "playtime";
+    names[SectionRole] = "section";
 
     return names;
 }
@@ -286,17 +432,18 @@ void AppModel::updateAppList(QVector<NvApp> newList)
         }
     }
 
-    auto appOrder = [](const QString& name) -> int {
-        if (name.compare("Desktop", Qt::CaseInsensitive) == 0) return 0;
-        if (name.compare("Steam Big Picture", Qt::CaseInsensitive) == 0) return 1;
-        return 2;
-    };
+    // Read once for the whole pass, exactly as sortAppList() does — same value, same reason.
+    const QString lastPlayed = m_Computer != nullptr
+                               ? PlaytimeManager::get()->lastPlayedOn(m_Computer->uuid).name
+                               : QString();
 
     // Process additions now
     for (const NvApp& newApp : std::as_const(newVisibleList)) {
         int insertionIndex = m_VisibleApps.size();
         bool found = false;
-        int ob = appOrder(newApp.name);
+        // ⚠️ Shared with NvComputer::sortAppList() — see nvapp.h. The two must produce the
+        // same order or the assert at the end of this function fires in a debug build.
+        int ob = appSortOrder(newApp.name, lastPlayed);
 
         for (int i = 0; i < m_VisibleApps.count(); i++) {
             const NvApp& existingApp = m_VisibleApps.at(i);
@@ -306,7 +453,7 @@ void AppModel::updateAppList(QVector<NvApp> newList)
                 break;
             }
             else {
-                int oa = appOrder(existingApp.name);
+                int oa = appSortOrder(existingApp.name, lastPlayed);
                 if (oa != ob ? ob < oa : existingApp.name.toLower() > newApp.name.toLower()) {
                     insertionIndex = i;
                     break;
@@ -321,7 +468,48 @@ void AppModel::updateAppList(QVector<NvApp> newList)
         }
     }
 
-    Q_ASSERT(newVisibleList == m_VisibleApps);
+    /*
+     * ⚠️ This replaces a `Q_ASSERT(newVisibleList == m_VisibleApps)`, and the change is
+     * deliberate rather than a way of silencing it.
+     *
+     * The assert held because the incoming list was already sorted the same way this loop
+     * inserts. That stopped being guaranteed the moment the order started depending on which
+     * game was played last: NvComputer::sortAppList() only runs when the app list itself
+     * changes, so after a session ends the model has re-sorted (refreshPlaytime) while the
+     * host's copy still carries the old order — and the next poll would hand it back that way.
+     *
+     * Reconciling is strictly better than asserting: it fixes the order instead of complaining
+     * about it in debug builds and doing nothing in release ones. And it costs nothing in the
+     * ordinary case, where the list is already in order and sortVisibleApps() returns false
+     * without touching the model.
+     */
+    sortVisibleApps();
+}
+
+bool AppModel::sortVisibleApps()
+{
+    if (m_VisibleApps.isEmpty() || m_Computer == nullptr)
+        return false;
+
+    const QString lastPlayed = PlaytimeManager::get()->lastPlayedOn(m_Computer->uuid).name;
+
+    QVector<NvApp> sorted = m_VisibleApps;
+    std::stable_sort(sorted.begin(), sorted.end(),
+                     [&lastPlayed](const NvApp& a, const NvApp& b) {
+        int oa = appSortOrder(a.name, lastPlayed), ob = appSortOrder(b.name, lastPlayed);
+        if (oa != ob) return oa < ob;
+        return a.name.toLower() < b.name.toLower();
+    });
+
+    if (sorted == m_VisibleApps)
+        return false;
+
+    // A reset rather than moveRows: the only time this fires is a session ending, which is
+    // also the moment the page is being rebuilt around the user anyway.
+    beginResetModel();
+    m_VisibleApps = sorted;
+    endResetModel();
+    return true;
 }
 
 void AppModel::setAppHidden(int appIndex, bool hidden)

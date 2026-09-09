@@ -17,8 +17,8 @@ Popup {
     padding: 32
 
     background: Rectangle {
-        color: "#1a1a1a"
-        border.color: "#2a2a2a"
+        color: Theme.card
+        border.color: Theme.line
         border.width: 1
         radius: 12
     }
@@ -28,19 +28,19 @@ Popup {
 
         Label {
             text: qsTr("PAIR WITH HOST")
-            font.family: "DM Sans"
-            font.pixelSize: 13
+            font.family: Theme.family
+            font.pixelSize: Theme.fontSmall
             font.bold: true
             font.letterSpacing: 1.6
-            color: "#707070"
+            color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
         }
 
         Label {
-            text: qsTr("Enter this PIN on your host PC to complete pairing.")
-            font.family: "DM Sans"
-            font.pixelSize: 18
-            color: "#f0f0f0"
+            text: qsTr("Enter this PIN on the host to finish pairing.")
+            font.family: Theme.family
+            font.pixelSize: Theme.fontTitle
+            color: Theme.text
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
@@ -65,7 +65,7 @@ Popup {
                 // The one place monospace survives the 5.0.0 unification onto DM Sans. These
                 // four digits exist to be read off this screen and compared against another,
                 // and a 1 that looks like an l is exactly the failure a monospaced face is for.
-                font.family: "JetBrains Mono"
+                font.family: Theme.monoFamily
                 font.pixelSize: 64
                 font.bold: true
                 font.letterSpacing: 10
@@ -75,9 +75,9 @@ Popup {
 
         Label {
             text: qsTr("This window will close automatically when pairing completes.")
-            font.family: "DM Sans"
-            font.pixelSize: 14
-            color: "#a0a0a0"
+            font.family: Theme.family
+            font.pixelSize: Theme.fontSmall
+            color: Theme.text2
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
@@ -86,10 +86,10 @@ Popup {
 
         Label {
             text: qsTr("Open the web UI on the host and enter the PIN there.")
-            font.family: "DM Sans"
-            font.pixelSize: 12
+            font.family: Theme.family
+            font.pixelSize: Theme.fontCaption
             font.italic: true
-            color: "#707070"
+            color: Theme.text3
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
@@ -115,18 +115,18 @@ Popup {
                 color: pairCancelBtn.activeFocus
                      ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12)
                      : pairCancelBtn.hovered
-                       ? "#262626"
-                       : "#1f1f1f"
+                       ? Theme.cardHigh
+                       : Theme.card
                 border.color: (pairCancelBtn.activeFocus || pairCancelBtn.hovered)
                               ? Theme.accent
-                              : "#2a2a2a"
+                              : Theme.line
                 border.width: pairCancelBtn.activeFocus ? 2 : 1
             }
             contentItem: Label {
                 text: pairCancelBtn.text
-                color: "#f0f0f0"
-                font.family: "DM Sans"
-                font.pixelSize: 14
+                color: Theme.text
+                font.family: Theme.family
+                font.pixelSize: Theme.fontSmall
                 font.bold: true
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter

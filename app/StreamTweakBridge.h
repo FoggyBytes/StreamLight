@@ -139,21 +139,17 @@ public:
     void sendRestore(const QString& hostAddress, ResponseCallback onResult);
     void sendSetSpeed(const QString& hostAddress, quint64 mbps, ResponseCallback onResult);
 
-    /**
-     * The host's most recent finished session (StreamTweak 8.1.0+), as JSON:
-     * {"v":1,"has":true,"ago":"3d ago","duration":"1m 1s","grade":"Excellent",
-     *  "grade_color":"#4ade80","rtt_ms":1,"rtt_peak_ms":3,"host_latency_ms":1.3,
-     *  "drops_pct":0.6,"games":[{"name":…,"cover":"<base64 png>"}]}
+    /*
+     * ⚠️ requestLastSession() — the LASTSESSION verb — was removed here in 5.7.0, and the
+     * host still implements it: this is the client no longer asking, not the protocol
+     * losing a command.
      *
-     * Note this is the HOST's last session and not necessarily one of ours — StreamTweak
-     * logs whatever streamed and does not record which client it belonged to.
-     *
-     * Replies "" / "ERR" on older hosts, which is how the client detects the feature is
-     * unavailable and simply draws nothing. The reply carries thumbnail images and is by
-     * far the largest one the bridge produces; sendRawRequest accumulates until the '\n'
-     * terminator, so it is already segment-safe.
+     * The card it fed now shows what THIS client last played, from a record kept on this
+     * machine (settings/playtime.h) and artwork already in the box art cache. That answers
+     * a better question — the host's reply described whatever had streamed, possibly from
+     * another device, and needed StreamTweak authorised to exist at all — so the call had
+     * no callers left. If it is ever wanted back, the host end never went away.
      */
-    void requestLastSession(const QString& hostAddress, ResponseCallback onResult);
 
     /**
      * Asynchronously asks the host whether Tailscale is installed and active.

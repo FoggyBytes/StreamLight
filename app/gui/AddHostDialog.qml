@@ -38,8 +38,8 @@ Popup {
 
         Label {
             text: qsTr("ADD HOST")
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(13)
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontSmall)
             font.bold: true
             font.letterSpacing: 1.6
             color: Theme.text3
@@ -47,10 +47,10 @@ Popup {
         }
 
         Label {
-            text: qsTr("Enter the IP address of your host PC")
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(18)
-            color: "#f0f0f0"
+            text: qsTr("Enter the host's IP address")
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontTitle)
+            color: Theme.text
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
@@ -62,17 +62,17 @@ Popup {
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: pop._px(360)
             implicitHeight: pop._px(48)
-            color: "#f0f0f0"
+            color: Theme.text
             selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
             selectedTextColor: Theme.onAccent
-            font.family: "DM Sans"
-            font.pixelSize: pop._px(20)
+            font.family: Theme.family
+            font.pixelSize: pop._px(Theme.fontTitle)
             font.bold: true
             horizontalAlignment: TextInput.AlignHCenter
             inputMethodHints: Qt.ImhPreferNumbers | Qt.ImhUrlCharactersOnly
 
             background: Rectangle {
-                color: "#0f0f0f"
+                color: Theme.ground
                 radius: pop._px(8)
                 border.color: ipField.activeFocus ? Theme.accent : Theme.line
                 border.width: ipField.activeFocus ? 2 : 1
@@ -106,17 +106,17 @@ Popup {
                     radius: pop._px(8)
                     color: okBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : okBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
-                         :                     "#1f1f1f"
+                         :                     Theme.card
                     border.color: okBtn.activeFocus ? Theme.accent
-                                : okBtn.hovered     ? "#3a3a3a"
+                                : okBtn.hovered     ? Theme.lineHigh
                                 :                     Theme.line
                     border.width: okBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: okBtn.text
                     color: Theme.accent
-                    font.family: "DM Sans"
-                    font.pixelSize: pop._px(15)
+                    font.family: Theme.family
+                    font.pixelSize: pop._px(Theme.fontBody)
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -140,17 +140,17 @@ Popup {
                     radius: pop._px(8)
                     color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : cancelBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
-                         :                         "#1f1f1f"
+                         :                         Theme.card
                     border.color: cancelBtn.activeFocus ? Theme.accent
-                                : cancelBtn.hovered     ? "#3a3a3a"
+                                : cancelBtn.hovered     ? Theme.lineHigh
                                 :                         Theme.line
                     border.width: cancelBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: cancelBtn.text
-                    color: "#f0f0f0"
-                    font.family: "DM Sans"
-                    font.pixelSize: pop._px(15)
+                    color: Theme.text
+                    font.family: Theme.family
+                    font.pixelSize: pop._px(Theme.fontBody)
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter

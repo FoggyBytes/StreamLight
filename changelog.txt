@@ -4,6 +4,43 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+------------------------------------
+Version 5.7.0 - Pick Up (09/09/2026)
+------------------------------------
+
+No StreamTweak update required — everything in 5.7.0 is client-side and works with any host. StreamLight now remembers what you played and for how long, so the last game is one button away from the host list.
+
+✨ NEW FEATURES:
+• Last played on the host card — the game you last streamed on that host: a badge above the cover reading how long you have put into it and how long ago, the artwork at the card's own height with its shadow, and the title underneath. A Play again button sits below it, on the same line as Open, Profiles and Options
+• Last played at the top of the host page — the same game as the first row under its own heading, with the cursor already on it, so opening a host and pressing A starts where you left off. Everything else follows under All apps, in the order it always had
+• Play time per game — how long you have streamed each one, shown next to the store on every row of the library. Kept per host, and remembered through an uninstall and reinstall because it is filed under the game's name rather than the id the host gives it. Desktop and Steam Big Picture never count
+• The spotlight on the host page shows the hours and the number of sessions for the game you are looking at, under its store
+• A Reset stats button at the foot of the per-game panel, which clears that game's hours and session count for the host and greys itself out when there is nothing to clear
+
+🎨 UI:
+• A game's title is never cut, on the host card or in the spotlight — it wraps to as many lines as it needs and shrinks to fit rather than ending in an ellipsis, so a name as long as Metal Gear Solid 4: Guns of the Patriots – Master Collection Version reads in full, last word included
+• The cover on the host card is drawn several times larger than the strip it replaces, from the artwork already cached for that host, and stops short of the point where it would be scaled up past the size the artwork exists at
+• It also sizes itself to the title: biggest when the name fits on one line, standing back when it takes three, so the block always ends on the same edge
+• Both screens present a game the same way — cover, title, figures — because they are now drawn by one component instead of two arrangements of the same idea
+• Moving between buttons is a colour that crosses over rather than a switch: the fill, the border and the label warm into the accent together, so walking a row reads as one light travelling along it. The same applies to the rows of the library, where the border used to snap while the fill faded
+• The accent you choose now reaches the whole interface. The PIN pad that appears after waking a host was drawing its focus ring and its dots in the default cyan whatever you had picked, because it named its own colours instead of reading yours
+• Text sizes follow one scale instead of twenty-one hand-picked values sitting a pixel or two apart, so a heading, a label and a caption keep the same relationship to each other on every screen
+• Settings is drawn in the same palette as the rest of the app — it carried its own set of flat greys while every other screen uses cooler ones, so it read a shade warmer than the screen it opens over
+• The clock, the date, the battery and the button prompts along the bottom grow with the window like everything else. They were fixed in place, which on a handheld made them the one part of the screen drawn smaller than what surrounds it
+• Settings tabs carry on past either end: LB and RB wrap around, so About is one press from Video instead of nine
+• The app says host where it used to say PC, and this device where it means the one in your hands — and it no longer asks you to click anything, which on a handheld there is nothing to do
+
+🐛 FIXES:
+• Small grey text is readable — the section headings in Settings, the captions under a game's figures and the muted half of a two-tone line all sat below the contrast the accessibility guidelines ask for
+• Buttons that cannot be pressed now look like it. A disabled button was drawn exactly like a working one, so the only way to find out was to press it
+• Coming back from a stream puts the cursor back on the game you just closed. It moves to the top of the library the moment the session ends, so a cursor left where it was pointed at whichever title had slid into that place
+• The library's section headings scroll with their rows. Last played was drawn above the list and stayed pinned there, so after scrolling a few titles the screen claimed the game at the top of the view was the last one played
+
+⚠️ COMPATIBILITY:
+• The host session report is gone from the card and Last played stands in its place. The old panel described the host's last session, whatever had streamed and from whichever device, and needed an authorized StreamTweak to appear at all; this one describes what you played, from a record kept on this machine, and works against a plain Sunshine host. The quality grade is not repeated here — StreamTweak's dashboard still calculates and shows it
+• Play time is kept per host, so deleting a host deletes its hours along with its profiles and per-game settings. A host reachable both on the LAN and over Tailscale is one host here and keeps one total
+• Nothing is removed from the bridge: the host still answers the command this panel used to send, and no StreamTweak setting changes
+
 ---------------------------------------
 Version 5.6.1 - Lights Off (07/09/2026)
 ---------------------------------------

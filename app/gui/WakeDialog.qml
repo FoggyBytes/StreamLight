@@ -59,7 +59,7 @@ Popup {
             font.family: Theme.family
             // The grey, not the accent: in this interface the accent means "the focus is
             // here", and an eyebrow is never focusable.
-            font.pixelSize: dialog._px(13)
+            font.pixelSize: dialog._px(Theme.fontSmall)
             font.bold: true
             font.letterSpacing: dialog._u * 1.6
             color: Theme.text3
@@ -69,7 +69,7 @@ Popup {
             anchors.horizontalCenter: parent.horizontalCenter
             text: dialog.hostName
             font.family: Theme.family
-            font.pixelSize: dialog._px(22)
+            font.pixelSize: dialog._px(Theme.fontH2)
             font.bold: true
             color: Theme.text
         }
@@ -107,7 +107,7 @@ Popup {
                             visible: index < dialog.step
                             text: "✓"
                             font.family: Theme.family
-                            font.pixelSize: dialog._px(15)
+                            font.pixelSize: dialog._px(Theme.fontBody)
                             color: Theme.online
                         }
                         Spinner {
@@ -122,7 +122,7 @@ Popup {
                         anchors.verticalCenter: parent.verticalCenter
                         text: modelData
                         font.family: Theme.family
-                        font.pixelSize: dialog._px(15)
+                        font.pixelSize: dialog._px(Theme.fontBody)
                         color: index < dialog.step ? Theme.online
                              : index === dialog.step ? Theme.text
                              : Theme.text3
@@ -138,7 +138,7 @@ Popup {
             visible: dialog.detail !== ""
             text: dialog.detail
             font.family: Theme.family
-            font.pixelSize: dialog._px(13)
+            font.pixelSize: dialog._px(Theme.fontSmall)
             color: Theme.text3
         }
 

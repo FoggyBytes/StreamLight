@@ -128,10 +128,10 @@ FocusScope {
     // Re-asks every authorized host for its last session. Called by the shell when the client
     // returns to the host list: a session that just ended is the commonest reason to be here,
     // and the card would otherwise go on describing the one before it until the next restart.
-    function refreshLastSession() {
+    function refreshLastPlayed() {
         for (var i = 0; i < hostProbes.count; i++) {
             var p = hostProbes.itemAt(i)
-            if (p && p.refreshLastSession) p.refreshLastSession()
+            if (p && p.refreshLastPlayed) p.refreshLastPlayed()
         }
     }
 
@@ -232,6 +232,78 @@ FocusScope {
     function _wakeAskLockState() {
         if (wakeIndex < 0) return
         computerModel.requestLockState(wakeIndex)
+    }
+
+    /*
+     * ── Resume the last played game, straight from the card ──────────────────────────────
+     *
+     * The whole point of Last played: a stream from the host list without going through the
+     * library. It stands on the same machinery the PIN unlock already uses — an AppModel
+     * initialised on demand, one app found by name, createSessionForApp() and a StreamSegue —
+     * so nothing new had to be invented to launch from this screen.
+     *
+     * ⚠️ createSessionForApp() applies the cascade (global ← host profile ← per-game), so a
+     * game resumed from here runs at exactly the settings it would from the host page. Doing
+     * this by hand with StreamingPreferences::get() is the mistake that has already been made
+     * once on this screen — see the note on streamOverride in HostStage.
+     *
+     * ⚠️ When something is already streaming on the host we open the library instead of
+     * launching. That page owns the "quit the running game?" flow, with its dialog and its
+     * box art, and a second copy of it here would be a second thing to keep in step. The one
+     * case worth a shortcut — resuming the game that is already up — is the case where the
+     * host is not busy with anything else.
+     */
+    function resumeLastPlayed(h) {
+        if (!h || !h.online || !h.paired) return
+
+        var lp = computerModel.lastPlayedFor(h.index)
+        if (!lp || lp.name === undefined || lp.name === "") return
+
+        if (h.busy) {
+            appShell.showApps(h.index, computerModel, false,
+                              h.name, h.address, h.gpuModel, h.isTailscaleClone)
+            return
+        }
+
+        var comp = Qt.createComponent("StreamSegue.qml")
+        if (comp.status !== Component.Ready) {
+            console.warn("[resume] StreamSegue.qml not ready:", comp.errorString())
+            return
+        }
+
+        // showHidden = true, like the unlock flow: this is not the user browsing a library,
+        // it is us looking for one entry they have already chosen. A game they hid from the
+        // grid but streamed last is still the game to resume.
+        unlockAppModel.initialize(ComputerManager, h.index, true)
+        var appIndex = unlockAppModel.indexOfAppNamed(lp.name)
+        if (appIndex < 0) {
+            // The gate said it was there when the card was drawn. If it has gone since, the
+            // library is the honest place to land — it will show what the host does have.
+            appShell.showApps(h.index, computerModel, false,
+                              h.name, h.address, h.gpuModel, h.isTailscaleClone)
+            return
+        }
+
+        var session = unlockAppModel.createSessionForApp(appIndex)
+        if (!session) {
+            console.warn("[resume] could not create the session")
+            return
+        }
+
+        var segue = comp.createObject(stackView, {
+            "appName":  lp.name,
+            "boxArt":   (lp.cover !== undefined ? lp.cover : ""),
+            "session":  session,
+            // Not a resume in the protocol sense — that word means "a session is already up
+            // on the host and we are rejoining it", which h.busy just ruled out.
+            "isResume": false,
+            "onSessionEndedFn": function() {
+                if (homeScreen.appShell)
+                    homeScreen.appShell.noteStreamEnded(h.index, h.name)
+            }
+        })
+        if (Window.window) Window.window.markStreamLaunching()
+        stackView.push(segue)
     }
 
     function _wakeStartUnlock() {
@@ -457,8 +529,9 @@ FocusScope {
         onCancelled: homeScreen._endWake()
     }
 
-    // Only ever used to find the Desktop app for an unlock. Initialised on demand so a
-    // normal session never pays for it.
+    // Used to find one app by name and launch it: the Desktop for an unlock, and the game
+    // behind Last played for a resume. Initialised on demand so a normal session never pays
+    // for it, and re-initialised each time — which initialize() explicitly supports.
     AppModel {
         id: unlockAppModel
     }
@@ -734,11 +807,11 @@ FocusScope {
 
     function addComplete(success, detectedPortBlocking) {
         if (!success) {
-            errorDialog.text = qsTr("Unable to connect to the specified PC.")
+            errorDialog.text = qsTr("Could not connect to that host.")
             if (detectedPortBlocking) {
-                errorDialog.text += "\n\n" + qsTr("This PC's Internet connection is blocking StreamLight. Streaming over the Internet may not work while connected to this network.")
+                errorDialog.text += "\n\n" + qsTr("This network is blocking StreamLight. Streaming over the Internet may not work while you are on it.")
             } else {
-                errorDialog.helpText = qsTr("Click the Help button for possible solutions.")
+                errorDialog.helpText = qsTr("Open Help for possible solutions.")
             }
             errorDialog.open()
         }
@@ -830,10 +903,12 @@ FocusScope {
             // that never answers behaves exactly as before.
             property bool   stSessionActive: false
 
-            // The host's last finished session, as StreamTweak reports it. Empty map until it
-            // answers, {has:false} on a host that does not know the command — so the panel is
-            // absent rather than empty on anything that cannot fill it.
-            property var    stLastSession: ({})
+            // What this client last played on this host: name, artwork, hours, and how the
+            // last session went. Read off local disk by ComputerModel::lastPlayedFor() — no
+            // bridge, no host, no poll. An empty map means the card draws no block at all:
+            // nothing streamed here yet, the record was reset, or the game has left the
+            // host's app list and could not be launched anyway.
+            property var    stLastPlayed: ({})
 
             // This device's wired link to *this* host (0 when Wi-Fi/Tailscale/unknown) versus
             // the host's own. Both are needed before claiming a switch is coming: promising
@@ -918,38 +993,25 @@ FocusScope {
                     // action LinkMatcher will decline without a word.
                     matchLink:         stMatchLink,
                     sessionActive:     stSessionActive,
-                    lastSession:       stLastSession
+                    lastPlayed:        stLastPlayed
                 }
             }
 
-            // Re-asks for the last session. Called when the client comes back to the host list,
-            // because the usual reason for that is a session having just ended.
-            function refreshLastSession() {
-                if (stAuth === "authorized")
-                    homeScreen.computerModel.requestLastSession(index)
-            }
-
-            // ⚠️ Asking once on the way back to the host list is too early, and that is the
-            // whole reason this timer exists. Leaving the host page does not end the session
-            // on the host: the streaming server holds it open so it can be resumed, and
-            // StreamTweak only files it once its inactivity grace expires. So the one-shot
-            // above lands while the host still considers the session current, and LASTSESSION
-            // answers with the one BEFORE it — the panel then describes the wrong session
-            // until something else happens to ask again.
-            //
-            // Ten seconds, and only for the host on screen while Home is the page in front:
-            // one request per ten seconds total, none at all while streaming or browsing a
-            // library. The answer is cached host-side per cover, so a repeat that changes
-            // nothing costs almost nothing on either end.
-            Timer {
-                interval: 10000
-                repeat: true
-                running: probe.stEnabled && probe.isCurrent
-                         && model.online && model.paired
-                         && probe.stAuth === "authorized"
-                         && homeScreen.appShell !== null
-                         && homeScreen.appShell.currentPage === 0
-                onTriggered: probe.refreshLastSession()
+            /*
+             * Re-reads what this client last played on this host. Called when the list comes
+             * back into view, because the usual reason for that is a session having just
+             * ended.
+             *
+             * ⚠️ A local read, not a request. Until 5.6.1 this asked the host over the bridge
+             * and a ten-second poll had to sit here as well, because leaving the host page
+             * does not end the session on the host — the streaming server holds it open to be
+             * resumed and StreamTweak only files it once its grace expires, so the first
+             * answer described the session BEFORE the one that just ended. Nothing races any
+             * more: the record is written by Session::endPlaytime() before the UI is back,
+             * so one read at the right moment is always right. The poll went with it.
+             */
+            function refreshLastPlayed() {
+                probe.stLastPlayed = homeScreen.computerModel.lastPlayedFor(index)
             }
 
             function push() { if (isCurrent) homeScreen.currentHost = record() }
@@ -964,14 +1026,14 @@ FocusScope {
                 model.gpuModel, model.profileCount, model.activeProfileSlot,
                 model.activeProfileName, model.stageColorFrom, model.stageColorTo,
                 model.stageImage, model.stageSeed, stAuth, stSpeedRaw,
-                willSwitchLink, cantSwitchLink, stLastSession, stMatchLink,
+                willSwitchLink, cantSwitchLink, stLastPlayed, stMatchLink,
                 stLinkChanging, stSwitched, stAllowsLink, stSessionActive
             ]
             on_WatchChanged: push()
             // Refresh on arrival as well as on the timer: a host the user has just tabbed to
             // stopped being polled while it was off screen, so waiting out the ten seconds
             // would show them the panel as it was when they last looked at it.
-            onIsCurrentChanged: { push(); if (isCurrent) refreshLastSession() }
+            onIsCurrentChanged: { push(); if (isCurrent) refreshLastPlayed() }
             // Switched off after having been on: the probes stop by themselves, but the values
             // they left behind would not, so the access chip and every Options tile gated on
             // "authorized" would stay on screen describing an integration that is gone.
@@ -988,10 +1050,14 @@ FocusScope {
                 stSessionActive = false
                 stLinkChanging = false
                 stLocalMbps = 0
-                stLastSession = ({})
+                stLastPlayed = ({})
             }
 
             Component.onCompleted: {
+                // Before push(), so the first record already carries it and the card draws
+                // the block on its first frame instead of a beat later. It costs a settings
+                // read and reaches no network, unlike everything else in here.
+                refreshLastPlayed()
                 push()
                 // Access only. Asking for STATUS here used to make sense; it no longer can,
                 // because STATUS now requires an access state and there is none yet — the
@@ -1090,10 +1156,6 @@ FocusScope {
                         probe.stSpeedRaw = String(info.currentMbps)
                 }
 
-                function onLastSessionReceived(idx, s) {
-                    if (idx === index) probe.stLastSession = s
-                }
-
                 function onStreamTweakAuthReceived(idx, state, pin) {
                     if (idx !== index) return
                     probe.stAuth = state
@@ -1105,7 +1167,6 @@ FocusScope {
                         var link = homeScreen.computerModel.probeLocalLink(index)
                         probe.stLocalMbps = link.usable === true ? link.mbps : 0
                         homeScreen.computerModel.requestHostNetInfo(index)
-                        homeScreen.computerModel.requestLastSession(index)
                     }
                     if (state === "pending" && pin.length > 0)
                         homeScreen.stShowPin(index, model.name, model.address, pin)
@@ -1273,7 +1334,7 @@ FocusScope {
             Label {
                 text: "STREAMLIGHT"
                 font.family: Theme.family
-                font.pixelSize: 30
+                font.pixelSize: Theme.fontH1
                 font.weight: Font.Black
                 font.bold: true
                 font.letterSpacing: 3.6
@@ -1283,7 +1344,7 @@ FocusScope {
             Label {
                 text: qsTr("a Moonlight fork")
                 font.family: Theme.family
-                font.pixelSize: 13
+                font.pixelSize: Theme.fontSmall
                 color: Theme.text3
             }
         }
@@ -1399,7 +1460,7 @@ FocusScope {
                                                  : (tabItem._probe ? tabItem._probe.pName.toUpperCase() : "")
                             color: tabItem._selected ? Theme.text : Theme.text3
                             font.family: Theme.family
-                            font.pixelSize: 18
+                            font.pixelSize: Theme.fontTitle
                             font.weight: Font.DemiBold
                         }
                     }
@@ -1503,7 +1564,7 @@ FocusScope {
                                ? qsTr("Link back to %1").arg(homeScreen.linkRestoreSpeed)
                                : qsTr("Ready")
         hideAddresses:     StreamingPreferences.hideHostIps
-        lastSession:       (_h && _h.lastSession) ? _h.lastSession : ({})
+        lastPlayed:        (_h && _h.lastPlayed) ? _h.lastPlayed : ({})
 
         // The physical (LAN) address stays the headline even when we are reaching the host
         // over Tailscale — the 100.x one gets its own field rather than replacing it.
@@ -1568,6 +1629,10 @@ FocusScope {
             }
             appShell.showApps(h.index, computerModel, false,
                               h.name, h.address, h.gpuModel, h.isTailscaleClone)
+            break
+
+        case "continue":
+            resumeLastPlayed(h)
             break
 
         case "pair":
@@ -1781,7 +1846,7 @@ FocusScope {
         id: deletePcDialog
         property int pcIndex: -1
         property string pcName: ""
-        headerText: qsTr("DELETE PC")
+        headerText: qsTr("DELETE HOST")
         affirmativeIsDanger: true
         text: qsTr("Are you sure you want to remove '%1'?").arg(pcName)
         standardButtons: Dialog.Yes | Dialog.No
@@ -1804,14 +1869,14 @@ FocusScope {
 
         function connectionTestComplete(result, blockedPorts) {
             if (result === -1) {
-                text = qsTr("The network test could not be performed because none of StreamLight's connection testing servers were reachable from this PC. Check your Internet connection or try again later.")
+                text = qsTr("The test could not run — none of StreamLight's test servers were reachable. Check this device's Internet connection and try again.")
                 imageSrc = "qrc:/res/baseline-warning-24px.svg"
             } else if (result === 0) {
-                text = qsTr("This network does not appear to be blocking StreamLight. If you still have trouble connecting, check your PC's firewall settings.") + "\n\n" +
-                       qsTr("If you are trying to stream over the Internet, install the Moonlight Internet Hosting Tool on your gaming PC and run the included Internet Streaming Tester to check your gaming PC's Internet connection.")
+                text = qsTr("This network does not appear to be blocking StreamLight. If connecting still fails, check the host's firewall.") + "\n\n" +
+                       qsTr("To stream over the Internet, run the Moonlight Internet Hosting Tool on the host and use its Internet Streaming Tester.")
                 imageSrc = "qrc:/res/baseline-check_circle_outline-24px.svg"
             } else {
-                text = qsTr("Your PC's current network connection seems to be blocking StreamLight. Streaming over the Internet may not work while connected to this network.") + "\n\n" +
+                text = qsTr("This network is blocking StreamLight. Streaming over the Internet may not work while you are on it.") + "\n\n" +
                        qsTr("The following network ports were blocked:") + "\n"
                 text += blockedPorts
                 imageSrc = "qrc:/res/baseline-error_outline-24px.svg"
@@ -1822,7 +1887,7 @@ FocusScope {
 
     NavigableDialog {
         id: renamePcDialog
-        property string label: qsTr("Enter the new name for this PC")
+        property string label: qsTr("Enter the new name for this host")
         property string originalName
         property int pcIndex: -1
         standardButtons: Dialog.Ok | Dialog.Cancel
@@ -1842,9 +1907,9 @@ FocusScope {
             spacing: 22
 
             Label {
-                text: qsTr("RENAME PC")
+                text: qsTr("RENAME HOST")
                 font.family: Theme.family
-                font.pixelSize: 13
+                font.pixelSize: Theme.fontSmall
                 font.bold: true
                 font.letterSpacing: 1.6
                 color: Theme.text3
@@ -1854,7 +1919,7 @@ FocusScope {
             Label {
                 text: renamePcDialog.label
                 font.family: Theme.family
-                font.pixelSize: 18
+                font.pixelSize: Theme.fontTitle
                 color: Theme.text
                 wrapMode: Text.Wrap
                 horizontalAlignment: Text.AlignHCenter
@@ -1886,13 +1951,13 @@ FocusScope {
                 selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
                 selectedTextColor: Theme.onAccent
                 font.family: Theme.family
-                font.pixelSize: 18
+                font.pixelSize: Theme.fontTitle
                 font.bold: true
                 horizontalAlignment: TextInput.AlignHCenter
                 focus: true
 
                 background: Rectangle {
-                    color: "#0f0f0f"
+                    color: Theme.ground
                     radius: 8
                     border.color: editText.activeFocus ? Theme.accent : Theme.line
                     border.width: editText.activeFocus ? 2 : 1
@@ -2058,7 +2123,7 @@ FocusScope {
             Label {
                 text: qsTr("STREAMTWEAK ACCESS")
                 font.family: Theme.family
-                font.pixelSize: 13
+                font.pixelSize: Theme.fontSmall
                 font.bold: true
                 font.letterSpacing: 1.6
                 color: Theme.text3
@@ -2066,9 +2131,11 @@ FocusScope {
             Label {
                 width: stPinDialog.availableWidth
                 wrapMode: Text.Wrap
-                text: qsTr("StreamTweak on %1 (%2) is asking to allow this device. Check that the PIN below matches the one shown on the host, then click Allow there.\n\nStreaming works without this — authorizing only enables host metrics, NIC speed, store badges and session reports.").arg(homeScreen.stPinHostName).arg(homeScreen.stPinHostAddr)
+                // Two lines: what to do, then what it is for. The longer version said the same
+                // twice and explained the trust model on screen — that belongs in the changelog.
+                text: qsTr("Check this PIN matches the one on %1 (%2), then approve there.\n\nOptional: it enables host metrics, link speed, store badges and session reports.").arg(homeScreen.stPinHostName).arg(homeScreen.stPinHostAddr)
                 font.family: Theme.family
-                font.pixelSize: 14
+                font.pixelSize: Theme.fontSmall
                 color: Theme.text
             }
             // The one place the monospaced face survives: these four digits exist to be read
@@ -2086,7 +2153,7 @@ FocusScope {
             Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: 130; height: 42; radius: 8
-                color: stPinClose.containsMouse ? Theme.cardHigh : "#1a1a1a"
+                color: stPinClose.containsMouse ? Theme.cardHigh : Theme.card
                 border.color: Theme.line
                 border.width: 1
                 Label {
@@ -2094,7 +2161,7 @@ FocusScope {
                     text: qsTr("Dismiss")
                     color: Theme.text
                     font.family: Theme.family
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.fontSmall
                     font.bold: true
                 }
                 MouseArea {

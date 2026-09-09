@@ -34,6 +34,8 @@ Everything below is in the current release, whichever version first introduced i
 **🏠 Home and the host page**
 - **Home** is your hosts as tabs under the wordmark, the selected one filling the screen: name, state, addresses, stream settings and actions at once. **LT / RT** move between hosts, **LB / RB** between that host's profiles
 - **The host page** puts the library down the left at full height and the game in the spotlight beside it — cover, name, store, and the right verb (*Resume* if it is already running, *Play* if not)
+- **Last played** *(5.7.0+)* — the game you last streamed on that host fills the right of its card, with the hours behind it and how long ago you left it. **Play again** starts it without opening the library, and the same game sits first on the host page under *Last played*
+- **Play time** *(5.7.0+)* — how long you have streamed each game, beside the store on every row. Filed under the game's name, so it survives a reinstall, and resettable from the per-game panel
 - **Per-host backgrounds** — a colour you pick or a picture of your own, with the card's gradient derived from it
 - **Your accent colour** — five presets or any hex code. Status colours never follow it: online stays green, a pending link change amber, *Shutdown* red
 - **Time, date and battery** in the top right of every screen, in the clock and date format you read
@@ -68,7 +70,6 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Host link matching** *(8.1.0+)* — before each launch StreamLight measures the wired link that actually reaches that host, asks the host to come down to it, and starts the stream only once the host confirms. A host running faster than the client sends each frame as a burst the slower link cannot drain, and the packets that die first are the few carrying audio: the symptom is sound cutting out while the picture stays perfect. The client decides the speed because only the client knows its own connection; the host keeps the permission and the restore
 - **Seamless launch** *(8.1.0+, opt-in)* — with **Wait for the game to appear** on, the stream window stays hidden until the host reports the game is really on screen, so you watch the game's cover art instead of the host's desktop rearranging itself. **B** or **Esc** reveals the host at any moment
 - **Remote PIN unlock** *(8.1.0+)* — after a **Wake**, if the host comes up at its lock screen, a controller-navigable number pad takes its Windows PIN. The session carrying the PIN is never shown and never recorded on the host; wrong attempts stop at three, since Windows suspends the PIN after a few failures
-- **Host session report** *(8.1.0+)* — the host's last finished session on its card: grade, age, duration, RTT and peak, host frame latency, drop rate, and the covers of what was played
 - **Host metrics in the overlay** *(4.4.0+)* — GPU %, encoder %, GPU temperature, VRAM, CPU and network TX, hidden entirely when StreamTweak is unreachable
 - **Store badges** *(5.0.0+)* — which store the selected game comes from, its mark beside its name on the host page: Steam, Epic, GOG, Ubisoft, Xbox, Battle.net and EA App
 - **Session quality reporting** *(5.2.0+)* — FPS, drops, RTT, jitter, decode latency and bitrate sent every second; StreamTweak turns them into a grade and charts
@@ -78,22 +79,25 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 
-## ✨ What's New in 5.6.1 — Lights Off
+## ✨ What's New in 5.7.0 — Pick Up
 
-One fix, to the PIN pad that appears after waking a host. Client-side, works with any host, and nothing else behaves differently from 5.6.0.
+StreamLight now remembers what you played and for how long, so the last game is one button away from the host list. Client-side, works with any host — including a plain Sunshine one.
 
-- **The PIN pad no longer starts Hue Sync.** Unlocking a host after a wake-up opens a hidden session whose only job is to carry four digits to the logon screen — and the *Philips Hue* setting, global or from a host profile, was reading that as a stream starting. It now acts only on a session you actually watch
-
-## ✨ What's New in 5.6.0 — Half Rate
-
-A 60 FPS stream on a 120 Hz screen can be shown one frame every two refreshes — what NVIDIA Profile Inspector and Special-K were being used for. Client-side, works with any host, and with the switch off nothing behaves differently from 5.5.0.
-
-- **Fractional V-Sync.** A switch in *Settings → Video* holds each frame for a whole number of refreshes instead of presenting once per refresh. Off by default, and it needs V-Sync and *Frame pacing* on — with either off the row greys out and says which one
-- **Only where the numbers divide.** The screen has to run at an exact multiple of the stream's frame rate — and it is the *ratio* that matters, not the screen. At 60 FPS that means 120, 180 or 240 Hz; a **144 Hz** screen is 2.4× at 60 and does nothing, but 2× at **72 FPS**, which the Custom pill on the frame rate row will give you. The log says at the start of every stream whether it applied and what it decided on
-- **Overridable per host profile**, on the row directly under *Frame pacing*, since that and V-Sync are what decide whether it can act. A profile missing either greys the row and names the one to fix — and keeps the choice, which starts working the day that profile has both. Deliberately not a per-game override: its conditions live on the profile, so a per-game copy could hold a value it had no way to satisfy
-- **A *Presentation cadence* line for the overlay** — how many refreshes each frame was really held for, how deep the queue to the display is sitting, and how long presenting a frame blocked. It measures the same way with the switch off, so the two states can be compared on the same numbers
-- **Every on/off setting is now a pair of *Off / On* pills** instead of a switch — the control the host profile and per-game panels have always used, so a yes-or-no answer looks the same wherever it is asked. They also grow with the interface scale, which the switches did not: a switch is sized by the theme rather than by us, so on a handheld every row grew around a control that stayed desktop-sized
-- ⚠️ **This is not *Frame pacing → Hardware***, the setting 5.1.3 was the last to carry. That one also switched frame pacing off and left presentation as the only thing timing the stream, which is where the drifting delay of [issue #9](https://github.com/FoggyBytes/StreamLight/issues/9) came from. This one leaves frame pacing running and requires it
+- **Last played, on the host card.** A badge above the cover says how long you have put into that game and how long ago you left it; the artwork stands at the card's own height with its shadow, the title underneath. **Play again** sits below, on the same line as *Open*, *Profiles* and *Options* — **Right** from *Options* reaches it, or click it
+- **Last played, at the top of the host page.** The same game as the first row, under its own heading, with the cursor already on it: open a host, press **A**, and you are back where you left off. Everything else follows under *All apps* in the order it always had
+- **Play time per game.** How long you have streamed each one, beside the store on every row of the library, and hours plus session count in the spotlight. Kept per host, and filed under the game's *name* rather than the id the host hands out — so it survives uninstalling a game and installing it again. *Desktop* and *Steam Big Picture* never count
+- **A *Reset stats* button** at the foot of the per-game panel, which clears that game's hours and session count for that host — greyed out when there is nothing to clear, because a total nobody can correct is a total that is eventually wrong
+- **A game's title is never cut**, here or in the spotlight. It wraps to as many lines as it needs and shrinks to fit instead of ending in an ellipsis, so a name as long as *Metal Gear Solid 4: Guns of the Patriots – Master Collection Version* reads in full, last word included
+- **The cover sizes itself to the title** on the host card: biggest when the name fits on one line, standing back when it takes three, so the block always ends on the same edge
+- **Both screens present a game the same way** — cover, title, figures — because one component draws it on both, instead of two arrangements of the same idea drifting apart
+- **The focus is a colour that crosses over**, not one that switches: fill, border and label warm into the accent together, so walking a row of buttons reads as one light travelling along it
+- **The accent you pick now reaches everything.** The PIN pad that appears after waking a host was drawing its focus ring and its dots in the default cyan whatever you had chosen, because it named its own colours instead of reading yours
+- **One type scale, one palette.** Text sizes come from a single scale instead of twenty-one hand-picked values a pixel or two apart, and *Settings* is drawn in the same colours as everywhere else — it carried its own flat greys while the rest of the app uses cooler ones, so it read a shade warmer than the screen it opens over
+- **The chrome scales with the window.** The clock, the date, the battery and the button prompts along the bottom were fixed in place, which on a handheld made them the one part of the screen drawn smaller than everything around them
+- **Settings tabs wrap.** **LB** and **RB** carry on past either end, so *About* is one press from *Video* instead of nine
+- **Small grey text is readable.** Section headings, the captions under a game's figures and the muted half of a two-tone line all sat below the contrast the accessibility guidelines ask for. Disabled buttons look disabled now, too — they used to be drawn exactly like working ones
+- **Two fixes worth naming.** Coming back from a stream puts the cursor back on the game you just closed — it moves to the top of the library the moment the session ends, so a cursor left where it was pointed at whatever had slid into that place. And the library's section headings now scroll with their rows: *Last played* used to stay pinned above the list, so after a few titles the screen claimed the game at the top of the view was the last one played
+- ⚠️ **This replaces the host session report.** That panel described the *host's* last session — whatever had streamed, from whichever device — and needed an authorized StreamTweak to appear at all. This one describes what **you** played, from a record kept on this machine. The quality grade is not repeated here: StreamTweak's dashboard still calculates and shows it, and nothing was removed from the bridge
 
 *Older releases are in [changelog.txt](changelog.txt).*
 

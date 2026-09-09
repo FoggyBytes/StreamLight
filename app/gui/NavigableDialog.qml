@@ -1,7 +1,6 @@
 import Theme 1.0
 import QtQuick 2.0
 import QtQuick.Controls 2.5
-import QtQuick.Layouts 1.3
 
 Dialog {
     id: navDialog
@@ -25,8 +24,8 @@ Dialog {
     padding: 32
 
     background: Rectangle {
-        color: "#1a1a1a"
-        border.color: "#2a2a2a"
+        color: Theme.card
+        border.color: Theme.line
         border.width: 1
         radius: 12
     }
@@ -48,7 +47,7 @@ Dialog {
             readonly property bool isAffirmative: role === DialogButtonBox.AcceptRole
                                                   || role === DialogButtonBox.YesRole
             readonly property bool isDanger: isAffirmative && navDialog.affirmativeIsDanger
-            readonly property color accentBase:  isDanger ? "#ef4444"                            : Theme.accent
+            readonly property color accentBase:  isDanger ? Theme.danger                            : Theme.accent
             readonly property color accentHover: isDanger ? Qt.rgba(0.937, 0.267, 0.267, 0.20)   : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
             readonly property color accentIdle:  isDanger ? Qt.rgba(0.937, 0.267, 0.267, 0.12)   : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12)
 
@@ -67,17 +66,17 @@ Dialog {
                 // shown via text colour, so it no longer looks focused at rest.
                 color: btn.activeFocus ? btn.accentHover
                      : btn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
-                     :                   "#1f1f1f"
+                     :                   Theme.card
                 border.color: btn.activeFocus ? btn.accentBase
-                            : btn.hovered     ? "#3a3a3a"
-                            :                   "#2a2a2a"
+                            : btn.hovered     ? Theme.lineHigh
+                            :                   Theme.line
                 border.width: btn.activeFocus ? 2 : 1
             }
             contentItem: Label {
                 text: btn.text
-                color: btn.isAffirmative ? btn.accentBase : "#f0f0f0"
-                font.family: "DM Sans"
-                font.pixelSize: 15
+                color: btn.isAffirmative ? btn.accentBase : Theme.text
+                font.family: Theme.family
+                font.pixelSize: Theme.fontBody
                 font.bold: true
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter

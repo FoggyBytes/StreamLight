@@ -27,10 +27,10 @@ Popup {
     property string hostName: ""
 
     readonly property color _accent: Theme.accent
-    readonly property color _danger: "#ef4444"
+    readonly property color _danger: Theme.danger
     readonly property color _text:   Theme.text
     readonly property color _dim:    Theme.text2
-    readonly property color _line:   "#242424"
+    readonly property color _line:   Theme.line
     // ⚠️ These are measurements, so they scale like everything else in the dialog.
     // They used to be raw pixels while their contents were already scaled, which meant
     // the gap between a row and the control inside it shrank as the screen grew: the
@@ -387,19 +387,19 @@ Popup {
                 }
                 Label {
                     text: qsTr("Host profiles")
-                    font.family: "DM Sans"; font.pixelSize: dlg._px(18); font.bold: true
+                    font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontTitle); font.bold: true
                     color: dlg._text
                 }
                 Label {
                     text: dlg.hostName
-                    font.family: "DM Sans"; font.pixelSize: dlg._px(13)
+                    font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall)
                     color: dlg._dim; elide: Text.ElideRight
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
                 }
             }
         }
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.line }
 
         // ── Profile bar: tabs + Add ─────────────────────────────────────────
         Item {
@@ -409,7 +409,7 @@ Popup {
                 anchors.left: parent.left; anchors.leftMargin: dlg._padX
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("Profile")
-                font.family: "DM Sans"; font.pixelSize: dlg._px(15); font.bold: true
+                font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontBody); font.bold: true
                 color: dlg._text
             }
             Row {
@@ -451,7 +451,7 @@ Popup {
                             anchors.centerIn: parent
                             text: qsTr("Off")
                             color: offBtn.selected ? Theme.onAccent : Theme.text2
-                            font.family: "DM Sans"; font.pixelSize: dlg._px(13); font.bold: offBtn.selected
+                            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall); font.bold: offBtn.selected
                         }
                     }
                     MouseArea {
@@ -505,7 +505,7 @@ Popup {
                                     anchors.centerIn: parent
                                     text: modelData
                                     color: ptTile._active ? Theme.onAccent : Theme.text2
-                                    font.family: "DM Sans"; font.pixelSize: dlg._px(13); font.bold: ptTile._active
+                                    font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall); font.bold: ptTile._active
                                 }
                                 MouseArea {
                                     anchors.fill: parent
@@ -568,7 +568,7 @@ Popup {
                             anchors.centerIn: parent
                             text: qsTr("+ Add")
                             color: dlg._accent
-                            font.family: "DM Sans"; font.pixelSize: dlg._px(13); font.bold: true
+                            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall); font.bold: true
                         }
                     }
                     MouseArea {
@@ -602,7 +602,7 @@ Popup {
                 wrapMode: Text.WordWrap
                 lineHeight: 1.25
                 text: qsTr("No profiles yet.\nAdd one to override streaming settings for this host\n(e.g. a “docked” 4K profile and a “portable” 1080p profile).")
-                font.family: "DM Sans"; font.pixelSize: dlg._px(14)
+                font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall)
                 color: dlg._dim
             }
         }
@@ -619,7 +619,7 @@ Popup {
                 wrapMode: Text.WordWrap
                 lineHeight: 1.25
                 text: qsTr("No profile active — this host uses your global settings.\nSelect a profile above to activate and edit it.")
-                font.family: "DM Sans"; font.pixelSize: dlg._px(14)
+                font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall)
                 color: dlg._dim
             }
         }
@@ -721,7 +721,7 @@ Popup {
                         Label {
                             width: parent.width
                             text: row.label
-                            font.family: "DM Sans"; font.pixelSize: dlg._px(15); font.bold: true
+                            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontBody); font.bold: true
                             color: dlg._text
                             elide: Text.ElideRight
                         }
@@ -729,7 +729,7 @@ Popup {
                             width: parent.width
                             visible: row.detail.length > 0
                             text: row.detail
-                            font.family: "DM Sans"; font.pixelSize: dlg._px(12)
+                            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontCaption)
                             color: dlg._dim
                             wrapMode: Text.WordWrap
                         }
@@ -755,7 +755,7 @@ Popup {
                         anchors.left: parent.left; anchors.leftMargin: dlg._padX
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("Name")
-                        font.family: "DM Sans"; font.pixelSize: dlg._px(15); font.bold: true
+                        font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontBody); font.bold: true
                         color: dlg._text
                     }
                     TextField {
@@ -765,12 +765,12 @@ Popup {
                         width: dlg._px(320); height: dlg._px(38)
                         leftPadding: dlg._px(12); rightPadding: dlg._px(12)
                         maximumLength: dlg._maxNameLen
-                        font.family: "DM Sans"; font.pixelSize: dlg._px(14)
+                        font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall)
                         color: dlg._text
                         selectByMouse: true
                         background: Rectangle {
                             radius: dlg._px(9)
-                            color: "#101316"
+                            color: Theme.ground
                             border.color: nameField.activeFocus ? dlg._accent : Theme.line
                             border.width: nameField.activeFocus ? 2 : 1
                         }
@@ -854,7 +854,7 @@ Popup {
                         anchors.left: parent.left; anchors.leftMargin: dlg._padX
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("Bitrate (Mbps)")
-                        font.family: "DM Sans"; font.pixelSize: dlg._px(15); font.bold: true
+                        font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontBody); font.bold: true
                         color: dlg._text
                     }
 
@@ -935,7 +935,7 @@ Popup {
                                     y: bitrateSlider.topPadding + bitrateSlider.availableHeight / 2 - height / 2
                                     width: bitrateSlider.availableWidth
                                     height: dlg._px(3); radius: dlg._px(2)
-                                    color: "#f0f0f0"
+                                    color: Theme.text
                                 }
                                 handle: Rectangle {
                                     x: bitrateSlider.leftPadding + bitrateSlider.visualPosition * (bitrateSlider.availableWidth - width)
@@ -955,7 +955,7 @@ Popup {
                             width: dlg._px(78)
                             text: (bitrateSlider.value / 1000).toFixed(0) + qsTr(" Mbps")
                             color: dlg._accent
-                            font.family: "DM Sans"; font.pixelSize: dlg._px(13); font.bold: true
+                            font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall); font.bold: true
                             horizontalAlignment: Text.AlignRight
                         }
                     }
@@ -1113,7 +1113,7 @@ Popup {
             }
         }
 
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.line }
 
         // ── Footer: Remove (left) · Done + Reset to Global (right) ──────────
         Item {

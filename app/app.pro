@@ -191,6 +191,7 @@ SOURCES += \
     settings/inputhints.cpp \
     settings/streamingpreferences.cpp \
     settings/appsettings.cpp \
+    settings/playtime.cpp \
     settings/videooptions.cpp \
     settings/shortcutmanager.cpp \
     streaming/input/abstouch.cpp \
@@ -253,6 +254,7 @@ HEADERS += \
     settings/inputhints.h \
     settings/streamingpreferences.h \
     settings/appsettings.h \
+    settings/playtime.h \
     settings/videooptions.h \
     settings/shortcutmanager.h \
     streaming/input/input.h \
