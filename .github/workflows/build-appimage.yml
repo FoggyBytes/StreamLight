@@ -1,0 +1,203 @@
+---
+name: Build - Linux AppImage
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      ci_version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    env:
+      CI_VERSION: ${{ inputs.ci_version }}
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: 'recursive'
+          fetch-depth: 1
+
+      - name: Setup environment
+        run: |
+          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.4.313-jammy.list https://packages.lunarg.com/vulkan/1.4.313/lunarg-vulkan-1.4.313-jammy.list
+          sudo apt update
+          sudo apt install -y pkg-config autoconf automake libtool libssl-dev zip python3-pip nasm libgbm-dev libdrm-dev libfreetype-dev libasound2-dev libdbus-1-dev libegl1-mesa-dev libgl1-mesa-dev \
+            libgles2-mesa-dev libglu1-mesa-dev libibus-1.0-dev libpulse-dev libudev-dev libx11-dev libxcursor-dev libxext-dev libxi-dev libxinerama-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libxrandr-dev libxss-dev libxt-dev libxv-dev libxxf86vm-dev libxcb-dri3-dev libx11-xcb-dev libxfixes-dev \
+            libxtst-dev libxcb-cursor-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb-randr0-dev libxcb-render-util0-dev libxcb-shape0-dev \
+            libxcb-xinerama0-dev libxcb-xkb-dev wayland-protocols libopus-dev libvdpau-dev libgl-dev libpipewire-0.3-dev liburing-dev vulkan-sdk cmake ninja-build
+          sudo pip3 install meson aqtinstall==3.3.0
+          mkdir -p dep_root/{bin,include,lib}
+          echo "DEP_ROOT=$PWD/dep_root" >> "${GITHUB_ENV}"
+          echo "$PWD/dep_root/bin" >> "${GITHUB_PATH}"
+
+      # The QML layer uses QtQuick.Effects (MultiEffect), which needs Qt 6.5 or newer,
+      # so the distro Qt packages on the build image are not an option. We install the
+      # same Qt the Windows release is built with (see build-release.ps1).
+      - name: Install Qt
+        env:
+          QT_VERSION: 6.8.3
+        run: |
+          aqt install-qt linux desktop $QT_VERSION linux_gcc_64 -O "$PWD/Qt"
+          QT_ROOT_DIR="$PWD/Qt/$QT_VERSION/gcc_64"
+          echo "QT_ROOT_DIR=$QT_ROOT_DIR" >> "${GITHUB_ENV}"
+          echo "$QT_ROOT_DIR/bin" >> "${GITHUB_PATH}"
+          echo "LD_LIBRARY_PATH=$QT_ROOT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
+          echo "PKG_CONFIG_PATH=$QT_ROOT_DIR/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "${GITHUB_ENV}"
+          # build-appimage.sh calls qmake6 by name; older Qt builds only ship 'qmake'
+          if [ ! -x "$QT_ROOT_DIR/bin/qmake6" ]; then
+            ln -s "$QT_ROOT_DIR/bin/qmake" dep_root/bin/qmake6
+          fi
+          # Fail here rather than halfway through linuxdeployqt if the QML modules are missing
+          [ -d "$QT_ROOT_DIR/qml/QtQuick/Effects" ] || { echo "QtQuick.Effects missing from the Qt install"; exit 1; }
+          [ -d "$QT_ROOT_DIR/qml/QtQuick/Dialogs" ] || { echo "QtQuick.Dialogs missing from the Qt install"; exit 1; }
+          # QtSql comes along via QML LocalStorage, and the official Qt build ships SQL
+          # driver plugins for Mimer, MySQL, ODBC and PostgreSQL whose client libraries
+          # are not installed here. linuxdeployqt aborts on any plugin it cannot resolve,
+          # so drop the ones that do not load. SQLite, the one QML uses, stays.
+          for plugin in "$QT_ROOT_DIR"/plugins/sqldrivers/*.so; do
+            if ldd "$plugin" 2>/dev/null | grep -q "not found"; then
+              echo "Removing unusable SQL driver plugin: $(basename "$plugin")"
+              rm -f "$plugin"
+            fi
+          done
+
+      - name: Checkout SDL3
+        uses: actions/checkout@v5
+        with:
+          repository: libsdl-org/SDL
+          ref: release-3.4.8
+          path: deps/SDL
+
+      - name: Build SDL3
+        working-directory: deps/SDL
+        run: |
+          cmake -DSDL_KMSDRM=OFF -DSDL_TEST_LIBRARY=OFF -DSDL_INSTALL_DOCS=OFF -S . -B build
+          cmake --build build -j
+          sudo cmake --install build
+
+      - name: Checkout sdl2-compat
+        uses: actions/checkout@v5
+        with:
+          repository: libsdl-org/sdl2-compat
+          ref: release-2.32.68
+          path: deps/sdl2-compat
+
+      - name: Build sdl2-compat
+        working-directory: deps/sdl2-compat
+        run: |
+          cmake -DSDL2COMPAT_TESTS=OFF -S . -B build
+          cmake --build build -j
+          sudo cmake --install build
+          # sdl2-compat installs sdl2-compat.pc and declares 'Provides: sdl2'. That field
+          # is a pkgconf extension; the pkg-config 0.29.2 that Jammy ships ignores it, so
+          # `PKGCONFIG += sdl2` in app.pro would not resolve.
+          sudo ln -sf /usr/local/lib/pkgconfig/sdl2-compat.pc /usr/local/lib/pkgconfig/sdl2.pc
+          pkg-config --exists sdl2 || { echo "sdl2.pc still not resolvable"; exit 1; }
+
+      - name: Checkout SDL_ttf
+        uses: actions/checkout@v5
+        with:
+          repository: libsdl-org/SDL_ttf
+          ref: a883e490e30fb44a5336ea3dcb990c6982c5216f
+          path: deps/SDL_ttf
+          submodules: 'recursive'
+
+      - name: Build SDL_ttf
+        working-directory: deps/SDL_ttf
+        run: |
+          ./autogen.sh
+          ./configure
+          make -j$(nproc)
+          sudo make install
+
+      - name: Checkout libva
+        uses: actions/checkout@v5
+        with:
+          repository: intel/libva
+          ref: 2.23.0
+          path: deps/libva
+
+      - name: Build libva
+        working-directory: deps/libva
+        run: |
+          ./autogen.sh
+          ./configure --enable-x11
+          make -j$(nproc)
+          sudo make install
+
+      - name: Checkout libplacebo
+        uses: actions/checkout@v5
+        with:
+          repository: haasn/libplacebo
+          ref: v7.360.1
+          path: deps/libplacebo
+          submodules: 'recursive'
+
+      - name: Build libplacebo
+        working-directory: deps/libplacebo
+        run: |
+          meson setup build -Dvulkan=enabled -Dopengl=disabled -Ddemos=false
+          ninja -C build
+          sudo ninja install -C build
+
+      - name: Build dav1d
+        working-directory: deps
+        env:
+          DAV1D_VER: 1.5.3
+        run: |
+          git clone --branch $DAV1D_VER --depth 1 https://code.videolan.org/videolan/dav1d.git
+          pushd dav1d
+          meson setup build -Ddefault_library=static -Dbuildtype=release -Denable_tools=false -Denable_tests=false
+          ninja -C build
+          sudo ninja install -C build
+          popd
+
+      - name: Checkout FFmpeg
+        uses: actions/checkout@v5
+        with:
+          repository: FFmpeg/FFmpeg
+          ref: n8.1.1
+          path: deps/FFmpeg
+
+      - name: Build FFmpeg
+        working-directory: deps/FFmpeg
+        run: |
+          ./configure --enable-pic --disable-static --enable-shared --disable-all --disable-autodetect --enable-avcodec --enable-avformat --enable-swscale \
+            --enable-decoder=h264 --enable-decoder=hevc --enable-decoder=av1 \
+            --enable-vaapi --enable-hwaccel=h264_vaapi --enable-hwaccel=hevc_vaapi --enable-hwaccel=av1_vaapi \
+            --enable-vdpau --enable-hwaccel=h264_vdpau  --enable-hwaccel=hevc_vdpau --enable-hwaccel=av1_vdpau \
+            --enable-libdrm --enable-vulkan --enable-hwaccel=h264_vulkan --enable-hwaccel=hevc_vulkan --enable-hwaccel=av1_vulkan \
+            --enable-libdav1d --enable-decoder=libdav1d
+          make -j$(nproc)
+          sudo make install
+
+      - name: Install linuxdeployqt
+        working-directory: dep_root/bin
+        run: |
+          wget -O linuxdeployqt https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
+          chmod a+x linuxdeployqt
+
+      - name: Build Binaries
+        env:
+          # linuxdeployqt, and the appimagetool it downloads, are AppImages themselves.
+          # Rather than depend on the runner image shipping libfuse2, let them unpack.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          sudo ldconfig
+          scripts/build-appimage.sh
+
+      - name: Upload Binaries
+        uses: actions/upload-artifact@v6
+        with:
+          name: StreamLight-LinuxAppImage-${{ env.CI_VERSION }}
+          path: build/installer-release/StreamLight-${{ env.CI_VERSION }}-x86_64.AppImage
+          compression-level: 0
+          if-no-files-found: error

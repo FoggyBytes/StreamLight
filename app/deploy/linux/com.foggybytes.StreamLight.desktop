@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=StreamLight
+Comment=Gamepad-first client for game streaming with Sunshine, StreamTweak, and Apollo
+Exec=streamlight
+Icon=streamlight
+Terminal=false
+Type=Application
+Categories=Qt;Game;Network;RemoteAccess;
+Keywords=streamlight;streamtweak;moonlight;sunshine;remote play;streaming;

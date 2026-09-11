@@ -121,11 +121,21 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
 
 ## 📝 Installation
 
+### Windows
+
 Download the latest installer from the [Releases](https://github.com/FoggyBytes/StreamLight/releases) page and run it.
 
 Settings — paired hosts, video / audio / input preferences, client certificate — live under `HKCU\Software\FoggyBytes\StreamLight`, and box art is cached in `%LOCALAPPDATA%\FoggyBytes\StreamLight`. Upgrades from 5.4.0 onward keep everything.
 
 Up to 5.3.0 both lived under `Moonlight Game Streaming Project\Moonlight` — upstream Moonlight's own store, shared with it. 5.4.0 moved out of it and does not migrate anything, so the upgrade to 5.4.0 resets settings and pairing once. The old store is left untouched: an older StreamLight, or a Moonlight installation, still finds its data there.
+
+### Linux (AppImage)
+
+There is no Linux download on the Releases page yet. Every push builds an `x86_64` AppImage in GitHub Actions (*Build* → *Build - Linux AppImage*); the artifact is attached to the workflow run as `StreamLight-LinuxAppImage-<sha>`.
+
+To build one locally, run `scripts/build-appimage.sh` from the repository root. It needs `qmake6` (Qt 6.5 or newer — the UI uses `QtQuick.Effects`, which older Qt lacks; CI builds with 6.8.3, the same version as the Windows release) and `linuxdeployqt` in `PATH`, plus the build dependencies listed in [`.github/workflows/build-appimage.yml`](.github/workflows/build-appimage.yml). The AppImage lands in `build/installer-release/`.
+
+Settings and box art go to Qt's standard locations, `~/.config/FoggyBytes/` and `~/.cache/FoggyBytes/StreamLight`, rather than the registry paths used on Windows.
 
 ## 🙏 Support the Project
 [![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://paypal.me/foggypunk)

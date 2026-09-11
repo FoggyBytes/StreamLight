@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+	<id>com.foggybytes.StreamLight</id>
+	<metadata_license>CC0-1.0</metadata_license>
+	<project_license>GPL-3.0+</project_license>
+	<name>StreamLight</name>
+	<summary>Gamepad-first game streaming client with host companion integration</summary>
+
+	<description>
+		<p>StreamLight is a gamepad-first game streaming client for local network streaming, forked from Moonlight with enhanced host-side companion integration (StreamTweak).</p>
+		<p>Features include:</p>
+		<ul>
+			<li>Gamepad-first navigation and customizable hotkey shortcuts</li>
+			<li>Hardware accelerated video decoding with VAAPI, VDPAU, and Vulkan support</li>
+			<li>Integrated performance overlay and real-time stream settings management</li>
+			<li>Seamless host links, pairing, metrics, and Tailscale integration</li>
+			<li>7.1 surround sound and multi-controller support</li>
+		</ul>
+	</description>
+
+	<url type="homepage">https://github.com/FoggyBytes/StreamLight</url>
+	<url type="bugtracker">https://github.com/FoggyBytes/StreamLight/issues</url>
+	<url type="help">https://github.com/FoggyBytes/StreamLight#readme</url>
+	<url type="vcs-browser">https://github.com/FoggyBytes/StreamLight</url>
+	<developer id="com.foggybytes">
+		<name>FoggyBytes</name>
+	</developer>
+	<launchable type="desktop-id">com.foggybytes.StreamLight.desktop</launchable>
+	<provides>
+		<binary>streamlight</binary>
+	</provides>
+	<content_rating type="oars-1.1" />
+
+	<branding>
+		<color type="primary" scheme_preference="dark">#00E676</color>
+	</branding>
+
+	<releases>
+		<release version="5.7.0" date="2026-09-09">
+			<description>
+				<p>StreamLight release with gamepad-first UI overhaul, last played tracking, and companion features.</p>
+			</description>
+		</release>
+	</releases>
+</component>
