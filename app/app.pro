@@ -6,7 +6,7 @@ QT += core quick network quickcontrols2 svg quickdialogs2
 CONFIG += c++17
 
 unix:!macx {
-    TARGET = moonlight
+    TARGET = streamlight
 } else {
     # On macOS, this is the name displayed in the global menu bar
     TARGET = StreamLight
@@ -536,13 +536,13 @@ unix:!macx: {
 
     target.path = $$PREFIX/$$BINDIR/
 
-    desktop.files = deploy/linux/com.moonlight_stream.Moonlight.desktop
+    desktop.files = deploy/linux/com.foggybytes.StreamLight.desktop
     desktop.path = $$PREFIX/$$DATADIR/applications/
 
-    icons.files = res/moonlight.svg
-    icons.path = $$PREFIX/$$DATADIR/icons/hicolor/scalable/apps/
+    icons.files = res/streamlight.png
+    icons.path = $$PREFIX/$$DATADIR/icons/hicolor/512x512/apps/
 
-    appstream.files = deploy/linux/com.moonlight_stream.Moonlight.appdata.xml
+    appstream.files = deploy/linux/com.foggybytes.StreamLight.appdata.xml
     appstream.path = $$PREFIX/$$DATADIR/metainfo/
 
     INSTALLS += target desktop icons appstream
