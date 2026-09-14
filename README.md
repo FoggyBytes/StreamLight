@@ -54,6 +54,7 @@ Everything below is in the current release, whichever version first introduced i
 - **Per-game overrides** on top of the active profile, for the settings that vary by title
 - A setting that cannot act says so wherever you meet it — greyed, with the reason on the line beneath, in Settings, in the profile and in the per-game dialog alike
 - Every change is written to disk the moment you make it
+- **Update from the app** *(5.8.0+)* — *Settings → About* downloads a newer release when there is one and checks it against GitHub's checksum; *Install now* opens the installer, which reopens StreamLight when it finishes, after a single Windows permission prompt. A newer version is also announced at startup
 
 **🎯 Windows Xbox app integration**
 - Branded tile artwork in the Windows 11 Xbox app's "My apps" section, seeded during setup and re-applied automatically whenever the Xbox app overwrites it
@@ -79,25 +80,16 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 
-## ✨ What's New in 5.7.0 — Pick Up
+## ✨ What's New in 5.8.0 — Keep Up
 
-StreamLight now remembers what you played and for how long, so the last game is one button away from the host list. Client-side, works with any host — including a plain Sunshine one.
+StreamLight updates itself from *Settings*, *Play again* behaves like the rest of the host card and ends where a game started from the library ends, and waking a host now says how long each step is taking. Client-side, works with any host.
 
-- **Last played, on the host card.** A badge above the cover says how long you have put into that game and how long ago you left it; the artwork stands at the card's own height with its shadow, the title underneath. **Play again** sits below, on the same line as *Open*, *Profiles* and *Options* — **Right** from *Options* reaches it, or click it
-- **Last played, at the top of the host page.** The same game as the first row, under its own heading, with the cursor already on it: open a host, press **A**, and you are back where you left off. Everything else follows under *All apps* in the order it always had
-- **Play time per game.** How long you have streamed each one, beside the store on every row of the library, and hours plus session count in the spotlight. Kept per host, and filed under the game's *name* rather than the id the host hands out — so it survives uninstalling a game and installing it again. *Desktop* and *Steam Big Picture* never count
-- **A *Reset stats* button** at the foot of the per-game panel, which clears that game's hours and session count for that host — greyed out when there is nothing to clear, because a total nobody can correct is a total that is eventually wrong
-- **A game's title is never cut**, here or in the spotlight. It wraps to as many lines as it needs and shrinks to fit instead of ending in an ellipsis, so a name as long as *Metal Gear Solid 4: Guns of the Patriots – Master Collection Version* reads in full, last word included
-- **The cover sizes itself to the title** on the host card: biggest when the name fits on one line, standing back when it takes three, so the block always ends on the same edge
-- **Both screens present a game the same way** — cover, title, figures — because one component draws it on both, instead of two arrangements of the same idea drifting apart
-- **The focus is a colour that crosses over**, not one that switches: fill, border and label warm into the accent together, so walking a row of buttons reads as one light travelling along it
-- **The accent you pick now reaches everything.** The PIN pad that appears after waking a host was drawing its focus ring and its dots in the default cyan whatever you had chosen, because it named its own colours instead of reading yours
-- **One type scale, one palette.** Text sizes come from a single scale instead of twenty-one hand-picked values a pixel or two apart, and *Settings* is drawn in the same colours as everywhere else — it carried its own flat greys while the rest of the app uses cooler ones, so it read a shade warmer than the screen it opens over
-- **The chrome scales with the window.** The clock, the date, the battery and the button prompts along the bottom were fixed in place, which on a handheld made them the one part of the screen drawn smaller than everything around them
-- **Settings tabs wrap.** **LB** and **RB** carry on past either end, so *About* is one press from *Video* instead of nine
-- **Small grey text is readable.** Section headings, the captions under a game's figures and the muted half of a two-tone line all sat below the contrast the accessibility guidelines ask for. Disabled buttons look disabled now, too — they used to be drawn exactly like working ones
-- **Two fixes worth naming.** Coming back from a stream puts the cursor back on the game you just closed — it moves to the top of the library the moment the session ends, so a cursor left where it was pointed at whatever had slid into that place. And the library's section headings now scroll with their rows: *Last played* used to stay pinned above the list, so after a few titles the screen claimed the game at the top of the view was the last one played
-- ⚠️ **This replaces the host session report.** That panel described the *host's* last session — whatever had streamed, from whichever device — and needed an authorized StreamTweak to appear at all. This one describes what **you** played, from a record kept on this machine. The quality grade is not repeated here: StreamTweak's dashboard still calculates and shows it, and nothing was removed from the bridge
+- **Update now, in *Settings → About*.** It appears only when a newer release is out, downloads the installer and checks it against the checksum GitHub publishes; **Install now** then opens the installer, which reopens StreamLight when it finishes — never before you press it, and with the one Windows permission prompt any install into *Program Files* asks for. If something goes wrong it stays on screen and says what, and the same button retries. A newer version is also announced when the app starts, unless you tick *Don't remind me* for it. Versions before 5.8.0 cannot do this, so this one is installed by hand
+- **Play again greys out with the card.** It stayed lit and pressable while the link speed was changing — the one button that did not follow the host's state — and on an offline host it vanished instead of greying, leaving the game it names on screen with nothing to do about it
+- **A greyed button can no longer be pressed with the controller.** During a link speed change the mouse was blocked and the D-pad was not, so **A** on a dimmed *Open* started a stream into an adapter that was still renegotiating
+- **Play again ends on the host's page**, with that game at the top, instead of back on the host list — a session started from the card now ends exactly where one started from the library does. Coming back from there also asks whether to put the host's link back: that question is only ever raised on the way from a host's page to the host list, and a game launched from the card never made that trip
+- **Waking a host is timed, step by step.** The host appearing on the network and StreamTweak coming up each count up in tenths of a second while they are the one being waited on, and keep the figure once they are done — so a slow wake says which part was slow rather than only which part is still running. The first step is called *Wake signal sent* now, not *Magic packet sent*
+- **A wake that cannot be sent stops there** and says so, rather than waiting out the full two and a half minutes for a host that was never told anything. One that gives up leaves the dialog on screen with the step that ran out and how long it was waited on, where it used to close with nothing said
 
 *Older releases are in [changelog.txt](changelog.txt).*
 

@@ -9,6 +9,7 @@ import ComputerManager 1.0
 import SdlGamepadKeyNavigation 1.0
 import SystemProperties 1.0
 import ShortcutManager 1.0
+import AppUpdate 1.0
 
 // SettingsScreen — Xbox-style flat settings panel.
 // 6 tabs: Video, Audio, Input, Decoder, Network, Session.
@@ -187,24 +188,11 @@ FocusScope {
         : qsTr("StreamTweak is switched off for this host — turn it on in the StreamTweak tab.")
     readonly property bool _lockVsync:       activeProfileOverride && activeProfileOverride.vsync !== undefined
 
-    // Latest-release tags fetched once per Settings open from the GitHub API.
-    property string streamLightLatest: ""
-    property string streamTweakLatest: ""
-
-    function _fetchLatestTag(repo, callback) {
-        var xhr = new XMLHttpRequest()
-        xhr.open("GET", "https://api.github.com/repos/FoggyBytes/" + repo + "/releases/latest")
-        xhr.setRequestHeader("Accept", "application/vnd.github+json")
-        xhr.onreadystatechange = function() {
-            if (xhr.readyState !== XMLHttpRequest.DONE) return
-            if (xhr.status !== 200) { callback(""); return }
-            try {
-                var data = JSON.parse(xhr.responseText)
-                callback(data.tag_name || "")
-            } catch (e) { callback("") }
-        }
-        xhr.send()
-    }
+    // Latest-release tags, looked up once per Settings open. The lookup lives in AppUpdate
+    // (backend/appupdate.h), not here: the self-update needs the installer asset out of the
+    // same StreamLight response, and a QML copy of the request beside it would be two.
+    readonly property string streamLightLatest: AppUpdate.latestStreamLight
+    readonly property string streamTweakLatest: AppUpdate.latestStreamTweak
 
     function resetBitrateToDefault() {
         if (!bitrateSlider) return
@@ -259,8 +247,21 @@ FocusScope {
             case 6: if (perfOverlaySwitch)     perfOverlaySwitch.forceActiveFocus();     break
             case 7: if (glyphSetSelector)      glyphSetSelector.forceActiveFocus();      break
             case 8: if (stGithubBtn)           stGithubBtn.forceActiveFocus();           break
-            case 9: if (aboutSlGithubBtn)      aboutSlGithubBtn.forceActiveFocus();      break
+            // Update now first when there is one: it is the only thing on this tab that changes,
+            // and the startup prompt's Yes lands here to press it. A stray press only downloads
+            // — installing is a second, separate press.
+            case 9:
+                if (aboutSlUpdateBtn && aboutSlUpdateBtn.visible) aboutSlUpdateBtn.forceActiveFocus()
+                else if (aboutSlGithubBtn)                        aboutSlGithubBtn.forceActiveFocus()
+                break
         }
+    }
+
+    // Opened from the startup update prompt (AppShell). Focus follows through focusFirstControl,
+    // which the screen's own activation calls with the current tab — so setting the tab is all.
+    function showAbout() {
+        tabBar.currentIndex = 9
+        Qt.callLater(function() { focusFirstControl(9) })
     }
 
     // Re-focus on every activation (the Loader transfers focus AFTER ctor).
@@ -273,8 +274,7 @@ FocusScope {
     Component.onCompleted: {
         SdlGamepadKeyNavigation.setUiNavMode(true)
         Qt.callLater(function() { focusFirstControl(tabBar.currentIndex) })
-        _fetchLatestTag("StreamLight",  function(t) { settingsScreen.streamLightLatest  = t })
-        _fetchLatestTag("StreamTweak",  function(t) { settingsScreen.streamTweakLatest  = t })
+        AppUpdate.checkLatest()
         _refreshLocalLink()
     }
 
@@ -4961,9 +4961,11 @@ FocusScope {
                     radius: settingsScreen._px(8)
                     border.color: settingsScreen._border
                     border.width: 1
+                    id: aboutSlCard
                     implicitHeight: settingsScreen._px(76)
 
                     Row {
+                        id: aboutSlInfo
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
                         anchors.leftMargin: settingsScreen._px(18)
@@ -4985,24 +4987,75 @@ FocusScope {
                             font.pixelSize: settingsScreen._px(Theme.fontSmall)
                             color: Theme.accent
                         }
+                        // The byline gives way to the reason while an update has failed: the
+                        // button beside it only says "Retry", and this is where there is room.
+                        //
+                        // ⚠️ Capped at the room left before the buttons, and elided past it. The
+                        // two Rows are anchored to opposite edges and know nothing of each other,
+                        // and the update button makes the right one wider still — uncapped, a long
+                        // reason ran underneath them.
                         Label {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("by FoggyBytes")
+                            width: Math.max(0, Math.min(implicitWidth,
+                                       aboutSlCard.width - aboutSlInfo.anchors.leftMargin - x
+                                       - aboutSlActions.width - aboutSlActions.anchors.rightMargin
+                                       - settingsScreen._px(16)))
+                            elide: Text.ElideRight
+                            text: AppUpdate.state === AppUpdate.Failed
+                                  ? AppUpdate.failureReason
+                                  : qsTr("by FoggyBytes")
                             font.family: Theme.family
                             font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                            color: settingsScreen._textDim
+                            color: AppUpdate.state === AppUpdate.Failed
+                                   ? Theme.danger : settingsScreen._textDim
                         }
                     }
 
                     Row {
+                        id: aboutSlActions
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                         anchors.rightMargin: settingsScreen._px(16)
                         spacing: settingsScreen._px(10)
+                        // Only when a newer release exists. The rest of the flow lives on the same
+                        // button: a percentage while downloading, "Install now" once the installer
+                        // is verified, "Retry" after a failure. Installing is always this press,
+                        // never the download ending — see "Two presses" in backend/appupdate.h.
+                        //
+                        // ⚠️ Never `enabled: false` while busy, even though pressing it then does
+                        // nothing: a disabled item drops active focus, and the pad would be left
+                        // on nothing. The guard is in onTriggered instead.
+                        // AboutLinkButton with no url, not a MiniButton: the same shape, size and
+                        // type as the three links beside it (Marcello, 14/09 — the MiniButton read
+                        // as a different kind of control and sat shorter than its neighbours).
+                        AboutLinkButton {
+                            id: aboutSlUpdateBtn
+                            visible: AppUpdate.updateAvailable
+                            // Ready but held: installing quits the app, and something on Home — a
+                            // wake, a link change, the question that puts a host's link back —
+                            // would be left stranded. See AppUpdate::installBlocked.
+                            readonly property bool _held: AppUpdate.state === AppUpdate.Ready
+                                                       && AppUpdate.installBlocked
+                            readonly property bool _busy: AppUpdate.state === AppUpdate.Downloading
+                                                       || AppUpdate.state === AppUpdate.Launching
+                                                       || _held
+                            label: AppUpdate.state === AppUpdate.Downloading
+                                   ? (AppUpdate.progress >= 0
+                                      ? qsTr("Downloading %1%").arg(AppUpdate.progress)
+                                      : qsTr("Downloading…"))
+                                 : _held                                   ? qsTr("Finish on Home first")
+                                 : AppUpdate.state === AppUpdate.Ready     ? qsTr("Install now")
+                                 : AppUpdate.state === AppUpdate.Launching ? qsTr("Starting installer…")
+                                 : AppUpdate.state === AppUpdate.Failed    ? qsTr("Retry")
+                                 :                                           qsTr("Update now")
+                            onTriggered: if (!_busy) AppUpdate.updateNow()
+                            KeyNavigation.right: aboutSlGithubBtn
+                        }
                         AboutLinkButton {
                             id: aboutSlGithubBtn
                             label: qsTr("GitHub releases")
                             url:   "https://github.com/FoggyBytes/StreamLight/releases"
+                            KeyNavigation.left:  aboutSlUpdateBtn.visible ? aboutSlUpdateBtn : null
                             KeyNavigation.right: aboutSlGplBtn
                         }
                         AboutLinkButton {
@@ -5383,16 +5436,23 @@ FocusScope {
     }
 
     // Reusable styled link button — opens `url` in the system browser / shell.
+    // With no `url` it emits `triggered` instead, so an action (the self-update button) wears
+    // exactly the same shape as the links beside it rather than a look of its own.
     component AboutLinkButton: Button {
         id: btn
         property string label: ""
         property string url: ""
+        signal triggered()
+        function _activate() {
+            if (url.length > 0) Qt.openUrlExternally(url)
+            else                triggered()
+        }
         text: label
         activeFocusOnTab: true
-        onClicked: Qt.openUrlExternally(url)
-        Keys.onReturnPressed: Qt.openUrlExternally(url)
-        Keys.onEnterPressed:  Qt.openUrlExternally(url)
-        Keys.onSpacePressed:  Qt.openUrlExternally(url)
+        onClicked: _activate()
+        Keys.onReturnPressed: _activate()
+        Keys.onEnterPressed:  _activate()
+        Keys.onSpacePressed:  _activate()
 
         HoverState { id: hov }
 

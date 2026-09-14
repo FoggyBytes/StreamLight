@@ -52,6 +52,7 @@
 #include "gui/appmodel.h"
 #include "backend/computermanager.h"
 #include "backend/systemproperties.h"
+#include "backend/appupdate.h"
 #include "streaming/session.h"
 #include "settings/streamingpreferences.h"
 #include "settings/shortcutmanager.h"
@@ -996,6 +997,11 @@ int main(int argc, char *argv[])
                                                [](QQmlEngine*, QJSEngine*) -> QObject* {
                                                    return new SystemProperties();
                                                });
+    qmlRegisterSingletonType<AppUpdate>("AppUpdate", 1, 0,
+                                        "AppUpdate",
+                                        [](QQmlEngine*, QJSEngine*) -> QObject* {
+                                            return new AppUpdate();
+                                        });
     qmlRegisterSingletonType<SdlGamepadKeyNavigation>("SdlGamepadKeyNavigation", 1, 0,
                                                       "SdlGamepadKeyNavigation",
                                                       [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {

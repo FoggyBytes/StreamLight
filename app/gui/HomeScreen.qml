@@ -10,6 +10,7 @@ import ComputerManager 1.0
 import StreamingPreferences 1.0
 import SdlGamepadKeyNavigation 1.0
 import SystemProperties 1.0
+import AppUpdate 1.0
 
 /*
  * Home — the stage.
@@ -168,6 +169,54 @@ FocusScope {
     // so nothing here has to predict, remember, or investigate anything.
     property bool   _wakeWaitsForStreamTweak : true
 
+    /*
+     * ── How long each phase took ─────────────────────────────────────────────
+     *
+     * The dialog draws these; this is where they are measured. One start stamp, one settled
+     * duration and one outcome per phase, in three arrays indexed the way the dialog indexes
+     * its rows.
+     *
+     * ⚠️ Assigned whole, never written through — `wakeStepMs[1] = x` changes the array in
+     * place and QML has nothing to notice, so the row would go on showing the old figure
+     * until something unrelated happened to re-evaluate it.
+     */
+    property var  wakeStepStart  : [0, 0, 0]
+    property var  wakeStepMs     : [-1, -1, -1]
+    property var  wakeStepResult : ["", "", ""]
+    property real wakeNow        : 0
+
+    readonly property bool _wakeFailed: wakeStepResult.indexOf("fail") >= 0
+
+    function _wakeResetSteps() {
+        wakeStepStart  = [0, 0, 0]
+        wakeStepMs     = [-1, -1, -1]
+        wakeStepResult = ["", "", ""]
+        wakeNow        = Date.now()
+    }
+
+    function _wakeBeginStep(i) {
+        if (i < 0 || i > 2 || wakeStepStart[i] > 0) return
+        var a = wakeStepStart.slice()
+        a[i] = Date.now()
+        wakeStepStart = a
+        wakeNow = a[i]
+    }
+
+    // Settles one phase and opens the next. Chaining the two here is what guarantees a phase
+    // is never timed from zero: whatever ends a step is the only thing that knows the next
+    // one has begun, and there is no other moment at which to say so.
+    function _wakeEndStep(i, ok) {
+        if (i < 0 || i > 2 || wakeStepMs[i] >= 0) return
+        _wakeBeginStep(i)
+        var d = wakeStepMs.slice()
+        d[i] = Math.max(0, Date.now() - wakeStepStart[i])
+        wakeStepMs = d
+        var r = wakeStepResult.slice()
+        r[i] = ok ? "ok" : "fail"
+        wakeStepResult = r
+        if (ok && i < 2) _wakeBeginStep(i + 1)
+    }
+
     function startWake(idx, hostName) {
         wakeIndex    = idx
         wakeHostName = hostName
@@ -179,10 +228,32 @@ FocusScope {
         appListWaitTimer.tries = 0
         appListWaitTimer.stop()
 
+        // Started before the call, not after: wakeComputer() hands the send to a thread pool
+        // and returns, so the only honest start for "how long did the packet take" is the
+        // instant we asked for it.
+        _wakeResetSteps()
+        _wakeBeginStep(0)
         computerModel.wakeComputer(idx)
         wakeDialog.open()
         wakeWaitTimer.elapsed = 0
         wakeWaitTimer.restart()
+    }
+
+    // Drives the counter on whichever row is running. Its own timer rather than a ride on
+    // wakeWaitTimer's 1 Hz tick: that one stops the moment StreamTweak answers, and it also
+    // returns early on a host probe that is not there yet — which would freeze the clock on
+    // exactly the screen whose whole point is that it is still moving.
+    Timer {
+        id: wakeClock
+        // 100 ms because the rows show tenths of a second: at 200 the figure skipped every
+        // other digit.
+        interval: 100
+        repeat: true
+        // Nothing is being timed once a step has failed — the flow has stopped and every row
+        // is showing a settled figure — so the clock stops with it rather than writing a
+        // property ten times a second that nothing reads.
+        running: homeScreen.wakeActive && !homeScreen._wakeFailed
+        onTriggered: homeScreen.wakeNow = Date.now()
     }
 
     // The host that just came all the way through, so its card can say so. Transient: on a
@@ -297,9 +368,30 @@ FocusScope {
             // Not a resume in the protocol sense — that word means "a session is already up
             // on the host and we are rejoining it", which h.busy just ruled out.
             "isResume": false,
+            /*
+             * ⚠️ This does NOT come back to Home, and the difference is not a preference.
+             *
+             * A session launched from here leaves `AppShell.currentPage` at 0 for its whole
+             * length — the segue is pushed on the stack ABOVE the shell — so popping it used
+             * to reveal the host list, one screen further out than the user had got to. The
+             * host's page is where the evening actually is, with the game just played already
+             * at row 0: the play-time record is written in the session's own teardown
+             * (Session::endPlaytime), which runs before this callback, so the model sorts it
+             * there on its own and there is no cursor to place by hand.
+             *
+             * It is also the only thing that can put the "shall I put the host's link back?"
+             * question back on the table. That prompt is armed by the trip host page → Home
+             * and nothing else (AppShell._prevPage), and a resume launched from Home never
+             * made that trip, so the question was silently unaskable for the one flow most
+             * likely to have switched the link. The same call the Open button makes settles
+             * both, in the right order: the page changes before the segue pops.
+             */
             "onSessionEndedFn": function() {
-                if (homeScreen.appShell)
-                    homeScreen.appShell.noteStreamEnded(h.index, h.name)
+                if (!homeScreen.appShell) return
+                homeScreen.appShell.noteStreamEnded(h.index, h.name)
+                homeScreen.appShell.showApps(h.index, computerModel, false,
+                                             h.name, h.address, h.gpuModel,
+                                             h.isTailscaleClone)
             }
         })
         if (Window.window) Window.window.markStreamLaunching()
@@ -450,17 +542,28 @@ FocusScope {
             // The streaming server answering is not StreamTweak answering — it is up long
             // before, which is why the wait continues past this point.
             if (!probe.pOnline) {
-                homeScreen.wakeStep = 1
                 onlineFor = 0
                 if (elapsed > 150) {
                     stop()
                     console.warn("[unlock] the host never came online — giving up")
-                    homeScreen._endWake()
+                    // ⚠️ The dialog stays up, where it used to vanish. Which of the three
+                    // steps gave out, and how long it was waited on, is the whole of what
+                    // there is to learn from a wake that failed — and closing the box was
+                    // throwing it away at the one moment it mattered. Close is on the button.
+                    homeScreen._wakeEndStep(1, false)
+                    homeScreen.wakeDetail = qsTr("The host never came online")
                 }
                 return
             }
 
-            if (homeScreen.wakeStep < 2) homeScreen.wakeStep = 2
+            if (homeScreen.wakeStep < 2) {
+                // Both, and in this order: the packet step may still be open if its result
+                // never came back, and _wakeEndStep chains each step's end into the next
+                // one's start, so timing them is the same act as marking them done.
+                homeScreen._wakeEndStep(0, true)
+                homeScreen._wakeEndStep(1, true)
+                homeScreen.wakeStep = 2
+            }
 
             // The integration is off for this host: the host answering IS the whole wake.
             // Straight to the end rather than through _wakeMatchLink(), which would only ask
@@ -484,6 +587,10 @@ FocusScope {
                 stop()
                 console.warn("[unlock] StreamTweak never answered in " + cap
                              + "s of the host being online — carrying on without the pad")
+                // Recorded as the failure it is, even though the flow carries on: this row
+                // is the one that did not happen. The dialog closes on the next line, so it
+                // is written for the log and for the instant it is on screen.
+                homeScreen._wakeEndStep(2, false)
                 homeScreen._wakeMatchLink()
                 return
             }
@@ -498,6 +605,27 @@ FocusScope {
     Connections {
         target: computerModel
 
+        /*
+         * The packet is away — or never left. Until 5.7.1 nobody asked: wakeComputer()
+         * dropped the answer on the floor, so a host with no MAC address on record produced
+         * a dialog that spun for two and a half minutes and then closed with nothing said.
+         *
+         * ⚠️ "sent" is about this machine and nothing else. The host has not had time to
+         * hear anything, so this can only ever close the FIRST row.
+         */
+        function onWakeCompleted(index, sent) {
+            if (!homeScreen.wakeActive || index !== homeScreen.wakeIndex) return
+            homeScreen._wakeEndStep(0, sent)
+            if (!sent) {
+                // Nothing is coming: the two rows below this one are waiting on a host that
+                // was never told to wake. Stop the wait and leave the dialog up saying so.
+                wakeWaitTimer.stop()
+                homeScreen.wakeDetail = qsTr("Could not send the wake signal")
+                return
+            }
+            if (homeScreen.wakeStep < 1) homeScreen.wakeStep = 1
+        }
+
         function onLockStateReceived(index, supported, locked) {
             if (!homeScreen.wakeActive || homeScreen.wakeUnlocking) return
             if (index !== homeScreen.wakeIndex) return
@@ -509,6 +637,9 @@ FocusScope {
 
             console.log("[unlock] LOCKSTATE answered: locked=" + locked)
             wakeWaitTimer.stop()
+            // StreamTweak is up: that is what this row was waiting for, whichever way the
+            // answer goes. The pad and the link match are what happens next, not part of it.
+            homeScreen._wakeEndStep(2, true)
             if (locked) homeScreen._wakeStartUnlock()
             else        homeScreen._wakeMatchLink()
         }
@@ -526,6 +657,10 @@ FocusScope {
         step: homeScreen.wakeStep
         detail: homeScreen.wakeDetail
         waitForStreamTweak: homeScreen._wakeWaitsForStreamTweak
+        stepStart:  homeScreen.wakeStepStart
+        stepMs:     homeScreen.wakeStepMs
+        stepResult: homeScreen.wakeStepResult
+        nowMs:      homeScreen.wakeNow
         onCancelled: homeScreen._endWake()
     }
 
@@ -571,6 +706,28 @@ FocusScope {
     property int    linkAskHostIndex: -1
     property string linkAskHostName: ""
     property bool   linkAskProbing: false
+
+    // ── Holding the self-update's Install now ─────────────────────────────────
+    // Installing quits the app, and everything below is state a quit would strand: a wake
+    // whose last step is a link match (wakeActive stays true through it, after the dialog has
+    // closed), a link being put back or changing, and the question above still to be asked —
+    // the host holds the streaming speed until asked, so quitting past the question leaves it
+    // there. Settings can be reached while any of these is under way, which is why it is
+    // decided here, where the state lives, and not assumed away. See AppUpdate::installBlocked.
+    //
+    // ⚠️ The pending question only clears on the trip that asks it — host page to host list.
+    // Settings returns to the page it was opened from, so the ordinary path gets there; a jump
+    // straight to Home would leave it pending until the app restarts, since it is not persisted.
+    Binding {
+        target: AppUpdate
+        property: "installBlocked"
+        value: homeScreen.wakeActive
+               || homeScreen.linkRestoreActive
+               || homeScreen.linkAskHostIndex >= 0
+               || homeScreen.linkAskProbing
+               || linkRestoreDialog.opened
+               || (!!homeScreen.currentHost && homeScreen.currentHost.linkChanging === true)
+    }
 
     function noteStreamEnded(idx, hostName) {
         if (idx < 0) return

@@ -221,6 +221,7 @@ SOURCES += \
     streaming/video/overlaymanager.cpp \
     streaming/video/streamsettingsoverlay.cpp \
     backend/systemproperties.cpp \
+    backend/appupdate.cpp \
     wm.cpp
 
 HEADERS += \
@@ -279,7 +280,8 @@ HEADERS += \
     gui/sdlgamepadkeynavigation.h \
     streaming/video/overlaymanager.h \
     streaming/video/streamsettingsoverlay.h \
-    backend/systemproperties.h
+    backend/systemproperties.h \
+    backend/appupdate.h
 
 # Platform-specific renderers and decoders
 ffmpeg {
@@ -586,13 +588,16 @@ VERSION = "$$cat(version.txt)"
 DEFINES += VERSION_STR=\\\"$$cat(version.txt)\\\"
 
 # ⚠️ VERSION_STR arrives as a -D, which jom cannot see change: after bumping
-# version.txt, delete release\main.obj and release\systemproperties.obj (or
-# clean-build), or the app keeps printing the old number out of stale objects.
-# The exe's FileVersion updates either way, so it is not a valid check — read
-# the string out of systemproperties.obj instead.
+# version.txt, delete release\main.obj, release\systemproperties.obj and
+# release\appupdate.obj (or clean-build), or the app keeps printing the old
+# number out of stale objects. The exe's FileVersion updates either way, so it
+# is not a valid check — read the string out of systemproperties.obj instead.
 #
-# Those two are the whole list: main.cpp and backend/systemproperties.cpp are
-# the only files that use VERSION_STR. This comment also named
+# Those three are the whole list: main.cpp, backend/systemproperties.cpp and
+# backend/appupdate.cpp are the only compiled files that use VERSION_STR. A
+# stale appupdate.obj is the quieter failure of the three: the version shown is
+# right, while the self-update compares against the old one and offers (or
+# hides) the wrong update. This comment also named
 # release\autoupdatechecker.obj until 07/09/2026, and that object cannot exist —
 # backend/autoupdatechecker.cpp is not in SOURCES, does not appear in the
 # generated Makefile, and nothing includes its header. The file is in the tree

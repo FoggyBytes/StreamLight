@@ -336,14 +336,25 @@ Item {
     // on the same index line rather than making it a zone of its own is what lets Right walk
     // into it and Left walk back out with no new key handling: it sits to the right of the
     // buttons, which is what Right already means here.
-    readonly property bool _playAgainReachable:
-        _hasLastPlayed && online && paired && !statusUnknown
+    readonly property bool _playAgainReachable: _hasLastPlayed
     readonly property int _maxActionIndex: actions.length - (_playAgainReachable ? 0 : 1)
+
+    /*
+     * Shown-and-greyed rather than taken away, which is what the rest of the card does: an
+     * unreachable host still shows "Open". The panel this button belongs to — the cover, the
+     * title, the figures — stays drawn when the host goes offline, so removing only the
+     * button left everything describing the game on screen and nothing to do about it.
+     *
+     * `linkChanging` is in here for the same reason it is on the action row: launching into a
+     * link that is still coming back up is the failure the whole feature exists to avoid.
+     */
+    readonly property bool _playAgainEnabled:
+        _playAgainReachable && online && paired && !statusUnknown && !linkChanging
 
     // ⚠️ On the LIMIT, not on `actions`. The focus can be sitting on Play again when the
     // button goes away without the button row changing at all — the record is reset from the
-    // per-game panel, or the host drops offline — and clamping only on actionsChanged left
-    // the focus on something invisible, so no button on the card looked focused at all.
+    // per-game panel — and clamping only on actionsChanged left the focus on something
+    // invisible, so no button on the card looked focused at all.
     on_MaxActionIndexChanged: if (actionIndex > _maxActionIndex)
                                   actionIndex = Math.max(0, _maxActionIndex)
     onActionsChanged: if (actionIndex > _maxActionIndex) actionIndex = Math.max(0, _maxActionIndex)
@@ -361,8 +372,17 @@ Item {
     // during navigation: an unreachable host still shows "Open", greyed, which says more
     // than a row that quietly loses a button.
     function activateFocused() {
+        /*
+         * ⚠️ The link gate lives HERE, not on the action row, and that is the whole reason
+         * this line exists. `enabled: false` up there stops the mouse and nothing else, so
+         * the D-pad went on firing Open into an adapter that was still renegotiating — the
+         * buttons were grey, dead to the click, and a press of A launched anyway.
+         */
+        if (linkChanging) return
+
         // Play again, one past the buttons.
         if (_playAgainReachable && actionIndex === actions.length) {
+            if (!_playAgainEnabled) return
             stage.activated("continue")
             return
         }
@@ -1010,6 +1030,17 @@ Item {
             height: stage._px(58)
             width: playAgainRow.implicitWidth + stage._px(54)
             radius: stage._px(10)
+
+            // The same pair the action row carries, on the same terms and with the same
+            // fade — it is one row of controls that happens to span both halves of the card,
+            // so it has to dim as one. Written here rather than inherited because this button
+            // is deliberately NOT inside that Row (see the note above).
+            opacity: stage._playAgainEnabled ? 1.0 : 0.4
+            enabled: stage._playAgainEnabled
+            Behavior on opacity {
+                enabled: !Theme.reduceAnimations
+                NumberAnimation { duration: 160 }
+            }
 
             color: _lit ? Theme.accent : "#14ffffff"
             border.width: _focused ? 2 : 1

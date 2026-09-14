@@ -255,6 +255,11 @@ public:
 signals:
     void pairingCompleted(QVariant error);
     void connectionTestCompleted(int result, QString blockedPorts);
+    /**
+     * The magic packet is away (or could not be sent at all — no MAC on record, every
+     * send refused). Says nothing about the host: it has not had time to hear it yet.
+     */
+    void wakeCompleted(int computerIndex, bool sent);
     void streamTweakStatusReceived(int computerIndex, QString status);
     void streamTweakAuthReceived(int computerIndex, QString state, QString pin);
 

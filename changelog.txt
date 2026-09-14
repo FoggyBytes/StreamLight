@@ -5,6 +5,36 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 ------------------------------------
+Version 5.8.0 - Keep Up (14/09/2026)
+------------------------------------
+
+No StreamTweak update required — everything in 5.8.0 is client-side and works with any host. StreamLight can now update itself from Settings, Play again behaves like the rest of the host card and ends where a game started from the library ends, and waking a host shows how long each step is taking.
+
+✨ NEW FEATURES:
+• Update now in Settings → About — shown only when a newer release is out, it downloads the installer and checks it against the checksum GitHub publishes for it, then Install now opens the installer, which reopens StreamLight when it finishes. Nothing is installed until you press it, and Windows asks for permission once, as for any install into Program Files
+• A newer version is announced when StreamLight starts — Yes takes you to Settings → About, No asks again next time, and Don't remind me about this version keeps it quiet until the one after
+• A failed update stays on screen and says why — a failed download, a checksum that does not match or a release with no installer — and the same button retries it
+
+✨ IMPROVEMENTS:
+• A wake is timed step by step — the host appearing on the network and StreamTweak coming up each count up in tenths of a second while they are the one being waited on and keep the figure once they are done, so a slow wake says which part was slow rather than only which part is still running
+• A wake that could not be sent stops there and says so, instead of waiting out the full two and a half minutes for a host that was never told anything
+• A wake that gives up leaves the dialog on screen with the step that ran out and how long it was waited on, where it used to close with nothing said
+
+🎨 UI:
+• The first step of a wake reads Wake signal sent rather than Magic packet sent
+• The steps of a wake sit centred in the dialog, like its title and button
+
+🐛 FIXES:
+• Play again follows the host's state like every other button on the card — it greys out while the link speed is changing, where it stayed lit and could be pressed, and on an offline host it stays greyed on the card instead of disappearing from under the game it names
+• A greyed button can no longer be triggered with the controller — during a link speed change the mouse was blocked and the D-pad was not, so A on a dimmed Open started a stream into an adapter that was still renegotiating
+• Stopping a game started with Play again returns to the host's page with that game at the top, not to the host list, so a session started from the card ends where one started from the library does
+• Coming back from there asks whether to put the host's link back — that question is only ever raised on the way from a host's page to the host list, and a game launched from the card never made that trip, so a link left at streaming speed went unmentioned
+• An adaptive trigger effect from the host is checked against the controller list like every other controller command — the check let through one controller number past the end of the list
+
+⚠️ COMPATIBILITY:
+• Updating from the app starts with this version — anything older cannot update itself, so 5.8.0 is installed by hand from the releases page
+
+------------------------------------
 Version 5.7.0 - Pick Up (09/09/2026)
 ------------------------------------
 

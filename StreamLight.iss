@@ -1,4 +1,4 @@
-; StreamLight 5.7.0 — Moonlight fork with StreamTweak integration.
+; StreamLight 5.8.0 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
@@ -11,7 +11,7 @@
 ; Reading version.txt from here was considered and left alone: that file carries a UTF-8
 ; BOM and no trailing newline, so an ISPP FileRead would have to skip three bytes by
 ; position, which is a more fragile thing than one line to remember at release time.
-#define AppVersion "5.7.0"
+#define AppVersion "5.8.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -112,6 +112,10 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: deskto
 Filename: "{app}\{#AppExeName}"; Parameters: "--register-xbox-tile"; \
     Tasks: xboxtile; \
     Flags: runhidden waituntilterminated runasoriginaluser
+; This entry is also how the in-app update (app/backend/appupdate.cpp) reopens the app: the
+; update runs this setup visibly, with no switches, so its last page carries this box. There
+; used to be a second, silent-only entry gated on a /SELFUPDATE switch; it went when the update
+; stopped running Setup /VERYSILENT (14/09/2026).
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; \
     Flags: nowait postinstall skipifsilent
 

@@ -228,26 +228,45 @@ void ComputerModel::deleteComputer(int computerIndex)
     endRemoveRows();
 }
 
-class DeferredWakeHostTask : public QRunnable
+/*
+ * ⚠️ The result of wake() used to go straight in the bin, and the wake dialog paid for it.
+ *
+ * NvComputer::wake() already answers a real question — did at least one datagram leave this
+ * machine? — and it can say no for reasons the user can act on: no MAC address stored for
+ * this host, every send refused. It is also not instant: a host saved by NAME goes through a
+ * blocking QHostInfo::fromName() in the middle of the address sweep. With the answer thrown
+ * away, a host with no MAC sat under a spinner for the full two-and-a-half minute give-up.
+ *
+ * Reported the same way the connection test does it — QObject + queued signal back to the
+ * GUI thread — because run() is on a thread-pool thread and nothing here may touch the UI.
+ */
+class DeferredWakeHostTask : public QObject, public QRunnable
 {
+    Q_OBJECT
 public:
-    DeferredWakeHostTask(NvComputer* computer)
-        : m_Computer(computer) {}
+    DeferredWakeHostTask(NvComputer* computer, int computerIndex)
+        : m_Computer(computer), m_ComputerIndex(computerIndex) {}
 
     void run()
     {
-        m_Computer->wake();
+        emit wakeCompleted(m_ComputerIndex, m_Computer->wake());
     }
+
+signals:
+    void wakeCompleted(int computerIndex, bool sent);
 
 private:
     NvComputer* m_Computer;
+    int m_ComputerIndex;
 };
 
 void ComputerModel::wakeComputer(int computerIndex)
 {
     Q_ASSERT(computerIndex < m_Computers.count());
 
-    DeferredWakeHostTask* wakeTask = new DeferredWakeHostTask(m_Computers[computerIndex]);
+    DeferredWakeHostTask* wakeTask = new DeferredWakeHostTask(m_Computers[computerIndex], computerIndex);
+    QObject::connect(wakeTask, &DeferredWakeHostTask::wakeCompleted,
+                     this, &ComputerModel::wakeCompleted);
     QThreadPool::globalInstance()->start(wakeTask);
 }
 
