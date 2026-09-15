@@ -84,6 +84,35 @@ Uint32 StreamUtils::getPlatformWindowFlags()
 #endif
 }
 
+SDL_Window* StreamUtils::createTestWindow()
+{
+    SDL_Window* testWindow;
+
+    // Stop text input before creating the test window to avoid sdl2-compat
+    // starting text input on the new window. This might trigger the IME to
+    // be displayed.
+    SDL_StopTextInput();
+
+    // NB: upstream also adds SDL_WINDOW_FULLSCREEN_DESKTOP here under KMSDRM (Linux
+    // Vulkan probing). Not carried: that video driver never exists on Windows.
+
+    // Try to add the platform-specific flags first and fall back if that fails
+    testWindow = SDL_CreateWindow("", 0, 0, 1280, 720,
+                                  SDL_WINDOW_HIDDEN | StreamUtils::getPlatformWindowFlags());
+    if (!testWindow) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Failed to create test window with platform flags: %s",
+                    SDL_GetError());
+
+        testWindow = SDL_CreateWindow("", 0, 0, 1280, 720, SDL_WINDOW_HIDDEN);
+        if (!testWindow) {
+            return nullptr;
+        }
+    }
+
+    return testWindow;
+}
+
 void StreamUtils::scaleSourceToDestinationSurface(SDL_Rect* src, SDL_Rect* dst)
 {
     int dstH = SDL_ceilf((float)dst->w * src->h / src->w);

@@ -78,6 +78,81 @@ int AppModel::indexOfAppNamed(const QString& name) const
     return -1;
 }
 
+int AppModel::indexOfAppId(int appId) const
+{
+    for (int i = 0; i < m_VisibleApps.count(); i++) {
+        if (m_VisibleApps.at(i).id == appId) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void AppModel::setCategory(const QString& category)
+{
+    if (category == m_Category) {
+        return;
+    }
+    m_Category = category;
+
+    // A reset, and the visible list rebuilt from scratch: switching tabs replaces every row,
+    // and getVisibleApps() keeps a hidden app only while it is already on screen, which after
+    // a switch it never is.
+    const QString lastPlayed = lastPlayedForSort();
+    beginResetModel();
+    m_VisibleApps.clear();
+    QVector<NvApp> visible = getVisibleApps(m_AllApps);
+    std::stable_sort(visible.begin(), visible.end(), [&lastPlayed](const NvApp& a, const NvApp& b) {
+        int oa = appSortOrder(a.name, lastPlayed), ob = appSortOrder(b.name, lastPlayed);
+        if (oa != ob) return oa < ob;
+        return a.name.toLower() < b.name.toLower();
+    });
+    m_VisibleApps = visible;
+    m_PlaytimeLabels.clear();
+    endResetModel();
+
+    emit categoryChanged();
+}
+
+bool AppModel::matchesCategory(const NvApp& app) const
+{
+    if (m_Category.isEmpty()) {
+        return true;
+    }
+    return isAppsCategory(app) == (m_Category == QLatin1String("apps"));
+}
+
+QString AppModel::lastPlayedForSort() const
+{
+    if (m_Computer == nullptr || m_Category == QLatin1String("apps")) {
+        return QString();
+    }
+    return PlaytimeManager::get()->lastPlayedOn(m_Computer->uuid).name;
+}
+
+void AppModel::updateCounts()
+{
+    int games = 0, apps = 0;
+    bool monitor = false;
+    for (const NvApp& app : std::as_const(m_AllApps)) {
+        if (hostControlKind(app.id, app.uuid, app.name) == HostControl::DisconnectMonitor) {
+            monitor = true;
+        }
+        if (!m_ShowHiddenGames && app.hidden) {
+            continue;
+        }
+        if (isAppsCategory(app)) apps++;
+        else                     games++;
+    }
+
+    if (games != m_GamesCount || apps != m_AppsCount || monitor != m_RemoteMonitorActive) {
+        m_GamesCount = games;
+        m_AppsCount = apps;
+        m_RemoteMonitorActive = monitor;
+        emit countsChanged();
+    }
+}
+
 Session* AppModel::createSessionForApp(int appIndex)
 {
     Q_ASSERT(appIndex < m_VisibleApps.count());
@@ -230,10 +305,14 @@ QVariant AppModel::data(const QModelIndex &index, int role) const
         if (index.row() != 0 || m_Computer == nullptr)
             return QStringLiteral("all");
 
-        const QString lastPlayed = PlaytimeManager::get()->lastPlayedOn(m_Computer->uuid).name;
+        const QString lastPlayed = lastPlayedForSort();
         return (!lastPlayed.isEmpty() && app.name.compare(lastPlayed, Qt::CaseInsensitive) == 0)
                ? QStringLiteral("continue") : QStringLiteral("all");
     }
+    case IsAppRole:
+        return isAppsCategory(app);
+    case ControlRole:
+        return hostControlName(hostControlKind(app.id, app.uuid, app.name));
     default:
         return QVariant();
     }
@@ -331,7 +410,8 @@ void AppModel::refreshPlaytime()
 
 int AppModel::lastPlayedIndex() const
 {
-    if (m_Computer == nullptr)
+    // Never on the APPS tab: nothing there is a game, and the running-game copy would match.
+    if (m_Computer == nullptr || m_Category == QLatin1String("apps"))
         return -1;
 
     PlaytimeRecord rec = PlaytimeManager::get()->lastPlayedOn(m_Computer->uuid);
@@ -364,6 +444,8 @@ QHash<int, QByteArray> AppModel::roleNames() const
     names[OverriddenRole] = "overridden";
     names[PlaytimeRole] = "playtime";
     names[SectionRole] = "section";
+    names[IsAppRole] = "isApp";
+    names[ControlRole] = "control";
 
     return names;
 }
@@ -392,6 +474,9 @@ QVector<NvApp> AppModel::getVisibleApps(const QVector<NvApp>& appList)
         // Don't immediately hide games that were previously visible. This
         // allows users to easily uncheck the "Hide App" checkbox if they
         // check it by mistake.
+        if (!matchesCategory(app)) {
+            continue;
+        }
         if (m_ShowHiddenGames || !app.hidden || isAppCurrentlyVisible(app)) {
             visibleApps.append(app);
         }
@@ -433,9 +518,7 @@ void AppModel::updateAppList(QVector<NvApp> newList)
     }
 
     // Read once for the whole pass, exactly as sortAppList() does — same value, same reason.
-    const QString lastPlayed = m_Computer != nullptr
-                               ? PlaytimeManager::get()->lastPlayedOn(m_Computer->uuid).name
-                               : QString();
+    const QString lastPlayed = lastPlayedForSort();
 
     // Process additions now
     for (const NvApp& newApp : std::as_const(newVisibleList)) {
@@ -484,6 +567,8 @@ void AppModel::updateAppList(QVector<NvApp> newList)
      * without touching the model.
      */
     sortVisibleApps();
+
+    updateCounts();
 }
 
 bool AppModel::sortVisibleApps()
@@ -491,7 +576,7 @@ bool AppModel::sortVisibleApps()
     if (m_VisibleApps.isEmpty() || m_Computer == nullptr)
         return false;
 
-    const QString lastPlayed = PlaytimeManager::get()->lastPlayedOn(m_Computer->uuid).name;
+    const QString lastPlayed = lastPlayedForSort();
 
     QVector<NvApp> sorted = m_VisibleApps;
     std::stable_sort(sorted.begin(), sorted.end(),

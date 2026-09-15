@@ -38,10 +38,10 @@ using namespace QMdnsEngine;
 
 ResolverPrivate::ResolverPrivate(Resolver *resolver, AbstractServer *server, const QByteArray &name, Cache *cache)
     : QObject(resolver),
-      q(resolver),
       server(server),
       name(name),
-      cache(cache ? cache : new Cache(this))
+      cache(cache ? cache : new Cache(this)),
+      q(resolver)
 {
     connect(server, &AbstractServer::messageReceived, this, &ResolverPrivate::onMessageReceived);
     connect(&timer, &QTimer::timeout, this, &ResolverPrivate::onTimeout);
@@ -75,7 +75,8 @@ void ResolverPrivate::query() const
     message.addQuery(query);
 
     // Add existing (known) records to the query
-    foreach (Record record, existing()) {
+    const auto records = existing();
+    for (const Record &record : records) {
         message.addRecord(record);
     }
 
@@ -89,14 +90,16 @@ void ResolverPrivate::onMessageReceived(const Message &message)
         return;
     }
 
+    const auto records = message.records();
+
     // Invalidate each record in the cache first. This ensures
     // that we properly handle the case where we have multiple
     // records of the same type with 'flush cache' set.
-    foreach (Record record, message.records()) {
+    for (const Record &record : records) {
         cache->invalidateRecord(record);
     }
 
-    foreach (Record record, message.records()) {
+    for (const Record &record : records) {
         if (record.name() == name && (record.type() == A || record.type() == AAAA)) {
             cache->addRecord(record);
             if (!addresses.contains(record.address())) {
@@ -109,7 +112,8 @@ void ResolverPrivate::onMessageReceived(const Message &message)
 
 void ResolverPrivate::onTimeout()
 {
-    foreach (Record record, existing()) {
+    const auto records = existing();
+    for (const Record &record : records) {
         emit q->resolved(record.address());
     }
 }

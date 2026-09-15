@@ -74,12 +74,12 @@ void TestCache::testExpiry()
     QMdnsEngine::Record record;
     QVERIFY(cache.lookupRecord(Name, Type, record));
 
-    // This unfortunately delays the test but 1s is the smallest TTL
-    QTest::qWait(1100);
+    // After entering the event loop, the record should be purged when its TTL
+    // expires in 1s
+    QTRY_VERIFY(!cache.lookupRecord(Name, Type, record));
 
-    // After entering the event loop, the record should have been purged and
-    // the recordExpired() signal emitted
-    QVERIFY(!cache.lookupRecord(Name, Type, record));
+    // Ensure that the shouldQuery() signal was emitted at least once and the
+    // recordExpired() signal was eventually emitted as well
     QVERIFY(shouldQuerySpy.count() > 0);
     QCOMPARE(recordExpiredSpy.count(), 1);
 }

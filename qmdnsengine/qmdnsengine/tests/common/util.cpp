@@ -29,9 +29,11 @@
 
 bool queryReceived(TestServer *server, const QByteArray &name, quint16 type)
 {
-    foreach (QMdnsEngine::Message message, server->receivedMessages()) {
+    const auto messages = server->receivedMessages();
+    for (const QMdnsEngine::Message &message : messages) {
         if (!message.isResponse()) {
-            foreach (QMdnsEngine::Query query, message.queries()) {
+            const auto queries = message.queries();
+            for (const QMdnsEngine::Query &query : queries) {
                 if (query.name() == name && query.type() == type) {
                     return true;
                 }

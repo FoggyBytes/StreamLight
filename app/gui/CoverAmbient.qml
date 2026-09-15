@@ -48,7 +48,16 @@ Item {
      */
     onSourceChanged: {
         if (Theme.reduceAnimations || _current.toString() === "") { _current = source; return }
-        if (source === _current) return
+        if (source === _current) {
+            // ⚠️ Not a plain return while a swap is running. The source can dip away and come
+            // straight back — the host page's list is rebuilt when a tab is picked, so for an
+            // instant nothing is focused — and returning here left the swap in flight still
+            // carrying the empty picture it was started for: it faded out, installed nothing,
+            // and the page stood on no artwork until the focus moved. Seen on opening a host
+            // in 5.9.0, with Last played in the spotlight.
+            if (ambientSwap.running) _pending = source
+            return
+        }
         _pending = source
         ambientSwap.restart()
     }
@@ -73,6 +82,10 @@ Item {
             source: root._current
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
+            // ⚠️ Must match the other Images showing the same cover (HeroCover, the library
+            // list): Qt shares one texture per picture, and a mismatch makes it log "Mipmap
+            // settings changed without having image data available" and keep the old setting.
+            mipmap: true
             // Hidden because MultiEffect draws it: the Image is only here as a texture
             // provider. Leaving it visible would paint the sharp copy under the blurred one.
             visible: false

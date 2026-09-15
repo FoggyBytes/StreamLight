@@ -676,27 +676,6 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
             return false;
         }
 
-        // Most FFmpeg decoders process input using a "push" model.
-        // We'll see those fail here if the format is not supported.
-        err = avcodec_send_packet(m_VideoDecoderCtx, m_Pkt);
-        if (err < 0) {
-            char errorstring[512];
-            av_strerror(err, errorstring, sizeof(errorstring));
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "Test decode failed (avcodec_send_packet): %s", errorstring);
-            return false;
-        }
-
-        // Signal EOS to force the decoder to immediately output the frame
-        err = avcodec_send_packet(m_VideoDecoderCtx, nullptr);
-        if (err < 0) {
-            char errorstring[512];
-            av_strerror(err, errorstring, sizeof(errorstring));
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "Test flush failed (avcodec_send_packet): %s", errorstring);
-            return false;
-        }
-
         AVFrame* frame = av_frame_alloc();
         if (!frame) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -704,21 +683,52 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
             return false;
         }
 
-        err = avcodec_receive_frame(m_VideoDecoderCtx, frame);
-        if (err == 0) {
-            // Allow the renderer to do any validation it wants on this frame
-            if (!m_FrontendRenderer->testRenderFrame(frame)) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                            "Test decode failed (testRenderFrame)");
+        // Some decoders won't output on the first frame, so we'll submit
+        // a few test frames if we get an EAGAIN error.
+        for (int retries = 0; retries < 5; retries++) {
+            // Most FFmpeg decoders process input using a "push" model.
+            // We'll see those fail here if the format is not supported.
+            err = avcodec_send_packet(m_VideoDecoderCtx, m_Pkt);
+            if (err < 0) {
                 av_frame_free(&frame);
+                char errorstring[512];
+                av_strerror(err, errorstring, sizeof(errorstring));
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "Test decode failed (avcodec_send_packet): %s", errorstring);
                 return false;
             }
+
+            // A few FFmpeg decoders (h264_mmal) process here using a "pull" model.
+            // Those decoders will fail here if the format is not supported.
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(62, 28, 100)
+            err = avcodec_receive_frame_flags(m_VideoDecoderCtx, frame,
+                                              AV_CODEC_RECEIVE_FRAME_FLAG_SYNCHRONOUS);
+#else
+            err = avcodec_receive_frame(m_VideoDecoderCtx, frame);
+#endif
+            if (err == AVERROR(EAGAIN)) {
+                // Wait a little while to let the hardware work
+                SDL_Delay(100);
+            }
+            else {
+                // Done!
+                break;
+            }
         }
-        else if (err < 0) {
+
+        if (err < 0) {
             char errorstring[512];
             av_strerror(err, errorstring, sizeof(errorstring));
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                         "Test decode failed (avcodec_receive_frame): %s", errorstring);
+            av_frame_free(&frame);
+            return false;
+        }
+
+        // Allow the renderer to do any validation it wants on this frame
+        if (!m_FrontendRenderer->testRenderFrame(frame)) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Test decode failed (testRenderFrame)");
             av_frame_free(&frame);
             return false;
         }
@@ -2180,6 +2190,74 @@ void FFmpegVideoDecoder::decoderThreadProc()
                             frame->crop_right = cropWidth;
                             frame->crop_bottom = cropHeight;
                             av_frame_apply_cropping(frame, 0);
+                        }
+                    }
+
+                    // Some decoders don't propagate color metadata from the bitstream,
+                    // so we will try to guess it here if it was unset.
+                    if (frame->color_range == AVCOL_RANGE_UNSPECIFIED) {
+                        switch (getDecoderColorRange()) {
+                        case COLOR_RANGE_LIMITED:
+                            frame->color_range = AVCOL_RANGE_MPEG;
+                            break;
+                        case COLOR_RANGE_FULL:
+                            frame->color_range = AVCOL_RANGE_JPEG;
+                            break;
+                        }
+                    }
+                    if (frame->colorspace == AVCOL_SPC_UNSPECIFIED) {
+                        switch (getDecoderColorspace()) {
+                        case COLORSPACE_REC_601:
+                            frame->colorspace = AVCOL_SPC_SMPTE170M;
+                            break;
+                        case COLORSPACE_REC_709:
+                            frame->colorspace = AVCOL_SPC_BT709;
+                            break;
+                        case COLORSPACE_REC_2020:
+                            frame->colorspace = AVCOL_SPC_BT2020_NCL;
+                            break;
+                        }
+
+                        // HDR forces BT.2020 regardless of decoder preference
+                        if (LiGetCurrentHostDisplayHdrMode()) {
+                            frame->colorspace = AVCOL_SPC_BT2020_NCL;
+                        }
+                    }
+                    if (frame->color_primaries == AVCOL_PRI_UNSPECIFIED) {
+                        switch (frame->colorspace) {
+                        case AVCOL_SPC_BT709:
+                            frame->color_primaries = AVCOL_PRI_BT709;
+                            break;
+                        case AVCOL_SPC_SMPTE170M:
+                            frame->color_primaries = AVCOL_PRI_SMPTE170M;
+                            break;
+                        case AVCOL_SPC_BT2020_NCL:
+                        case AVCOL_SPC_BT2020_CL:
+                            frame->color_primaries = AVCOL_PRI_BT2020;
+                            break;
+                        default:
+                            break;
+                        }
+                    }
+                    if (frame->color_trc == AVCOL_TRC_UNSPECIFIED) {
+                        switch (frame->colorspace) {
+                        case AVCOL_SPC_BT709:
+                            frame->color_trc = AVCOL_TRC_BT709;
+                            break;
+                        case AVCOL_SPC_SMPTE170M:
+                            frame->color_trc = AVCOL_TRC_SMPTE170M;
+                            break;
+                        case AVCOL_SPC_BT2020_NCL:
+                        case AVCOL_SPC_BT2020_CL:
+                            frame->color_trc = AVCOL_TRC_BT2020_10;
+                            break;
+                        default:
+                            break;
+                        }
+
+                        // HDR forces SMPTE 2084 PQ regardless of decoder preference
+                        if (LiGetCurrentHostDisplayHdrMode()) {
+                            frame->color_trc = AVCOL_TRC_SMPTE2084;
                         }
                     }
 

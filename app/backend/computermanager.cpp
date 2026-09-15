@@ -34,7 +34,7 @@ public:
 private:
     bool tryPollComputer(QNetworkAccessManager* nam, NvAddress address, bool& changed)
     {
-        NvHTTP http(address, 0, m_Computer->serverCert, nam);
+        NvHTTP http(address, 0, m_Computer->serverCert, !m_Computer->isNvidiaServerSoftware, nam);
 
         QString serverInfo;
         try {
@@ -124,10 +124,15 @@ private:
             // Tailscale for this host (Open on Tailscale) or for pinned legacy clones.
             // Reading the fields without a lock is safe here for the same reason as the
             // offline check below: we're on the only thread that writes them.
+            //
+            // ⚠️ The last condition is a guard, not an optimisation: if the LAN slot ever holds
+            // the Tailscale address itself, the probe below "succeeds" on the address we are
+            // already on, changes nothing, and logs a move back to LAN on every poll forever.
             if (online && !m_Computer->preferTailscaleAddress && !m_Computer->isAddressPinned &&
                     !m_Computer->tailscaleAddress.isNull() &&
                     m_Computer->activeAddress == m_Computer->tailscaleAddress &&
-                    !m_Computer->localAddress.isNull()) {
+                    !m_Computer->localAddress.isNull() &&
+                    m_Computer->localAddress != m_Computer->tailscaleAddress) {
                 bool lanChanged = false;
                 if (tryPollComputer(&nam, m_Computer->localAddress, lanChanged)) {
                     stateChanged |= lanChanged;
@@ -496,19 +501,38 @@ void ComputerManager::handleMdnsServiceResolved(MdnsPendingComputer* computer,
     QHostAddress v6Global = getBestGlobalAddressV6(addresses);
     bool added = false;
 
-    // Add the host using the IPv4 address
+    // Add the host using the IPv4 address.
+    //
+    // ⚠️ Not simply the first IPv4 in the list. A host running Tailscale announces its 100.x
+    // interface address alongside the LAN one, in no guaranteed order, and taking whichever
+    // came first could file the Tailscale address as the host's LAN address — which then
+    // answers from everywhere and pins the poller to the slow path (the §34 bug, reached
+    // through mDNS instead of serverinfo). Prefer a real LAN address; a Tailscale-range one
+    // is used only when it is all the host offered, and PendingAddTask then routes it into
+    // the Tailscale slot rather than the LAN one.
+    QHostAddress chosenV4;
     for (const QHostAddress& address : std::as_const(addresses)) {
-        if (address.protocol() == QAbstractSocket::IPv4Protocol) {
-            // NB: We don't just call addNewHost() here with v6Global because the IPv6
-            // address may not be reachable (if the user hasn't installed the IPv6 helper yet
-            // or if this host lacks outbound IPv6 capability). We want to add IPv6 even if
-            // it's not currently reachable.
-            addNewHost(NvAddress(address, computer->port()),
-                       true, computer->hostname(),
-                       NvAddress(v6Global, computer->port()));
-            added = true;
-            break;
+        if (address.protocol() != QAbstractSocket::IPv4Protocol || address.isLoopback()) {
+            continue;
         }
+        if (NvAddress(address, computer->port()).isTailscaleRange()) {
+            if (chosenV4.isNull()) {
+                chosenV4 = address;
+            }
+            continue;
+        }
+        chosenV4 = address;
+        break;
+    }
+    if (!chosenV4.isNull()) {
+        // NB: We don't just call addNewHost() here with v6Global because the IPv6
+        // address may not be reachable (if the user hasn't installed the IPv6 helper yet
+        // or if this host lacks outbound IPv6 capability). We want to add IPv6 even if
+        // it's not currently reachable.
+        addNewHost(NvAddress(chosenV4, computer->port()),
+                   true, computer->hostname(),
+                   NvAddress(v6Global, computer->port()));
+        added = true;
     }
 
     if (!added) {
@@ -939,7 +963,8 @@ private:
 
     void run()
     {
-        NvHTTP http(m_Address, 0, QSslCertificate());
+        // Use the placeholder UID for the initial poll, then we'll switch to the real one if it's not GFE
+        NvHTTP http(m_Address, 0, QSslCertificate(), false);
 
         if (m_Mdns) {
             if (m_MdnsIpv6Address.isNull()) {
@@ -967,6 +992,7 @@ private:
 
         // Create initial newComputer using HTTP serverinfo with no pinned cert
         NvComputer* newComputer = new NvComputer(http, serverInfo);
+        http.setTrueUid(!newComputer->isNvidiaServerSoftware);
 
         // Tag this entry as a local clone (e.g. Tailscale dual-tile) if requested.
         // The uuid stays the real one (Moonlight protocol identity); aliasSuffix is
@@ -1027,8 +1053,22 @@ private:
             // Only update local address if we actually reached the PC via this address.
             // If we reached it via the IPv6 address after the local address failed,
             // don't store the non-working local address.
+            //
+            // ⚠️ Same classification the serverinfo constructor applies to LocalIP
+            // (nvcomputer.cpp): a Tailscale-range address goes to the Tailscale slot, never
+            // the LAN one, and loopback identifies no host at all. Without it an mDNS answer
+            // from the 100.x interface became localAddress while also being tailscaleAddress,
+            // and the LAN-preferred recovery in PcMonitorThread "moved back to LAN" onto the
+            // very same address on every poll.
             if (http.address() == m_Address) {
-                newComputer->localAddress = m_Address;
+                if (m_Address.isTailscaleRange()) {
+                    if (newComputer->tailscaleAddress.isNull()) {
+                        newComputer->tailscaleAddress = m_Address;
+                    }
+                }
+                else if (!m_Address.isLoopback()) {
+                    newComputer->localAddress = m_Address;
+                }
             }
 
             // Get the WAN IP address using STUN if we're on mDNS over IPv4

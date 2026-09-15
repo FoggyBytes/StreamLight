@@ -5,6 +5,31 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 ------------------------------------
+Version 5.9.0 - In Step (15/09/2026)
+------------------------------------
+
+No StreamTweak update required — everything in 5.9.0 is client-side and works with any host. StreamLight catches up with Moonlight's latest engine fixes and libraries, understands the Remote Input and Remote Monitor entries of Vibeshine and Vibepollo 2.0, and splits each host's library into Games and Apps.
+
+✨ NEW FEATURES:
+• Games and Apps on the host page — LT/RT (PgUp/PgDn on the keyboard) switch between the games and everything that is not one: Desktop, Steam Big Picture and the host's own controls. A host with no games, or with a Remote Monitor still attached, opens on Apps
+• Remote Input and Remote Monitor from Vibeshine and Vibepollo 2.0 are recognised as host controls — they open beside a running game without asking to quit it, and skip the wait for a game window
+• Host actions report their result instead of an error — Disconnect Monitor, Disconnect Input and Terminate say what they did, and when the host asks for confirmation StreamLight asks Yes or No and repeats the launch itself
+
+✨ IMPROVEMENTS:
+• Engine and protocol brought level with Moonlight's development branch — faster recovery from lost video packets, decoder device selection by GPU vendor and driver, audio latency held to 50 ms whatever the packet size, and some thirty more upstream fixes
+• OpenSSL 3.6.4 and SDL 3.4.16 — security and bug-fix releases of the libraries underneath, plus the latest host discovery library
+• The client's own ID is sent to Sunshine-based hosts instead of a placeholder shared by every client, as Moonlight now does
+• Everything under Apps shows Open and carries no hours or session count
+
+🐛 FIXES:
+• Pointing at a game with the mouse updates the cover and details beside the list, not only the highlight on the row
+• A host running Tailscale could be recorded with its Tailscale address as its local one, and the log then reported it moving back to the LAN every few seconds
+• The software renderer drew full-range video at the wrong levels, a display larger than 8K could crash the display list, and a game with an empty name stopped the whole library from loading
+
+⚠️ COMPATIBILITY:
+• Remote Input and Remote Monitor need Vibeshine or Vibepollo 2.0 on the host; elsewhere the Apps tab simply has fewer entries
+
+------------------------------------
 Version 5.8.0 - Keep Up (14/09/2026)
 ------------------------------------
 

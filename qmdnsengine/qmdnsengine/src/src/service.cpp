@@ -121,3 +121,19 @@ void Service::addAttribute(const QByteArray &key, const QByteArray &value)
 {
     d->attributes.insert(key, value);
 }
+
+QDebug QMdnsEngine::operator<<(QDebug debug, const Service &service)
+{
+    QDebugStateSaver saver(debug);
+    Q_UNUSED(saver);
+
+    debug.noquote().nospace()
+        << "Service(name: " << service.name()
+        << ", type: " << service.type()
+        << ", hostname: " << service.hostname()
+        << ", port: " << service.port()
+        << ", attributes: " << service.attributes()
+        << ")";
+
+    return debug;
+}

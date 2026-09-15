@@ -566,7 +566,9 @@ void SdlInputHandler::handleControllerTouchpadEvent(SDL_ControllerTouchpadEvent*
         return;
     }
 
-    LiSendControllerTouchEvent((uint8_t)state->index, eventType, event->finger, event->x, event->y, event->pressure);
+    LiSendControllerTouchEvent2((uint8_t)state->index, eventType,
+                                (uint8_t)event->touchpad, event->finger,
+                                event->x, event->y, event->pressure);
 }
 
 #endif
@@ -768,6 +770,9 @@ void SdlInputHandler::handleControllerDeviceEvent(SDL_ControllerDeviceEvent* eve
         }
         if (SDL_GameControllerGetNumTouchpads(state->controller) > 0) {
             capabilities |= LI_CCAP_TOUCHPAD;
+            if (SDL_GameControllerGetNumTouchpads(state->controller) > 1) {
+                capabilities |= LI_CCAP_DUAL_TOUCHPAD;
+            }
         }
         if (SDL_GameControllerHasSensor(state->controller, SDL_SENSOR_ACCEL)) {
             capabilities |= LI_CCAP_ACCEL;
@@ -802,7 +807,32 @@ void SdlInputHandler::handleControllerDeviceEvent(SDL_ControllerDeviceEvent* eve
             type = LI_CTYPE_NINTENDO;
             break;
         default:
-            type = LI_CTYPE_UNKNOWN;
+            // These Steam Controller VID/PID combos come from SDL's controller_list.h
+            // TODO: Use SDL_GAMEPAD_TYPE_STEAM on SDL 3.6+
+            if (vendorId == 0x28de) {
+                switch (productId) {
+                case 0x1101:
+                case 0x1102:
+                case 0x1105:
+                case 0x1106:
+                case 0x1142:
+                case 0x1201:
+                case 0x1202:
+                case 0x1205:
+                case 0x1302:
+                case 0x1303:
+                case 0x1304:
+                case 0x1305:
+                    type = LI_CTYPE_STEAM;
+                    break;
+                default:
+                    type = LI_CTYPE_UNKNOWN;
+                    break;
+                }
+            }
+            else {
+                type = LI_CTYPE_UNKNOWN;
+            }
             break;
         }
 

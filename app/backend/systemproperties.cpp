@@ -222,21 +222,18 @@ void SystemProperties::updateDecoderProperties(bool hasHardwareAcceleration, boo
 QRect SystemProperties::getNativeResolution(int displayIndex)
 {
     // Returns default constructed QRect if out of bounds
-    Q_ASSERT(!monitorNativeResolutions.isEmpty());
     return monitorNativeResolutions.value(displayIndex);
 }
 
 QRect SystemProperties::getSafeAreaResolution(int displayIndex)
 {
     // Returns default constructed QRect if out of bounds
-    Q_ASSERT(!monitorSafeAreaResolutions.isEmpty());
     return monitorSafeAreaResolutions.value(displayIndex);
 }
 
 int SystemProperties::getRefreshRate(int displayIndex)
 {
     // Returns 0 if out of bounds
-    Q_ASSERT(!monitorRefreshRates.isEmpty());
     return monitorRefreshRates.value(displayIndex);
 }
 
@@ -265,25 +262,21 @@ void SystemProperties::startAsyncLoad()
         return;
     }
 
-    // Update display related attributes (max FPS, native resolution, etc).
-    refreshDisplays();
-
-    testWindow = SDL_CreateWindow("", 0, 0, 1280, 720,
-                                  SDL_WINDOW_HIDDEN | StreamUtils::getPlatformWindowFlags());
+    testWindow = StreamUtils::createTestWindow();
     if (!testWindow) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Failed to create test window with platform flags: %s",
-                    SDL_GetError());
-
-        testWindow = SDL_CreateWindow("", 0, 0, 1280, 720, SDL_WINDOW_HIDDEN);
-        if (!testWindow) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "Failed to create window for hardware decode test: %s",
-                         SDL_GetError());
-            SDL_QuitSubSystem(SDL_INIT_VIDEO);
-            return;
-        }
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Failed to create window for hardware decode test: %s",
+                     SDL_GetError());
+        SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        return;
     }
+
+    // Update display related attributes (max FPS, native resolution, etc).
+    //
+    // NB: SDL3 will forcefully refresh displays when a window is created,
+    // so we place this after the window creation to ensure we don't pay
+    // the penalty for mode enumeration twice.
+    refreshDisplays();
 
     systemPropertyQueryThread = new SystemPropertyQueryThread(this);
     systemPropertyQueryThread->start();
@@ -306,6 +299,8 @@ void SystemProperties::refreshDisplays()
     }
 
     monitorNativeResolutions.clear();
+    monitorSafeAreaResolutions.clear();
+    monitorRefreshRates.clear();
 
     SDL_DisplayMode bestMode;
     for (int displayIndex = 0; displayIndex < SDL_GetNumVideoDisplays(); displayIndex++) {
@@ -314,8 +309,11 @@ void SystemProperties::refreshDisplays()
 
         if (StreamUtils::getNativeDesktopMode(displayIndex, &desktopMode, &safeArea)) {
             if (desktopMode.w <= 8192 && desktopMode.h <= 8192) {
-                monitorNativeResolutions.insert(displayIndex, QRect(0, 0, desktopMode.w, desktopMode.h));
-                monitorSafeAreaResolutions.insert(displayIndex, QRect(0, 0, safeArea.w, safeArea.h));
+                // Keep these lists compact because their QML consumers iterate until
+                // the first empty entry. Inserting by SDL display index is invalid if
+                // an earlier display was skipped (for example, a >8K virtual display).
+                monitorNativeResolutions.append(QRect(0, 0, desktopMode.w, desktopMode.h));
+                monitorSafeAreaResolutions.append(QRect(0, 0, safeArea.w, safeArea.h));
             }
             else {
                 SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
@@ -325,7 +323,8 @@ void SystemProperties::refreshDisplays()
 
             // Start at desktop mode and work our way up
             bestMode = desktopMode;
-            for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
+            int numDisplayModes = SDL_GetNumDisplayModes(displayIndex);
+            for (int i = 0; i < numDisplayModes; i++) {
                 SDL_DisplayMode mode;
                 if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
                     if (mode.w == desktopMode.w && mode.h == desktopMode.h) {

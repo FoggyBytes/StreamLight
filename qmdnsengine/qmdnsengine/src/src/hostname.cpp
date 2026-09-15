@@ -40,8 +40,8 @@ using namespace QMdnsEngine;
 
 HostnamePrivate::HostnamePrivate(Hostname *hostname, AbstractServer *server)
     : QObject(hostname),
-      q(hostname),
-      server(server)
+      server(server),
+      q(hostname)
 {
     connect(server, &AbstractServer::messageReceived, this, &HostnamePrivate::onMessageReceived);
     connect(&registrationTimer, &QTimer::timeout, this, &HostnamePrivate::onRegistrationTimeout);
@@ -91,11 +91,13 @@ bool HostnamePrivate::generateRecord(const QHostAddress &srcAddress, quint16 typ
     // Attempt to find the interface that corresponds with the provided
     // address and determine this device's address from the interface
 
-    foreach (QNetworkInterface interface, QNetworkInterface::allInterfaces()) {
-        foreach (QNetworkAddressEntry entry, interface.addressEntries()) {
+    const auto interfaces = QNetworkInterface::allInterfaces();
+    for (const QNetworkInterface &networkInterface : interfaces) {
+        const auto entries = networkInterface.addressEntries();
+        for (const QNetworkAddressEntry &entry : entries) {
             if (srcAddress.isInSubnet(entry.ip(), entry.prefixLength())) {
-                foreach (entry, interface.addressEntries()) {
-                    QHostAddress address = entry.ip();
+                for (const QNetworkAddressEntry &newEntry : entries) {
+                    QHostAddress address = newEntry.ip();
                     if ((address.protocol() == QAbstractSocket::IPv4Protocol && type == A) ||
                             (address.protocol() == QAbstractSocket::IPv6Protocol && type == AAAA)) {
                         record.setName(hostname);
@@ -116,7 +118,8 @@ void HostnamePrivate::onMessageReceived(const Message &message)
         if (hostnameRegistered) {
             return;
         }
-        foreach (Record record, message.records()) {
+        const auto records = message.records();
+        for (const Record &record : records) {
             if ((record.type() == A || record.type() == AAAA) && record.name() == hostname) {
                 ++hostnameSuffix;
                 assertHostname();
@@ -128,7 +131,8 @@ void HostnamePrivate::onMessageReceived(const Message &message)
         }
         Message reply;
         reply.reply(message);
-        foreach (Query query, message.queries()) {
+        const auto queries = message.queries();
+        for (const Query &query : queries) {
             if ((query.type() == A || query.type() == AAAA) && query.name() == hostname) {
                 Record record;
                 if (generateRecord(message.address(), query.type(), record)) {

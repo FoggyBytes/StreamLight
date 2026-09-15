@@ -133,7 +133,11 @@ public:
     // stayed up until the user pressed B. It also drives the launch screen's "press B" prompt
     // and its slow-launch hint, neither of which should appear when nothing is being waited on.
     bool waitsForGame() const {
-        return !m_UnlockMode && m_StreamTweakEnabled && m_Preferences->waitForGameOnScreen;
+        // 5.9.0: never for a Vibeshine / Vibepollo host control. Remote Input and Remote Monitor
+        // put no game window on screen, and Terminate or a Disconnect never stream at all, so
+        // a wait for "the game on screen" would only run to its cap.
+        return !m_UnlockMode && m_StreamTweakEnabled && m_Preferences->waitForGameOnScreen
+            && hostControlKind(m_App.id, m_App.uuid, m_App.name) == HostControl::None;
     }
 
     explicit Session(NvComputer* computer, NvApp& app, StreamingPreferences *preferences = nullptr);
@@ -343,6 +347,11 @@ signals:
     void connectionStarted();
 
     void displayLaunchError(QString text);
+
+    // 5.9.0. The host answered the launch with HTTP 410: not a failure but a finished action
+    // (Terminate, Disconnect) or a request to confirm by launching the same entry again. Apollo
+    // established the convention and Vibeshine / Vibepollo 2.0 use it for their host controls.
+    void launchNotice(QString text, bool needsConfirmation);
 
     void quitStarting();
 

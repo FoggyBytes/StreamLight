@@ -1,4 +1,5 @@
 #include "nvcomputer.h"
+#include "identitymanager.h"
 #include <Limelight.h>
 
 #include <QDebug>
@@ -18,9 +19,10 @@
 #define RESUME_TIMEOUT_MS 30000
 #define QUIT_TIMEOUT_MS 30000
 
-NvHTTP::NvHTTP(NvAddress address, uint16_t httpsPort, QSslCertificate serverCert, QNetworkAccessManager* nam) :
+NvHTTP::NvHTTP(NvAddress address, uint16_t httpsPort, QSslCertificate serverCert, bool useTrueUid, QNetworkAccessManager* nam) :
     m_Nam(nam ? nam : new QNetworkAccessManager(this)),
-    m_ServerCert(serverCert)
+    m_ServerCert(serverCert),
+    m_UseTrueUid(useTrueUid)
 {
     m_BaseUrlHttp.setScheme("http");
     m_BaseUrlHttps.setScheme("https");
@@ -34,9 +36,8 @@ NvHTTP::NvHTTP(NvAddress address, uint16_t httpsPort, QSslCertificate serverCert
 }
 
 NvHTTP::NvHTTP(NvComputer* computer, QNetworkAccessManager* nam) :
-    NvHTTP(computer->activeAddress, computer->activeHttpsPort, computer->serverCert, nam)
+    NvHTTP(computer->activeAddress, computer->activeHttpsPort, computer->serverCert, !computer->isNvidiaServerSoftware, nam)
 {
-
 }
 
 void NvHTTP::setServerCert(QSslCertificate serverCert)
@@ -59,6 +60,11 @@ void NvHTTP::setAddress(NvAddress address)
 void NvHTTP::setHttpsPort(uint16_t port)
 {
     m_BaseUrlHttps.setPort(port);
+}
+
+void NvHTTP::setTrueUid(bool useTrueUid)
+{
+    m_UseTrueUid = useTrueUid;
 }
 
 NvAddress NvHTTP::address()
@@ -109,7 +115,7 @@ NvHTTP::getCurrentGame(QString serverInfo)
     // has the semantics that its name would indicate. To contain the effects of this change as much
     // as possible, we'll force the current game to zero if the server isn't in a streaming session.
     QString serverState = getXmlString(serverInfo, "state");
-    if (serverState != nullptr && serverState.endsWith("_SERVER_BUSY"))
+    if (serverState.endsWith("_SERVER_BUSY"))
     {
         return getXmlString(serverInfo, "currentgame").toInt();
     }
@@ -276,14 +282,16 @@ NvHTTP::getDisplayModeList(QString serverInfo)
             if (name == QString("DisplayMode")) {
                 modes.append(NvDisplayMode());
             }
-            else if (name == QString("Width")) {
-                modes.last().width = xmlReader.readElementText().toInt();
-            }
-            else if (name == QString("Height")) {
-                modes.last().height = xmlReader.readElementText().toInt();
-            }
-            else if (name == QString("RefreshRate")) {
-                modes.last().refreshRate = xmlReader.readElementText().toInt();
+            else if (!modes.isEmpty()) {
+                if (name == QString("Width")) {
+                    modes.last().width = xmlReader.readElementText().toInt();
+                }
+                else if (name == QString("Height")) {
+                    modes.last().height = xmlReader.readElementText().toInt();
+                }
+                else if (name == QString("RefreshRate")) {
+                    modes.last().refreshRate = xmlReader.readElementText().toInt();
+                }
             }
         }
     }
@@ -314,18 +322,42 @@ NvHTTP::getAppList()
                 }
                 apps.append(NvApp());
             }
-            else if (name == QString("AppTitle")) {
-                apps.last().name = xmlReader.readElementText();
+            else if (!apps.isEmpty()) {
+                if (name == QString("AppTitle")) {
+                    // If an app has no name, Sunshine may send us <AppTitle/>,
+                    // which readElementText() returns as a null QString.
+                    // We want to treat this as an empty QString instead, so we
+                    // will explicitly convert it. An empty string will satisfy
+                    // NvApp's isInitialized() check.
+                    QString title = xmlReader.readElementText();
+                    if (title.isNull()) {
+                        title = "";
+                    }
+                    apps.last().name = title;
+                }
+                else if (name == QString("ID")) {
+                    apps.last().id = xmlReader.readElementText().toInt();
+                }
+                else if (name == QString("UUID")) {
+                    apps.last().uuid = xmlReader.readElementText();
+                }
+                else if (name == QString("IsHdrSupported")) {
+                    apps.last().hdrSupported = xmlReader.readElementText() == "1";
+                }
+                else if (name == QString("IsAppCollectorGame")) {
+                    apps.last().isAppCollectorGame = xmlReader.readElementText() == "1";
+                }
             }
-            else if (name == QString("ID")) {
-                apps.last().id = xmlReader.readElementText().toInt();
-            }
-            else if (name == QString("IsHdrSupported")) {
-                apps.last().hdrSupported = xmlReader.readElementText() == "1";
-            }
-            else if (name == QString("IsAppCollectorGame")) {
-                apps.last().isAppCollectorGame = xmlReader.readElementText() == "1";
-            }
+        }
+    }
+
+    // Vibeshine / Vibepollo 2.0 pad their control titles with leading spaces so they sort
+    // first in a client that alphabetises the list. We sort and group those ourselves, so the
+    // padding would only show up as a crooked label. Ordinary apps keep their name untouched:
+    // it is the key play time and the "last played" record are stored under.
+    for (NvApp& app : apps) {
+        if (hostControlKind(app.id, app.uuid, app.name) != HostControl::None) {
+            app.name = app.name.trimmed();
         }
     }
 
@@ -390,13 +422,7 @@ QByteArray
 NvHTTP::getXmlStringFromHex(QString xml,
                             QString tagName)
 {
-    QString str = getXmlString(xml, tagName);
-    if (str == nullptr)
-    {
-        return nullptr;
-    }
-
-    return QByteArray::fromHex(str.toUtf8());
+    return QByteArray::fromHex(getXmlString(xml, tagName).toUtf8());
 }
 
 QString
@@ -418,7 +444,7 @@ NvHTTP::getXmlString(QString xml,
         }
     }
 
-    return nullptr;
+    return QString();
 }
 
 void NvHTTP::handleSslErrors(QNetworkReply* reply, const QList<QSslError>& errors)
@@ -481,11 +507,9 @@ NvHTTP::openConnection(QUrl baseUrl,
     QUrl url(baseUrl);
     url.setPath("/" + command);
 
-    // Use a common UID for Moonlight clients to allow them to quit
-    // games for each other (otherwise GFE gets screwed up and it requires
-    // manual intervention to solve).
-    url.setQuery("uniqueid=0123456789ABCDEF&uuid=" +
-                 QUuid::createUuid().toRfc4122().toHex() +
+    // Use a placeholder UID for GFE allow them to quit games for each other.
+    url.setQuery("uniqueid=" + (m_UseTrueUid ? IdentityManager::get()->getUniqueId() : "0123456789ABCDEF") +
+                 "&uuid=" + QUuid::createUuid().toRfc4122().toHex() +
                  ((arguments != nullptr) ? ("&" + arguments) : ""));
 
     QNetworkRequest request(url);

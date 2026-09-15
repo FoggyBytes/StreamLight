@@ -68,7 +68,8 @@ void TestServer::saveMessage(const QMdnsEngine::Message &message)
 {
     mMessages.append(message);
     if (message.isResponse()) {
-        foreach (QMdnsEngine::Record record, message.records()) {
+        const auto records = message.records();
+        for (const QMdnsEngine::Record &record : records) {
             mCache.addRecord(record);
         }
     }

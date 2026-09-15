@@ -55,7 +55,7 @@ class QMDNSENGINE_EXPORT CachePrivate;
  * QList<QMdnsEngine::Record> records;
  * cache.lookupRecords("My Service._http._tcp.local.", QMdnsEngine::TXT, records);
  *
- * foreach (QMdnsEngine::Record record, records) {
+ * for (const QMdnsEngine::Record &record : records) {
  *     qDebug() << "Record:" << record.name();
  * }
  * @endcode

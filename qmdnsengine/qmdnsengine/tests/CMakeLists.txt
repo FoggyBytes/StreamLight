@@ -17,7 +17,7 @@ foreach(_test ${TESTS})
         CXX_STANDARD_REQUIRED ON
     )
     target_include_directories(${_test} PUBLIC "${CMAKE_CURRENT_BINARY_DIR}")
-    target_link_libraries(${_test} qmdnsengine Qt5::Test common)
+    target_link_libraries(${_test} qmdnsengine Qt${QT_VERSION_MAJOR}::Test common)
     add_test(NAME ${_test}
         COMMAND ${_test}
     )

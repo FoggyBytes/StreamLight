@@ -139,6 +139,24 @@ Item {
     // case where the host restores its link with nothing on the client to say so.
     property var onSessionEndedFn : null
 
+    // 5.9.0. A launch the host answered with 410 — a finished host action, or a request to
+    // confirm by launching again (see Session::launchNotice). Handed to the caller after this
+    // screen pops, because only the host page can relaunch the same entry; without a caller the
+    // message is shown plainly, never as an error.
+    property var onLaunchNoticeFn : null
+    property string _noticeText : ""
+    property bool _noticeConfirm : false
+
+    function launchNotice(text, needsConfirmation)
+    {
+        hostSlowTimer.stop()
+        _endLaunchWait()
+        if (_cancelRequested) return
+        _noticeText = text
+        _noticeConfirm = needsConfirmation
+        streamSegueErrorDialog.text = ""
+    }
+
     // Resume session captured during sessionFinished (while `session` is still
     // valid) and consumed by the delayed retry. `session` is nulled by
     // readyForDeletion before the retry timer fires, so we can't build it later.
@@ -400,6 +418,11 @@ Item {
             // recreates the native window — a visible flicker for no reason.
             if (!unlockMode) window.restoreAfterStream()
 
+            if (_noticeText) {
+                if (onLaunchNoticeFn) onLaunchNoticeFn(_noticeText, _noticeConfirm)
+                else                  streamSegueErrorDialog.text = _noticeText
+            }
+
             // Display any launch errors. We do this after
             // the Qt UI is visible again to prevent losing
             // focus on the dialog which would impact gamepad
@@ -514,6 +537,7 @@ Item {
         session.connectionStarted.connect(connectionStarted)
         session.streamWindowRevealed.connect(streamWindowRevealed)
         session.displayLaunchError.connect(displayLaunchError)
+        session.launchNotice.connect(launchNotice)
         session.quitStarting.connect(quitStarting)
         session.sessionFinished.connect(sessionFinished)
         session.readyForDeletion.connect(sessionReadyForDeletion)

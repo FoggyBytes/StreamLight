@@ -117,7 +117,8 @@ void MainWindow::onMessageReceived(const QMdnsEngine::Message &message)
     if (!mShowQueries->isChecked()) {
         return;
     }
-    foreach (QMdnsEngine::Query query, message.queries()) {
+    const auto queries = message.queries();
+    for (const QMdnsEngine::Query &query : queries) {
         mLog->append(
             tr("[%1] %2")
                 .arg(QMdnsEngine::typeName(query.type()))

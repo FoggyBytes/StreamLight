@@ -347,12 +347,14 @@ void toPacket(const Message &message, QByteArray &packet)
     writeInteger<quint16>(packet, offset, 0);
     writeInteger<quint16>(packet, offset, 0);
     QMap<QByteArray, quint16> nameMap;
-    foreach (Query query, message.queries()) {
+    const auto queries = message.queries();
+    for (const Query &query : queries) {
         writeName(packet, offset, query.name(), nameMap);
         writeInteger<quint16>(packet, offset, query.type());
         writeInteger<quint16>(packet, offset, query.unicastResponse() ? 0x8001 : 1);
     }
-    foreach (Record record, message.records()) {
+    const auto records = message.records();
+    for (Record record : records) {
         writeRecord(packet, offset, record, nameMap);
     }
 }

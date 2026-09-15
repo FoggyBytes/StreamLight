@@ -12,6 +12,22 @@ class AppModel : public QAbstractListModel
 {
     Q_OBJECT
 
+    /**
+     * Which half of the host's list the rows show (5.9.0): "games", "apps", or "" for all of
+     * it. Empty by default, so every model built before the tabs existed — the unlock flow
+     * looking for Desktop, the host stage — still sees the whole list.
+     */
+    Q_PROPERTY(QString category READ category WRITE setCategory NOTIFY categoryChanged)
+    /// How many entries each tab would show, hidden ones filtered exactly as the rows are.
+    Q_PROPERTY(int gamesCount READ gamesCount NOTIFY countsChanged)
+    Q_PROPERTY(int appsCount READ appsCount NOTIFY countsChanged)
+    /**
+     * This client holds a Remote Monitor the server kept after its stream ended. The 2.0
+     * servers then send only Resume and Disconnect Monitor, which is the whole app list — so
+     * the host page opens on APPS, where those two are.
+     */
+    Q_PROPERTY(bool remoteMonitorActive READ remoteMonitorActive NOTIFY countsChanged)
+
     enum Roles
     {
         NameRole = Qt::UserRole,
@@ -24,10 +40,22 @@ class AppModel : public QAbstractListModel
         OverriddenRole,
         PlaytimeRole,
         SectionRole,
+        IsAppRole,
+        ControlRole,
     };
 
 public:
     explicit AppModel(QObject *parent = nullptr);
+
+    QString category() const { return m_Category; }
+    void setCategory(const QString& category);
+    int gamesCount() const { return m_GamesCount; }
+    int appsCount() const { return m_AppsCount; }
+    bool remoteMonitorActive() const { return m_RemoteMonitorActive; }
+
+    /// Index of a visible app by id, or -1. Used to relaunch the same entry after a host
+    /// confirmation — by id, because the running-game copy shares its name with the game.
+    Q_INVOKABLE int indexOfAppId(int appId) const;
 
     // Must be called before any QAbstractListModel functions
     Q_INVOKABLE void initialize(ComputerManager* computerManager, int computerIndex, bool showHiddenGames);
@@ -105,9 +133,21 @@ private slots:
 
 signals:
     void computerLost();
+    void categoryChanged();
+    void countsChanged();
 
 private:
     void updateAppList(QVector<NvApp> newList);
+
+    /// Does this app belong in the current tab? Always true with no category set.
+    bool matchesCategory(const NvApp& app) const;
+
+    /// The last-played name the sort and the Continue section use — empty on the APPS tab,
+    /// where the running-game copy carries the game's own title and must not be promoted.
+    QString lastPlayedForSort() const;
+
+    /// Recounts both tabs and the retained-monitor flag; emits countsChanged when any moved.
+    void updateCounts();
 
     /// Puts m_VisibleApps into the order appSortOrder() describes. Returns true when the
     /// order actually moved (and the model was reset), false when it was already right.
@@ -126,6 +166,11 @@ private:
     QVector<NvApp> m_VisibleApps, m_AllApps;
     int m_CurrentGameId;
     bool m_ShowHiddenGames;
+
+    QString m_Category;
+    int m_GamesCount = 0;
+    int m_AppsCount = 0;
+    bool m_RemoteMonitorActive = false;
 
     // Formatted play time by app id, filled on first read of each row.
     //

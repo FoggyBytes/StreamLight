@@ -29,6 +29,7 @@
 #include <QHostAddress>
 #include <QList>
 #include <QMap>
+#include <QDebug>
 
 #include "qmdnsengine_export.h"
 
@@ -148,6 +149,8 @@ private:
 
     ServicePrivate *const d;
 };
+
+QMDNSENGINE_EXPORT QDebug operator<<(QDebug debug, const Service &service);
 
 }
 

@@ -137,7 +137,8 @@ void ProviderPrivate::onMessageReceived(const Message &message)
     bool sendTxt = false;
 
     // Determine which records to send based on the queries
-    foreach (Query query, message.queries()) {
+    const auto queries = message.queries();
+    for (const Query &query : queries) {
         if (query.type() == PTR && query.name() == MdnsBrowseType) {
             sendBrowsePtr = true;
         } else if (query.type() == PTR && query.name() == ptrRecord.name()) {
@@ -150,7 +151,8 @@ void ProviderPrivate::onMessageReceived(const Message &message)
     }
 
     // Remove records to send if they are already known
-    foreach (Record record, message.records()) {
+    const auto records = message.records();
+    for (const Record &record : records) {
         if (record == ptrRecord) {
             sendPtr = false;
         } else if (record == srvRecord) {
@@ -185,10 +187,10 @@ void ProviderPrivate::onMessageReceived(const Message &message)
     }
 }
 
-void ProviderPrivate::onHostnameChanged(const QByteArray &hostname)
+void ProviderPrivate::onHostnameChanged(const QByteArray &newHostname)
 {
     // Update the proposed SRV record
-    srvProposed.setTarget(hostname);
+    srvProposed.setTarget(newHostname);
 
     // If initialized, confirm the record
     if (initialized) {

@@ -184,7 +184,7 @@ FocusScope {
      */
     property string _resumeCursorTo: ""
 
-    function launchSegue(name, art, session, resume) {
+    function launchSegue(name, art, session, resume, appId) {
         appsRoot._resumeCursorTo = name
         var component = Qt.createComponent("StreamSegue.qml")
         if (component.status !== Component.Ready) {
@@ -196,6 +196,12 @@ FocusScope {
             "boxArt":           art,
             "session":          session,
             "isResume":         resume,
+            // Built here for the same reason as onSessionEndedFn below: it outlives the
+            // delegate. A host that answers 410 is handed back to this page, the only place
+            // that can launch the same entry again.
+            "onLaunchNoticeFn": function(text, confirm) {
+                appsRoot.showHostNotice(text, confirm, appId, name)
+            },
             // ⚠️ Built here and not passed in. A closure carries the context it was written
             // in, so one written in the delegate would die with the delegate exactly like the
             // segue used to — and this is the callback that records the session ending, which
@@ -245,11 +251,14 @@ FocusScope {
         if (!appGrid || !appGrid.appModel || appGrid.currentIndex < 0) return ({})
         return appGrid.appModel.playtimeFor(appGrid.currentIndex)
     }
+    // Nothing on the APPS tab carries hours or sessions (5.9.0). Most of it is never tracked
+    // anyway, but the running-game copy a 2.0 server sends has the game's own title, and its
+    // figures would otherwise turn up against an entry that is not the game.
     readonly property string focusedPlaytime:
-        (focusedPlaytimeRec && focusedPlaytimeRec.total !== undefined)
+        (!focusedIsApp && focusedPlaytimeRec && focusedPlaytimeRec.total !== undefined)
             ? focusedPlaytimeRec.total : ""
     readonly property int focusedSessions:
-        (focusedPlaytimeRec && focusedPlaytimeRec.sessions !== undefined)
+        (!focusedIsApp && focusedPlaytimeRec && focusedPlaytimeRec.sessions !== undefined)
             ? focusedPlaytimeRec.sessions : 0
 
     // Bound to delegate._running (a property — reactive) so the status-bar prompts and the
@@ -257,12 +266,83 @@ FocusScope {
     property bool focusedAppIsRunning:
         (appGrid && appGrid.currentItem) ? appGrid.currentItem._running === true : false
 
-    // "Desktop" is not a game and "Play Desktop" reads wrong; it is the one entry where the
-    // honest verb is Open.
+    readonly property bool focusedIsApp:
+        (appGrid && appGrid.currentItem) ? appGrid.currentItem._isApp === true : false
+
+    // Nothing on the APPS tab is a game, and "Play Desktop" or "Play Remote Monitor" reads
+    // wrong: the honest verb for all of them is Open (5.9.0 — it used to be Desktop alone).
     readonly property string focusedVerb:
         focusedAppIsRunning ? qsTr("Resume")
-      : focusedAppName === "Desktop" ? qsTr("Open")
+      : focusedIsApp ? qsTr("Open")
       : qsTr("Play")
+
+    // ── GAMES / APPS (5.9.0) ─────────────────────────────────────────────────
+    /*
+     * The host's list split in two: the games, and everything that is not one — Desktop,
+     * Steam Big Picture, and the host controls Vibeshine and Vibepollo 2.0 add (Remote Input,
+     * Remote Monitor, Resume, Terminate, Disconnect). LT/RT on the pad, PgUp/PgDn on the
+     * keyboard; the triggers only cycle hosts on Home, so here they are free.
+     *
+     * Opens on GAMES, or on APPS when there are no games — a host set up without StreamTweak
+     * may have nothing but Desktop — or when this client still holds a Remote Monitor, because
+     * the server then lists only Resume and Disconnect Monitor.
+     */
+    property string libraryTab: "games"
+    property bool _tabChosenByUser: false
+
+    function setLibraryTab(tab, byUser) {
+        if (!appGrid || !appGrid.appModel) return
+        if (byUser) _tabChosenByUser = true
+        if (tab === libraryTab && appGrid.appModel.category === tab) return
+        libraryTab = tab
+        appGrid.appModel.category = tab
+        appGrid.currentIndex = 0
+        appGrid.positionViewAtBeginning()
+        appGrid.updateContinue()
+        appsRoot._playtimeEpoch++
+    }
+
+    function switchLibraryTab(dir) {
+        setLibraryTab(dir < 0 ? "games" : "apps", true)
+    }
+
+    function _pickDefaultTab() {
+        if (!appGrid || !appGrid.appModel) return
+        var m = appGrid.appModel
+        setLibraryTab((m.remoteMonitorActive || m.gamesCount === 0) ? "apps" : "games", false)
+    }
+
+    // The list can change under an open page — a poll brings the app list, a Remote Monitor is
+    // kept after its stream. A choice the user made stands, except for the two cases where the
+    // tab they are on would be empty or would hide the controls that are now the whole list.
+    Connections {
+        target: (appGrid && appGrid.appModel) ? appGrid.appModel : null
+        function onCountsChanged() {
+            var m = appGrid.appModel
+            if (!appsRoot._tabChosenByUser) {
+                appsRoot._pickDefaultTab()
+            } else if (m.remoteMonitorActive && appsRoot.libraryTab !== "apps") {
+                appsRoot.setLibraryTab("apps", false)
+            } else if (appsRoot.libraryTab === "games" && m.gamesCount === 0 && m.appsCount > 0) {
+                appsRoot.setLibraryTab("apps", false)
+            }
+        }
+    }
+
+    // ── Host notices (5.9.0) ─────────────────────────────────────────────────
+    /*
+     * A launch the host answered with 410. Either a host action that finished (Terminate,
+     * Disconnect Monitor, Disconnect Input) — shown as what it is, not as an error — or a
+     * request to confirm by launching the same entry again within 60 seconds, which this page
+     * turns into a question and answers itself on Yes.
+     */
+    function showHostNotice(text, confirm, appId, name) {
+        hostNoticeDialog.text = text
+        hostNoticeDialog.confirm = confirm
+        hostNoticeDialog.appId = appId
+        hostNoticeDialog.appName = name
+        hostNoticeDialog.open()
+    }
 
     // No `focusedActionLabel` exported any more: the status bar no longer prints A on this
     // page, because the verb is written on the button that carries the A glyph. The bar
@@ -308,6 +388,14 @@ FocusScope {
          * badge they move. The shoulders carry inert keys of their own precisely so they
          * cannot be confused with the host cycling on PgUp/PgDn.
          */
+        // GAMES / APPS: LT/RT on the pad (Key_F14/F15), PgUp/PgDn on the keyboard.
+        else if (event.key === Qt.Key_F14 || event.key === Qt.Key_PageUp) {
+            switchLibraryTab(-1)
+            event.accepted = true
+        } else if (event.key === Qt.Key_F15 || event.key === Qt.Key_PageDown) {
+            switchLibraryTab(1)
+            event.accepted = true
+        }
         else if (event.key === Qt.Key_F16 || event.key === Qt.Key_Q) {
             cycleProfile(-1)
             event.accepted = true
@@ -971,14 +1059,80 @@ FocusScope {
      * axis to move along instead of two: on a pad that is the difference between arriving at
      * a game and hunting for it.
      */
-    ListView {
-        id: appGrid
-        // Straight under the configuration line: the column's caption is now the list's own
-        // first section header, which scrolls away with the rows it names.
+    // The two tabs over the library (5.9.0). Clickable for the mouse; the pad's LT/RT and the
+    // keyboard's PgUp/PgDn are named in the status bar.
+    Row {
+        id: libraryTabs
         anchors.top: cfgLine.bottom
         anchors.left: parent.left
-        anchors.bottom: parent.bottom
         anchors.topMargin: appsRoot._px(16)
+        anchors.leftMargin: appsRoot._sideMargin
+        spacing: appsRoot._px(26)
+
+        Repeater {
+            model: [
+                { tab: "games", label: qsTr("GAMES"),
+                  n: (appGrid && appGrid.appModel) ? appGrid.appModel.gamesCount : 0 },
+                { tab: "apps",  label: qsTr("APPS"),
+                  n: (appGrid && appGrid.appModel) ? appGrid.appModel.appsCount : 0 }
+            ]
+
+            delegate: Item {
+                id: tabItem
+                readonly property bool _on: appsRoot.libraryTab === modelData.tab
+                implicitWidth: tabRow.implicitWidth
+                implicitHeight: tabRow.implicitHeight + appsRoot._px(10)
+
+                Row {
+                    id: tabRow
+                    spacing: appsRoot._px(8)
+
+                    Label {
+                        text: modelData.label
+                        color: tabItem._on ? Theme.text : Theme.text3
+                        font.family: Theme.family
+                        font.pixelSize: appsRoot._px(Theme.fontBody)
+                        font.weight: tabItem._on ? Font.DemiBold : Font.Normal
+                        font.letterSpacing: appsRoot._u * 1.6
+                    }
+                    Label {
+                        text: modelData.n
+                        color: Theme.text3
+                        font.family: Theme.family
+                        font.pixelSize: appsRoot._px(Theme.fontBody)
+                    }
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: appsRoot._px(2)
+                    radius: height / 2
+                    color: Theme.accent
+                    visible: tabItem._on
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        appsRoot.setLibraryTab(modelData.tab, true)
+                        appsRoot.focusLibrary()
+                    }
+                }
+            }
+        }
+    }
+
+    ListView {
+        id: appGrid
+        // Straight under the tabs: the column's caption is the list's own first section
+        // header, which scrolls away with the rows it names.
+        anchors.top: libraryTabs.bottom
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.topMargin: appsRoot._px(8)
         anchors.leftMargin: appsRoot._sideMargin
         anchors.bottomMargin: appsRoot._px(58)
         width: appsRoot._libraryWidth
@@ -989,7 +1143,12 @@ FocusScope {
         boundsBehavior: Flickable.OvershootBounds
         // Keeps the focused row off the edges while walking with the pad, so the next title
         // is always already visible rather than appearing as you reach it.
-        highlightRangeMode: ListView.ApplyRange
+        // ⚠️ Only while driving with the pad or the keyboard. With the mouse the row under the
+        // pointer becomes current (see onHoveredChanged in the delegate), and a range that
+        // scrolled to keep it off the edges would slide the next row under a pointer that has
+        // not moved — which would make that one current, and so on down the list.
+        highlightRangeMode: SdlGamepadKeyNavigation.inputMode === "key"
+                            ? ListView.ApplyRange : ListView.NoHighlightRange
         preferredHighlightBegin: appsRoot._px(60)
         preferredHighlightEnd: height - appsRoot._px(60)
         highlightMoveDuration: Theme.reduceAnimations ? 0 : 160
@@ -1046,7 +1205,8 @@ FocusScope {
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: appsRoot._px(8)
-                text: parent._isContinue ? qsTr("LAST PLAYED") : qsTr("ALL APPS")
+                text: parent._isContinue ? qsTr("LAST PLAYED")
+                    : appsRoot.libraryTab === "apps" ? qsTr("ALL APPS") : qsTr("ALL GAMES")
                 color: parent._isContinue ? Theme.accent : Theme.text3
                 font.family: Theme.family
                 font.pixelSize: appsRoot._px(Theme.fontSmall)
@@ -1074,15 +1234,24 @@ FocusScope {
         readonly property int _gap:  appsRoot._px(6)
 
         Component.onCompleted: {
-            // Row 0 is the game you last played whenever there is one — the model sorts it
-            // there — so opening the page already has A pointed at it.
+            // The tab first: it decides which rows exist. Then row 0 is the game you last
+            // played whenever there is one — the model sorts it there — so opening the page
+            // already has A pointed at it.
+            appsRoot._pickDefaultTab()
             currentIndex = 0
             updateContinue()
             appModel.computerLost.connect(computerLost)
             activated = true
 
             if (!showGames && !appsRoot.showHiddenGames) {
+                // The direct-launch entry can sit on either tab, so look on the other one too.
                 var directLaunchAppIndex = model.getDirectLaunchAppIndex()
+                if (directLaunchAppIndex < 0) {
+                    var startTab = appsRoot.libraryTab
+                    appsRoot.setLibraryTab(startTab === "games" ? "apps" : "games", false)
+                    directLaunchAppIndex = model.getDirectLaunchAppIndex()
+                    if (directLaunchAppIndex < 0) appsRoot.setLibraryTab(startTab, false)
+                }
                 if (directLaunchAppIndex >= 0) {
                     currentIndex = directLaunchAppIndex
                     currentItem.launchOrResumeSelectedApp(false)
@@ -1122,6 +1291,13 @@ FocusScope {
         function createModel() {
             var model = Qt.createQmlObject('import AppModel 1.0; AppModel {}', parent, '')
             model.initialize(ComputerManager, appsRoot.computerIndex, appsRoot.showHiddenGames)
+            // The tab is decided here, before the list sees a single row, rather than by
+            // resetting a model that has already filled it: that reset left the spotlight with no
+            // focused item for an instant, and everything bound to it — the blurred backdrop
+            // above all — had to recover from a flicker nobody asked for.
+            var tab = (model.remoteMonitorActive || model.gamesCount === 0) ? "apps" : "games"
+            model.category = tab
+            appsRoot.libraryTab = tab
             return model
         }
 
@@ -1139,6 +1315,8 @@ FocusScope {
             property bool   _running:    model.running
             property string _boxArt:     model.boxart
             property bool   _overridden: model.overridden
+            property bool   _isApp:      model.isApp
+            property string _control:    model.control
 
             opacity: model.hidden ? 0.45 : 1.0
 
@@ -1227,14 +1405,15 @@ FocusScope {
                         property string store: appGrid.storeMap[model.name] || ""
                         width: parent.width
                         visible: store.length > 0 || model.overridden
-                                 || (model.playtime && model.playtime.length > 0)
+                                 || (!model.isApp && model.playtime && model.playtime.length > 0)
                         text: {
                             var parts = []
                             if (store.length > 0)   parts.push(store)
                             // Empty for a game never streamed, and for Desktop and Steam Big
                             // Picture, which never accumulate any — the model decides, this
                             // line just appends what it is given.
-                            if (model.playtime && model.playtime.length > 0)
+                            // Never on an app — see focusedPlaytime.
+                            if (!model.isApp && model.playtime && model.playtime.length > 0)
                                 parts.push(model.playtime)
                             if (model.overridden)   parts.push(qsTr("custom settings"))
                             return parts.join("  ·  ")
@@ -1305,7 +1484,10 @@ FocusScope {
                 // Must use appGrid.appModel — bare appModel is not in scope.
                 var m = appGrid.appModel
                 var runningId = m.getRunningAppId()
-                if (runningId !== 0 && runningId !== model.appid) {
+                // A host control runs beside the game rather than replacing it (Remote Input
+                // and Remote Monitor exist precisely to be used while one is running), so it
+                // never asks to quit first — the server decides, and says so if it refuses.
+                if (runningId !== 0 && runningId !== model.appid && model.control === "") {
                     if (quitExistingApp) {
                         quitAppDialog.appName = m.getRunningAppName()
                         quitAppDialog.boxArt = m.getRunningAppBoxArt()
@@ -1327,7 +1509,27 @@ FocusScope {
                 appsRoot.launchSegue(model.name,
                                      model.boxart,
                                      m.createSessionForApp(index),
-                                     runningId === model.appid)
+                                     runningId === model.appid,
+                                     model.appid)
+            }
+
+            /*
+             * With the mouse the row under the pointer is the selected one (5.9.0). The light
+             * on the row already followed the pointer, but the spotlight reads the list's
+             * current item, so the cover beside it stayed on whatever the pad had left there.
+             *
+             * ⚠️ Only for a row fully in view. Selecting a row cut by the edge scrolls it in,
+             * which slides the next row under a pointer that has not moved — and that one would
+             * be selected in turn. The mouse mode also drops the highlight range for the same
+             * reason (see highlightRangeMode).
+             */
+            onHoveredChanged: {
+                if (!hovered || SdlGamepadKeyNavigation.inputMode === "key"
+                        || appGrid.currentIndex === index)
+                    return
+                var top = appDelegate.mapToItem(appGrid, 0, 0).y
+                if (top >= 0 && top + appDelegate.height <= appGrid.height)
+                    appGrid.currentIndex = index
             }
 
             onClicked: {
@@ -1373,7 +1575,9 @@ FocusScope {
         anchors.centerIn: parent
         width: parent.width * 0.6
         visible: appGrid.count === 0
-        text: qsTr("No apps to show — some may be hidden on the host")
+        text: appsRoot.libraryTab === "games"
+              ? qsTr("No games to show — some may be hidden on the host")
+              : qsTr("No apps to show — some may be hidden on the host")
         color: Theme.text2
         font.family: Theme.family
         font.pixelSize: appsRoot._px(Theme.fontTitle)
@@ -1426,6 +1630,31 @@ FocusScope {
         }
 
         onAccepted: quitApp()
+        onClosed: appsRoot.focusLibrary()
+    }
+
+    // A 410 from the host — see showHostNotice(). Yes relaunches the same entry, found again by
+    // id: the running-game copy a 2.0 server sends shares its name with the game itself.
+    NavigableMessageDialog {
+        id: hostNoticeDialog
+        property bool confirm: false
+        property int appId: 0
+        property string appName: ""
+        standardButtons: confirm ? (Dialog.Yes | Dialog.No) : Dialog.Ok
+
+        onAccepted: {
+            if (!confirm || !appGrid.appModel) return
+            var i = appGrid.appModel.indexOfAppId(appId)
+            if (i < 0) {
+                // The confirmation can be for an entry on the other tab (a normal app replacing
+                // a running one); look there before giving up.
+                appsRoot.setLibraryTab(appsRoot.libraryTab === "games" ? "apps" : "games", false)
+                i = appGrid.appModel.indexOfAppId(appId)
+            }
+            if (i < 0) return
+            appGrid.currentIndex = i
+            if (appGrid.currentItem) appGrid.currentItem.launchOrResumeSelectedApp(true)
+        }
         onClosed: appsRoot.focusLibrary()
     }
 

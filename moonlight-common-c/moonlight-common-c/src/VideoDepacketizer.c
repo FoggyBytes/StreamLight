@@ -103,9 +103,10 @@ static void dropFrameState(void) {
     // We're dropping frame state now
     dropStatePending = false;
 
-    if (strictIdrFrameWait || !idrFrameProcessed || waitingForIdrFrame) {
+    if (strictIdrFrameWait || !idrFrameProcessed || waitingForIdrFrame || (nalChainHead && frameType == FRAME_TYPE_IDR)) {
         // We'll need an IDR frame now if we're in non-RFI mode, if we've never
-        // received an IDR frame, or if we explicitly need an IDR frame.
+        // received an IDR frame, if we explicitly need an IDR frame, or if we
+        // just dropped a partially processed IDR frame.
         waitingForIdrFrame = true;
     }
     else {

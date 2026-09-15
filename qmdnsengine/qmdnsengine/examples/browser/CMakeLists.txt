@@ -10,7 +10,7 @@ set_target_properties(browser PROPERTIES
     CXX_STANDARD 11
 )
 
-target_link_libraries(browser qmdnsengine Qt5::Widgets)
+target_link_libraries(browser qmdnsengine Qt${QT_VERSION_MAJOR}::Widgets)
 
 install(TARGETS browser
     RUNTIME DESTINATION "${EXAMPLE_DIR}"

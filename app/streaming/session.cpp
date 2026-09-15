@@ -822,6 +822,12 @@ bool Session::initialize(QQuickWindow* qtWindow)
         return false;
     }
 
+    // Stop text input. SDL enables it by default
+    // when we initialize the video subsystem, but this
+    // causes an IME popup when certain keys are held down
+    // on macOS.
+    SDL_StopTextInput();
+
     LiInitializeStreamConfiguration(&m_StreamConfig);
     m_StreamConfig.width = m_Preferences->width;
     m_StreamConfig.height = m_Preferences->height;
@@ -830,21 +836,13 @@ bool Session::initialize(QQuickWindow* qtWindow)
     getWindowDimensions(x, y, width, height);
 
     // Create a hidden window to use for decoder initialization tests
-    SDL_Window* testWindow = SDL_CreateWindow("", x, y, width, height,
-                                              SDL_WINDOW_HIDDEN | StreamUtils::getPlatformWindowFlags());
+    SDL_Window* testWindow = StreamUtils::createTestWindow();
     if (!testWindow) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Failed to create test window with platform flags: %s",
-                    SDL_GetError());
-
-        testWindow = SDL_CreateWindow("", x, y, width, height, SDL_WINDOW_HIDDEN);
-        if (!testWindow) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "Failed to create window for hardware decode test: %s",
-                         SDL_GetError());
-            SDL_QuitSubSystem(SDL_INIT_VIDEO);
-            return false;
-        }
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Failed to create window for hardware decode test: %s",
+                     SDL_GetError());
+        SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        return false;
     }
 
     qInfo() << "Server GPU:" << m_Computer->gpuModel;
@@ -971,24 +969,6 @@ bool Session::initialize(QQuickWindow* qtWindow)
             }
         }
 
-#if 0
-        // TODO: Determine if AV1 is better depending on the decoder
-        if (getDecoderAvailability(testWindow,
-                                   m_Preferences->videoDecoderSelection,
-                                   m_Preferences->enableYUV444 ?
-                                        (m_Preferences->enableHdr ? VIDEO_FORMAT_AV1_HIGH10_444 : VIDEO_FORMAT_AV1_HIGH8_444) :
-                                        (m_Preferences->enableHdr ? VIDEO_FORMAT_AV1_MAIN10 : VIDEO_FORMAT_AV1_MAIN8),
-                                   m_StreamConfig.width,
-                                   m_StreamConfig.height,
-                                   m_StreamConfig.fps) != DecoderAvailability::Hardware) {
-            // Deprioritize AV1 unless we can't hardware decode HEVC and have HDR enabled.
-            // We want to keep AV1 at the top of the list for HDR with software decoding
-            // because dav1d is higher performance than FFmpeg's HEVC software decoder.
-            if (hevcDA == DecoderAvailability::Hardware || !m_Preferences->enableHdr) {
-                m_SupportedVideoFormats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
-            }
-        }
-#else
         // Deprioritize AV1 unless we can't hardware decode HEVC, and have HDR enabled
         // or we're on Windows or a non-x86 Linux/BSD.
         //
@@ -1016,7 +996,15 @@ bool Session::initialize(QQuickWindow* qtWindow)
             ) {
             m_SupportedVideoFormats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
         }
-#endif
+        else if (!m_Preferences->enableHdr &&
+                   getDecoderAvailability(testWindow,
+                                          m_Preferences->videoDecoderSelection,
+                                          m_Preferences->enableYUV444 ? VIDEO_FORMAT_AV1_HIGH8_444 : VIDEO_FORMAT_AV1_MAIN8,
+                                          m_StreamConfig.width,
+                                          m_StreamConfig.height,
+                                          m_StreamConfig.fps) != DecoderAvailability::Hardware) {
+            m_SupportedVideoFormats.deprioritizeByMask(VIDEO_FORMAT_MASK_AV1);
+        }
 
 #ifdef Q_OS_DARWIN
         {
@@ -1177,7 +1165,7 @@ void Session::refreshHostCapabilities()
         // Mirror PcMonitorThread::tryPollComputer: pass 0 for httpsPort so
         // NvHTTP rediscovers it from the HTTP response. Using a cached value
         // here would risk failing if the port has changed.
-        NvHTTP http(address, 0, m_Computer->serverCert, &nam);
+        NvHTTP http(address, 0, m_Computer->serverCert, !m_Computer->isNvidiaServerSoftware, &nam);
 
         QString serverInfo;
         try {
@@ -1691,7 +1679,8 @@ void Session::updateOptimalWindowDisplayMode()
     if (!matchVideo) {
         // Start with the native desktop resolution and try to find
         // the highest refresh rate that our stream FPS evenly divides.
-        for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
+        int numDisplayModes = SDL_GetNumDisplayModes(displayIndex);
+        for (int i = 0; i < numDisplayModes; i++) {
             if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
                 if (mode.w == desktopMode.w && mode.h == desktopMode.h &&
                     mode.refresh_rate % m_StreamConfig.fps == 0) {
@@ -1714,7 +1703,8 @@ void Session::updateOptimalWindowDisplayMode()
     if (bestMode.refresh_rate == 0) {
         float bestModeAspectRatio = 0;
         float videoAspectRatio = (float)m_ActiveVideoWidth / (float)m_ActiveVideoHeight;
-        for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
+        int numDisplayModes = SDL_GetNumDisplayModes(displayIndex);
+        for (int i = 0; i < numDisplayModes; i++) {
             if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
                 float modeAspectRatio = (float)mode.w / (float)mode.h;
                 if (mode.w >= m_ActiveVideoWidth && mode.h >= m_ActiveVideoHeight &&
@@ -1941,10 +1931,16 @@ public:
 // Called in a non-main thread
 bool Session::startConnectionAsync()
 {
+    // A Vibeshine / Vibepollo 2.0 host control runs beside the game rather than replacing it,
+    // and it is always reached through /launch: the server routes Resume, Remote Monitor and
+    // Terminate itself, and a /resume for one of them would be asking to rejoin the game.
+    const bool hostControl = hostControlKind(m_App.id, m_App.uuid, m_App.name) != HostControl::None;
+
     // The UI should have ensured the old game was already quit
     // if we decide to stream a different game.
     Q_ASSERT(m_Computer->currentGameId == 0 ||
-             m_Computer->currentGameId == m_App.id);
+             m_Computer->currentGameId == m_App.id ||
+             hostControl);
 
     bool enableGameOptimizations;
     if (m_Computer->isNvidiaServerSoftware) {
@@ -1973,7 +1969,7 @@ bool Session::startConnectionAsync()
 
     try {
         NvHTTP http(m_Computer);
-        http.startApp(m_Computer->currentGameId != 0 ? "resume" : "launch",
+        http.startApp((m_Computer->currentGameId != 0 && !hostControl) ? "resume" : "launch",
                       m_Computer->isNvidiaServerSoftware,
                       m_App.id, &m_StreamConfig,
                       enableGameOptimizations,
@@ -1983,6 +1979,17 @@ bool Session::startConnectionAsync()
                       rtspSessionUrl,
                       m_HostVirtualDisplay);
     } catch (const GfeHttpResponseException& e) {
+        // ⚠️ 410 is not an error. Apollo's convention, kept by Vibeshine and Vibepollo 2.0: a
+        // host control that finishes without a stream (Terminate, Disconnect Monitor/Input)
+        // answers 410 with a success message, and an action the server wants confirmed
+        // (Terminate from a secondary client, replacing a running app) answers 410 asking to
+        // launch the same entry again within 60 s. Only that wording tells the two apart —
+        // the status code is the same — so it is matched on the one phrase both prompts share.
+        if (e.getStatusCode() == 410) {
+            const QString message = QString::fromUtf8(e.getStatusMessage());
+            emit launchNotice(message, message.contains(QLatin1String("again within"), Qt::CaseInsensitive));
+            return false;
+        }
         emit displayLaunchError(tr("Host returned error: %1").arg(e.toQString()));
         return false;
     } catch (const QtNetworkReplyException& e) {
@@ -2269,6 +2276,20 @@ void Session::beginLinkMatch()
         // path as the unlock case, because that signal is what releases the launch.
         emit linkMatchFinished(false, QString());
         return;
+    }
+
+    // 5.9.0: nothing worth renegotiating the host's adapter for. Remote Input carries input
+    // only, and Terminate / Disconnect finish with a message instead of a stream — dropping the
+    // link for either would black out whatever else is streaming from that host.
+    switch (hostControlKind(m_App.id, m_App.uuid, m_App.name)) {
+    case HostControl::RemoteInput:
+    case HostControl::Terminate:
+    case HostControl::DisconnectMonitor:
+    case HostControl::DisconnectInput:
+        emit linkMatchFinished(false, QString());
+        return;
+    default:
+        break;
     }
 
     // One matcher per session; a resume builds a new Session and therefore a new matcher.
@@ -2623,24 +2644,24 @@ void Session::exec()
     bool needsFirstEnterCapture = false;
     bool needsPostDecoderCreationCapture = false;
 
-    // HACK: For Wayland, we wait until we get the first SDL_WINDOWEVENT_ENTER
-    // event where it seems to work consistently on GNOME. For other platforms,
-    // especially where SDL may call SDL_RecreateWindow(), we must only capture
-    // after the decoder is created.
-    if (strcmp(SDL_GetCurrentVideoDriver(), "wayland") == 0) {
-        // Native Wayland: Capture on SDL_WINDOWEVENT_ENTER
-        needsFirstEnterCapture = true;
+    // Avoid capturing the mouse initially for windowed relative mode.
+    // We still capture in windowed absolute mode because it doesn't
+    // constrain the motion of the cursor. This allows the user to
+    // easily reposition or resize the window.
+    if (m_IsFullScreen || m_Preferences->absoluteMouseMode) {
+        // HACK: For Wayland, we wait until we get the first SDL_WINDOWEVENT_ENTER
+        // event where it seems to work consistently on GNOME. For other platforms,
+        // especially where SDL may call SDL_RecreateWindow(), we must only capture
+        // after the decoder is created.
+        if (strcmp(SDL_GetCurrentVideoDriver(), "wayland") == 0) {
+            // Native Wayland: Capture on SDL_WINDOWEVENT_ENTER
+            needsFirstEnterCapture = true;
+        }
+        else {
+            // X11/XWayland: Capture after decoder creation
+            needsPostDecoderCreationCapture = true;
+        }
     }
-    else {
-        // X11/XWayland: Capture after decoder creation
-        needsPostDecoderCreationCapture = true;
-    }
-
-    // Stop text input. SDL enables it by default
-    // when we initialize the video subsystem, but this
-    // causes an IME popup when certain keys are held down
-    // on macOS.
-    SDL_StopTextInput();
 
     // Disable the screen saver if requested
     if (m_Preferences->keepAwake) {

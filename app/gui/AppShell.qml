@@ -269,6 +269,12 @@ FocusScope {
         case "change":
             SdlGamepadKeyNavigation.simulateKey(Qt.Key_Space)
             break
+        case "gamesTab":
+            if (appsLoader.item && appsLoader.item.switchLibraryTab) appsLoader.item.switchLibraryTab(-1)
+            break
+        case "appsTab":
+            if (appsLoader.item && appsLoader.item.switchLibraryTab) appsLoader.item.switchLibraryTab(1)
+            break
         case "prevTab":
             SdlGamepadKeyNavigation.simulateKey(Qt.Key_PageUp)
             break
@@ -489,9 +495,14 @@ FocusScope {
         // page, and B leaves it. "Hosts", not "Back" — B always lands in the same place from
         // here, and naming the destination is the one thing the removed corner button did
         // that the bar could not. "Back" says you are leaving, "Hosts" says where you arrive.
+        // 5.9.0: LT/RT switch the host page between GAMES and APPS. They sit here rather than
+        // on the tabs because there is no button on the tabs to carry a glyph, and on this page
+        // the triggers belong to nothing else.
         readonly property var _hintsApps: [
-            { btn: "Y", key: "S",   act: qsTr("Settings"), kind: "settings" },
-            { btn: "B", key: "Esc", act: qsTr("Hosts"),    kind: "back" }
+            { btn: "Y",  key: "S",    act: qsTr("Settings"), kind: "settings" },
+            { btn: "B",  key: "Esc",  act: qsTr("Hosts"),    kind: "back" },
+            { btn: "LT", key: "PgUp", act: qsTr("Games"),    kind: "gamesTab" },
+            { btn: "RT", key: "PgDn", act: qsTr("Apps"),     kind: "appsTab" }
         ]
         // Settings prompts add "X · Default" when the bitrate differs from recommended.
         readonly property bool _showDefaultHint:

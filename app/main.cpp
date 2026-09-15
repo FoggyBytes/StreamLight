@@ -731,9 +731,13 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-#ifdef STEAM_LINK
+#if defined(STEAM_LINK) || defined(Q_OS_WIN32)
     // Steam Link requires that we initialize video before creating our
     // QGuiApplication in order to configure the framebuffer correctly.
+    //
+    // We keep the video subsystem initialized on Windows because it's
+    // much more costly to reinitialize than other platforms. It hurts
+    // the settings page transition performance significantly.
     if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "SDL_InitSubSystem(SDL_INIT_VIDEO) failed: %s",
@@ -768,10 +772,6 @@ int main(int argc, char *argv[])
     // for screensaver inhibitor reporting.
     SDL_SetHint(SDL_HINT_AUDIO_DEVICE_APP_NAME, "Moonlight");
     SDL_SetHint(SDL_HINT_APP_NAME, "Moonlight");
-
-    // We handle capturing the mouse ourselves when it leaves the window, so we don't need
-    // SDL doing it for us behind our backs.
-    SDL_SetHint(SDL_HINT_MOUSE_AUTO_CAPTURE, "0");
 
     // SDL will try to lock the mouse cursor on Wayland if it's not visible in order to
     // support applications that assume they can warp the cursor (which isn't possible

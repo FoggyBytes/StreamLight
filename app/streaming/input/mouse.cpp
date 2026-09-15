@@ -128,8 +128,10 @@ void SdlInputHandler::handleMouseMotionEvent(SDL_MouseMotionEvent* event)
         Uint32 buttonState = SDL_GetMouseState(nullptr, nullptr);
         if (buttonState == 0) {
             if (m_PendingMouseButtonsAllUpOnVideoRegionLeave) {
-                // Stop capturing the mouse now
-                SDL_CaptureMouse(SDL_FALSE);
+                if (m_NeedsManualCaptureOnLeave) {
+                    // Stop capturing the mouse now
+                    SDL_CaptureMouse(SDL_FALSE);
+                }
                 m_PendingMouseButtonsAllUpOnVideoRegionLeave = false;
             }
         }
@@ -193,7 +195,7 @@ void SdlInputHandler::handleMouseWheelEvent(SDL_MouseWheelEvent* event)
     if (event->preciseX != 0.0f) {
         // Invert the scroll direction if needed
         if (m_ReverseScrollDirection) {
-            event->preciseX = -event->preciseY;
+            event->preciseX = -event->preciseX;
         }
 
 #ifdef Q_OS_DARWIN

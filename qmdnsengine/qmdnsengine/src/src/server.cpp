@@ -98,13 +98,14 @@ void ServerPrivate::onTimeout()
     bool ipv6Bound = bindSocket(ipv6Socket, QHostAddress::AnyIPv6);
 
     if (ipv4Bound || ipv6Bound) {
-        foreach (QNetworkInterface interface, QNetworkInterface::allInterfaces()) {
-            if (interface.flags() & QNetworkInterface::CanMulticast) {
+        const auto interfaces = QNetworkInterface::allInterfaces();
+        for (const QNetworkInterface &networkInterface : interfaces) {
+            if (networkInterface.flags() & QNetworkInterface::CanMulticast) {
                 if (ipv4Bound) {
-                    ipv4Socket.joinMulticastGroup(MdnsIpv4Address, interface);
+                    ipv4Socket.joinMulticastGroup(MdnsIpv4Address, networkInterface);
                 }
                 if (ipv6Bound) {
-                    ipv6Socket.joinMulticastGroup(MdnsIpv6Address, interface);
+                    ipv6Socket.joinMulticastGroup(MdnsIpv6Address, networkInterface);
                 }
             }
         }
@@ -154,7 +155,8 @@ void Server::sendMessageToAll(const Message &message)
     QByteArray packet;
     toPacket(message, packet);
 
-    foreach (QNetworkInterface interface, QNetworkInterface::allInterfaces()) {
+    const auto interfaces = QNetworkInterface::allInterfaces();
+    for (const QNetworkInterface &interface : interfaces) {
         if (interface.flags() & QNetworkInterface::CanMulticast) {
             d->ipv4Socket.setMulticastInterface(interface);
             d->ipv4Socket.writeDatagram(packet, MdnsIpv4Address, MdnsPort);

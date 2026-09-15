@@ -127,13 +127,14 @@ void TestBrowser::testBrowser()
     QCOMPARE(serviceAddedSpy.count(), 1);
     QCOMPARE(serviceUpdatedSpy.count(), 1);
 
-    // Remove the PTR record
+    // Remove the SRV record
     {
         QMdnsEngine::Record record;
-        record.setName(Type);
-        record.setType(QMdnsEngine::PTR);
+        record.setName(Fqdn);
+        record.setType(QMdnsEngine::SRV);
+        record.setTarget(Target);
+        record.setPort(Port);
         record.setTtl(0);
-        record.setTarget(Fqdn);
         QMdnsEngine::Message message;
         message.setResponse(true);
         message.addRecord(record);

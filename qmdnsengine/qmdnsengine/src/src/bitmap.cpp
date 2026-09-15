@@ -68,8 +68,10 @@ Bitmap::Bitmap(const Bitmap &other)
 
 Bitmap &Bitmap::operator=(const Bitmap &other)
 {
-    d->free();
-    d->fromData(other.d->length, other.d->data);
+    if (this != &other) {
+        d->free();
+        d->fromData(other.d->length, other.d->data);
+    }
     return *this;
 }
 

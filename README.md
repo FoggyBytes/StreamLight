@@ -34,6 +34,8 @@ Everything below is in the current release, whichever version first introduced i
 **🏠 Home and the host page**
 - **Home** is your hosts as tabs under the wordmark, the selected one filling the screen: name, state, addresses, stream settings and actions at once. **LT / RT** move between hosts, **LB / RB** between that host's profiles
 - **The host page** puts the library down the left at full height and the game in the spotlight beside it — cover, name, store, and the right verb (*Resume* if it is already running, *Play* if not)
+- **Games and Apps** *(5.9.0+)* — **LT / RT** split the host page between its games and everything else: Desktop, Steam Big Picture and the host's controls, which open with *Open* and never count hours. A host with no games opens on Apps
+- **Remote Input and Remote Monitor** *(5.9.0+)* — the host controls of Vibeshine and Vibepollo 2.0 open beside a running game, and their results and confirmation requests appear as messages and Yes/No questions rather than errors
 - **Last played** *(5.7.0+)* — the game you last streamed on that host fills the right of its card, with the hours behind it and how long ago you left it. **Play again** starts it without opening the library, and the same game sits first on the host page under *Last played*
 - **Play time** *(5.7.0+)* — how long you have streamed each game, beside the store on every row. Filed under the game's name, so it survives a reinstall, and resettable from the per-game panel
 - **Per-host backgrounds** — a colour you pick or a picture of your own, with the card's gradient derived from it
@@ -80,22 +82,21 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 
-## ✨ What's New in 5.8.0 — Keep Up
+## ✨ What's New in 5.9.0 — In Step
 
-StreamLight updates itself from *Settings*, *Play again* behaves like the rest of the host card and ends where a game started from the library ends, and waking a host now says how long each step is taking. Client-side, works with any host.
+StreamLight catches up with Moonlight's latest engine fixes and libraries, understands the Remote Input and Remote Monitor entries of Vibeshine and Vibepollo 2.0, and splits each host's library into Games and Apps. Client-side, works with any host.
 
-- **Update now, in *Settings → About*.** It appears only when a newer release is out, downloads the installer and checks it against the checksum GitHub publishes; **Install now** then opens the installer, which reopens StreamLight when it finishes — never before you press it, and with the one Windows permission prompt any install into *Program Files* asks for. If something goes wrong it stays on screen and says what, and the same button retries. A newer version is also announced when the app starts, unless you tick *Don't remind me* for it. Versions before 5.8.0 cannot do this, so this one is installed by hand
-- **Play again greys out with the card.** It stayed lit and pressable while the link speed was changing — the one button that did not follow the host's state — and on an offline host it vanished instead of greying, leaving the game it names on screen with nothing to do about it
-- **A greyed button can no longer be pressed with the controller.** During a link speed change the mouse was blocked and the D-pad was not, so **A** on a dimmed *Open* started a stream into an adapter that was still renegotiating
-- **Play again ends on the host's page**, with that game at the top, instead of back on the host list — a session started from the card now ends exactly where one started from the library does. Coming back from there also asks whether to put the host's link back: that question is only ever raised on the way from a host's page to the host list, and a game launched from the card never made that trip
-- **Waking a host is timed, step by step.** The host appearing on the network and StreamTweak coming up each count up in tenths of a second while they are the one being waited on, and keep the figure once they are done — so a slow wake says which part was slow rather than only which part is still running. The first step is called *Wake signal sent* now, not *Magic packet sent*
-- **A wake that cannot be sent stops there** and says so, rather than waiting out the full two and a half minutes for a host that was never told anything. One that gives up leaves the dialog on screen with the step that ran out and how long it was waited on, where it used to close with nothing said
+- **Games and Apps.** **LT / RT** switch the host page between its games and everything else — Desktop, Steam Big Picture and the host's controls, all opened with *Open* and never counted in hours. A host with no games, or with a Remote Monitor still attached, opens on Apps
+- **Remote Input and Remote Monitor** open beside a running game without asking to quit it, and the host's answers — *Disconnected*, *Terminated*, or a request to confirm — arrive as a message or a Yes/No question instead of an error
+- **Level with Moonlight's development branch** — faster recovery from lost video packets, decoder device selection by GPU vendor and driver, and some thirty more upstream fixes, on OpenSSL 3.6.4 and SDL 3.4.16
+- **The mouse moves the spotlight.** Pointing at a game now updates the cover beside the list, not only the highlight on its row
+- **Fixes** for a Tailscale host recorded under its Tailscale address as if it were on the LAN, full-range video in the software renderer, and a game with an empty name blocking the library
 
 *Older releases are in [changelog.txt](changelog.txt).*
 
 ## 🏗️ Architecture
 
-A Qt 6 / QML fork of Moonlight-Qt. The decoder pipeline — FFmpeg, D3D11VA, DXVA2, libplacebo — and the protocol, `moonlight-common-c`, are upstream's, and they track Moonlight's **development branch** rather than its releases: upstream has not tagged one since v6.1.0 in September 2024, while its master branch is still moving. As of 5.2.0 our copy of `moonlight-common-c` is identical to master's. The UI layer is ours.
+A Qt 6 / QML fork of Moonlight-Qt. The decoder pipeline — FFmpeg, D3D11VA, DXVA2, libplacebo — and the protocol, `moonlight-common-c`, are upstream's, and they track Moonlight's **development branch** rather than its releases: upstream has not tagged one since v6.1.0 in September 2024, while its master branch is still moving. As of 5.9.0 our copy of `moonlight-common-c` is identical to master's again, and upstream's application fixes are carried over as they land. The UI layer is ours.
 
 Integration with StreamTweak runs over a TCP bridge on **port 47998** (LAN, line-delimited ASCII), carrying link speed (`NETINFO`, `SETSPEED`), host metrics (`STATS`), store data (`APPSTORES`), telemetry (`SESSIONDATA`), Tailscale presence, launch state (`GAMESTATE`), lock state, and the power and Windows Update commands. Each command is preceded by an `AUTH1` line signing it with the client's Moonlight certificate (RSA-SHA256); a one-time `ENROLL` registers the client with the host for approval.
 
