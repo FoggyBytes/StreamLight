@@ -186,6 +186,7 @@ typedef struct _PACING_MEASUREMENT {
     // written on a 1 Hz tick would double-count or skip windows more or less at random.
     unsigned long long sequence;
 } PACING_MEASUREMENT, *PPACING_MEASUREMENT;
+class IVrrFramePresenter;
 
 class IFFmpegRenderer : public Overlay::IOverlayRenderer {
 public:
@@ -332,6 +333,13 @@ public:
         return true;
     }
 
+    // Renderers opt into VRR through a separate presenter rather than changing
+    // renderFrame().  The ordinary fixed and unpaced paths continue to call
+    // renderFrame() exactly as before.
+    virtual IVrrFramePresenter* getVrrFramePresenter() {
+        return nullptr;
+    }
+
     virtual bool isDirectRenderingSupported() {
         // The renderer can render directly to the display
         return true;
@@ -378,6 +386,8 @@ public:
     RendererType getRendererType() {
         return m_Type;
     }
+
+    virtual QString getCalibrationIdentity() { return {}; }
 
     const char *getRendererName() {
         switch (m_Type) {

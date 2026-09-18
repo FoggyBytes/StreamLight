@@ -269,6 +269,14 @@ FocusScope {
     readonly property bool focusedIsApp:
         (appGrid && appGrid.currentItem) ? appGrid.currentItem._isApp === true : false
 
+    // ── Pinned (6.0.0) ───────────────────────────────────────────────────────
+    // Read by the status bar, which draws "Pin" / "Unpin" for the selected row. Only games can
+    // be pinned: on the APPS tab the prompt is not drawn and the key does nothing.
+    readonly property bool focusedPinnable:
+        (appGrid && appGrid.currentItem) ? appGrid.currentItem._isApp !== true : false
+    readonly property bool focusedPinned:
+        (appGrid && appGrid.currentItem) ? appGrid.currentItem._pinned === true : false
+
     // Nothing on the APPS tab is a game, and "Play Desktop" or "Play Remote Monitor" reads
     // wrong: the honest verb for all of them is Open (5.9.0 — it used to be Desktop alone).
     readonly property string focusedVerb:
@@ -396,6 +404,11 @@ FocusScope {
             switchLibraryTab(1)
             event.accepted = true
         }
+        // Pin / Unpin (6.0.0): Start on the pad (Key_F18), P on the keyboard.
+        else if (event.key === Qt.Key_F18 || event.key === Qt.Key_P) {
+            togglePinFocused()
+            event.accepted = true
+        }
         else if (event.key === Qt.Key_F16 || event.key === Qt.Key_Q) {
             cycleProfile(-1)
             event.accepted = true
@@ -410,6 +423,28 @@ FocusScope {
             appGrid.currentItem.launchOrResumeSelectedApp(true)
         }
     }
+    /*
+     * Pins or unpins the selected game and keeps the selection on it.
+     *
+     * ⚠️ By app id, after the call. Pinning moves the game — up under PINNED, or back down into
+     * ALL GAMES — and the model reorders with a reset, so the index the list held now points at
+     * whatever slid into that place. Same fault, same cure, as _resumeCursorTo.
+     */
+    function togglePinFocused() {
+        if (!appGrid || !appGrid.appModel || !appGrid.currentItem) return
+        if (appGrid.currentItem._isApp === true) return
+
+        var appId = appGrid.currentItem._appId
+        appGrid.appModel.togglePinned(appGrid.currentIndex)
+
+        var i = appGrid.appModel.indexOfAppId(appId)
+        if (i >= 0) {
+            appGrid.currentIndex = i
+            appGrid.positionViewAtIndex(i, ListView.Contain)
+        }
+        appGrid.updateContinue()
+    }
+
     function stopFocusedApp() {
         if (appGrid && appGrid.currentItem && appGrid.currentItem.doQuitGame) {
             appGrid.currentItem.doQuitGame()
@@ -420,6 +455,10 @@ FocusScope {
         appSettingsDialog.appModel = appGrid.appModel
         appSettingsDialog.appIndex = idx
         appSettingsDialog.appName = name ? name : ""
+        // The header's cover (6.0.0). The focused app's, because that is the only one this is
+        // ever called for — see the single caller below. If a second caller ever opens the
+        // panel for another index, it has to pass that app's box art instead.
+        appSettingsDialog.cover = appsRoot.focusedBoxArt
         // So the per-game "inherit" option shows the active profile's name.
         appSettingsDialog.activeProfileName = appsRoot.hostProfileName
         appSettingsDialog.effectiveVsync = appsRoot._effVsync
@@ -1169,15 +1208,19 @@ FocusScope {
          * "all" and the caption above says "ALL APPS", exactly as before the feature existed.
          */
         /*
-         * ⚠️ Refreshed by hand rather than bound. A binding on lastPlayedIndex() would look
-         * right and be wrong: it is a plain Q_INVOKABLE with no NOTIFY behind it, so QML has
-         * nothing to re-evaluate on, and after a session — the one moment this changes — the
-         * caption would still be saying what it said before. Every place that can move it
-         * calls updateContinue().
+         * The section of row 0: whichever heading comes first — LAST PLAYED, PINNED (6.0.0) or
+         * ALL — sits tight under the tabs, and every later one gets the gap and the rule. It
+         * replaced `hasContinue`, which could only tell whether LAST PLAYED came first.
+         *
+         * ⚠️ Refreshed by hand rather than bound. A binding on sectionAt(0) would look right and
+         * be wrong: it is a plain Q_INVOKABLE with no NOTIFY behind it, so QML has nothing to
+         * re-evaluate on, and after a session or a pin — the moments this changes — the headings
+         * would still be spaced for the order before. Every place that can move it calls
+         * updateContinue().
          */
-        property bool hasContinue: false
+        property string firstSection: ""
         function updateContinue() {
-            hasContinue = (count > 0 && appModel.lastPlayedIndex() === 0)
+            firstSection = count > 0 ? appModel.sectionAt(0) : ""
         }
         onCountChanged: updateContinue()
 
@@ -1197,15 +1240,16 @@ FocusScope {
         section.delegate: Item {
             width: appGrid.width
             readonly property bool _isContinue: section === "continue"
+            readonly property bool _isFirst: section === appGrid.firstSection
             // The first heading needs no room above it — the caption line already sits there.
-            height: _isContinue ? appsRoot._px(24)
-                                : (appGrid.hasContinue ? appsRoot._px(46) : appsRoot._px(24))
+            height: _isFirst ? appsRoot._px(24) : appsRoot._px(46)
 
             Label {
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: appsRoot._px(8)
                 text: parent._isContinue ? qsTr("LAST PLAYED")
+                    : section === "pinned" ? qsTr("PINNED")
                     : appsRoot.libraryTab === "apps" ? qsTr("ALL APPS") : qsTr("ALL GAMES")
                 color: parent._isContinue ? Theme.accent : Theme.text3
                 font.family: Theme.family
@@ -1213,10 +1257,10 @@ FocusScope {
                 font.letterSpacing: appsRoot._u * 1.6
             }
 
-            // The rule runs beside the second heading only: it marks a boundary between two
+            // The rule runs beside every heading but the first: it marks a boundary between two
             // groups, and above the first there is nothing to divide from.
             Rectangle {
-                visible: !parent._isContinue && appGrid.hasContinue
+                visible: !parent._isFirst
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
@@ -1316,7 +1360,7 @@ FocusScope {
             property string _boxArt:     model.boxart
             property bool   _overridden: model.overridden
             property bool   _isApp:      model.isApp
-            property string _control:    model.control
+            property bool   _pinned:     model.pinned
 
             opacity: model.hidden ? 0.45 : 1.0
 
@@ -1382,9 +1426,29 @@ FocusScope {
                 }
 
                 // ── Title, and the store under it ────────────────────────────
+                // ── Pinned mark (6.0.0) ──────────────────────────────────────
+                // On the row itself and not only by the PINNED heading, because a pinned game
+                // that is also the last one played sits under LAST PLAYED — and unpinning it
+                // should not need remembering that it was pinned.
+                Image {
+                    id: pinMark
+                    visible: appDelegate._pinned
+                    anchors.right: runTag.visible ? runTag.left : parent.right
+                    anchors.rightMargin: appsRoot._px(16)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: appsRoot._px(18)
+                    height: width
+                    source: "qrc:/res/pin.svg"
+                    sourceSize.width: width * Screen.devicePixelRatio
+                    sourceSize.height: height * Screen.devicePixelRatio
+                    smooth: true
+                    opacity: appDelegate._lit ? 0.95 : 0.6
+                }
+
                 Column {
                     anchors.left: thumbBox.right
-                    anchors.right: runTag.visible ? runTag.left : parent.right
+                    anchors.right: pinMark.visible ? pinMark.left
+                                 : runTag.visible ? runTag.left : parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.leftMargin: appsRoot._px(16)
                     anchors.rightMargin: appsRoot._px(16)

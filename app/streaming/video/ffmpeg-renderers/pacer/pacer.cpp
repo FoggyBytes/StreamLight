@@ -1,5 +1,10 @@
 #include "pacer.h"
+#include "path.h"
+#include <QCryptographicHash>
+#include "vrrpacingworker.h"
+#include "../ivrrframepresenter.h"
 #include "streaming/streamutils.h"
+#include "streaming/vrrratepolicy.h"
 
 #ifdef Q_OS_WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -12,6 +17,8 @@
 #endif
 
 #include <SDL_syswm.h>
+
+#include <utility>
 
 // Limit the number of queued frames to prevent excessive memory consumption
 // if the V-Sync source or renderer is blocked for a while. It's important
@@ -29,22 +36,39 @@ static_assert(PACER_MAX_OUTSTANDING_FRAMES == MAX_QUEUED_FRAMES + 2,
 // V-sync happens.
 #define TIMER_SLACK_MS 3
 
-Pacer::Pacer(IFFmpegRenderer* renderer, PVIDEO_STATS videoStats) :
+Pacer::Pacer(IFFmpegRenderer* renderer) :
     m_RenderThread(nullptr),
     m_VsyncThread(nullptr),
     m_DeferredFreeFrame(nullptr),
     m_Stopping(false),
+    m_Shutdown(false),
     m_VsyncSource(nullptr),
     m_VsyncRenderer(renderer),
     m_MaxVideoFps(0),
-    m_DisplayFps(0),
-    m_VideoStats(videoStats)
+    m_DisplayFps(0)
 {
 
 }
 
 Pacer::~Pacer()
 {
+    shutdown();
+}
+
+void Pacer::shutdown()
+{
+    if (m_Shutdown) {
+        return;
+    }
+    m_Shutdown = true;
+
+    if (m_VrrWorker != nullptr) {
+        // The VRR worker owns the renderer context and releases it from its
+        // own thread after cancelling any prepared frame.
+        m_VrrWorker.reset();
+        return;
+    }
+
     m_Stopping = true;
 
     // Stop the V-sync thread
@@ -81,8 +105,17 @@ Pacer::~Pacer()
     av_frame_free(&m_DeferredFreeFrame);
 }
 
+PacerTelemetrySnapshot Pacer::telemetrySnapshot() const
+{
+    return m_Telemetry.snapshot();
+}
+
 void Pacer::renderOnMainThread()
 {
+    if (m_VrrWorker != nullptr) {
+        return;
+    }
+
     // Ignore this call for renderers that work on a dedicated render thread
     if (m_RenderThread != nullptr) {
         return;
@@ -236,7 +269,7 @@ void Pacer::handleVsync(int timeUntilNextVsyncMillis)
 
         // Drop the lock while we call av_frame_free()
         m_FrameQueueLock.unlock();
-        m_VideoStats->pacerDroppedFrames++;
+        m_Telemetry.recordLegacyDrop();
         av_frame_free(&frame);
         m_FrameQueueLock.lock();
     }
@@ -259,11 +292,123 @@ void Pacer::handleVsync(int timeUntilNextVsyncMillis)
     enqueueFrameForRenderingAndUnlock(m_PacingQueue.dequeue());
 }
 
-bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing)
+bool Pacer::initialize(SDL_Window* window, int maxVideoFps,
+                       bool enablePacing, bool enableVsync,
+                       bool enableVrr, int vrrDisplayRefreshHz,
+                       bool smoothVrrFrameTiming, const QString& calibrationKey,
+                       int vrrLatencyMode)
 {
     m_MaxVideoFps = maxVideoFps;
-    m_DisplayFps = StreamUtils::getDisplayRefreshRate(window);
     m_RendererAttributes = m_VsyncRenderer->getRendererAttributes();
+
+    // VRR is deliberately a third pacing mode. It is selected once, before
+    // any legacy V-sync source or render thread can be created, and every
+    // rejection continues through the original fixed path below.
+    if (enableVrr) {
+        VrrSessionConfig config;
+        // The production queue policy is shared across native backends.
+        config.readinessHitchFeedback = false;
+        config.latencyMode = vrrLatencyMode >= 0 && vrrLatencyMode <= 2 ? vrrLatencyMode : 1;
+        VrrFallbackReason fallbackReason = VrrFallbackReason::NoFallback;
+        if (!calibrationKey.isEmpty()) {
+            const QString display = QString::fromUtf8(SDL_GetDisplayName(SDL_GetWindowDisplayIndex(window)));
+            auto context = calibrationKey + QString("|%1|%2|%3|%4")
+                .arg(display).arg(maxVideoFps).arg(vrrDisplayRefreshHz)
+                .arg(smoothVrrFrameTiming);
+#ifdef Q_OS_LINUX
+            // Do not seed the shared policy with retired Linux hitch-policy history.
+            context += QStringLiteral("|shared-readiness-policy-v18");
+#endif
+            if (config.latencyMode != 0) {
+                context += QStringLiteral("|latency-mode=%1").arg(config.latencyMode);
+            }
+            // Preserve the historical V2 calibration identity now that its
+            // queue policy is unconditional rather than a live preference.
+            context += QStringLiteral("|mean-miss-queue-v2");
+            if (smoothVrrFrameTiming) {
+                // The saved flag previously selected timestamp-following
+                // playout too. Do not cross-seed its readiness calibration.
+                context += QStringLiteral("|frame-smoothing=500-100-2000");
+            }
+            config.calibrationKey = QCryptographicHash::hash(context.toUtf8(), QCryptographicHash::Sha256).toHex().toStdString();
+            config.calibrationPath = Path::getCacheFileInfo("vrr13-calibration.json").absoluteFilePath().toStdString();
+        }
+        config.streamRateHz = maxVideoFps;
+        config.displayRefreshHz = vrrDisplayRefreshHz;
+        config.smoothFrameTiming = smoothVrrFrameTiming;
+        // The retired extra-queue flag remains only for historical replay;
+        // the timing profile controls delay and stale-frame replacement.
+        config.allowAdditionalQueuedFrame = false;
+
+        if (!enableVsync) {
+            fallbackReason = VrrFallbackReason::IneffectiveVsync;
+        }
+        else if (config.displayRefreshHz <= 0) {
+            fallbackReason = VrrFallbackReason::InvalidRefresh;
+        }
+        else if (!VrrRatePolicy::hasAdaptiveHeadroom(config.streamRateHz,
+                                                     config.displayRefreshHz)) {
+            fallbackReason = VrrFallbackReason::InsufficientHeadroom;
+            IVrrFramePresenter* presenter =
+                m_VsyncRenderer->getVrrFramePresenter();
+            if (presenter != nullptr &&
+                    presenter->checkSupport() == VrrFallbackReason::NoFallback &&
+                    !presenter->restoreFixedPresentation(fallbackReason)) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                             "VRR pacing lacks adaptive-refresh headroom and the presenter cannot restore fixed presentation");
+                return false;
+            }
+        }
+        else {
+            IVrrFramePresenter* presenter =
+                m_VsyncRenderer->getVrrFramePresenter();
+            if (presenter == nullptr) {
+                fallbackReason = VrrFallbackReason::UnsupportedRenderer;
+            }
+            else {
+                fallbackReason = presenter->checkSupport();
+                if (fallbackReason == VrrFallbackReason::NoFallback) {
+                    m_VrrWorker = std::make_unique<VrrPacingWorker>(
+                        presenter, config, &m_Telemetry);
+                    if (m_VrrWorker->start()) {
+                        m_DisplayFps = config.displayRefreshHz;
+                        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                    "VRR pacing: target %d Hz with %d FPS stream (adaptive timestamp playout, frame timing %s, timing profile %s)",
+                                    m_DisplayFps, m_MaxVideoFps,
+                                    config.smoothFrameTiming ? "smoothed" : "follows host timestamps",
+                                    config.latencyMode == 2 ? "low latency" :
+                                    config.latencyMode == 1 ? "balanced target" : "smooth");
+                        return true;
+                    }
+
+                    fallbackReason = VrrFallbackReason::InitializationFailed;
+                    if (!presenter->restoreFixedPresentation(fallbackReason)) {
+                        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                                     "VRR pacing worker failed to start and the presenter cannot restore fixed presentation");
+                        m_VrrWorker.reset();
+                        return false;
+                    }
+
+                    m_VrrWorker.reset();
+                }
+            }
+        }
+
+        m_VrrFallbackReason = vrrFallbackReasonName(fallbackReason);
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "VRR pacing unavailable: %s; falling back to fixed V-sync pacing",
+                    vrrFallbackReasonName(fallbackReason));
+
+        // VRR requires V-sync at the session boundary, so its rejection still
+        // has a valid fixed-pacing fallback even if the user did not select
+        // the older frame-pacing checkbox.
+        enablePacing = enablePacing || enableVsync;
+    }
+
+    // The VRR success path uses its strict session refresh snapshot and
+    // returned above. Keep the legacy fallback query out of that path so it
+    // cannot invent a 60 Hz value or produce an unrelated warning.
+    m_DisplayFps = StreamUtils::getDisplayRefreshRate(window);
 
     if (enablePacing) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -329,18 +474,30 @@ void Pacer::signalVsync()
     m_VsyncSignalled.wakeOne();
 }
 
+void Pacer::notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO info)
+{
+    if (m_VrrWorker != nullptr) {
+        m_VrrWorker->notifyWindowChanged(info);
+        return;
+    }
+
+    // Legacy pacing has no additional window-state work. The VRR worker
+    // overrides this path to discard stale work on suspension/minimize.
+}
+
 void Pacer::renderFrame(AVFrame* frame)
 {
-    // Count time spent in Pacer's queues
-    uint64_t beforeRender = LiGetMicroseconds();
-    m_VideoStats->totalPacerTimeUs += (beforeRender - (uint64_t)frame->pkt_dts);
-
+    const uint64_t decoderOutputUs =
+        static_cast<uint64_t>(frame->pkt_dts);
+    const uint64_t beforeRender = LiGetMicroseconds();
     // Render it
     m_VsyncRenderer->renderFrame(frame);
-    uint64_t afterRender = LiGetMicroseconds();
+    const uint64_t afterRender = LiGetMicroseconds();
 
-    m_VideoStats->totalRenderTimeUs += (afterRender - beforeRender);
-    m_VideoStats->renderedFrames++;
+    m_Telemetry.recordLegacyFrame(
+        afterRender >= decoderOutputUs ?
+            afterRender - decoderOutputUs : 0,
+        afterRender >= beforeRender ? afterRender - beforeRender : 0);
 
     // Wait until after next frame to free this one to ensure the GPU
     // doesn't stall or read garbage if the backing buffer gets returned
@@ -383,7 +540,7 @@ void Pacer::renderFrame(AVFrame* frame)
 
         // Drop the lock while we call av_frame_free()
         m_FrameQueueLock.unlock();
-        m_VideoStats->pacerDroppedFrames++;
+        m_Telemetry.recordLegacyDrop();
         av_frame_free(&frame);
         m_FrameQueueLock.lock();
     }
@@ -416,4 +573,19 @@ void Pacer::submitFrame(AVFrame* frame)
     else {
         enqueueFrameForRenderingAndUnlock(frame);
     }
+}
+
+void Pacer::submitFrame(PacedFrame&& frame)
+{
+    if (m_VrrWorker != nullptr) {
+        m_VrrWorker->submit(std::move(frame));
+        return;
+    }
+
+    submitFrame(frame.release());
+}
+
+bool Pacer::isVrrActive() const
+{
+    return m_VrrWorker != nullptr;
 }

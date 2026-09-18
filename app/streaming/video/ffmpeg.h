@@ -7,6 +7,7 @@
 #include "../bandwidth.h"
 #include "decoder.h"
 #include "settings/playtime.h"
+#include "incomingframetiming.h"
 #include "ffmpeg-renderers/renderer.h"
 #include "ffmpeg-renderers/pacer/pacer.h"
 
@@ -95,6 +96,10 @@ private:
 
     void addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst);
 
+    void syncPacerTelemetry();
+
+    void finalizeActiveVideoStats();
+
     bool createFrontendRenderer(PDECODER_PARAMETERS params, bool useAlternateFrontend);
 
     static
@@ -157,6 +162,7 @@ private:
     VIDEO_STATS m_LastWndVideoStats;
     VIDEO_STATS m_GlobalVideoStats;
     mutable SDL_SpinLock m_LastWndLock = 0; // protects m_LastWndVideoStats for cross-thread reads
+    PacerTelemetrySnapshot m_LastPacerTelemetry;
     std::set<IFFmpegRenderer::RendererType> m_FailedRenderers;
 
     // Emission state for the [pacing] log. The sequence number is what keeps this honest:
@@ -170,6 +176,7 @@ private:
     int m_FramesOut;
 
     int m_LastFrameNumber;
+    IncomingFrameTiming m_IncomingFrameTiming;
     int m_StreamFps;
     int m_OriginalVideoWidth;
     int m_OriginalVideoHeight;
@@ -182,6 +189,8 @@ private:
 
     // Data buffers in the queued DU are not valid
     QQueue<DECODE_UNIT> m_FrameInfoQueue;
+    // Parallel to m_FrameInfoQueue: when each packet was handed to the decoder.
+    QQueue<uint64_t> m_FrameSubmitTimeQueue;
 
     static const uint8_t k_H264TestFrame[];
     static const uint8_t k_HEVCMainTestFrame[];

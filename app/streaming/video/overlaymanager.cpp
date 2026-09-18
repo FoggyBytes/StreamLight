@@ -197,11 +197,6 @@ bool OverlayManager::isOverlayEnabled(OverlayType type)
     return m_Overlays[type].enabled;
 }
 
-char* OverlayManager::getOverlayText(OverlayType type)
-{
-    return m_Overlays[type].text;
-}
-
 void OverlayManager::updateOverlayText(OverlayType type, const char* text)
 {
     m_Overlays[type].isPanel = false;
@@ -216,11 +211,6 @@ void OverlayManager::updateOverlayPanel(OverlayType type, const OverlayPanel& pa
     m_Panels[type] = panel;
 
     setOverlayTextUpdated(type);
-}
-
-int OverlayManager::getOverlayMaxTextLength()
-{
-    return sizeof(m_Overlays[0].text);
 }
 
 int OverlayManager::getOverlayFontSize(OverlayType type)

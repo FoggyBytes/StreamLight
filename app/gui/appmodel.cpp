@@ -99,11 +99,13 @@ void AppModel::setCategory(const QString& category)
     // and getVisibleApps() keeps a hidden app only while it is already on screen, which after
     // a switch it never is.
     const QString lastPlayed = lastPlayedForSort();
+    reloadPinned();
+    const QSet<QString>& pinned = m_Pinned;
     beginResetModel();
     m_VisibleApps.clear();
     QVector<NvApp> visible = getVisibleApps(m_AllApps);
-    std::stable_sort(visible.begin(), visible.end(), [&lastPlayed](const NvApp& a, const NvApp& b) {
-        int oa = appSortOrder(a.name, lastPlayed), ob = appSortOrder(b.name, lastPlayed);
+    std::stable_sort(visible.begin(), visible.end(), [&lastPlayed, &pinned](const NvApp& a, const NvApp& b) {
+        int oa = appSortOrder(a.name, lastPlayed, pinned), ob = appSortOrder(b.name, lastPlayed, pinned);
         if (oa != ob) return oa < ob;
         return a.name.toLower() < b.name.toLower();
     });
@@ -128,6 +130,23 @@ QString AppModel::lastPlayedForSort() const
         return QString();
     }
     return PlaytimeManager::get()->lastPlayedOn(m_Computer->uuid).name;
+}
+
+void AppModel::reloadPinned()
+{
+    // Pins exist for games only, so the APPS tab sorts and draws as if there were none —
+    // including a stale pin whose name the running-game copy of a 2.0 server happens to carry.
+    if (m_Computer == nullptr || m_Category == QLatin1String("apps")) {
+        m_Pinned.clear();
+        return;
+    }
+    m_Pinned = PlaytimeManager::get()->pinnedOn(m_Computer->uuid);
+}
+
+bool AppModel::isPinnedApp(const NvApp& app) const
+{
+    return !m_Pinned.isEmpty() && !isAppsCategory(app)
+           && m_Pinned.contains(normaliseGameName(app.name));
 }
 
 void AppModel::updateCounts()
@@ -295,20 +314,25 @@ QVariant AppModel::data(const QModelIndex &index, int role) const
         return label;
     }
     case SectionRole: {
-        // What the ListView groups on. Two values only, and the sort order guarantees the
-        // "continue" one is a single row at the top — so the section header is the caption
-        // above it rather than a heading that could repeat further down.
+        // What the ListView groups on. Three values, and the sort order guarantees each is one
+        // contiguous run: "continue" is a single row at the top, "pinned" follows it (6.0.0),
+        // "all" is the rest — so every header is a caption that cannot repeat further down.
         //
-        // Only row 0 can be it, which is what keeps this cheap: every other row answers
-        // without reading anything, where asking lastPlayedIndex() per row would be a
-        // settings read and a list scan on every repaint.
-        if (index.row() != 0 || m_Computer == nullptr)
+        // Only row 0 can be "continue", which is what keeps this cheap: every other row
+        // answers from the pinned cache, where finding the last played game per row
+        // would be a settings read and a list scan on every repaint.
+        if (m_Computer == nullptr)
             return QStringLiteral("all");
 
-        const QString lastPlayed = lastPlayedForSort();
-        return (!lastPlayed.isEmpty() && app.name.compare(lastPlayed, Qt::CaseInsensitive) == 0)
-               ? QStringLiteral("continue") : QStringLiteral("all");
+        if (index.row() == 0) {
+            const QString lastPlayed = lastPlayedForSort();
+            if (!lastPlayed.isEmpty() && app.name.compare(lastPlayed, Qt::CaseInsensitive) == 0)
+                return QStringLiteral("continue");
+        }
+        return isPinnedApp(app) ? QStringLiteral("pinned") : QStringLiteral("all");
     }
+    case PinnedRole:
+        return isPinnedApp(app);
     case IsAppRole:
         return isAppsCategory(app);
     case ControlRole:
@@ -408,26 +432,34 @@ void AppModel::refreshPlaytime()
                      { PlaytimeRole, SectionRole });
 }
 
-int AppModel::lastPlayedIndex() const
+bool AppModel::togglePinned(int appIndex)
 {
-    // Never on the APPS tab: nothing there is a game, and the running-game copy would match.
-    if (m_Computer == nullptr || m_Category == QLatin1String("apps"))
-        return -1;
+    if (m_Computer == nullptr || m_Category == QLatin1String("apps")
+            || appIndex < 0 || appIndex >= m_VisibleApps.count())
+        return false;
 
-    PlaytimeRecord rec = PlaytimeManager::get()->lastPlayedOn(m_Computer->uuid);
-    if (!rec.valid)
-        return -1;
+    const NvApp app = m_VisibleApps.at(appIndex);
+    if (isAppsCategory(app))
+        return false;
 
-    // Matched by name, not by the id stored with the record: the id is a hint that goes
-    // stale when the host rebuilds apps.json, and the name is the key everything else here
-    // is built on. A game since removed from the host simply does not match, which is
-    // exactly the "is it still launchable" gate — no separate check needed.
-    for (int i = 0; i < m_VisibleApps.count(); i++) {
-        if (m_VisibleApps.at(i).name.compare(rec.name, Qt::CaseInsensitive) == 0)
-            return i;
+    const bool pinned = !isPinnedApp(app);
+    PlaytimeManager::get()->setPinned(m_Computer->uuid, app.name, pinned);
+
+    // sortVisibleApps() reloads the pins and resets the model when the order moved. When it
+    // did not — pinning the first game under ALL GAMES, which stays where it is — the rows
+    // still have to redraw their mark and their section.
+    if (!sortVisibleApps() && !m_VisibleApps.isEmpty()) {
+        emit dataChanged(createIndex(0, 0), createIndex(m_VisibleApps.count() - 1, 0),
+                         { PinnedRole, SectionRole });
     }
+    return pinned;
+}
 
-    return -1;
+QString AppModel::sectionAt(int row) const
+{
+    if (row < 0 || row >= m_VisibleApps.count())
+        return QString();
+    return data(createIndex(row, 0), SectionRole).toString();
 }
 
 QHash<int, QByteArray> AppModel::roleNames() const
@@ -444,6 +476,7 @@ QHash<int, QByteArray> AppModel::roleNames() const
     names[OverriddenRole] = "overridden";
     names[PlaytimeRole] = "playtime";
     names[SectionRole] = "section";
+    names[PinnedRole] = "pinned";
     names[IsAppRole] = "isApp";
     names[ControlRole] = "control";
 
@@ -519,6 +552,7 @@ void AppModel::updateAppList(QVector<NvApp> newList)
 
     // Read once for the whole pass, exactly as sortAppList() does — same value, same reason.
     const QString lastPlayed = lastPlayedForSort();
+    reloadPinned();
 
     // Process additions now
     for (const NvApp& newApp : std::as_const(newVisibleList)) {
@@ -526,7 +560,7 @@ void AppModel::updateAppList(QVector<NvApp> newList)
         bool found = false;
         // ⚠️ Shared with NvComputer::sortAppList() — see nvapp.h. The two must produce the
         // same order or the assert at the end of this function fires in a debug build.
-        int ob = appSortOrder(newApp.name, lastPlayed);
+        int ob = appSortOrder(newApp.name, lastPlayed, m_Pinned);
 
         for (int i = 0; i < m_VisibleApps.count(); i++) {
             const NvApp& existingApp = m_VisibleApps.at(i);
@@ -536,7 +570,7 @@ void AppModel::updateAppList(QVector<NvApp> newList)
                 break;
             }
             else {
-                int oa = appSortOrder(existingApp.name, lastPlayed);
+                int oa = appSortOrder(existingApp.name, lastPlayed, m_Pinned);
                 if (oa != ob ? ob < oa : existingApp.name.toLower() > newApp.name.toLower()) {
                     insertionIndex = i;
                     break;
@@ -577,11 +611,13 @@ bool AppModel::sortVisibleApps()
         return false;
 
     const QString lastPlayed = lastPlayedForSort();
+    reloadPinned();
+    const QSet<QString>& pinned = m_Pinned;
 
     QVector<NvApp> sorted = m_VisibleApps;
     std::stable_sort(sorted.begin(), sorted.end(),
-                     [&lastPlayed](const NvApp& a, const NvApp& b) {
-        int oa = appSortOrder(a.name, lastPlayed), ob = appSortOrder(b.name, lastPlayed);
+                     [&lastPlayed, &pinned](const NvApp& a, const NvApp& b) {
+        int oa = appSortOrder(a.name, lastPlayed, pinned), ob = appSortOrder(b.name, lastPlayed, pinned);
         if (oa != ob) return oa < ob;
         return a.name.toLower() < b.name.toLower();
     });

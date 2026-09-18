@@ -32,6 +32,11 @@ FocusScope {
     onWidthChanged: Theme.uiScale = width / 1330
     Component.onCompleted: {
         Theme.uiScale = width / 1330
+        // The opening animation (6.0.0) — decided here, once. See StartupSplash.
+        _splashOnLaunch = Theme.startupAnimation && !Theme.reduceAnimations
+                          && !(typeof initialView !== "undefined" && initialView && initialView.length > 0)
+        if (_splashOnLaunch)
+            startupSplash.start()
         // The release lookup behind the startup update prompt (see _maybePromptUpdate at the
         // bottom). Settings runs the same lookup again when it opens.
         AppUpdate.checkLatest()
@@ -48,6 +53,11 @@ FocusScope {
     // SystemProperties.versionString is VERSION_STR, which qmake takes from
     // app/version.txt, so the label and the installer can no longer disagree.
     readonly property string _version: SystemProperties.versionString
+
+    // Set once in Component.onCompleted and never again: it is "this launch opens with the
+    // splash", not a mirror of the setting: turning the setting on in Settings changes the
+    // next launch, never this one.
+    property bool _splashOnLaunch: false
 
     // 0 = Home, 1 = Apps, 2 = Settings
     property int currentPage: 0
@@ -275,6 +285,9 @@ FocusScope {
         case "appsTab":
             if (appsLoader.item && appsLoader.item.switchLibraryTab) appsLoader.item.switchLibraryTab(1)
             break
+        case "pin":
+            if (appsLoader.item && appsLoader.item.togglePinFocused) appsLoader.item.togglePinFocused()
+            break
         case "prevTab":
             SdlGamepadKeyNavigation.simulateKey(Qt.Key_PageUp)
             break
@@ -327,6 +340,12 @@ FocusScope {
     AmbientBackground {
         id: ambientBackground
         z: -1
+        // The waves run twice as fast while a host is streaming (6.0.0). Home is
+        // always loaded (see homeLoader), so this holds on the Apps and Settings pages too.
+        streaming: homeLoader.item ? homeLoader.item.anyStreaming : false
+        // The waves rise from the bottom only as the first act of the opening animation, on its
+        // clock. With it off (splash never running) this is 1: Home opens on waves in place.
+        rise: startupSplash.rise
     }
 
     FocusScope {
@@ -336,6 +355,9 @@ FocusScope {
         anchors.top: parent.top
         anchors.bottom: statusBar.top
         focus: true
+        // Invisible and deaf while the opening animation runs; see StartupSplash.
+        opacity: startupSplash.homeOpacity
+        enabled: !startupSplash.blocking
 
         // Home stays always-active so ComputerModel survives Apps/Settings.
         Loader {
@@ -425,6 +447,7 @@ FocusScope {
         anchors.rightMargin: Math.round(44 * Theme.uiScale)
         transformOrigin: Item.TopRight
         scale: Theme.uiScale
+        opacity: startupSplash.homeOpacity
     }
 
     // Status bar — gamepad prompts + version. Glyphs swap by controller type.
@@ -441,6 +464,8 @@ FocusScope {
         // and where the two met there was a visible step across the foot of the screen. So
         // the page sets this to whatever it ends in and the bar borrows it.
         color: appShell.statusBarFloor
+        opacity: startupSplash.homeOpacity
+        enabled: !startupSplash.blocking
 
         // No rule along the top. There was one, and once the ambient gradient ran the full
         // height behind it the line was the only thing left drawing a border where there is
@@ -450,15 +475,9 @@ FocusScope {
         readonly property bool _padIsPs: SdlGamepadKeyNavigation.controllerType === "ps"
         readonly property bool _padIsSwitch: SdlGamepadKeyNavigation.controllerType === "switch"
 
-        // Glyphs are chosen by SDL button POSITION. Nintendo swaps A/B and X/Y
-        // relative to Xbox, so the Switch glyph for the south button (_iconA)
-        // is the one labeled "B", the east button (_iconB) is labeled "A", etc.
-        readonly property string _iconA: _padIsPs ? "qrc:/res/pad_ps_cross.svg"    : _padIsSwitch ? "qrc:/res/pad_switch_b.svg" : "qrc:/res/pad_xbox_a.svg"
-        readonly property string _iconB: _padIsPs ? "qrc:/res/pad_ps_circle.svg"   : _padIsSwitch ? "qrc:/res/pad_switch_a.svg" : "qrc:/res/pad_xbox_b.svg"
-        readonly property string _iconX: _padIsPs ? "qrc:/res/pad_ps_square.svg"   : _padIsSwitch ? "qrc:/res/pad_switch_y.svg" : "qrc:/res/pad_xbox_x.svg"
-        readonly property string _iconY: _padIsPs ? "qrc:/res/pad_ps_triangle.svg" : _padIsSwitch ? "qrc:/res/pad_switch_x.svg" : "qrc:/res/pad_xbox_y.svg"
-        readonly property string _iconL: _padIsPs ? "qrc:/res/pad_ps_l1.svg"       : _padIsSwitch ? "qrc:/res/pad_switch_l.svg" : "qrc:/res/pad_xbox_lb.svg"
-        readonly property string _iconR: _padIsPs ? "qrc:/res/pad_ps_r1.svg"       : _padIsSwitch ? "qrc:/res/pad_switch_r.svg" : "qrc:/res/pad_xbox_rb.svg"
+        // (Six more glyphs used to be resolved here — A, B, X, Y and the shoulders — and none of
+        //  them was read by anything any more: the prompts draw their own. Removed in 6.0.0.
+        //  Only Select is still used, by the prompt below.)
         // Select / Back / View / Create / − button.
         readonly property string _iconSelect: _padIsPs ? "qrc:/res/pad_ps_create.svg" : _padIsSwitch ? "qrc:/res/pad_switch_minus.svg" : "qrc:/res/pad_xbox_view.svg"
         // (The trigger glyphs used to be resolved here too, for the "Prev/Next host" prompts.
@@ -498,12 +517,24 @@ FocusScope {
         // 5.9.0: LT/RT switch the host page between GAMES and APPS. They sit here rather than
         // on the tabs because there is no button on the tabs to carry a glyph, and on this page
         // the triggers belong to nothing else.
-        readonly property var _hintsApps: [
-            { btn: "Y",  key: "S",    act: qsTr("Settings"), kind: "settings" },
-            { btn: "B",  key: "Esc",  act: qsTr("Hosts"),    kind: "back" },
-            { btn: "LT", key: "PgUp", act: qsTr("Games"),    kind: "gamesTab" },
-            { btn: "RT", key: "PgDn", act: qsTr("Apps"),     kind: "appsTab" }
-        ]
+        // 6.0.0: Start / P pins the selected game. In the bar rather than on the spotlight's
+        // buttons, by decision, and only while a game is selected — the APPS tab has nothing to
+        // pin, so there the prompt is not drawn at all. The word follows the row: Unpin on a
+        // pinned game.
+        readonly property var _hintsApps: {
+            var h = [
+                { btn: "Y",  key: "S",    act: qsTr("Settings"), kind: "settings" },
+                { btn: "B",  key: "Esc",  act: qsTr("Hosts"),    kind: "back" }
+            ]
+            var page = appsLoader.item
+            if (page && page.focusedPinnable === true)
+                h.push({ btn: "START", key: "P",
+                         act: page.focusedPinned === true ? qsTr("Unpin") : qsTr("Pin"),
+                         kind: "pin" })
+            h.push({ btn: "LT", key: "PgUp", act: qsTr("Games"), kind: "gamesTab" })
+            h.push({ btn: "RT", key: "PgDn", act: qsTr("Apps"),  kind: "appsTab" })
+            return h
+        }
         // Settings prompts add "X · Default" when the bitrate differs from recommended.
         readonly property bool _showDefaultHint:
             currentPage === 2
@@ -666,6 +697,8 @@ FocusScope {
 
     function _maybePromptUpdate() {
         if (_updatePrompted || !AppUpdate.shouldPrompt()) return
+        // Not over the opening animation: asked again when it ends (startupSplash.onFinished).
+        if (startupSplash.running) return
         // Never over a stream or its launch screen: both are pushed on the global stackView
         // above this shell. Not marked as prompted, so a later lookup (Settings runs one) can
         // still offer it this launch.
@@ -678,6 +711,23 @@ FocusScope {
     Connections {
         target: AppUpdate
         function onLatestChanged() { appShell._maybePromptUpdate() }
+    }
+
+    /*
+     * The opening animation (6.0.0). Above the pages, the clock and the status bar, which it
+     * keeps at opacity 0 and without input until its fade (see contentArea). Popups have their
+     * own overlay above this.
+     */
+    StartupSplash {
+        id: startupSplash
+        anchors.fill: parent
+        // Input returns to Home when the fade starts, not when it ends: by then Home is
+        // visible, and a press during the last 0.4 s should do what it looks like it does.
+        onBlockingChanged: {
+            if (!blocking && appShell.currentPage === 0 && homeLoader.item)
+                homeLoader.item.forceActiveFocus()
+        }
+        onFinished: appShell._maybePromptUpdate()
     }
 
     UpdatePromptDialog {

@@ -32,6 +32,13 @@ void SessionTelemetrySampler::onSampleTimer()
     Session* session = Session::get();
     if (!session) return;
 
+    // Skip while Session replaces the decoder (6.0.0, §73.19). This timer can fire inside a
+    // window-message pump on the stream thread during that replacement; m_DecoderLock is an
+    // SDL mutex and recursive, so the lock below would succeed and hand back a decoder that
+    // was just deleted — the crash in both dumps of 16/09. One missed sample in a one-second
+    // series costs nothing.
+    if (session->isReplacingVideoDecoder()) return;
+
     // Retrieve last-window stats via the thread-safe accessor
     SDL_LockMutex(session->decoderLock());
     IVideoDecoder* dec = session->videoDecoder();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QSettings>
+#include <QSet>
 #include <QString>
 
 /**
@@ -120,22 +121,38 @@ inline QString hostControlName(HostControl c)
 }
 
 /**
- * Where an app sits in the list: the game you last played first, then the desktop, then
- * Steam's shell, then everything else alphabetically.
+ * How a game's name is compared wherever the NAME is the key — play time and pins: runs of
+ * whitespace collapsed and case folded, so "Hollow  Knight" and "hollow knight" are one game.
+ *
+ * ⚠️ One spelling. PlaytimeManager::normalise() delegates here, and appSortOrder() below uses
+ * it for pins, so the sort and the store cannot disagree about whether two names match.
+ */
+inline QString normaliseGameName(const QString& name)
+{
+    return name.simplified().toLower();
+}
+
+/**
+ * Where an app sits in the list: the game you last played first, then the games you pinned
+ * (6.0.0), then the desktop, then Steam's shell, then everything else alphabetically.
  *
  * ⚠️ Shared so the two sort sites cannot drift — NvComputer::sortAppList() orders the list
  * and AppModel::updateAppList() inserts against that order, then asserts the two agree.
  *
- * `lastPlayedName` is empty on every host where nothing has been streamed yet, and then this
- * is exactly the order it always was.
+ * `lastPlayedName` is empty on every host where nothing has been streamed yet, and `pinned`
+ * (normalised names, see normaliseGameName) is empty until something is pinned — with both
+ * empty this is exactly the order it always was. A pinned game that is also the last played
+ * one sorts as last played: it is shown once, at the top.
  */
-inline int appSortOrder(const QString& name, const QString& lastPlayedName = QString())
+inline int appSortOrder(const QString& name, const QString& lastPlayedName = QString(),
+                        const QSet<QString>& pinned = QSet<QString>())
 {
     if (!lastPlayedName.isEmpty()
         && name.compare(lastPlayedName, Qt::CaseInsensitive) == 0) return 0;
-    if (name.compare(QStringLiteral("Desktop"), Qt::CaseInsensitive) == 0) return 1;
-    if (name.compare(QStringLiteral("Steam Big Picture"), Qt::CaseInsensitive) == 0) return 2;
-    return 3;
+    if (!pinned.isEmpty() && pinned.contains(normaliseGameName(name))) return 1;
+    if (name.compare(QStringLiteral("Desktop"), Qt::CaseInsensitive) == 0) return 2;
+    if (name.compare(QStringLiteral("Steam Big Picture"), Qt::CaseInsensitive) == 0) return 3;
+    return 4;
 }
 
 class NvApp

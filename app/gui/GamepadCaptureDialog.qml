@@ -81,18 +81,18 @@ Popup {
                     Keys.onReturnPressed: pop._toggle(modelData.flag)
                     Keys.onEnterPressed:  pop._toggle(modelData.flag)
                     Keys.onSpacePressed:  pop._toggle(modelData.flag)
-                    Keys.onDownPressed: {
+                    Keys.onDownPressed: function(event) {
                         var ni = index + pop._cols
                         if (ni < rep.count) rep.itemAt(ni).forceActiveFocus()
                         else saveBtn.forceActiveFocus()
                         event.accepted = true
                     }
-                    Keys.onUpPressed: {
+                    Keys.onUpPressed: function(event) {
                         var ni = index - pop._cols
                         if (ni >= 0) { rep.itemAt(ni).forceActiveFocus(); event.accepted = true }
                     }
-                    Keys.onLeftPressed: { if (index > 0) { rep.itemAt(index-1).forceActiveFocus(); event.accepted = true } }
-                    Keys.onRightPressed: { if (index < rep.count-1) { rep.itemAt(index+1).forceActiveFocus(); event.accepted = true } }
+                    Keys.onLeftPressed: function(event) { if (index > 0) { rep.itemAt(index-1).forceActiveFocus(); event.accepted = true } }
+                    Keys.onRightPressed: function(event) { if (index < rep.count-1) { rep.itemAt(index+1).forceActiveFocus(); event.accepted = true } }
 
                     background: Rectangle {
                         radius: 8

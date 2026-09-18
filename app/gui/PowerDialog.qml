@@ -122,7 +122,7 @@ Popup {
             // Host (0) and Both (2) require an approved host; Client (1) is always on.
             disabledIndices: pop.hostAllowed ? [] : [0, 2]
             currentIndex: 1   // default to Client — always available, safe
-            Keys.onDownPressed: { (updatesCheck.enabled ? updatesCheck : cancelBtn).forceActiveFocus(); event.accepted = true }
+            Keys.onDownPressed: function(event) { (updatesCheck.enabled ? updatesCheck : cancelBtn).forceActiveFocus(); event.accepted = true }
         }
 
         Label {

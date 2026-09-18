@@ -4,6 +4,46 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-------------------------------------
+Version 6.0.0 - Free Run (18/09/2026)
+-------------------------------------
+
+No StreamTweak update required — everything in 6.0.0 is client-side. VRR presentation, built on Nonary's VRR work for Moonlight: on a variable-refresh display each frame is shown as soon as it is ready instead of waiting for the screen's next refresh. Home is redrawn around a moving background, takes you straight back into a game that is still streaming, favourite games can be pinned to the top of the host page, and host profiles and per-game settings are rebuilt on the tabs of Settings.
+
+✨ NEW FEATURES:
+• VRR in Settings → Video — with V-Sync on and a variable-refresh display, frames are shown as soon as they are ready, with three timing profiles (Low latency, Balanced, Smooth) and Reduce judder
+• VRR per host profile — like Fractional V-Sync, so a handheld and a docked profile can each have their own answer
+• VRR pacing overlay line — how evenly frames are presented, or why VRR is not running
+• Resume from Home — while a host is streaming, its card shows the game in progress with Resume in place of Play again
+• Pinned games — Start on the pad or P on the keyboard pins the selected game, and pinned games sit together under Last played, in alphabetical order
+• Moving background — waves in your accent colour rise over the lower three quarters of every screen, twice as fast while a host is streaming or a launch is starting. Still with Reduce animations, and paused while a dialog is open or the window is being moved
+• Opening animation — the waves rise, the StreamLight icon fades in and a band of light writes its name before Home appears. About three seconds, any button skips it, and it can be turned off in Settings → Session
+• Card opacity per host — a slider in the host's Background lets the moving background show through its card, from 70% to 100%. Every host starts at 90%
+• Name a profile with the pad — X opens eight ready-made names such as Docked, Portable, Handheld and TV, with a field for your own when a keyboard is at hand
+
+✨ IMPROVEMENTS:
+• Settings follow VRR — while it runs, Display mode shows Borderless, V-Sync and Frame pacing show On and Fractional V-Sync shows Off, all locked, and your own choices come back when VRR is switched off
+• The Frame rate row shows the rate recommended for VRR on this display, and the VRR row says when the chosen frame rate is above the display's refresh, where VRR cannot run
+• Less GPU work on 4K streams — where the graphics card decodes and renders on the same device, each frame is now shown directly instead of being copied first. 1080p and 1440p are unchanged
+
+🎨 UI:
+• Home — the host's card takes the left of the screen and the game stands beside it on the background. Before a host's first game, a line says where it will appear
+• Host profiles and per-game settings are split into the tabs of Settings — one section at a time, switched with LB / RB shown at the ends of the strip, with the number of changed values on every tab
+• Inherited values look inherited — the accent marks only what a profile or a game changes, every row says where its value comes from (Global: 4K, Docked 4K: 120), Y gives a row back and Reset all the whole set
+• Host profiles show how many settings each profile changes and switch with LT / RT from anywhere in the dialog; per-game settings open with the game's cover and name the profile they inherit from
+• The Last played badge on Home reads Last played 2 h ago · 18 h total — it used to say Last played for 18 h, as if that were the last session, when it is every session added up
+
+🐛 FIXES:
+• A crash while the video renderer was being recreated during a stream — rare before, frequent with VRR on a GPU that briefly falls behind, which recreates it several times a minute
+
+⚠️ COMPATIBILITY:
+• VRR is experimental, Windows D3D11 only, and needs a display with variable refresh
+• VRR and Fractional V-Sync cannot run together: with VRR on, Fractional V-Sync is off
+
+🙏 THANKS:
+• Thanks to Nonary (Chase Payne, https://github.com/Nonary/moonlight-qt) for the VRR pacing this release is built on
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/14) for asking for VRR and testing Nonary's build against half-rate V-Sync
+
 ------------------------------------
 Version 5.9.0 - In Step (15/09/2026)
 ------------------------------------

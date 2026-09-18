@@ -1,0 +1,9 @@
+{
+    "config_schema": 1,
+    "scenarios": [
+        { "name": "session-policy", "mode": "fixed" },
+        { "name": "lowlatency-policy", "mode": "fixed", "parameters": { "controller": { "timestamp_playout_enabled": 1, "playout_delay_adaptive": 1, "playout_delay_start_us": 4000, "playout_delay_minimum_us": 1000, "playout_delay_maximum_us": 6000, "playout_delay_percentile_per_mille": 980, "pacing_latency_extra_period_numerator": 0 } } },
+        { "name": "smoothness-policy", "mode": "fixed", "parameters": { "controller": { "timestamp_playout_enabled": 1, "playout_delay_adaptive": 1, "playout_delay_start_us": 8000, "playout_delay_minimum_us": 2000, "playout_delay_maximum_us": 12000, "playout_delay_percentile_per_mille": 997, "pacing_latency_extra_period_numerator": 1 } } },
+        { "name": "single-mode-p99-1to8", "mode": "fixed", "parameters": { "controller": { "timestamp_playout_enabled": 1, "playout_delay_adaptive": 1, "playout_delay_start_us": 6000, "playout_delay_minimum_us": 1000, "playout_delay_maximum_us": 8000, "playout_delay_percentile_per_mille": 990, "pacing_latency_extra_period_numerator": 0 } } }
+    ]
+}

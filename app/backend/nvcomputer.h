@@ -154,6 +154,11 @@ public:
     QString stageSeedColor;    // "#rrggbb", empty when the source is a picture or unset
     QString stageColorFrom;    // derived, "#rrggbb"
     QString stageColorTo;      // derived, "#rrggbb"
+    // How opaque this host's card is on Home, in percent (6.0.0), so the waves of the
+    // app's floor can show through it. 0 means never set, and reads as the default — which
+    // is how every host saved before 6.0.0 arrives, with no migration. The range and the
+    // default live in ComputerModel (StageOpacityMin / StageOpacityDefault), not here.
+    int stageOpacity = 0;
 
     // Whether StreamLight may use the StreamTweak integration on this host: link matching,
     // remote power and Windows Update, the PIN unlock, the last-session panel, store

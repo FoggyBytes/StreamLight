@@ -1,8 +1,12 @@
 #pragma once
 
+#include "dxgipresent.h"
+#include "d3d11composition.h"
+#include "ivrrframepresenter.h"
 #include "renderer.h"
 
 #include <d3d11_4.h>
+#include <d3dkmthk.h>
 #include <dxgi1_6.h>
 
 extern "C" {
@@ -12,15 +16,32 @@ extern "C" {
 #include <wrl/client.h>
 #include <wrl/wrappers/corewrappers.h>
 
-class D3D11VARenderer : public IFFmpegRenderer
+class D3D11VARenderer : public IFFmpegRenderer, public IVrrFramePresenter
 {
 public:
+    QString getCalibrationIdentity() override;
     D3D11VARenderer(int decoderSelectionPass);
     virtual ~D3D11VARenderer() override;
     virtual bool initialize(PDECODER_PARAMETERS params) override;
     virtual bool prepareDecoderContext(AVCodecContext* context, AVDictionary**) override;
     virtual bool prepareDecoderContextInGetFormat(AVCodecContext* context, AVPixelFormat pixelFormat) override;
     virtual void renderFrame(AVFrame* frame) override;
+    virtual IVrrFramePresenter* getVrrFramePresenter() override;
+
+    // DXGI can switch to interval one; composition always provides native
+    // presentation ordering. Both can honor a protected slot without a CPU floor.
+    virtual bool canLatchAdaptivePresent() const override { return true; }
+    virtual VrrFallbackReason checkSupport() const override;
+    virtual uint64_t captureDecodeBoundary() override;
+    uint64_t waitForDecode(AVFrame* frame, uint64_t decodeBoundary) override;
+    virtual VrrPrepareResult prepareFrame(AVFrame* frame,
+                                          uint64_t decodeBoundary) override;
+    virtual VrrPresentFeedback presentAdaptive(
+        const VrrPresentRequest& request) override;
+    virtual VrrPresentFeedback cancelFrame() override;
+    virtual void setSuspended(bool suspended) override;
+    virtual bool restoreFixedPresentation(VrrFallbackReason reason) override;
+
     virtual void notifyOverlayUpdated(Overlay::OverlayType) override;
     virtual bool notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO stateInfo) override;
     virtual int getRendererAttributes() override;
@@ -42,16 +63,37 @@ private:
     void flushCadenceWindow(uint64_t nowUs);
 
     bool setupRenderingResources();
+    bool m_CompositionRequested = false;
+    D3D11CompositionPresenter m_CompositionPresenter;
+    uint64_t m_CompositionPresentId = 0;
+    bool m_CompositionModeLogged = false;
     std::vector<DXGI_FORMAT> getVideoTextureSRVFormats();
     bool setupFrameRenderingResources(AVHWFramesContext* framesContext);
     bool setupSwapchainDependentResources();
     bool setupVideoTexture(AVHWFramesContext* framesContext); // for !m_BindDecoderOutputTextures
     bool setupTexturePoolViews(AVHWFramesContext* framesContext); // for m_BindDecoderOutputTextures
+    bool prepareFrameForPresent(AVFrame* frame,
+                                uint64_t decodeBoundary = 0);
+    bool initializeVrrPresentReadyFence();
+    bool waitForVrrPresentReady(uint64_t decodeBoundary);
+    HRESULT presentPreparedFrame(const DxgiPresentParameters& parameters);
+    UINT legacyPresentFlags() const;
+    void initializeVrrPresentationState(SDL_Window* window,
+                                        DXGI_SWAP_CHAIN_DESC1* swapChainDesc);
+    void refreshVrrDisplayState();
+    void refreshVrrDisplayTiming();
+    void closeVrrRasterSource();
+    VrrNativeRasterSample sampleVrrRaster() const;
+    void populateVrrGpuReadyFeedback(VrrPresentFeedback& feedback) const;
+    VrrFallbackReason evaluateVrrEligibility(
+        bool prioritizeOutputCompatibility);
+    void releasePreparedVrrFrame();
+    void queueRenderDeviceReset();
     void renderOverlay(Overlay::OverlayType type);
     bool createOverlayVertexBuffer(Overlay::OverlayType type, int width, int height, Microsoft::WRL::ComPtr<ID3D11Buffer>& newVertexBuffer);
     void bindColorConversion(bool frameChanged, AVFrame* frame);
     void bindVideoVertexBuffer(bool frameChanged, AVFrame* frame);
-    void renderVideo(AVFrame* frame);
+    void renderVideo(AVFrame* frame, uint64_t decodeBoundary = 0);
     bool checkDecoderSupport(IDXGIAdapter* adapter);
     bool createDeviceByAdapterIndex(int adapterIndex, bool* adapterNotFound = nullptr);
     bool setupSharedDevice(IDXGIAdapter1* adapter);
@@ -70,8 +112,43 @@ private:
         Monitored,
     };
 
+    struct VrrDisplayTimingSnapshot {
+        bool queryResultValid = false;
+        uint32_t queryResult = 0;
+        bool pathValid = false;
+        uint32_t pathFlags = 0;
+        bool targetAvailable = false;
+        uint64_t sourceAdapterLuid = 0;
+        uint32_t sourceId = 0;
+        uint64_t targetAdapterLuid = 0;
+        uint32_t targetId = 0;
+        uint32_t outputTechnology = 0;
+        uint32_t rotation = 0;
+        uint32_t scaling = 0;
+        uint32_t pathRefreshNumerator = 0;
+        uint32_t pathRefreshDenominator = 0;
+        bool signalValid = false;
+        uint64_t signalPixelRateHz = 0;
+        uint32_t signalHSyncNumerator = 0;
+        uint32_t signalHSyncDenominator = 0;
+        uint32_t signalVSyncNumerator = 0;
+        uint32_t signalVSyncDenominator = 0;
+        uint32_t signalActiveWidth = 0;
+        uint32_t signalActiveHeight = 0;
+        uint32_t signalTotalWidth = 0;
+        uint32_t signalTotalHeight = 0;
+        uint32_t signalAdditionalInfoRaw = 0;
+        uint32_t signalScanLineOrdering = 0;
+    };
+
     Microsoft::WRL::ComPtr<IDXGIFactory5> m_Factory;
+    // m_AdapterIndex identifies the output selected by SDL.  The renderer
+    // may fall back to another adapter for decoding, so retain that index
+    // separately for the VRR same-GPU check.
     int m_AdapterIndex;
+    int m_RenderAdapterIndex;
+    bool m_VrrRenderAdapterLuidValid;
+    uint64_t m_VrrRenderAdapterLuid;
     Microsoft::WRL::ComPtr<ID3D11Device5> m_RenderDevice, m_DecodeDevice;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext4> m_RenderDeviceContext, m_DecodeDeviceContext;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> m_RenderSharedTextureArray;
@@ -95,6 +172,66 @@ private:
     AVColorTransferCharacteristic m_LastColorTrc;
 
     bool m_AllowTearing;
+    bool m_VrrTearingSupported;
+    bool m_VrrBorderlessFlipModel;
+    bool m_VrrSameGpuOutput;
+    bool m_VrrSwapChainAllowsTearing;
+    bool m_VrrTearingFeatureQueryResultValid;
+    int64_t m_VrrTearingFeatureQueryResult;
+    bool m_VrrTearingFeatureAllowsTearing;
+    bool m_VrrSwapChainDescQueryResultValid;
+    int64_t m_VrrSwapChainDescQueryResult;
+    uint32_t m_VrrSwapChainFlags;
+    uint32_t m_VrrSwapChainSwapEffect;
+    bool m_VrrFullscreenStateQueryResultValid;
+    int64_t m_VrrFullscreenStateQueryResult;
+    bool m_VrrFullscreenExclusive;
+    uint32_t m_VrrWindowFlags;
+    UINT m_VrrDesktopMonitorCount;
+    HWND m_VrrWindowHandle;
+    VrrDisplayTimingSnapshot m_VrrDisplayTiming;
+    bool m_VrrRasterSamplingRequested;
+    bool m_VrrRasterOpenResultValid;
+    int64_t m_VrrRasterOpenResult;
+    bool m_VrrRasterSourceValid;
+    D3DKMT_HANDLE m_VrrRasterAdapter;
+    D3DDDI_VIDEO_PRESENT_SOURCE_ID m_VrrRasterVidPnSourceId;
+    bool m_VrrSuspended;
+    VrrFallbackReason m_VrrFallbackReason;
+    bool m_VrrFramePrepared;
+    bool m_VrrContextLocked;
+    Microsoft::WRL::ComPtr<ID3D11Fence> m_VrrPresentReadyFence;
+    UINT64 m_VrrPresentReadyFenceValue;
+    HANDLE m_VrrPresentReadyFenceEvent;
+    bool m_VrrPresentReadyAvailable;
+    bool m_VrrGpuReadyAttempted;
+    bool m_VrrGpuReadySignalResultValid;
+    int64_t m_VrrGpuReadySignalResult;
+    bool m_VrrGpuReadySetEventResultValid;
+    int64_t m_VrrGpuReadySetEventResult;
+    bool m_VrrGpuReadyWaitResultValid;
+    uint32_t m_VrrGpuReadyWaitResult;
+    bool m_VrrGpuReadyTimingValid;
+    uint64_t m_VrrGpuReadySignalStartUs;
+    uint64_t m_VrrGpuReadySignalEndUs;
+    uint64_t m_VrrGpuReadyFlushStartUs;
+    uint64_t m_VrrGpuReadyFlushEndUs;
+    uint64_t m_VrrGpuReadySetEventStartUs;
+    uint64_t m_VrrGpuReadySetEventEndUs;
+    uint64_t m_VrrGpuReadyPollStartUs;
+    uint64_t m_VrrGpuReadyPollEndUs;
+    uint64_t m_VrrGpuReadyFenceValue;
+    uint64_t m_VrrGpuReadyPollCompletedValue;
+    bool m_VrrGpuReadyCompletedBeforeWait;
+    uint64_t m_VrrGpuReadyWaitStartUs;
+    uint64_t m_VrrGpuReadyTimeUs;
+    bool m_VrrPriorPresentCountValid;
+    uint64_t m_VrrPriorPresentCount;
+    bool m_VrrPriorFrameStatsValid;
+    uint64_t m_VrrPriorFrameStatsPresentCount;
+    uint64_t m_VrrPriorFrameStatsTimeUs;
+    uint64_t m_VrrPriorFrameStatsPresentRefreshSequence;
+    uint64_t m_VrrPriorFrameStatsRefreshSequence;
 
     // V-blanks to hold each presented frame (DXGI sync interval). 0 = present
     // immediately, which is upstream Moonlight's behaviour and still the default.
@@ -201,4 +338,3 @@ private:
 
     AVBufferRef* m_HwDeviceContext;
 };
-

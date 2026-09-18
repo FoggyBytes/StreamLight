@@ -37,6 +37,57 @@ FocusScope {
      */
     property var nativeIndices: []
 
+    /*
+     * ── The inherited state (6.0.0) ─────────────────────────────────────────────────────
+     *
+     * An override strip's index 0 means "no override": the value comes from Global, or from
+     * the host profile in the per-game panel. Until now that was a pill of its own reading
+     * "Global · 4K", drawn selected — in the accent, like a value the user had chosen. Every
+     * row of an untouched profile therefore looked modified, which is the one thing the panel
+     * exists to tell apart. So: the accent now means "this profile changes it", and inherited
+     * is drawn NEUTRAL.
+     *
+     * `inheritStrip` turns that on. `inheritIndex` says which of the real options equals the
+     * inherited value — the caller knows it, this control cannot: it sees labels, not the
+     * settings behind them. When it is set:
+     *
+     *   · index 0 is not drawn and navigation steps over it, exactly like a hidden index;
+     *   · with currentIndex 0 the inheritIndex pill carries a neutral highlight, so the strip
+     *     still shows where the value sits;
+     *   · with an override, the chosen pill takes the accent and the inherited one keeps a
+     *     small dot — where you would land if you gave the value back;
+     *   · CHOOSING the inherited option resets the row instead of storing the same value
+     *     again. That is the whole reason index 0 could stop being a pill: "same as Global"
+     *     and "Global" are one state, and it used to be two.
+     *
+     * ⚠️ inheritIndex may legitimately be -1: the inherited value need not be on the strip
+     * (a custom resolution, a frame rate no display reports). Then nothing is highlighted
+     * while the row is inherited — the row's own caption says what Global holds, and Y on the
+     * row is what gives the value back.
+     */
+    property bool inheritStrip: false
+    property int  inheritIndex: -1
+
+    // Where the selection is DRAWN. Not currentIndex: index 0 is the inherit slot, and what
+    // it means on screen is "the option that happens to equal Global".
+    readonly property int _visualIndex: (inheritStrip && currentIndex === 0) ? inheritIndex
+                                                                            : currentIndex
+    readonly property bool _inheritedSel: inheritStrip && currentIndex === 0
+
+    // Where ◀ stops. With an inherit strip index 0 is not a place the cursor can be.
+    readonly property int _firstIndex: inheritStrip ? 1 : 0
+
+    /*
+     * One place decides what a pill press means, because there are two of them — the mouse
+     * and ◀/▶ — and they must not disagree about the reset.
+     */
+    function _choose(i) {
+        var target = (inheritStrip && i === inheritIndex) ? 0 : i
+        if (selector.currentIndex === target && selector.currentIndex !== -1) return
+        selector.currentIndex = target
+        selector.activated(target)
+    }
+
     function isNative(i) {
         for (var k = 0; k < nativeIndices.length; ++k)
             if (nativeIndices[k] === i)
@@ -52,6 +103,8 @@ FocusScope {
     }
 
     function isHidden(i) {
+        // The inherit slot is never drawn: it has no value of its own to show.
+        if (inheritStrip && i === 0) return true
         for (var k = 0; k < hiddenIndices.length; ++k)
             if (hiddenIndices[k] === i)
                 return true
@@ -127,7 +180,14 @@ FocusScope {
                 width: pillLabel.implicitWidth + selector._pillPadX * 2
                 height: selector._px(30)
 
-                readonly property bool _selected: selector.currentIndex === index
+                readonly property bool _selected: selector.currentIndex >= 0
+                                                  && selector._visualIndex === index
+                // Drawn selected, but by inheritance rather than by choice.
+                readonly property bool _inherited: pill._selected && selector._inheritedSel
+                // The value this row would go back to, while it is holding another one.
+                readonly property bool _inheritMark: selector.inheritStrip
+                                                     && selector.currentIndex !== 0
+                                                     && index === selector.inheritIndex
                 readonly property bool _disabled: selector.isDisabled(index)
 
                 // A Row leaves out what is not visible, so the strip closes up on its own and
@@ -141,11 +201,29 @@ FocusScope {
 
                 HoverState { id: hov }
 
+                // The selection. Accent when this profile chose the value, a raised neutral
+                // when the value is merely the one being inherited — see inheritStrip.
                 Rectangle {
                     anchors.fill: parent
                     anchors.margins: selector._px(2)
                     radius: selector._px(5)
-                    color: pill._selected ? selector._accent : "transparent"
+                    color: !pill._selected  ? "transparent"
+                         : pill._inherited  ? Theme.cardHigh
+                         :                    selector._accent
+                    border.color: Theme.lineHigh
+                    border.width: pill._inherited ? 1 : 0
+                    opacity: pill._disabled ? 0.4 : 1.0
+                }
+                // Where the value would go back to. Bottom-centre, so it never meets the
+                // native marker in the opposite corner, and neutral: this is not a choice.
+                Rectangle {
+                    visible: pill._inheritMark
+                    width: selector._px(4); height: width
+                    radius: width / 2
+                    anchors.bottom: parent.bottom
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottomMargin: selector._px(4)
+                    color: Theme.text3
                     opacity: pill._disabled ? 0.4 : 1.0
                 }
                 // The native marker. Inside the pill's own rounded corner rather than
@@ -160,16 +238,19 @@ FocusScope {
                     anchors.right: parent.right
                     anchors.topMargin: selector._px(5)
                     anchors.rightMargin: selector._px(6)
-                    color: pill._selected ? selector._textOn : selector._accent
-                    opacity: pill._disabled ? 0.4 : (pill._selected ? 0.5 : 1.0)
+                    color: (pill._selected && !pill._inherited) ? selector._textOn
+                                                                : selector._accent
+                    opacity: pill._disabled ? 0.4
+                           : (pill._selected && !pill._inherited) ? 0.5 : 1.0
                 }
                 Label {
                     id: pillLabel
                     anchors.centerIn: parent
                     text: modelData
-                    color: pill._disabled ? Theme.offline
-                         : pill._selected ? selector._textOn
-                         :                  selector._textOff
+                    color: pill._disabled  ? Theme.offline
+                         : pill._inherited ? Theme.text
+                         : pill._selected  ? selector._textOn
+                         :                   selector._textOff
                     font.family: Theme.family
                     font.pixelSize: selector._px(Theme.fontSmall)
                     font.bold: pill._selected
@@ -201,10 +282,7 @@ FocusScope {
                     // enabled / cursorShape / hoverEnabled are HoverState's job now.
                     onClicked: {
                         selector.forceActiveFocus()
-                        if (selector.currentIndex !== index) {
-                            selector.currentIndex = index
-                            selector.activated(index)
-                        }
+                        selector._choose(index)
                     }
                 }
             }
@@ -214,23 +292,49 @@ FocusScope {
     // At a boundary we leave the event UNaccepted so KeyNavigation.left/right
     // (if set on the instance) can move focus to a neighbour — e.g. Right past
     // the last profile tab focuses the "+ Add" button.
-    Keys.onLeftPressed: {
-        var i = selector.currentIndex - 1
-        while (i >= 0 && selector.isSkipped(i)) i--
-        if (i >= 0) {
-            selector.currentIndex = i
-            selector.activated(i)
+    //
+    // ⚠️ Both walk from _visualIndex, not from currentIndex: on an inherit strip those two
+    // differ by exactly the case that matters — currentIndex 0 is drawn on the inheritIndex
+    // pill, and stepping from 0 would jump the cursor to the front of the strip instead of
+    // moving one pill from where the eye sees it. When nothing is selected (a custom value,
+    // currentIndex -1) the inherited pill is the anchor: it is where the strip would land.
+    function _cursorIndex() {
+        if (selector._visualIndex >= 0) return selector._visualIndex
+        return selector.inheritIndex >= 0 ? selector.inheritIndex : selector._firstIndex
+    }
+
+    /*
+     * Nothing is drawn as selected: a custom value is in force (currentIndex -1) and the
+     * inherited one is not on the strip either. Then the first press has nowhere to step
+     * FROM, so it selects the anchor instead of stepping past it — otherwise ▶ would appear
+     * to skip a pill and ◀ would walk the focus out of the control.
+     */
+    readonly property bool _nothingDrawn: selector._visualIndex < 0
+    Keys.onLeftPressed: function(event) {
+        if (selector._nothingDrawn) {
+            selector._choose(selector._firstIndex)
+            event.accepted = true
+            return
+        }
+        var i = selector._cursorIndex() - 1
+        while (i >= selector._firstIndex && selector.isSkipped(i)) i--
+        if (i >= selector._firstIndex) {
+            selector._choose(i)
             event.accepted = true
         } else {
             event.accepted = false
         }
     }
-    Keys.onRightPressed: {
-        var i = selector.currentIndex + 1
+    Keys.onRightPressed: function(event) {
+        if (selector._nothingDrawn) {
+            selector._choose(selector._firstIndex)
+            event.accepted = true
+            return
+        }
+        var i = selector._cursorIndex() + 1
         while (i < selector.labels.length && selector.isSkipped(i)) i++
         if (i < selector.labels.length) {
-            selector.currentIndex = i
-            selector.activated(i)
+            selector._choose(i)
             event.accepted = true
         } else {
             event.accepted = false

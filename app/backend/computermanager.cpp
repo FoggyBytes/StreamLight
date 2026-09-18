@@ -1283,6 +1283,31 @@ bool ComputerManager::setStageBackground(QString uuid, QString imagePath, QStrin
     return true;
 }
 
+bool ComputerManager::setStageOpacity(QString uuid, int percent)
+{
+    if (uuid.isEmpty()) {
+        return false;
+    }
+
+    NvComputer* computer = nullptr;
+    {
+        QReadLocker lock(&m_Lock);
+        computer = m_KnownHosts.value(uuid);
+    }
+    if (computer == nullptr) {
+        return false;
+    }
+
+    {
+        QWriteLocker cLock(&computer->lock);
+        computer->stageOpacity = percent;
+    }
+
+    saveHost(computer);
+    emit computerStateChanged(computer);
+    return true;
+}
+
 bool ComputerManager::setStreamTweakEnabled(QString uuid, bool enabled)
 {
     if (uuid.isEmpty()) {

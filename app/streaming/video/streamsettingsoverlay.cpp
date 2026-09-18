@@ -151,7 +151,10 @@ bool StreamSettingsOverlay::isRowLocked(int rowId) const
     // decoder whenever V-Sync is disabled, and the software Pacer is gated on it. V-Sync is a global preference
     // that can't be changed from here, so the row is shown read-only instead of
     // advertising a mode that would be silently ignored.
-    return rowId == ROW_PACING && !m_Prefs->enableVsync;
+    //
+    // Also locked while the session runs VRR (6.0.0): the VRR worker paces on its own and
+    // the setting is not read, so the row shows On read-only, the value it really has.
+    return rowId == ROW_PACING && (!m_Prefs->enableVsync || Session::get()->isVrrActive());
 }
 
 void StreamSettingsOverlay::moveFocus(int delta)
@@ -506,8 +509,10 @@ void StreamSettingsOverlay::render()
             break;
         case ROW_PACING:
             if (isRowLocked(ROW_PACING)) {
+                const bool vrr = Session::get()->isVrrActive();
                 addRow(ROW_PACING, QStringLiteral("Frame pacing"),
-                       QStringLiteral("Off"), QStringLiteral("V-Sync off"));
+                       vrr ? QStringLiteral("On") : QStringLiteral("Off"),
+                       vrr ? QStringLiteral("VRR") : QStringLiteral("V-Sync off"));
             }
             else {
                 addRow(ROW_PACING, QStringLiteral("Frame pacing"),

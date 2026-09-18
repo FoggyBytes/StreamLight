@@ -27,6 +27,9 @@
 // read instead of loading every record and sorting it by date on every repaint of the card.
 #define SER_LASTGAME    "lastGame"
 
+// The games pinned on this host (6.0.0), as a list of readable names in the host node.
+#define SER_PINNED      "pinned"
+
 PlaytimeManager* PlaytimeManager::get()
 {
     static PlaytimeManager instance;
@@ -44,7 +47,10 @@ QString PlaytimeManager::normalise(const QString& appName)
     // "Hollow  Knight" and "Hollow Knight" are one game. Case folding on top of that, since
     // the streaming server's entry and the library's copy of a title do not always agree on
     // capitalisation.
-    return appName.simplified().toLower();
+    //
+    // ⚠️ Spelled in nvapp.h (6.0.0), because the list's sort now compares pinned names too
+    // and must agree with this store about what counts as the same game.
+    return normaliseGameName(appName);
 }
 
 QString PlaytimeManager::digest(const QString& normalisedName)
@@ -232,6 +238,50 @@ void PlaytimeManager::reset(const QString& hostUuid, const QString& appName)
     settings.beginGroup(hostGroup(hostUuid));
     if (normalise(settings.value(QStringLiteral(SER_LASTGAME)).toString()) == normalise(appName))
         settings.remove(QStringLiteral(SER_LASTGAME));
+    settings.endGroup();
+}
+
+QSet<QString> PlaytimeManager::pinnedOn(const QString& hostUuid) const
+{
+    QSet<QString> out;
+    if (hostUuid.isEmpty())
+        return out;
+
+    QSettings settings;
+    settings.beginGroup(hostGroup(hostUuid));
+    const QStringList names = settings.value(QStringLiteral(SER_PINNED)).toStringList();
+    settings.endGroup();
+
+    for (const QString& name : names) {
+        if (!name.isEmpty())
+            out.insert(normalise(name));
+    }
+    return out;
+}
+
+void PlaytimeManager::setPinned(const QString& hostUuid, const QString& appName, bool pinned)
+{
+    if (hostUuid.isEmpty() || appName.isEmpty())
+        return;
+
+    QSettings settings;
+    settings.beginGroup(hostGroup(hostUuid));
+    QStringList names = settings.value(QStringLiteral(SER_PINNED)).toStringList();
+
+    // Drop every spelling of this game first, so pinning twice cannot store it twice and
+    // unpinning removes it whatever capitalisation it was pinned under.
+    const QString key = normalise(appName);
+    for (int i = names.size() - 1; i >= 0; i--) {
+        if (normalise(names.at(i)) == key)
+            names.removeAt(i);
+    }
+    if (pinned)
+        names.append(appName);
+
+    if (names.isEmpty())
+        settings.remove(QStringLiteral(SER_PINNED));
+    else
+        settings.setValue(QStringLiteral(SER_PINNED), names);
     settings.endGroup();
 }
 

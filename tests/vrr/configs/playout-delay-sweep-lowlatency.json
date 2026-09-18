@@ -1,0 +1,159 @@
+﻿{
+    "config_schema":  1,
+    "scenarios":  [
+                      {
+                          "name":  "session-policy",
+                          "mode":  "fixed"
+                      },
+                      {
+                          "name":  "old-projected-lowlatency",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  0
+                                                            }
+                                         }
+                      },
+                      {
+                          "name":  "fixed-1ms",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  1,
+                                                                "source_playout_delay_us":  1000
+                                                            }
+                                         }
+                      },
+                      {
+                          "name":  "fixed-2ms",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  1,
+                                                                "source_playout_delay_us":  2000
+                                                            }
+                                         }
+                      },
+                      {
+                          "name":  "fixed-3ms",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  1,
+                                                                "source_playout_delay_us":  3000
+                                                            }
+                                         }
+                      },
+                      {
+                          "name":  "fixed-4ms",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  1,
+                                                                "source_playout_delay_us":  4000
+                                                            }
+                                         }
+                      },
+                      {
+                          "name":  "fixed-5ms",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  1,
+                                                                "source_playout_delay_us":  5000
+                                                            }
+                                         }
+                      },
+                      {
+                          "name":  "fixed-6ms",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  1,
+                                                                "source_playout_delay_us":  6000
+                                                            }
+                                         }
+                      },
+                      {
+                          "name":  "fixed-8ms",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  1,
+                                                                "source_playout_delay_us":  8000
+                                                            }
+                                         }
+                      },
+                      {
+                          "name":  "adaptive-p95",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  1,
+                                                                "playout_delay_adaptive":  1,
+                                                                "playout_delay_start_us":  4000,
+                                                                "playout_delay_minimum_us":  1000,
+                                                                "playout_delay_maximum_us":  6000,
+                                                                "playout_delay_percentile_per_mille":  950
+                                                            }
+                                         }
+                      },
+                      {
+                          "name":  "adaptive-p98",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  1,
+                                                                "playout_delay_adaptive":  1,
+                                                                "playout_delay_start_us":  4000,
+                                                                "playout_delay_minimum_us":  1000,
+                                                                "playout_delay_maximum_us":  6000,
+                                                                "playout_delay_percentile_per_mille":  980
+                                                            }
+                                         }
+                      },
+                      {
+                          "name":  "adaptive-p99",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  1,
+                                                                "playout_delay_adaptive":  1,
+                                                                "playout_delay_start_us":  4000,
+                                                                "playout_delay_minimum_us":  1000,
+                                                                "playout_delay_maximum_us":  6000,
+                                                                "playout_delay_percentile_per_mille":  990
+                                                            }
+                                         }
+                      },
+                      {
+                          "name":  "adaptive-p99-max12",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  1,
+                                                                "playout_delay_adaptive":  1,
+                                                                "playout_delay_start_us":  4000,
+                                                                "playout_delay_minimum_us":  1000,
+                                                                "playout_delay_maximum_us":  12000,
+                                                                "playout_delay_percentile_per_mille":  990
+                                                            }
+                                         }
+                      },
+                      {
+                          "name":  "session-no-burst-exclusion",
+                          "mode":  "fixed",
+                          "parameters":  {
+                                             "controller":  {
+                                                                "timestamp_playout_enabled":  1,
+                                                                "playout_delay_adaptive":  1,
+                                                                "playout_delay_start_us":  6000,
+                                                                "playout_delay_minimum_us":  1000,
+                                                                "playout_delay_maximum_us":  8000,
+                                                                "playout_delay_percentile_per_mille":  990,
+                                                                "playout_burst_exclusion_per_mille":  0
+                                                            }
+                                         }
+                      }
+                  ]
+}

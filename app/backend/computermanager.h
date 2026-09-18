@@ -239,6 +239,9 @@ public:
     // fall back to the name-derived colours. Same shape as setTailscaleAddress above: write
     // under the host's lock, persist, then tell the model to repaint.
     bool setStageBackground(QString uuid, QString imagePath, QString seedColor);
+    // How opaque the host's card is on Home, in percent (6.0.0). Stored as given: the range
+    // is ComputerModel's to enforce, since it is also what the slider is drawn from.
+    bool setStageOpacity(QString uuid, int percent);
 
     // The StreamTweak integration for one host. Persisted immediately: the Settings tab is
     // a place people leave by killing the app, so waiting for teardown would lose the choice.

@@ -31,6 +31,7 @@
 #define SER_STAGESEED "stageseed"
 #define SER_STAGEFROM "stagefrom"
 #define SER_STAGETO "stageto"
+#define SER_STAGEOPACITY "stageopacity"
 #define SER_STENABLED "streamtweakenabled"
 
 NvComputer::NvComputer(QSettings& settings)
@@ -57,6 +58,8 @@ NvComputer::NvComputer(QSettings& settings)
     this->stageSeedColor = settings.value(SER_STAGESEED).toString();
     this->stageColorFrom = settings.value(SER_STAGEFROM).toString();
     this->stageColorTo   = settings.value(SER_STAGETO).toString();
+    // Absent on every host saved before 6.0.0: 0, which means "use the default".
+    this->stageOpacity   = settings.value(SER_STAGEOPACITY, 0).toInt();
 
     // ⚠️ Absence of the key is NOT the same as false, and reading it as false would be a
     // regression shipped in a release: everyone already using StreamTweak would upgrade and
@@ -177,6 +180,7 @@ void NvComputer::serialize(QSettings& settings, bool serializeApps) const
     settings.setValue(SER_STAGESEED, stageSeedColor);
     settings.setValue(SER_STAGEFROM, stageColorFrom);
     settings.setValue(SER_STAGETO, stageColorTo);
+    settings.setValue(SER_STAGEOPACITY, stageOpacity);
     settings.setValue(SER_STENABLED, streamTweakEnabled);
 
     // Avoid deleting an existing applist if we couldn't get one
@@ -210,6 +214,7 @@ bool NvComputer::isEqualSerialized(const NvComputer &that) const
            this->stageSeedColor == that.stageSeedColor &&
            this->stageColorFrom == that.stageColorFrom &&
            this->stageColorTo == that.stageColorTo &&
+           this->stageOpacity == that.stageOpacity &&
            this->streamTweakEnabled == that.streamTweakEnabled &&
            this->appList == that.appList;
 }
@@ -223,9 +228,10 @@ void NvComputer::sortAppList()
     // Read once for the whole sort rather than per comparison: the name comes off disk, and a
     // comparator is called O(n log n) times.
     const QString lastPlayed = PlaytimeManager::get()->lastPlayedOn(uuid).name;
+    const QSet<QString> pinned = PlaytimeManager::get()->pinnedOn(uuid);
 
-    std::stable_sort(appList.begin(), appList.end(), [&lastPlayed](const NvApp& a, const NvApp& b) {
-        int oa = appSortOrder(a.name, lastPlayed), ob = appSortOrder(b.name, lastPlayed);
+    std::stable_sort(appList.begin(), appList.end(), [&lastPlayed, &pinned](const NvApp& a, const NvApp& b) {
+        int oa = appSortOrder(a.name, lastPlayed, pinned), ob = appSortOrder(b.name, lastPlayed, pinned);
         if (oa != ob) return oa < ob;
         return a.name.toLower() < b.name.toLower();
     });

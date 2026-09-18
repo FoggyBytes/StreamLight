@@ -68,9 +68,9 @@ Popup {
                     dlg.chosen(it.kind)
                 }
             }
-            Keys.onReturnPressed: { _activate(); event.accepted = true }
-            Keys.onEnterPressed:  { _activate(); event.accepted = true }
-            Keys.onSpacePressed:  { _activate(); event.accepted = true }
+            Keys.onReturnPressed: function(event) { _activate(); event.accepted = true }
+            Keys.onEnterPressed:  function(event) { _activate(); event.accepted = true }
+            Keys.onSpacePressed:  function(event) { _activate(); event.accepted = true }
 
             delegate: Item {
                 width: grid.cellWidth

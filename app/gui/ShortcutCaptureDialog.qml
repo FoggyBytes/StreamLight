@@ -145,7 +145,7 @@ Popup {
             Keys.onEnterPressed:  if (!pop._keyListening) _start()
             Keys.onSpacePressed:  if (!pop._keyListening) _start()
 
-            Keys.onPressed: {
+            Keys.onPressed: function(event) {
                 if (!pop._keyListening) {
                     if (event.key === Qt.Key_Down) { saveBtn.forceActiveFocus(); event.accepted = true }
                     return

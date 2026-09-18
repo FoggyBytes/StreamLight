@@ -1,0 +1,162 @@
+{
+  "config_schema": 1,
+  "parameters": {
+    "controller": {},
+    "worker": {
+      "queue_capacity": 3
+    },
+    "display": {
+      "calibration_confirmed": 0,
+      "scanout_period_us": 0,
+      "scanout_period_ps": 0,
+      "active_scanout_us": 0,
+      "active_scanout_ps": 0,
+      "active_scanout_percent": 95,
+      "sync_to_active_scanout_us": 0,
+      "present_transport_us": 0,
+      "phase_uncertainty_us": 250,
+      "anchor_max_age_us": 0
+    },
+    "execution": {
+      "decision_delay_us": 0,
+      "render_wake_delay_us": 0,
+      "target_wake_delay_us": 0,
+      "preparation_delay_us": 0,
+      "submission_delay_us": 0,
+      "display_transition_delay_us": 0,
+      "spacing_guard_feedback_us": 0,
+      "submission_advance_us": 0,
+      "remove_pre_present_raster_probe_overhead": 0,
+      "periodic_stall_every_frames": 0,
+      "periodic_stall_phase_frames": 0,
+      "periodic_stall_burst_frames": 1,
+      "periodic_stall_us": 0,
+      "periodic_render_wake_delay_us": 0,
+      "periodic_target_wake_delay_us": 0,
+      "periodic_preparation_stall_us": 0,
+      "periodic_submission_stall_us": 0,
+      "periodic_display_transition_delay_us": 0,
+      "periodic_spacing_guard_feedback_us": 0,
+      "periodic_submission_advance_us": 0
+    }
+  },
+  "scenarios": [
+    {
+      "name": "defaults",
+      "mode": "fixed",
+      "assertions": [
+        {
+          "metric": "simulation.tear.modelled_interval_violations",
+          "operator": "<=",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "larger-guard-step",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "guard_step_us": 100
+        }
+      }
+    },
+    {
+      "name": "alignment-probe-overhead-normalized",
+      "mode": "fixed",
+      "parameters": {
+        "execution": {
+          "remove_pre_present_raster_probe_overhead": 1
+        }
+      },
+      "assertions": [
+        {
+          "metric": "simulation.observer_overhead_normalization.missing_evidence_frames",
+          "operator": "<=",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "periodic-decision-stall",
+      "mode": "fixed",
+      "parameters": {
+        "execution": {
+          "periodic_stall_every_frames": 60,
+          "periodic_stall_us": 2000
+        }
+      }
+    },
+    {
+      "name": "periodic-render-and-submit-stalls",
+      "mode": "fixed",
+      "parameters": {
+        "execution": {
+          "periodic_stall_every_frames": 60,
+          "periodic_preparation_stall_us": 1500,
+          "periodic_submission_stall_us": 1000
+        }
+      }
+    },
+    {
+      "name": "scheduler-and-spacing-anomaly-burst",
+      "mode": "fixed",
+      "parameters": {
+        "execution": {
+          "periodic_stall_every_frames": 120,
+          "periodic_stall_phase_frames": 30,
+          "periodic_stall_burst_frames": 4,
+          "periodic_render_wake_delay_us": 1500,
+          "periodic_target_wake_delay_us": 1000,
+          "periodic_spacing_guard_feedback_us": 250
+        }
+      }
+    },
+    {
+      "name": "periodic-early-present-fault",
+      "mode": "fixed",
+      "parameters": {
+        "execution": {
+          "periodic_stall_every_frames": 60,
+          "periodic_submission_advance_us": 6000
+        }
+      }
+    },
+    {
+      "name": "periodic-display-transition-delay",
+      "mode": "fixed",
+      "parameters": {
+        "execution": {
+          "periodic_stall_every_frames": 60,
+          "periodic_display_transition_delay_us": 6000
+        }
+      }
+    },
+    {
+      "name": "wide-worker-queue",
+      "mode": "worker",
+      "parameters": {
+        "worker": {
+          "queue_capacity": 6
+        }
+      },
+      "assertions": [
+        {
+          "metric": "simulation.worker.unaccepted_arrivals",
+          "operator": "<=",
+          "value": 0
+        },
+        {
+          "metric": "simulation.worker.capacity_evictions",
+          "operator": "<=",
+          "value": 0
+        },
+        {
+          "metric": "simulation.tear.modelled_interval_violations",
+          "operator": "<=",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

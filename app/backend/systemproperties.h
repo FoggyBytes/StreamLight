@@ -80,6 +80,18 @@ public:
      */
     Q_INVOKABLE QVariantMap videoOptions();
 
+    /**
+     * The VRR stream rate recommended for the client display, and the refresh it was
+     * derived from: { fps, refreshHz }, or an empty map when no display reports a
+     * usable rate. Settings shows it as a subline under Frame rate when VRR is on.
+     *
+     * ⚠️ Advisory only. It never rewrites the saved frame rate, and the FPS strip is
+     * still built from VideoOptions — §73.4.1 decided against a second, VRR-flavoured
+     * list that reorders itself when a switch is flipped. The arithmetic is
+     * VrrRatePolicy's, so this and the pacing gate cannot drift apart.
+     */
+    Q_INVOKABLE QVariantMap vrrRecommendation();
+
     Q_INVOKABLE void startAsyncLoad();
     Q_INVOKABLE void waitForAsyncLoad();
     Q_INVOKABLE void refreshDisplays();

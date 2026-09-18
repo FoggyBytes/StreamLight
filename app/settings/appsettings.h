@@ -69,11 +69,22 @@ struct AppOverride
     // already decides on its own, and needs no knob to do it.
     bool hasFractionalVsync = false; bool fractionalVsync = false; // StreamingPreferences::fractionalVsync
 
+    // VRR (6.0.0). Host-profile only, for the same reason and with the same shape as
+    // Fractional V-Sync above: it is a dependent of V-Sync, and the situation it
+    // describes is the panel — a handheld profile on a VRR display and a docked one on
+    // a fixed-refresh screen want opposite answers at the same frame rate.
+    //
+    // ⚠️ VRR and Fractional V-Sync are mutually exclusive and VRR wins; the resolution
+    // lives in Session::snapshotPresentationSettings(), NOT here. A profile may hold
+    // both switched on, and keeps both: the session decides, and says so in the log.
+    bool hasVrr = false;          bool enableVrr = false;    // StreamingPreferences::enableVrr
+
     bool isEmpty() const
     {
         return !(hasResolution || hasFps || hasBitrate || hasHdr ||
                  hasCodec || hasFramePacing || hasAudio || hasHue || hasMatchLink ||
-                 hasWaitForGame || hasDisplayMode || hasVsync || hasFractionalVsync);
+                 hasWaitForGame || hasDisplayMode || hasVsync || hasFractionalVsync ||
+                 hasVrr);
     }
 };
 

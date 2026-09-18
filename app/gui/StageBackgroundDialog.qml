@@ -16,6 +16,12 @@ import Theme 1.0
  * the same machine and must look the same.
  *
  * Emits chosen(imagePath, seedColor); both empty means "clear it".
+ *
+ * 6.0.0: and how opaque the card is, so the waves of the app's floor shows through it.
+ * Emitted as opacityChosen(percent) while the slider moves — the card behind this dialog is
+ * the preview, exactly as it is for the colours. It belongs here rather than in Settings
+ * because it is a property of the backdrop: a pale picture and a dark one want different
+ * amounts of it, and the backdrop is per host.
  */
 Popup {
     id: dlg
@@ -30,6 +36,12 @@ Popup {
     property string currentSeed: ""
 
     signal chosen(string imagePath, string seedColor)
+
+    // The card's opacity in percent, and the lowest the slider goes. Both handed in by the
+    // opener from ComputerModel, which owns the range — see StageOpacityMin there.
+    property int currentOpacity: 90
+    property int opacityMin: 70
+    signal opacityChosen(int percent)
 
     // Six hues far enough apart to tell a strip of hosts apart at a glance. They are seeds,
     // not final colours — CoverPalette normalises each one, so a badly chosen value cannot
@@ -55,7 +67,28 @@ Popup {
 
     // Focus lands on the swatch row: picking a colour is the common case, and the file
     // dialog is a detour most users will never take.
-    onOpened: swatchRow.forceActiveFocus()
+    onOpened: {
+        // Set, not bound: a binding would be broken by the first move and then stop following
+        // the host the dialog is reopened for.
+        opacitySlider.value = dlg.currentOpacity
+        swatchRow.forceActiveFocus()
+    }
+
+    // The debounce for the slider. Short enough that the card follows the drag, long enough
+    // that a drag is not twenty registry writes.
+    Timer {
+        id: commitTimer
+        interval: 90
+        onTriggered: dlg.opacityChosen(Math.round(opacitySlider.value))
+    }
+
+    // Done pressed inside the debounce window: send the last value rather than lose it.
+    onClosed: {
+        if (commitTimer.running) {
+            commitTimer.stop()
+            dlg.opacityChosen(Math.round(opacitySlider.value))
+        }
+    }
 
     contentItem: Column {
         spacing: dlg._px(20)
@@ -85,7 +118,7 @@ Popup {
             // things in one file is exactly how a working handler starts reading the wrong one.
             Keys.onLeftPressed:  function(event) { if (swatchRow.index > 0) swatchRow.index--; event.accepted = true }
             Keys.onRightPressed: function(event) { if (swatchRow.index < dlg._seeds.length - 1) swatchRow.index++; event.accepted = true }
-            Keys.onDownPressed:  function(event) { pickBtn.forceActiveFocus(); event.accepted = true }
+            Keys.onDownPressed:  function(event) { opacitySlider.forceActiveFocus(); event.accepted = true }
             Keys.onReturnPressed: function(event) { dlg.chosen("", dlg._seeds[swatchRow.index]); event.accepted = true }
             Keys.onEnterPressed:  function(event) { dlg.chosen("", dlg._seeds[swatchRow.index]); event.accepted = true }
             Keys.onSpacePressed:  function(event) { dlg.chosen("", dlg._seeds[swatchRow.index]); event.accepted = true }
@@ -139,6 +172,79 @@ Popup {
             }
         }
 
+        // ── Card opacity (6.0.0) ─────────────────────────────────────────────
+        // Between the colours and the buttons: it is part of the look, like the colour, and
+        // Done has to stay the last thing the D-pad reaches.
+        Row {
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: dlg._px(16)
+
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Card opacity")
+                font.family: Theme.family
+                font.pixelSize: dlg._px(Theme.fontBody)
+                font.bold: true
+                color: Theme.text
+            }
+
+            Item {
+                anchors.verticalCenter: parent.verticalCenter
+                width: dlg._px(260); height: dlg._px(36)
+
+                Rectangle {   // focus ring — the same one the profile dialogs draw round a slider
+                    anchors.fill: parent; anchors.margins: -2
+                    radius: dlg._px(6); color: "transparent"
+                    border.color: Theme.accent; border.width: 2
+                    visible: opacitySlider.activeFocus
+                }
+
+                Slider {
+                    id: opacitySlider
+                    anchors.fill: parent
+                    // The floor comes from ComputerModel; 100 is a card with nothing behind it
+                    // showing, which is a legitimate choice and was the only one before 6.0.0.
+                    from: dlg.opacityMin
+                    to: 100
+                    // Every whole percent can be chosen (it was steps of 2 at first, which
+                    // left the odd values out). Held, ◀/▶ repeat, so crossing the thirty
+                    // stops from 70 to 100 with the D-pad is one long press.
+                    stepSize: 1
+                    snapMode: Slider.SnapAlways
+                    // Emitted for the mouse, the wheel AND the keys, so one handler covers the
+                    // pad as well. Debounced: every value would otherwise be a registry write.
+                    onMoved: commitTimer.restart()
+                    KeyNavigation.up: swatchRow
+                    KeyNavigation.down: pickBtn
+
+                    background: Rectangle {
+                        x: opacitySlider.leftPadding
+                        y: opacitySlider.topPadding + opacitySlider.availableHeight / 2 - height / 2
+                        width: opacitySlider.availableWidth
+                        height: dlg._px(3); radius: dlg._px(2)
+                        color: Theme.text
+                    }
+                    handle: Rectangle {
+                        x: opacitySlider.leftPadding + opacitySlider.visualPosition * (opacitySlider.availableWidth - width)
+                        y: opacitySlider.topPadding + opacitySlider.availableHeight / 2 - height / 2
+                        implicitWidth: dlg._px(14); implicitHeight: dlg._px(14); radius: dlg._px(7)
+                        color: Theme.accent
+                    }
+                }
+            }
+
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                width: dlg._px(52)
+                horizontalAlignment: Text.AlignRight
+                text: Math.round(opacitySlider.value) + "%"
+                font.family: Theme.family
+                font.pixelSize: dlg._px(Theme.fontSmall)
+                font.bold: true
+                color: Theme.text
+            }
+        }
+
         // ── Picture / clear ──────────────────────────────────────────────────
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -149,7 +255,7 @@ Popup {
                 text: qsTr("Choose a picture…")
                 implicitWidth: dlg._px(190)
                 KeyNavigation.right: clearBtn
-                KeyNavigation.up: swatchRow
+                KeyNavigation.up: opacitySlider
                 onActivated: fileDialog.open()
             }
 
@@ -159,7 +265,7 @@ Popup {
                 implicitWidth: dlg._px(130)
                 KeyNavigation.left: pickBtn
                 KeyNavigation.right: closeBtn
-                KeyNavigation.up: swatchRow
+                KeyNavigation.up: opacitySlider
                 onActivated: dlg.chosen("", "")
             }
 
@@ -169,7 +275,7 @@ Popup {
                 affirmative: true
                 implicitWidth: dlg._px(130)
                 KeyNavigation.left: clearBtn
-                KeyNavigation.up: swatchRow
+                KeyNavigation.up: opacitySlider
                 onActivated: dlg.close()
             }
         }

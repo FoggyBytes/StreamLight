@@ -1,0 +1,562 @@
+{
+  "config_schema": 1,
+  "parameters": {
+    "controller": {
+      "arrival_spread_guard_us": 900,
+      "base_guard_divisor": 96,
+      "cadence_stability_latch_frames": 64,
+      "candidate_cadence_ratio_denominator": 1,
+      "candidate_cadence_ratio_numerator": 2,
+      "cold_start_readiness_demand_us": 1500,
+      "guard_decay_frames": 120,
+      "guard_step_us": 50,
+      "latch_base_guard_exit": 0,
+      "latch_enter_headroom_period_denominator": 1,
+      "latch_enter_headroom_period_numerator": 0,
+      "latch_enter_headroom_us": 225,
+      "latch_exit_headroom_period_denominator": 1,
+      "latch_exit_headroom_period_numerator": 0,
+      "latch_exit_headroom_us": 400,
+      "latched_floor_disabled": 1,
+      "loose_cadence_window_us": 350000,
+      "loose_headroom_display_periods": 2,
+      "major_cadence_ratio_denominator": 2,
+      "major_cadence_ratio_numerator": 7,
+      "material_rate_change_percent": 12,
+      "maximum_adaptive_guard_us": 1000,
+      "maximum_base_guard_us": 250,
+      "maximum_cadence_samples": 512,
+      "maximum_forward_movement_us": 1000000,
+      "maximum_render_wake_lead_us": 2000,
+      "maximum_target_wake_lead_us": 500,
+      "minimum_cadence_samples": 6,
+      "minimum_guard_us": 100,
+      "minimum_readiness_reserve_us": 500,
+      "minimum_readiness_samples": 16,
+      "pacing_latency_budget_divisor": 2,
+      "pacing_latency_extra_period_denominator": 1,
+      "pacing_latency_extra_period_numerator": 0,
+      "pacing_latency_queue_mode_extra": 0,
+      "phase_error_frames": 3,
+      "playout_adaptive_only": 0,
+      "playout_band_stale_us": 120000000,
+      "playout_band_width_hz": 20,
+      "playout_burst_exclusion_per_mille": 750,
+      "playout_delay_adaptive": 1,
+      "playout_delay_attack_us": 500,
+      "playout_delay_margin_us": 300,
+      "playout_delay_maximum_period_per_mille": 0,
+      "playout_delay_maximum_us": 16000,
+      "playout_delay_minimum_samples": 250,
+      "playout_delay_minimum_us": 1000,
+      "playout_delay_percentile_per_mille": 1000,
+      "playout_delay_release_samples": 500,
+      "playout_delay_release_us": 10,
+      "playout_delay_reservoir_samples": 1024,
+      "playout_delay_slew_across_bands": 1,
+      "playout_delay_start_period_per_mille": 950,
+      "playout_delay_start_us": 6000,
+      "playout_delay_tolerance_us": 0,
+      "playout_history_enabled": 1,
+      "playout_metronome_enabled": 0,
+      "playout_metronome_period_window_frames": 128,
+      "playout_motion_ceiling_period_per_mille": 750,
+      "playout_motion_deadband_enabled": 0,
+      "playout_motion_floor_us": 1000,
+      "playout_motion_gain_per_mille": 1500,
+      "playout_motion_minimum_samples": 16,
+      "playout_motion_percentile": 90,
+      "playout_motion_window_frames": 128,
+      "playout_native_hitch_adaptation": 1,
+      "playout_offset_reseed_frames": 3,
+      "playout_offset_slew_us": 20,
+      "playout_offset_warmup_samples": 64,
+      "playout_offset_window_us": 3000000,
+      "playout_per_frame_latch": 1,
+      "playout_phase_deadband_us": 100,
+      "playout_phase_residual_window_frames": 256,
+      "playout_phase_step_divisor": 64,
+      "playout_phase_step_minimum_us": 30,
+      "playout_phase_step_period_per_mille": 20,
+      "playout_prediction_enabled": 1,
+      "playout_prepare_on_arrival": 0,
+      "playout_rate_protection_enabled": 0,
+      "playout_readiness_driven_adaptation": 1,
+      "playout_require_display_events": 1,
+      "playout_smoothing_gain_per_mille": 0,
+      "playout_smoothing_max_lag_us": 6000,
+      "playout_smoothing_period_alpha_per_mille": 100,
+      "playout_smoothing_snap_per_mille": 3000,
+      "playout_smoothness_feedback_enabled": 1,
+      "playout_stable_smoothness_reference": 1,
+      "playout_stall_burst_exclusion": 1,
+      "playout_stall_exclusion_us": 25000,
+      "playout_submission_estimate_fallback": 1,
+      "preparation_learning_samples": 96,
+      "preparation_percentile": 99,
+      "presentation_safety_us": 0,
+      "rate_candidate_minimum_us": 200000,
+      "rate_candidate_samples": 3,
+      "readiness_acquire_step_us": 1000,
+      "readiness_attack_denominator": 1,
+      "readiness_attack_numerator": 1,
+      "readiness_ceiling_us": 10000,
+      "readiness_floor_period_denominator": 1,
+      "readiness_floor_period_numerator": 0,
+      "readiness_learning_samples": 16,
+      "readiness_learning_window_us": 0,
+      "readiness_loose_percentile": 80,
+      "readiness_low_percentile": 0,
+      "readiness_release_denominator": 32,
+      "readiness_release_numerator": 1,
+      "readiness_tight_percentile": 100,
+      "render_baseline_percentile": 50,
+      "render_lead_ceiling_us": 0,
+      "render_lead_floor_us": 3000,
+      "render_lead_slack_us": 0,
+      "render_start_after_submission_us": 6000,
+      "render_start_minimum_lead_us": 2500,
+      "render_start_preserve_learned_lead": 1,
+      "retain_readiness_on_phase_reset": 0,
+      "scheduler_learning_samples": 19,
+      "scheduler_percentile": 95,
+      "source_playout_delay_us": 3000,
+      "tight_cadence_window_us": 1000000,
+      "timestamp_playout_enabled": 1,
+      "usable_headroom_denominator": 4,
+      "usable_headroom_numerator": 3,
+      "latency_fix_enabled": 0,
+      "latency_fix_delay_period_per_mille": 500
+    }
+  },
+  "scenarios": [
+    {
+      "name": "nominal-current",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "latency_fix_enabled": 0,
+          "latency_fix_delay_period_per_mille": 500
+        }
+      },
+      "assertions": [
+        {
+          "metric": "adaptive_spacing_violations",
+          "operator": "==",
+          "value": 0
+        },
+        {
+          "metric": "accounting_valid",
+          "operator": "==",
+          "value": 1
+        },
+        {
+          "metric": "arrival_to_submission_us.p99",
+          "operator": "<=",
+          "value": 30000
+        },
+        {
+          "metric": "maximum_queue_depth",
+          "operator": "<=",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "nominal-latency",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "latency_fix_enabled": 1,
+          "latency_fix_delay_period_per_mille": 500
+        }
+      },
+      "assertions": [
+        {
+          "metric": "adaptive_spacing_violations",
+          "operator": "==",
+          "value": 0
+        },
+        {
+          "metric": "accounting_valid",
+          "operator": "==",
+          "value": 1
+        },
+        {
+          "metric": "arrival_to_submission_us.p99",
+          "operator": "<=",
+          "value": 30000
+        },
+        {
+          "metric": "maximum_queue_depth",
+          "operator": "<=",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "decision-current",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "latency_fix_enabled": 0,
+          "latency_fix_delay_period_per_mille": 500
+        },
+        "execution": {
+          "periodic_stall_every_frames": 37,
+          "periodic_stall_us": 3000
+        }
+      },
+      "assertions": [
+        {
+          "metric": "adaptive_spacing_violations",
+          "operator": "==",
+          "value": 0
+        },
+        {
+          "metric": "accounting_valid",
+          "operator": "==",
+          "value": 1
+        },
+        {
+          "metric": "arrival_to_submission_us.p99",
+          "operator": "<=",
+          "value": 30000
+        },
+        {
+          "metric": "maximum_queue_depth",
+          "operator": "<=",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "decision-latency",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "latency_fix_enabled": 1,
+          "latency_fix_delay_period_per_mille": 500
+        },
+        "execution": {
+          "periodic_stall_every_frames": 37,
+          "periodic_stall_us": 3000
+        }
+      },
+      "assertions": [
+        {
+          "metric": "adaptive_spacing_violations",
+          "operator": "==",
+          "value": 0
+        },
+        {
+          "metric": "accounting_valid",
+          "operator": "==",
+          "value": 1
+        },
+        {
+          "metric": "arrival_to_submission_us.p99",
+          "operator": "<=",
+          "value": 30000
+        },
+        {
+          "metric": "maximum_queue_depth",
+          "operator": "<=",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "preparation-current",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "latency_fix_enabled": 0,
+          "latency_fix_delay_period_per_mille": 500
+        },
+        "execution": {
+          "periodic_stall_every_frames": 31,
+          "periodic_preparation_stall_us": 4000
+        }
+      },
+      "assertions": [
+        {
+          "metric": "adaptive_spacing_violations",
+          "operator": "==",
+          "value": 0
+        },
+        {
+          "metric": "accounting_valid",
+          "operator": "==",
+          "value": 1
+        },
+        {
+          "metric": "arrival_to_submission_us.p99",
+          "operator": "<=",
+          "value": 30000
+        },
+        {
+          "metric": "maximum_queue_depth",
+          "operator": "<=",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "preparation-latency",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "latency_fix_enabled": 1,
+          "latency_fix_delay_period_per_mille": 500
+        },
+        "execution": {
+          "periodic_stall_every_frames": 31,
+          "periodic_preparation_stall_us": 4000
+        }
+      },
+      "assertions": [
+        {
+          "metric": "adaptive_spacing_violations",
+          "operator": "==",
+          "value": 0
+        },
+        {
+          "metric": "accounting_valid",
+          "operator": "==",
+          "value": 1
+        },
+        {
+          "metric": "arrival_to_submission_us.p99",
+          "operator": "<=",
+          "value": 30000
+        },
+        {
+          "metric": "maximum_queue_depth",
+          "operator": "<=",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "submission-current",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "latency_fix_enabled": 0,
+          "latency_fix_delay_period_per_mille": 500
+        },
+        "execution": {
+          "periodic_stall_every_frames": 43,
+          "periodic_submission_stall_us": 3000
+        }
+      },
+      "assertions": [
+        {
+          "metric": "adaptive_spacing_violations",
+          "operator": "==",
+          "value": 0
+        },
+        {
+          "metric": "accounting_valid",
+          "operator": "==",
+          "value": 1
+        },
+        {
+          "metric": "arrival_to_submission_us.p99",
+          "operator": "<=",
+          "value": 30000
+        },
+        {
+          "metric": "maximum_queue_depth",
+          "operator": "<=",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "submission-latency",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "latency_fix_enabled": 1,
+          "latency_fix_delay_period_per_mille": 500
+        },
+        "execution": {
+          "periodic_stall_every_frames": 43,
+          "periodic_submission_stall_us": 3000
+        }
+      },
+      "assertions": [
+        {
+          "metric": "adaptive_spacing_violations",
+          "operator": "==",
+          "value": 0
+        },
+        {
+          "metric": "accounting_valid",
+          "operator": "==",
+          "value": 1
+        },
+        {
+          "metric": "arrival_to_submission_us.p99",
+          "operator": "<=",
+          "value": 30000
+        },
+        {
+          "metric": "maximum_queue_depth",
+          "operator": "<=",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "scheduler-burst-current",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "latency_fix_enabled": 0,
+          "latency_fix_delay_period_per_mille": 500
+        },
+        "execution": {
+          "periodic_stall_every_frames": 53,
+          "periodic_stall_burst_frames": 3,
+          "periodic_render_wake_delay_us": 2500,
+          "periodic_target_wake_delay_us": 2500
+        }
+      },
+      "assertions": [
+        {
+          "metric": "adaptive_spacing_violations",
+          "operator": "==",
+          "value": 0
+        },
+        {
+          "metric": "accounting_valid",
+          "operator": "==",
+          "value": 1
+        },
+        {
+          "metric": "arrival_to_submission_us.p99",
+          "operator": "<=",
+          "value": 30000
+        },
+        {
+          "metric": "maximum_queue_depth",
+          "operator": "<=",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "scheduler-burst-latency",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "latency_fix_enabled": 1,
+          "latency_fix_delay_period_per_mille": 500
+        },
+        "execution": {
+          "periodic_stall_every_frames": 53,
+          "periodic_stall_burst_frames": 3,
+          "periodic_render_wake_delay_us": 2500,
+          "periodic_target_wake_delay_us": 2500
+        }
+      },
+      "assertions": [
+        {
+          "metric": "adaptive_spacing_violations",
+          "operator": "==",
+          "value": 0
+        },
+        {
+          "metric": "accounting_valid",
+          "operator": "==",
+          "value": 1
+        },
+        {
+          "metric": "arrival_to_submission_us.p99",
+          "operator": "<=",
+          "value": 30000
+        },
+        {
+          "metric": "maximum_queue_depth",
+          "operator": "<=",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "recovery-stall-current",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "latency_fix_enabled": 0,
+          "latency_fix_delay_period_per_mille": 500
+        },
+        "execution": {
+          "periodic_stall_every_frames": 300,
+          "periodic_preparation_stall_us": 20000
+        }
+      },
+      "assertions": [
+        {
+          "metric": "adaptive_spacing_violations",
+          "operator": "==",
+          "value": 0
+        },
+        {
+          "metric": "accounting_valid",
+          "operator": "==",
+          "value": 1
+        },
+        {
+          "metric": "arrival_to_submission_us.p99",
+          "operator": "<=",
+          "value": 30000
+        },
+        {
+          "metric": "maximum_queue_depth",
+          "operator": "<=",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "name": "recovery-stall-latency",
+      "mode": "fixed",
+      "parameters": {
+        "controller": {
+          "latency_fix_enabled": 1,
+          "latency_fix_delay_period_per_mille": 500
+        },
+        "execution": {
+          "periodic_stall_every_frames": 300,
+          "periodic_preparation_stall_us": 20000
+        }
+      },
+      "assertions": [
+        {
+          "metric": "adaptive_spacing_violations",
+          "operator": "==",
+          "value": 0
+        },
+        {
+          "metric": "accounting_valid",
+          "operator": "==",
+          "value": 1
+        },
+        {
+          "metric": "arrival_to_submission_us.p99",
+          "operator": "<=",
+          "value": 30000
+        },
+        {
+          "metric": "maximum_queue_depth",
+          "operator": "<=",
+          "value": 3
+        }
+      ]
+    }
+  ]
+}

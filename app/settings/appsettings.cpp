@@ -31,6 +31,7 @@ static AppOverride readOverrideGroup(const QSettings& s)
     if (s.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = s.value("displaymode").toInt(); }
     if (s.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = s.value("vsync").toBool(); }
     if (s.contains("fractionalvsync")) { ov.hasFractionalVsync = true; ov.fractionalVsync = s.value("fractionalvsync").toBool(); }
+    if (s.contains("vrr"))          { ov.hasVrr = true;         ov.enableVrr = s.value("vrr").toBool(); }
     return ov;
 }
 
@@ -49,6 +50,7 @@ static void writeOverrideGroup(QSettings& s, const AppOverride& ov)
     if (ov.hasDisplayMode) s.setValue("displaymode", ov.windowMode);
     if (ov.hasVsync)       s.setValue("vsync", ov.enableVsync);
     if (ov.hasFractionalVsync) s.setValue("fractionalvsync", ov.fractionalVsync);
+    if (ov.hasVrr)         s.setValue("vrr", ov.enableVrr);
 }
 
 QVariantMap appOverrideToMap(const AppOverride& ov)
@@ -67,6 +69,7 @@ QVariantMap appOverrideToMap(const AppOverride& ov)
     if (ov.hasDisplayMode) m["displaymode"] = ov.windowMode;
     if (ov.hasVsync)       m["vsync"] = ov.enableVsync;
     if (ov.hasFractionalVsync) m["fractionalvsync"] = ov.fractionalVsync;
+    if (ov.hasVrr)         m["vrr"] = ov.enableVrr;
     return m;
 }
 
@@ -90,6 +93,7 @@ AppOverride appOverrideFromMap(const QVariantMap& m)
     if (m.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = m.value("displaymode").toInt(); }
     if (m.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = m.value("vsync").toBool(); }
     if (m.contains("fractionalvsync")) { ov.hasFractionalVsync = true; ov.fractionalVsync = m.value("fractionalvsync").toBool(); }
+    if (m.contains("vrr"))          { ov.hasVrr = true;         ov.enableVrr = m.value("vrr").toBool(); }
     return ov;
 }
 
@@ -131,6 +135,7 @@ QVariantMap inheritedValueLabels(const StreamingPreferences* p)
     // knows nothing about — and the Global pill has to say what it inherits, not predict an
     // outcome. The renderer logs the resolved answer at the start of every stream.
     m.insert(QStringLiteral("fractionalvsync"), p->fractionalVsync ? on : off);
+    m.insert(QStringLiteral("vrr"), p->enableVrr ? on : off);
 
     QString codec;
     switch (p->videoCodecConfig) {
@@ -211,6 +216,7 @@ void applyAppOverride(StreamingPreferences* p, const AppOverride& ov)
     // before it will use a sync interval at all. Collapsing it here would only mean two
     // places had to agree.
     if (ov.hasFractionalVsync) p->fractionalVsync = ov.fractionalVsync;
+    if (ov.hasVrr) p->enableVrr = ov.enableVrr;
 }
 
 // ── AppSettingsManager (per-game) ────────────────────────────────────────────

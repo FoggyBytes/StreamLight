@@ -59,10 +59,12 @@
 #include "settings/theme.h"
 #include "settings/inputhints.h"
 #include "backend/powerstatus.h"
+#include "backend/windowmove.h"
 #include "backend/gradientimage.h"
 #include "gui/sdlgamepadkeynavigation.h"
 #include "XboxTileArtwork.h"
 #include "TailscaleManager.h"
+#include "windowsvblankvirtualization.h"
 
 #if defined(Q_OS_WIN32)
 #define IS_UNSPECIFIED_HANDLE(x) ((x) == INVALID_HANDLE_VALUE || (x) == NULL)
@@ -664,7 +666,12 @@ int main(int argc, char *argv[])
         (decltype(DXGIDisableVBlankVirtualization)*)GetProcAddress(GetModuleHandleW(L"dxgi.dll"),
                                                                    "DXGIDisableVBlankVirtualization");
     if (fnDXGIDisableVBlankVirtualization) {
-        fnDXGIDisableVBlankVirtualization();
+        const HRESULT result = fnDXGIDisableVBlankVirtualization();
+        WindowsVblankVirtualization::recordResult(
+            static_cast<int64_t>(result));
+    }
+    else {
+        WindowsVblankVirtualization::recordUnavailable();
     }
 #endif
 
@@ -1032,6 +1039,11 @@ int main(int argc, char *argv[])
                                           [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                               return PowerStatus::get(qmlEngine);
                                           });
+    qmlRegisterSingletonType<WindowMove>("WindowMove", 1, 0,
+                                         "WindowMove",
+                                         [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
+                                             return WindowMove::get(qmlEngine);
+                                         });
 
     // Create the identity manager on the main thread
     IdentityManager::get();

@@ -62,7 +62,6 @@ FocusScope {
     // Tracks the last-used input device so the pad highlight and the mouse hover never
     // light up two different things at once.
     readonly property bool _pointerMode: SdlGamepadKeyNavigation.inputMode === "pointer"
-    readonly property bool _keyMode:     SdlGamepadKeyNavigation.inputMode === "key"
 
     // Whether Tailscale is installed on THIS client (drives the greyed "Tailscale" host
     // option). Evaluated once — the client's install state rarely changes mid-run.
@@ -266,6 +265,12 @@ FocusScope {
             readyIndex = wakeIndex
             readyTimer.restart()
         }
+        // The host no longer reports the unlock session: nothing left to hide. When it still
+        // does, the probe clears the mark the moment it stops (onPBusyChanged).
+        if (_unlockCarrierIndex >= 0) {
+            var carrier = hostProbes.itemAt(_unlockCarrierIndex)
+            if (!carrier || !carrier.pBusy) _unlockCarrierIndex = -1
+        }
         wakeActive     = false
         wakeUnlocking  = false
         _waitingForQuit = false
@@ -320,9 +325,9 @@ FocusScope {
      *
      * ⚠️ When something is already streaming on the host we open the library instead of
      * launching. That page owns the "quit the running game?" flow, with its dialog and its
-     * box art, and a second copy of it here would be a second thing to keep in step. The one
-     * case worth a shortcut — resuming the game that is already up — is the case where the
-     * host is not busy with anything else.
+     * box art, and a second copy of it here would be a second thing to keep in step. Since
+     * 6.0.0 the card shows the running session with Resume in that case (resumeRunning), so
+     * this branch is only reached when the host runs something its app list does not name.
      */
     function resumeLastPlayed(h) {
         if (!h || !h.online || !h.paired) return
@@ -333,12 +338,6 @@ FocusScope {
         if (h.busy) {
             appShell.showApps(h.index, computerModel, false,
                               h.name, h.address, h.gpuModel, h.isTailscaleClone)
-            return
-        }
-
-        var comp = Qt.createComponent("StreamSegue.qml")
-        if (comp.status !== Component.Ready) {
-            console.warn("[resume] StreamSegue.qml not ready:", comp.errorString())
             return
         }
 
@@ -361,13 +360,62 @@ FocusScope {
             return
         }
 
+        // Not a resume in the protocol sense — that word means "a session is already up on
+        // the host and we are rejoining it", which h.busy just ruled out.
+        _launchFromCard(h, lp.name, lp.cover, session, false)
+    }
+
+    /*
+     * ── Rejoin the session the host is running (6.0.0) ───────────────────────────────────
+     *
+     * The card's Resume. It does what Resume on the host page does for the running row — a
+     * session for the current game, pushed with isResume — without the trip to the library.
+     *
+     * ⚠️ createSessionForCurrentGame(), not an AppModel lookup: it matches on currentGameId,
+     * the id the card was drawn from, so the session opened is the one running even when two
+     * entries share a name (a 2.0 server's running-game copy carries the game's title). It
+     * builds its preferences through the same buildPrefs() cascade as createSessionForApp().
+     *
+     * No Stop here, by decision: quitting a game — and the confirmation that goes with it —
+     * stays on the host page.
+     */
+    function resumeRunning(h) {
+        if (!h || !h.online || !h.paired) return
+
+        var running = computerModel.runningAppFor(h.index)
+        if (!running || running.name === undefined || running.name === "") {
+            // The session ended, or moved to something the list does not name, between drawing
+            // the card and the press. The host page shows what is actually there.
+            appShell.showApps(h.index, computerModel, false,
+                              h.name, h.address, h.gpuModel, h.isTailscaleClone)
+            return
+        }
+
+        var session = computerModel.createSessionForCurrentGame(h.index)
+        if (!session) {
+            console.warn("[resume] could not create a session for the running game")
+            appShell.showApps(h.index, computerModel, false,
+                              h.name, h.address, h.gpuModel, h.isTailscaleClone)
+            return
+        }
+
+        _launchFromCard(h, running.name, running.cover, session, true)
+    }
+
+    // The segue both card buttons push. One copy, because the callback below is the part that
+    // must not drift: it is what lands the user on the host page and re-arms the link prompt.
+    function _launchFromCard(h, name, cover, session, isResume) {
+        var comp = Qt.createComponent("StreamSegue.qml")
+        if (comp.status !== Component.Ready) {
+            console.warn("[resume] StreamSegue.qml not ready:", comp.errorString())
+            return
+        }
+
         var segue = comp.createObject(stackView, {
-            "appName":  lp.name,
-            "boxArt":   (lp.cover !== undefined ? lp.cover : ""),
+            "appName":  name,
+            "boxArt":   (cover !== undefined ? cover : ""),
             "session":  session,
-            // Not a resume in the protocol sense — that word means "a session is already up
-            // on the host and we are rejoining it", which h.busy just ruled out.
-            "isResume": false,
+            "isResume": isResume,
             /*
              * ⚠️ This does NOT come back to Home, and the difference is not a preference.
              *
@@ -435,6 +483,7 @@ FocusScope {
             return
         }
         session.setUnlockMode(true)
+        _unlockCarrierIndex = wakeIndex
 
         // Declared before the session exists, so the host has the mark in hand by the time
         // its streaming server reports a client.
@@ -474,6 +523,53 @@ FocusScope {
 
     // Set while the host is being asked to close the unlock session.
     property bool _waitingForQuit : false
+
+    /*
+     * ── The PIN unlock's own session is never "Streaming now" (6.0.0) ────────────────────
+     *
+     * The unlock streams the host's Desktop to carry the keystrokes, then asks the host to
+     * close it. The host goes on reporting that session until its next serverinfo poll, a few
+     * seconds later — and the card, which shows whatever the host is running, put "Streaming
+     * now · Desktop · Resume" up in place of Last played for exactly that long. Nobody asked
+     * for that session; offering to resume it is wrong for the whole of its life.
+     *
+     * Two guards, because they cover two stretches:
+     *  - the wake itself, PIN pad and link match included: nothing it starts is a session;
+     *  - after it, the host this unlock ran on, until it stops reporting a session
+     *    (onPBusyChanged in the probe) — and only while what it reports is the Desktop, so a
+     *    game the user launches next is shown as soon as it runs.
+     */
+    property int _unlockCarrierIndex : -1
+
+    /*
+     * Any host is streaming right now (6.0.0). AppShell hands it to AmbientBackground, whose
+     * waves run twice as fast while it is true.
+     *
+     * Over every host, not just the one on screen: the floor is the whole app's, and a session
+     * running on the host you have scrolled away from is still a session. Each probe works out
+     * its own answer (pStreaming) with the card's rule; this only ORs them.
+     *
+     * ⚠️ The early return is correct, not a shortcut that loses updates: a binding tracks what
+     * it actually read, so it listens to every probe up to the first streaming one, and when
+     * that one stops it re-runs and reads further.
+     */
+    readonly property bool anyStreaming: {
+        for (var i = 0; i < hostProbes.count; i++) {
+            var p = hostProbes.itemAt(i)
+            if (p && p.pStreaming) return true
+        }
+        return false
+    }
+
+    function _runningFor(idx, live) {
+        if (!live) return ({})
+        if (wakeActive && idx === wakeIndex) return ({})
+        var r = computerModel.runningAppFor(idx)
+        if (idx === _unlockCarrierIndex && r.name !== undefined
+                && String(r.name).trim().toLowerCase() === "desktop")
+            return ({})
+        return r
+    }
 
     function _quitSettled() {
         if (!_waitingForQuit) return
@@ -1039,6 +1135,11 @@ FocusScope {
             readonly property bool   pOnline:  model.online
             readonly property bool   pPaired:  model.paired
             readonly property bool   pUnknown: model.statusUnknown
+            readonly property bool   pBusy:    model.busy
+
+            // The unlock's Desktop session has really gone once the host stops reporting it.
+            onPBusyChanged: if (!pBusy && homeScreen._unlockCarrierIndex === index)
+                                homeScreen._unlockCarrierIndex = -1
 
             // This host's StreamTweak switch. Every probe below is bound to it, so turning it
             // off in Settings silences them in the same frame.
@@ -1137,6 +1238,7 @@ FocusScope {
                     stageColorTo:      model.stageColorTo,
                     stageImage:        model.stageImage,
                     stageSeedColor:    model.stageSeed,
+                    stageOpacity:      model.stageOpacity,
                     auth:              stAuth,
                     linkText:          homeScreen.formatStreamTweakStatus(stSpeedRaw),
                     willSwitchLink:    willSwitchLink,
@@ -1150,7 +1252,12 @@ FocusScope {
                     // action LinkMatcher will decline without a word.
                     matchLink:         stMatchLink,
                     sessionActive:     stSessionActive,
-                    lastPlayed:        stLastPlayed
+                    lastPlayed:        stLastPlayed,
+                    // What the host is streaming right now (6.0.0). Read here, on every push,
+                    // because model.busy and model.online are in _watch: a session starting or
+                    // ending re-evaluates the record, and with it this. A cheap in-memory
+                    // lookup, no request.
+                    runningApp:        homeScreen._runningFor(index, model.busy && model.online)
                 }
             }
 
@@ -1173,6 +1280,19 @@ FocusScope {
 
             function push() { if (isCurrent) homeScreen.currentHost = record() }
 
+            /*
+             * This host is streaming right now (6.0.0), for the background's waves —
+             * see anyStreaming on the root. The SAME expression as the card's runningApp
+             * above, on purpose: the flow must speed up exactly when "Streaming now" shows,
+             * which means the PIN unlock's own Desktop session and a wake in progress do not
+             * count. _runningFor() already knows both; a second rule here would drift from it.
+             *
+             * It re-evaluates on model.busy / model.online and on the wake and unlock state
+             * that _runningFor() reads — the same dependencies that keep the card current.
+             */
+            readonly property bool pStreaming:
+                homeScreen._runningFor(index, model.busy && model.online).name !== undefined
+
             // An array binding re-evaluates when any element does, and yields a new object
             // each time, so this fires on every model role change without needing a handler
             // per role. It is the cheapest way to keep one plain record in step with a model.
@@ -1182,9 +1302,11 @@ FocusScope {
                 model.tailscaleAddress, model.hasTailscale, model.tailscaleActive,
                 model.gpuModel, model.profileCount, model.activeProfileSlot,
                 model.activeProfileName, model.stageColorFrom, model.stageColorTo,
-                model.stageImage, model.stageSeed, stAuth, stSpeedRaw,
+                model.stageImage, model.stageSeed, model.stageOpacity, stAuth, stSpeedRaw,
                 willSwitchLink, cantSwitchLink, stLastPlayed, stMatchLink,
-                stLinkChanging, stSwitched, stAllowsLink, stSessionActive
+                stLinkChanging, stSwitched, stAllowsLink, stSessionActive,
+                // What _runningFor() reads to hide the PIN unlock's own session (6.0.0).
+                homeScreen.wakeActive, homeScreen.wakeIndex, homeScreen._unlockCarrierIndex
             ]
             on_WatchChanged: push()
             // Refresh on arrival as well as on the timer: a host the user has just tabbed to
@@ -1722,6 +1844,7 @@ FocusScope {
                                : qsTr("Ready")
         hideAddresses:     StreamingPreferences.hideHostIps
         lastPlayed:        (_h && _h.lastPlayed) ? _h.lastPlayed : ({})
+        runningApp:        (_h && _h.runningApp) ? _h.runningApp : ({})
 
         // The physical (LAN) address stays the headline even when we are reaching the host
         // over Tailscale — the 100.x one gets its own field rather than replacing it.
@@ -1738,6 +1861,10 @@ FocusScope {
         backdropTo:   (_h && _h.stageColorTo && _h.stageColorTo.length > 0)
                       ? _h.stageColorTo : homeScreen.hostColorPair(_h ? _h.name : "")[1]
         backdropImage: (_h && _h.stageImage) ? _h.stageImage : ""
+        // Percent in the model, 0..1 on the card. The model already applies the default to a
+        // host that never set one, so the fallback here only covers the moment before a record.
+        backdropOpacity: ((_h && _h.stageOpacity) ? _h.stageOpacity
+                                                  : homeScreen.computerModel.stageOpacityDefault) / 100
 
         zoneActive:  homeScreen.focusZone === 1
         pointerMode: homeScreen._pointerMode
@@ -1790,6 +1917,10 @@ FocusScope {
 
         case "continue":
             resumeLastPlayed(h)
+            break
+
+        case "resume":
+            resumeRunning(h)
             break
 
         case "pair":
@@ -1856,6 +1987,9 @@ FocusScope {
             stageBackgroundDialog.hostName     = h.name
             stageBackgroundDialog.currentImage = h.stageImage    || ""
             stageBackgroundDialog.currentSeed  = h.stageSeedColor || ""
+            stageBackgroundDialog.opacityMin     = homeScreen.computerModel.stageOpacityMin
+            stageBackgroundDialog.currentOpacity = h.stageOpacity
+                                                   || homeScreen.computerModel.stageOpacityDefault
             stageBackgroundDialog.pcIndex      = h.index
             stageBackgroundDialog.open()
             break
@@ -1988,6 +2122,11 @@ FocusScope {
             homeScreen.computerModel.setHostStageBackground(pcIndex, imagePath, seedColor)
             currentImage = imagePath
             currentSeed  = seedColor
+        }
+        // Applied as it moves, like the colour: the card behind the dialog is the preview.
+        onOpacityChosen: function(percent) {
+            if (pcIndex < 0) return
+            homeScreen.computerModel.setHostStageOpacity(pcIndex, percent)
         }
         onClosed: navRoot.forceActiveFocus()
     }

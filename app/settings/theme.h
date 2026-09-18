@@ -102,6 +102,13 @@ class Theme : public QObject
     Q_PROPERTY(bool reduceAnimations READ reduceAnimations WRITE setReduceAnimations NOTIFY changed)
 
     /**
+     * Play the opening animation — waves, logo, wordmark — before Home (6.0.0). On by default.
+     * AppShell reads it once, at launch, and skips it anyway under reduceAnimations or when a
+     * command line opened the app straight into a stream.
+     */
+    Q_PROPERTY(bool startupAnimation READ startupAnimation WRITE setStartupAnimation NOTIFY changed)
+
+    /**
      * How much bigger than its design size everything should be drawn, for the window the app
      * is currently in. AppShell computes it from the window width and writes it here; the
      * pages have always had their own copy of the same number.
@@ -178,11 +185,13 @@ public:
     int fontDisplay() const { return 34; }   // ms( 4)
 
     bool reduceAnimations() const { return m_ReduceAnimations; }
+    bool startupAnimation() const { return m_StartupAnimation; }
 
     qreal uiScale() const { return m_UiScale; }
 
     void setAccent(const QColor& c);
     void setReduceAnimations(bool on);
+    void setStartupAnimation(bool on);
     void setUiScale(qreal s);
 
     /**
@@ -214,6 +223,7 @@ private:
 
     QColor m_Accent;
     bool   m_ReduceAnimations = false;
+    bool   m_StartupAnimation = true;
 
     // 1.0 until AppShell has a width to measure. Not persisted: it describes the window the
     // app happens to be in, not anything the user chose.

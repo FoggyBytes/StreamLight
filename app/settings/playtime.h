@@ -28,6 +28,7 @@
 // the normalised name, and the readable name is stored as a value inside it.
 
 #include <QDateTime>
+#include <QSet>
 #include <QString>
 
 /**
@@ -127,6 +128,22 @@ public:
      * reach them again.
      */
     void forgetHost(const QString& hostUuid);
+
+    // ── Pinned games (6.0.0) ─────────────────────────────────────────────────────────────
+    /*
+     * The games the user pinned on this host, which the host page lists under PINNED, right
+     * after Last played. They live here, beside the play time, because they are keyed exactly
+     * the same way and for the same reason: host uuid + the game's NAME, so a pin survives a
+     * reinstall and an apps.json rebuilt with new ids, and a Tailscale clone shares the pins
+     * of the LAN tile it came from.
+     *
+     * ⚠️ One value per host holding the readable names, not a group per game: pins are read
+     * whole on every sort, and a list is one read. It sits in the host node, so forgetHost()
+     * takes it along, and reset() — which clears one game's HOURS — deliberately does not.
+     */
+    /// Normalised names (normaliseGameName) — the form appSortOrder() looks them up in.
+    QSet<QString> pinnedOn(const QString& hostUuid) const;
+    void setPinned(const QString& hostUuid, const QString& appName, bool pinned);
 
     /**
      * Desktop and Steam Big Picture are not games and never accumulate hours.

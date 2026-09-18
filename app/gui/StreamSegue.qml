@@ -831,8 +831,14 @@ Item {
      * With no artwork (a CLI launch, the PIN pad, a game with no cover) CoverAmbient draws
      * nothing and the floor below is what shows — which is also what the PIN pad wanted
      * anyway: it should look like part of the app, not like a launch that lost its picture.
+     *
+     * 6.0.0: the waves run at streaming speed here — this screen IS a stream starting.
+     * Not on the PIN pad, which reuses this screen for plumbing: Home does not count the
+     * unlock's own session as a stream either (HomeScreen._runningFor), and the two must agree.
      */
-    AmbientBackground {}
+    AmbientBackground {
+        streaming: !streamSegue.unlockMode
+    }
 
     CoverAmbient {
         source: streamSegue.unlockMode ? "" : streamSegue.boxArt

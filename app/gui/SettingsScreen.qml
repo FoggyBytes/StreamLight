@@ -81,7 +81,6 @@ FocusScope {
      * theme.h, together with the rest of the interface.
      */
     readonly property color _bg2:       Theme.card
-    readonly property color _bg3:       Theme.cardHigh
     readonly property color _border:    Theme.line
     readonly property color _borderS:   Theme.lineHigh
     readonly property color _text:      Theme.text
@@ -308,6 +307,23 @@ FocusScope {
      */
     readonly property var _video: SystemProperties.videoOptions()
 
+    // VRR (6.0.0): the stream rate recommended for this display, { fps, refreshHz } or an
+    // empty map. Advisory only — it never rewrites the saved frame rate, and the FPS strip
+    // still comes from _video. See SystemProperties::vrrRecommendation().
+    readonly property var _vrrRec: SystemProperties.vrrRecommendation()
+
+    // VRR commands the rows it depends on (6.0.0). While it would really run, Display mode,
+    // V-Sync, Frame pacing and Fractional V-Sync show the value the session will use and
+    // lock; the stored values are untouched and come back when VRR is off. It is the rule
+    // Frame pacing already follows with V-Sync off: a row says what will happen.
+    //
+    // ⚠️ Not active above the display's refresh: Session refuses VRR there and runs fixed
+    // V-sync with the saved display mode and Fractional V-Sync, so locking the rows would
+    // make them lie. The VRR row says so instead (§73.14).
+    readonly property bool _vrrOverRate: StreamingPreferences.fps > (settingsScreen._vrrRec.refreshHz || 100000)
+    readonly property bool _vrrActive:   StreamingPreferences.enableVsync && StreamingPreferences.enableVrr
+                                         && !settingsScreen._vrrOverRate
+
     // "This display: 165 Hz", or the plural when there is more than one panel attached.
     // Empty when SDL never got far enough to say — the rows then drop their caption line
     // rather than print a heading with nothing under it.
@@ -427,7 +443,10 @@ FocusScope {
         { label: qsTr("About")     }
     ]
 
-    TabBar {
+    // The strip itself is SectionTabBar (6.0.0), shared with the host profile and per-game
+    // dialogs so the three are one design. Settings leaves its LB/RB prompts off: the status
+    // bar already carries them here.
+    SectionTabBar {
         id: tabBar
         anchors.top: header.bottom
         anchors.left: parent.left
@@ -436,100 +455,9 @@ FocusScope {
         anchors.rightMargin: settingsScreen._px(30)
         anchors.topMargin: settingsScreen._px(8)
         height: settingsScreen._px(48)
-        // Tab switching is LB/RB only — never via D-pad focus traversal.
-        focusPolicy: Qt.NoFocus
+        u: settingsScreen._u
+        tabs: settingsScreen._tabs
         onCurrentIndexChanged: settingsScreen.focusFirstControl(currentIndex)
-
-        background: Rectangle {
-            color: "transparent"
-            Rectangle {
-                anchors.bottom: parent.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: 1
-                color: settingsScreen._border
-            }
-        }
-
-        Repeater {
-            model: settingsScreen._tabs
-
-            TabButton {
-                id: tabButton
-
-                readonly property bool _current: tabBar.currentIndex === index
-
-                text: modelData.label !== undefined ? modelData.label : ""
-                focusPolicy: Qt.NoFocus
-                font.family: Theme.family
-                font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                font.bold: true
-                font.capitalization: Font.AllUppercase
-                font.letterSpacing: 0.8
-
-                background: Rectangle {
-                    color: "transparent"
-                    Rectangle {
-                        anchors.bottom: parent.bottom
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        height: 2
-                        color: tabButton._current ? Theme.accent : "transparent"
-                    }
-                }
-
-                /*
-                 * ⚠️ The implicit size is NOT optional, and leaving it out is what crammed every
-                 * tab into the left end of the bar for one build.
-                 *
-                 * A Control takes its own implicitWidth from its contentItem's, and a bare Item
-                 * has an implicitWidth of ZERO — so every TabButton reported itself as nothing
-                 * but padding and TabBar packed ten of them into a couple of hundred pixels.
-                 * The ten hand-written buttons this replaced never hit it because each used
-                 * `contentItem: Text`, and a Text measures its own string.
-                 *
-                 * So the wrapper has to answer the question the Text used to answer, for
-                 * whichever of the two children is actually being drawn.
-                 */
-                contentItem: Item {
-                    implicitWidth:  modelData.icon !== undefined ? tabIcon.width  : tabLabel.implicitWidth
-                    implicitHeight: modelData.icon !== undefined ? tabIcon.height : tabLabel.implicitHeight
-
-                    Text {
-                        id: tabLabel
-                        anchors.fill: parent
-                        visible: modelData.icon === undefined
-                        text: tabButton.text
-                        font: tabButton.font
-                        color: tabButton._current ? settingsScreen._text : settingsScreen._textDim
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                    Image {
-                        id: tabIcon
-                        anchors.centerIn: parent
-                        visible: modelData.icon !== undefined
-                        // A shade taller than the labels beside it, not a badge: a mark has to
-                        // carry at a glance where a word carries by shape, so it needs a little
-                        // more room than the cap height — but only a little, or it stops
-                        // reading as one item in a row of ten.
-                        //
-                        // Source is the 672px PNG from StreamTweak's installer resources, so at
-                        // 26 logical px it has many times the pixels it needs even at 4K with
-                        // 200% scaling — hence `smooth`, which is doing real work here rather
-                        // than being decoration.
-                        height: settingsScreen._px(26)
-                        width: settingsScreen._px(26)
-                        source: modelData.icon !== undefined ? modelData.icon : ""
-                        fillMode: Image.PreserveAspectFit
-                        smooth: true
-                        mipmap: true
-                        // Dimmed like an unselected label, full strength when the tab is current.
-                        opacity: tabButton._current ? 1.0 : 0.55
-                    }
-                }
-            }
-        }
     }
 
     // Green outline shown around the active control when it has focus.
@@ -890,7 +818,17 @@ FocusScope {
                                 }
                                 Label {
                                     id: fpsHint
-                                    text: settingsScreen._displayHint(settingsScreen._video.fpsHint)
+                                    text: {
+                                        var base = settingsScreen._displayHint(settingsScreen._video.fpsHint)
+                                        // VRR (§73.4.1): the recommendation rides the existing caption
+                                        // instead of adding pills, so the strip never reorders itself
+                                        // when a switch is flipped.
+                                        if (StreamingPreferences.enableVrr && settingsScreen._vrrRec.fps) {
+                                            var rec = qsTr("VRR: %1 FPS recommended").arg(settingsScreen._vrrRec.fps)
+                                            return base.length > 0 ? base + " · " + rec : rec
+                                        }
+                                        return base
+                                    }
                                     visible: text.length > 0
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._px(Theme.fontSmall)
@@ -1092,12 +1030,12 @@ FocusScope {
                                     bitrateAccelTimer.stop()
                                 }
 
-                                Keys.onPressed: {
+                                Keys.onPressed: function(event) {
                                     if (event.isAutoRepeat) { event.accepted = true; return }
                                     if (event.key === Qt.Key_Left)  { _startAccel(-1); event.accepted = true }
                                     if (event.key === Qt.Key_Right) { _startAccel(+1); event.accepted = true }
                                 }
-                                Keys.onReleased: {
+                                Keys.onReleased: function(event) {
                                     if (event.isAutoRepeat) { event.accepted = true; return }
                                     if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
                                         _stopAccel()
@@ -1147,7 +1085,7 @@ FocusScope {
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeightTall
-                            enabled: !settingsScreen._lockDisplayMode
+                            enabled: !settingsScreen._lockDisplayMode && !settingsScreen._vrrActive
                             opacity: enabled ? 1.0 : 0.4
 
                             Column {
@@ -1189,7 +1127,7 @@ FocusScope {
                                 // in sync without an explicit setter call.
                                 Binding on currentIndex {
                                     value: {
-                                        var v = StreamingPreferences.windowMode
+                                        var v = settingsScreen._vrrActive ? StreamingPreferences.WM_FULLSCREEN_DESKTOP : StreamingPreferences.windowMode
                                         for (var i = 0; i < displayModeSelector._values.length; i++) {
                                             if (displayModeSelector._values[i] === v) return i
                                         }
@@ -1205,7 +1143,7 @@ FocusScope {
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeightTall
-                            enabled: !settingsScreen._lockVsync
+                            enabled: !settingsScreen._lockVsync && !settingsScreen._vrrActive
                             opacity: enabled ? 1.0 : 0.4
 
                             Column {
@@ -1259,6 +1197,7 @@ FocusScope {
                             // restores the choice.
                             enabled: !settingsScreen._lockFramePacing
                                      && StreamingPreferences.enableVsync
+                                     && !settingsScreen._vrrActive
                             opacity: enabled ? 1.0 : 0.4
 
                             // ⚠️ The conditional 2:2 warning that stood here went with the
@@ -1320,6 +1259,9 @@ FocusScope {
                                         // Safe because onActivated fires on user interaction, not on
                                         // this binding, and the row is disabled in that state.
                                         if (!StreamingPreferences.enableVsync) return 0
+                                        // VRR: pacing is on whatever is saved — the VRR worker paces, and
+                                        // a refused VRR falls back with pacing forced on.
+                                        if (settingsScreen._vrrActive) return 1
                                         var v = StreamingPreferences.framePacingMode
                                         for (var i = 0; i < framePacingSelector._values.length; i++) {
                                             if (framePacingSelector._values[i] === v) return i
@@ -1344,6 +1286,9 @@ FocusScope {
                             height: Math.max(settingsScreen._rowHeightTall, fracVsyncCol.implicitHeight + settingsScreen._px(16))
                             enabled: StreamingPreferences.enableVsync
                                      && StreamingPreferences.framePacingMode !== StreamingPreferences.FP_OFF
+                                     // VRR (6.0.0) wins over this row: the two are mutually exclusive
+                                     // and Session resolves them there, in one place (§73.11).
+                                     && !settingsScreen._vrrActive
                             opacity: enabled ? 1.0 : 0.4
 
                             Column {
@@ -1375,7 +1320,9 @@ FocusScope {
                                           // something the user can change from here, and the
                                           // Custom pill on the row above is.
                                           ? qsTr("Shows each frame for a whole number of refreshes instead of once per refresh — 60 FPS on a 120 Hz screen becomes one frame every two. Needs the screen to run at an exact multiple of the frame rate: at 60 FPS that means 120, 180 or 240 Hz, and on a 144 Hz screen it takes 72 FPS instead.")
-                                          : qsTr("Requires V-Sync and Frame Pacing.")
+                                          : settingsScreen._vrrActive
+                                            ? qsTr("Off while VRR is on.")
+                                            : qsTr("Requires V-Sync and Frame Pacing.")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
@@ -1387,8 +1334,175 @@ FocusScope {
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.fractionalVsync
+                                checked: StreamingPreferences.fractionalVsync && !settingsScreen._vrrActive
                                 onToggled: function(v) { StreamingPreferences.fractionalVsync = v; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── VRR (6.0.0) ───────────────────────────────────────────
+                        //
+                        // The pacing mode imported from Nonary/moonlight-qt (§73). A
+                        // dependent of V-Sync, like Fractional V-Sync above, and mutually
+                        // exclusive with it: Session resolves the pair once, VRR wins, and
+                        // the Fractional row greys out saying so. The stored values are
+                        // kept either way — a greyed row does not rewrite a preference.
+                        Item {
+                            id: vrrRow
+                            width: parent.width
+                            height: Math.max(settingsScreen._rowHeightTall, vrrCol.implicitHeight + settingsScreen._px(16))
+                            enabled: StreamingPreferences.enableVsync
+                            opacity: enabled ? 1.0 : 0.4
+
+                            Column {
+                                id: vrrCol
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: vrrSwitch.left
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("VRR (experimental)")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: vrrRow.enabled
+                                          ? ((StreamingPreferences.enableVrr && settingsScreen._vrrOverRate)
+                                             ? qsTr("Inactive at %1 FPS on this %2 Hz display.").arg(StreamingPreferences.fps).arg(settingsScreen._vrrRec.refreshHz)
+                                             : qsTr("Shows each frame as soon as it is ready, for displays with variable refresh."))
+                                          : qsTr("Requires V-Sync.")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: vrrSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.enableVrr
+                                onToggled: function(v) { StreamingPreferences.enableVrr = v; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── VRR timing ──────────────────────────────────────────
+                        // Nonary's three controller profiles. The stored integers are also
+                        // the controller's profile IDs, so the pills map through _values and
+                        // never through the index itself.
+                        Item {
+                            id: vrrTimingRow
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+                            enabled: StreamingPreferences.enableVsync && StreamingPreferences.enableVrr
+                            opacity: enabled ? 1.0 : 0.4
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: vrrTimingSelector.left
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("VRR timing")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: vrrTimingRow.enabled ? qsTr("Latency against smoothness. Applies from the next stream.")
+                                                               : qsTr("Requires VRR.")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            SegmentedSelector {
+                                id: vrrTimingSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                labels: [qsTr("Low latency"), qsTr("Balanced"), qsTr("Smooth")]
+                                property var _values: [
+                                    StreamingPreferences.VLM_LOWEST_LATENCY,
+                                    StreamingPreferences.VLM_BALANCED,
+                                    StreamingPreferences.VLM_SMOOTHEST
+                                ]
+
+                                // Binding on, not a plain binding: SegmentedSelector writes
+                                // currentIndex imperatively on a click (§64).
+                                Binding on currentIndex {
+                                    value: {
+                                        var v = StreamingPreferences.vrrLatencyMode
+                                        for (var i = 0; i < vrrTimingSelector._values.length; i++) {
+                                            if (vrrTimingSelector._values[i] === v) return i
+                                        }
+                                        return 1
+                                    }
+                                }
+                                onActivated: function(idx) { StreamingPreferences.vrrLatencyMode = _values[idx]; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Reduce judder ───────────────────────────────────────
+                        Item {
+                            id: vrrJudderRow
+                            width: parent.width
+                            height: Math.max(settingsScreen._rowHeightTall, vrrJudderCol.implicitHeight + settingsScreen._px(16))
+                            enabled: StreamingPreferences.enableVsync && StreamingPreferences.enableVrr
+                            opacity: enabled ? 1.0 : 0.4
+
+                            Column {
+                                id: vrrJudderCol
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: vrrJudderSwitch.left
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Reduce judder")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: vrrJudderRow.enabled ? qsTr("Evens out uneven frame timing with the buffer VRR already keeps.")
+                                                               : qsTr("Requires VRR.")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: vrrJudderSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.smoothVrrFrameTiming
+                                onToggled: function(v) { StreamingPreferences.smoothVrrFrameTiming = v; StreamingPreferences.save() }
                             }
                         }
                     }
@@ -3244,8 +3358,8 @@ FocusScope {
                                     }
 
                                     onEditingFinished: commit()
-                                    Keys.onReturnPressed: { commit(); event.accepted = true }
-                                    Keys.onEnterPressed:  { commit(); event.accepted = true }
+                                    Keys.onReturnPressed: function(event) { commit(); event.accepted = true }
+                                    Keys.onEnterPressed:  function(event) { commit(); event.accepted = true }
                                 }
                             }
                         }
@@ -3284,6 +3398,47 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: Theme.reduceAnimations
                                 onToggled: function(v) { Theme.reduceAnimations = v }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Startup animation (6.0.0) ─────────────────────────
+                        // Read once at launch by AppShell, so a change shows at the next start.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Startup animation")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    // Reduce animations wins: say so, or On would look broken.
+                                    text: Theme.reduceAnimations
+                                          ? qsTr("Skipped while Reduce animations is on")
+                                          : qsTr("Waves and logo before Home")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: startupAnimSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: Theme.startupAnimation
+                                onToggled: function(v) { Theme.startupAnimation = v }
                             }
                         }
                     }
@@ -3409,6 +3564,12 @@ FocusScope {
                       desc: qsTr("How long each frame is held on screen and how long presenting it blocks — the measurement behind Fractional V-Sync"),
                       host: false, sub: false,
                       lines: ["Cadence: 2:2 asked, 2.00 v/f (2-2), queue 1.0 (0-2), wait 0.31 ms (max 0.90, 0 blocked, 0 slips)"] },
+                    { bit: StreamingPreferences.OI_VRR,
+                      name: qsTr("VRR pacing"),
+                      desc: qsTr("How evenly VRR presents frames, or why it is not running"),
+                      host: false, sub: false,
+                      lines: ["VRR pacing: Active | Smoothness (2m): 99.62% / 99.50% target",
+                              "Client interval error (1s): 0.212 ms | Tolerance: 0.50 ms | Dropped (30s): 0"] },
                     { bit: StreamingPreferences.OI_HOST_METRICS,
                       name: qsTr("Host metrics"),
                       desc: qsTr("GPU, encoder, temperature, VRAM, CPU and outbound network — needs StreamTweak on the host"),

@@ -10,6 +10,20 @@ class ComputerModel : public QAbstractListModel
 {
     Q_OBJECT
 
+    /*
+     * The range of a host card's opacity, in percent (6.0.0). Here, once, because three
+     * places need it and must agree: the setter clamps to it, data() applies the default to
+     * hosts that never set one, and the slider in StageBackgroundDialog is drawn from it.
+     *
+     * ⚠️ The floor is 70 — Marcello's call after trying it (18/09/2026); it was 60 at first.
+     * The reason for having a floor at all is the text, not the card. The card never
+     * disappears at any value — it keeps its border and its contents — but what the name and
+     * the fields are read against is the card's own SCRIM, and the opacity thins that too:
+     * the lower it goes, the more the moving waves behind cut across the host's name.
+     */
+    Q_PROPERTY(int stageOpacityMin READ stageOpacityMin CONSTANT)
+    Q_PROPERTY(int stageOpacityDefault READ stageOpacityDefault CONSTANT)
+
     enum Roles
     {
         NameRole = Qt::UserRole,
@@ -34,11 +48,19 @@ class ComputerModel : public QAbstractListModel
         StageColorToRole,
         StageImageRole,
         StageSeedRole,
+        StageOpacityRole,
         StreamTweakEnabledRole
     };
 
 public:
     explicit ComputerModel(QObject* object = nullptr);
+
+    static constexpr int StageOpacityMin     = 70;
+    // Where every host starts — an existing one on its first 6.0.0 launch and a new one
+    // alike, because both arrive with stageOpacity 0 (Marcello, 18/09/2026: 88, then 85, then 90).
+    static constexpr int StageOpacityDefault = 90;
+    int stageOpacityMin() const     { return StageOpacityMin; }
+    int stageOpacityDefault() const { return StageOpacityDefault; }
 
     // Must be called before any QAbstractListModel functions
     Q_INVOKABLE void initialize(ComputerManager* computerManager);
@@ -157,6 +179,13 @@ public:
                                             const QString& seedColor);
 
     /**
+     * How opaque this host's card is on Home, in percent (6.0.0). Clamped to
+     * [StageOpacityMin, 100] — see the note on the property for why the floor is where it is.
+     * Stored on the host with the rest of its backdrop.
+     */
+    Q_INVOKABLE void setHostStageOpacity(int computerIndex, int percent);
+
+    /**
      * The StreamTweak integration, per host. Everything that talks to the bridge is gated
      * on this: the probes, link matching, remote power and Windows Update, the PIN unlock,
      * the last-session panel, store badges, host metrics, the launch curtain, telemetry.
@@ -247,6 +276,20 @@ public:
      * resolving the artwork already needs the app id, and only the app list has it.
      */
     Q_INVOKABLE QVariantMap lastPlayedFor(int computerIndex) const;
+
+    // ── Now streaming (6.0.0) ────────────────────────────────────────────────────────────
+    /**
+     * What the host card shows INSTEAD of Last played while the host has a session up: the
+     * running entry's name and artwork, found through `currentGameId` in the app list — the
+     * same source the host page's STREAMING tag reads, so the two screens cannot disagree
+     * about what is running.
+     *
+     * Returns an EMPTY map when the host is not online, has nothing running, or runs an id
+     * its app list does not carry. The card then falls back to Last played, whose button
+     * already opens the host page while the host is busy — never a Resume that could not
+     * find what to resume.
+     */
+    Q_INVOKABLE QVariantMap runningAppFor(int computerIndex) const;
 
     /// "2 h ago", "yesterday", "3 days ago" — the wording the host used to send with its own
     /// last-session reply, kept identical now that the client works it out for itself.

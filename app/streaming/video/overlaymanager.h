@@ -68,12 +68,10 @@ public:
     ~OverlayManager();
 
     bool isOverlayEnabled(OverlayType type);
-    char* getOverlayText(OverlayType type);
     void updateOverlayText(OverlayType type, const char* text);
     // Render a structured panel (rounded card, selectable rows, header + footer)
     // instead of a plain wrapped-text block. Used by the Stream Settings overlay.
     void updateOverlayPanel(OverlayType type, const OverlayPanel& panel);
-    int getOverlayMaxTextLength();
     void setOverlayTextUpdated(OverlayType type);
     void setOverlayState(OverlayType type, bool enabled);
     SDL_Color getOverlayColor(OverlayType type);
@@ -110,7 +108,10 @@ private:
         int fontSize;
         SDL_Color color;
         SDL_Color bgColor;
-        char text[1024];
+        // 2048 since 6.0.0: the performance overlay at full detail, with the two VRR lines,
+        // measured 912 bytes on a real session — too close to 1024, and updateOverlayText()
+        // truncates without a word. The stats are formatted into a buffer of the same size.
+        char text[2048];
 
         TTF_Font* font;
         TTF_Font* smallFont;

@@ -1,0 +1,111 @@
+{
+  "config_schema": 1,
+  "scenarios": [
+    {
+      "name": "nominal",
+      "mode": "fixed",
+      "assertions": [
+        {
+          "metric": "simulation.tear.modelled_interval_violations",
+          "operator": "<=",
+          "value": 0
+        },
+        {
+          "metric": "simulation.latency_us.decode_to_submission.p99",
+          "operator": "<=",
+          "value": 30000
+        }
+      ]
+    },
+    {
+      "name": "periodic-decision",
+      "mode": "fixed",
+      "parameters": {
+        "execution": {
+          "periodic_stall_every_frames": 37,
+          "periodic_stall_us": 3000
+        }
+      },
+      "assertions": [
+        {
+          "metric": "simulation.tear.modelled_interval_violations",
+          "operator": "<=",
+          "value": 0
+        },
+        {
+          "metric": "simulation.latency_us.decode_to_submission.p99",
+          "operator": "<=",
+          "value": 30000
+        }
+      ]
+    },
+    {
+      "name": "periodic-preparation",
+      "mode": "fixed",
+      "parameters": {
+        "execution": {
+          "periodic_stall_every_frames": 31,
+          "periodic_preparation_stall_us": 4000
+        }
+      },
+      "assertions": [
+        {
+          "metric": "simulation.tear.modelled_interval_violations",
+          "operator": "<=",
+          "value": 0
+        },
+        {
+          "metric": "simulation.latency_us.decode_to_submission.p99",
+          "operator": "<=",
+          "value": 30000
+        }
+      ]
+    },
+    {
+      "name": "periodic-submission",
+      "mode": "fixed",
+      "parameters": {
+        "execution": {
+          "periodic_stall_every_frames": 43,
+          "periodic_submission_stall_us": 3000
+        }
+      },
+      "assertions": [
+        {
+          "metric": "simulation.tear.modelled_interval_violations",
+          "operator": "<=",
+          "value": 0
+        },
+        {
+          "metric": "simulation.latency_us.decode_to_submission.p99",
+          "operator": "<=",
+          "value": 30000
+        }
+      ]
+    },
+    {
+      "name": "scheduler-burst",
+      "mode": "fixed",
+      "parameters": {
+        "execution": {
+          "periodic_stall_every_frames": 53,
+          "periodic_stall_burst_frames": 3,
+          "periodic_render_wake_delay_us": 2500,
+          "periodic_target_wake_delay_us": 2500
+        }
+      },
+      "assertions": [
+        {
+          "metric": "simulation.tear.modelled_interval_violations",
+          "operator": "<=",
+          "value": 0
+        },
+        {
+          "metric": "simulation.latency_us.decode_to_submission.p99",
+          "operator": "<=",
+          "value": 30000
+        }
+      ]
+    }
+  ]
+}

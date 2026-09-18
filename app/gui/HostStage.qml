@@ -189,6 +189,10 @@ Item {
     // picture gets to be itself over most of the card.
     property string backdropImage: ""
 
+    // How opaque the card is, 0..1 (6.0.0). Chosen per host in StageBackgroundDialog and
+    // stored with the rest of its backdrop; ComputerModel supplies the default and the floor.
+    property real backdropOpacity: 0.90
+
     // ── Last played (5.7.0) ──────────────────────────────────────────────────
     /*
      * The game this client last streamed on this host, from ComputerModel::lastPlayedFor().
@@ -208,9 +212,50 @@ Item {
     readonly property bool _hasLastPlayed:
         !addMode && lastPlayed && lastPlayed.name !== undefined && lastPlayed.name !== ""
 
-    // The block's own width. It is a column — cover over title over figures — so this is
-    // what the widest of those needs, and the card's left-hand text stops short of it.
-    readonly property int _lastPanelW: _hasLastPlayed ? _px(380) : 0
+    // ── Now streaming (6.0.0) ────────────────────────────────────────────────
+    /*
+     * What the host is streaming right now, from ComputerModel::runningAppFor(): name and
+     * artwork, or an empty map.
+     *
+     * ⚠️ It TAKES the Last played slot rather than joining it. While a session is up, "Play
+     * again" on the last game you closed is the wrong offer — the host is holding something
+     * else open, and the thing worth one press is getting back into it. Same block, same
+     * width, same button position: nothing on the card moves when a session starts or ends,
+     * and the layout inherits every scaling rule the Last played block already had.
+     */
+    property var runningApp: ({})
+
+    readonly property bool _hasRunning:
+        !addMode && runningApp && runningApp.name !== undefined && runningApp.name !== ""
+
+    // The right-hand block is on screen: the running session, or failing that the last game.
+    readonly property bool _hasPanel: _hasRunning || _hasLastPlayed
+
+    // Neither, yet (6.0.0): one quiet line stands where the block's button will be — see
+    // lastPlayedHint. Never in add mode, which has no host to have played anything on. No
+    // button with it: _panelActionReachable stays on _hasPanel, so the pad does not stop on
+    // an action that has nothing to act on.
+    readonly property bool _panelPlaceholder: !addMode && !_hasPanel
+
+    /*
+     * ── The card is the LEFT part of the stage (6.0.0) ───────────────────────────
+     *
+     * It used to fill the stage, with the game block drawn inside it on the right. That left
+     * the waves of the app's floor visible only in the margins around one big card, so
+     * the card now takes a little over half, and the game block stands OUTSIDE it, directly
+     * on the floor — see lastPanel.
+     *
+     * ⚠️ The game block did not move. It keeps the exact position, size and alignment it had
+     * inside the full-width card: its right edge and top are still measured from the stage,
+     * which is where the full card's edges were, and its button still sits on the line of the
+     * action row. Only its parent changed. The card is what got narrower, and the left-hand
+     * content reflows to fit (see nameFlow, subLineRow and fieldRow).
+     *
+     * 55% and not 50: the left side carries the name, the profile, the next launch's settings
+     * and up to five fields, and at half the width they ran out of room too often. What is left
+     * still clears the game block (380 wide, 46 from the edge) with a clear gap.
+     */
+    readonly property int _cardW: Math.round(width * 0.55)
 
     // ── "Add a host" mode ────────────────────────────────────────────────────
     // The add panel is the same stage with a different face, not a separate screen: it is
@@ -263,9 +308,22 @@ Item {
     // ⚠️ Without a picture this is now the flat colour the ramp actually paints there, not a
     // blend recomputed here — the two used to be worked out separately and could disagree.
     // With one, the picture is unknowable and "#202020" stands in for it, as before.
-    readonly property color _bgUnderText:
+    readonly property color _bgOpaque:
         backdropImage !== "" ? Theme.blend("#202020", "#e605080a")
                              : _flatColour
+
+    /*
+     * ⚠️ And then laid over the app's FLOOR at the card's opacity (6.0.0). Since the card is
+     * translucent, what is behind the text is not the backdrop alone but the backdrop at
+     * backdropOpacity over the floor — a darker thing. Judging the text against the opaque
+     * backdrop could choose dark text for a light colour and then draw it on something much
+     * darker than it was chosen for. The floor is AmbientBackground's ramp around the card's
+     * middle height, which is where the name and the fields sit.
+     */
+    readonly property color _floorUnderCard:
+        Qt.tint("#151515", Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.05))
+    readonly property color _bgUnderText:
+        Theme.blend(_floorUnderCard, Qt.rgba(_bgOpaque.r, _bgOpaque.g, _bgOpaque.b, backdropOpacity))
 
     readonly property color _onBg:    Theme.onColor(_bgUnderText)
     readonly property bool  _bgIsLight: _onBg !== Qt.rgba(1, 1, 1, 1)
@@ -310,10 +368,10 @@ Item {
 
         var list = []
 
-        // (Play again is NOT in here. It is drawn under the cover on the other side of the
-        //  card — see playAgainBtn — because a verb down here had the game it refers to a
+        // (Play again / Resume is NOT in here. It is drawn under the cover on the other side of
+        //  the card — see panelActionBtn — because a verb down here had the game it refers to a
         //  card's width away, and read as generic. It is still one stop past the last button
-        //  in this row: _playAgainReachable and moveAction below.)
+        //  in this row: _panelActionReachable and moveAction below.)
 
         if (statusUnknown)
             list.push({ kind: "open", label: qsTr("Open"), danger: false, disabled: true })
@@ -332,12 +390,15 @@ Item {
         return list
     }
 
-    // One stop past the last button is Play again, when the card is showing one. Keeping it
-    // on the same index line rather than making it a zone of its own is what lets Right walk
-    // into it and Left walk back out with no new key handling: it sits to the right of the
-    // buttons, which is what Right already means here.
-    readonly property bool _playAgainReachable: _hasLastPlayed
-    readonly property int _maxActionIndex: actions.length - (_playAgainReachable ? 0 : 1)
+    // One stop past the last button is the block's own button — Resume or Play again — when
+    // the card is showing the block. Keeping it on the same index line rather than making it
+    // a zone of its own is what lets Right walk into it and Left walk back out with no new key
+    // handling: it sits to the right of the buttons, which is what Right already means here.
+    readonly property bool _panelActionReachable: _hasPanel
+    readonly property int _maxActionIndex: actions.length - (_panelActionReachable ? 0 : 1)
+
+    // What that button does, decided once so the pad, the mouse and the label cannot disagree.
+    readonly property string _panelActionKind: _hasRunning ? "resume" : "continue"
 
     /*
      * Shown-and-greyed rather than taken away, which is what the rest of the card does: an
@@ -348,12 +409,13 @@ Item {
      * `linkChanging` is in here for the same reason it is on the action row: launching into a
      * link that is still coming back up is the failure the whole feature exists to avoid.
      */
-    readonly property bool _playAgainEnabled:
-        _playAgainReachable && online && paired && !statusUnknown && !linkChanging
+    readonly property bool _panelActionEnabled:
+        _panelActionReachable && online && paired && !statusUnknown && !linkChanging
 
     // ⚠️ On the LIMIT, not on `actions`. The focus can be sitting on Play again when the
     // button goes away without the button row changing at all — the record is reset from the
-    // per-game panel — and clamping only on actionsChanged left the focus on something
+    // per-game panel, or the session behind Resume ends with no last game to fall back on —
+    // and clamping only on actionsChanged left the focus on something
     // invisible, so no button on the card looked focused at all.
     on_MaxActionIndexChanged: if (actionIndex > _maxActionIndex)
                                   actionIndex = Math.max(0, _maxActionIndex)
@@ -380,10 +442,10 @@ Item {
          */
         if (linkChanging) return
 
-        // Play again, one past the buttons.
-        if (_playAgainReachable && actionIndex === actions.length) {
-            if (!_playAgainEnabled) return
-            stage.activated("continue")
+        // Resume or Play again, one past the buttons.
+        if (_panelActionReachable && actionIndex === actions.length) {
+            if (!_panelActionEnabled) return
+            stage.activated(_panelActionKind)
             return
         }
         if (actionIndex < 0 || actionIndex >= actions.length) return
@@ -440,9 +502,29 @@ Item {
     // ═════════════════════════════════════════════════════════════════════════
     Rectangle {
         id: card
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: stage._cardW
         radius: stage._px(16)
-        color: Theme.card
+
+        /*
+         * How opaque the card's backdrop is (6.0.0). A shade under 1 so the waves of the
+         * app's floor shows through — without it the card covers most of Home and the flow
+         * is only visible in the margins. The user sets it per host (stage.backdropOpacity,
+         * from StageBackgroundDialog); the floor of that range is ComputerModel's, and the note
+         * on StageOpacityMin says why it is not lower.
+         *
+         * ⚠️ Applied to the backdrop GROUP, flattened — see backdropGroup — never to each
+         * layer. The ramp and the picture sit on top of each other: at 0.85 each they would
+         * cover 0.98 together, and the card would look almost exactly as opaque as before.
+         */
+        readonly property real backdropOpacity: stage.backdropOpacity
+
+        // Transparent behind the backdrop, which covers the whole card and is thinned on its
+        // own. In add mode there is no backdrop, so the plain fill takes the same opacity.
+        color: stage.addMode ? Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, card.backdropOpacity)
+                             : "transparent"
         border.color: Theme.line
         border.width: 1
         clip: true
@@ -503,15 +585,6 @@ Item {
             }
         }
 
-        MultiEffect {
-            anchors.fill: parent
-            visible: !stage.addMode
-            source: baseRampLayer
-            autoPaddingEnabled: false
-            maskEnabled: true
-            maskSource: cardMask
-        }
-
         // ── 2. The host's picture, over the ramp it was derived from ─────────
         /*
          * ⚠️ On its own effect, and NOT grouped into a layer with the ramps around it.
@@ -534,19 +607,20 @@ Item {
             id: backdropPicture
             anchors.fill: parent
             source: stage.backdropImage !== "" ? "file:///" + stage.backdropImage : ""
+            /*
+             * Cropped, and always from the CENTRE (6.0.0). Since the card became the left part
+             * of the stage it is far narrower than the landscape pictures people pick, so the
+             * crop now takes a lot off the sides — and the subject of a picture is almost always
+             * in the middle. Centre is also Qt's default for PreserveAspectCrop; it is written
+             * out because this is now a decision, not a default: an alignment added here later
+             * for some other reason would quietly cut the subject in half.
+             */
             fillMode: Image.PreserveAspectCrop
+            horizontalAlignment: Image.AlignHCenter
+            verticalAlignment: Image.AlignVCenter
             asynchronous: true
-            // Drawn by the effect below; this element is only the texture behind it.
+            // Drawn by backdropGroup below; this element is only the texture behind it.
             visible: false
-        }
-
-        MultiEffect {
-            anchors.fill: parent
-            visible: !stage.addMode && stage.backdropImage !== ""
-            source: backdropPicture
-            autoPaddingEnabled: false
-            maskEnabled: true
-            maskSource: cardMask
         }
 
         // ── 3. The scrim ─────────────────────────────────────────────────────
@@ -581,24 +655,96 @@ Item {
             }
         }
 
-        MultiEffect {
+        /*
+         * ── The three passes, drawn as ONE layer (6.0.0) ─────────────────────
+         *
+         * The effects that draw the ramp, the picture and the scrim used to sit each beside
+         * its source. They are gathered here so card.backdropOpacity can apply to what they
+         * make TOGETHER: `layer.enabled` flattens the group first, then the opacity thins the
+         * result once. Without the layer, Qt multiplies the opacity into each child and they
+         * are blended one over the other at 0.85 apiece — ramp and picture stacked that way
+         * are 0.98 opaque, and the flow behind would barely show at all.
+         *
+         * ⚠️ Only the EFFECTS moved. Their sources (baseRampLayer, backdropPicture, scrimLayer)
+         * stay where they were: they are invisible textures, their order means nothing, and
+         * backdropPicture in particular must remain sampled directly by its own effect — see
+         * the long note above it for the 5.1.0 regression that grouping it caused.
+         *
+         * The layer costs one texture per card, re-rendered only when the card itself changes;
+         * the flow moving behind it is blended against that texture, not redrawn into it.
+         */
+        Item {
+            id: backdropGroup
             anchors.fill: parent
-            visible: !stage.addMode && stage.backdropImage !== ""
-            source: scrimLayer
-            autoPaddingEnabled: false
-            maskEnabled: true
-            maskSource: cardMask
+            visible: !stage.addMode
+            opacity: card.backdropOpacity
+            layer.enabled: card.backdropOpacity < 1
+
+            MultiEffect {
+                anchors.fill: parent
+                source: baseRampLayer
+                autoPaddingEnabled: false
+                maskEnabled: true
+                maskSource: cardMask
+            }
+
+            MultiEffect {
+                anchors.fill: parent
+                visible: stage.backdropImage !== ""
+                source: backdropPicture
+                autoPaddingEnabled: false
+                maskEnabled: true
+                maskSource: cardMask
+            }
+
+            MultiEffect {
+                anchors.fill: parent
+                visible: stage.backdropImage !== ""
+                source: scrimLayer
+                autoPaddingEnabled: false
+                maskEnabled: true
+                maskSource: cardMask
+            }
         }
 
         // ── Chips ────────────────────────────────────────────────────────────
-        Row {
-            id: chipRow
+        /*
+         * ⚠️ Shrunk to fit, never wrapped and never cut (6.0.0).
+         *
+         * Since the card became the left part of the stage, the full set — state, StreamTweak,
+         * Tailscale and a link chip during a wake — can be wider than the card, and the card
+         * clips: the last chip was simply cut off at its edge. Which chips appear, and when,
+         * is deliberate (Marcello, 18/09/2026: the behaviour stays), so what gives is their
+         * SIZE, and only by as much as it has to. `_fit` is 1 whenever the row fits, which is
+         * the usual case, and below 1 only for the moments that would otherwise overflow.
+         *
+         * By `scale` on the whole row, not by re-deriving each font and padding: the chips
+         * keep their exact proportions, and the row's implicit width — what `_fit` is measured
+         * against — is not affected by its own scale, so there is no binding loop. The box
+         * around it takes the SCALED size, so the name below moves up with the row instead of
+         * keeping a gap the row no longer fills.
+         *
+         * Every resolution is covered by the same rule: the chips and the card both grow with
+         * _u, so their ratio only changes where _u is clamped, and _fit absorbs exactly that.
+         */
+        Item {
+            id: chipBox
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.topMargin: stage._px(34)
             anchors.leftMargin: stage._px(38)
-            spacing: stage._px(9)
             visible: !stage.addMode
+
+            readonly property real _room: card.width - stage._px(38) * 2
+            readonly property real _fit: Math.min(1, _room / Math.max(1, chipRow.implicitWidth))
+            width: chipRow.implicitWidth * _fit
+            height: chipRow.implicitHeight * _fit
+
+        Row {
+            id: chipRow
+            scale: chipBox._fit
+            transformOrigin: Item.TopLeft
+            spacing: stage._px(9)
 
             Repeater {
                 model: {
@@ -654,16 +800,19 @@ Item {
                 }
             }
         }
+        }
 
         // ── Name + subtitle ──────────────────────────────────────────────────
         Column {
             id: nameBlock
-            anchors.top: stage.addMode ? parent.top : chipRow.bottom
+            anchors.top: stage.addMode ? parent.top : chipBox.bottom
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.topMargin: stage._px(stage.addMode ? 56 : 20)
             anchors.leftMargin: stage._px(38)
-            anchors.rightMargin: stage._px(38) + stage._lastPanelW
+            // No room reserved for the game block any more: since 6.0.0 it stands outside the
+            // card (see _cardW), so the card's whole width is the text's.
+            anchors.rightMargin: stage._px(38)
             spacing: stage._px(8)
 
             // The name, and the active profile beside it.
@@ -672,14 +821,31 @@ Item {
             // where you look — and it is the single setting that changes what every launch
             // from this host will look like. At the name's own height, in the accent, it
             // becomes the second thing read instead of the last.
-            Row {
+            //
+            // ⚠️ A Flow since 6.0.0, not a Row. In the narrower card a long host name and the
+            // profile cluster no longer always fit on one line, and a Row could only elide the
+            // NAME to make room — the one word on the card that must never be cut. The Flow
+            // keeps them side by side when they fit and puts the profile on the next line when
+            // they do not. Each sits in a box of the line's height and centres itself in it,
+            // because a Flow places its children by their tops and the two are not equally tall.
+            Flow {
+                id: nameFlow
                 width: parent.width
                 spacing: stage._px(18)
+
+                readonly property real _lineH: Math.max(nameText.implicitHeight,
+                                                        stage._hasProfiles ? profileCluster.implicitHeight : 0)
+
+                Item {
+                    width: nameText.width
+                    height: nameFlow._lineH
 
                 Text {
                     id: nameText
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(implicitWidth, parent.width - (profileCluster.visible ? profileCluster.width + stage._px(18) : 0))
+                    // Its own line if need be, and ellipsis only past the WHOLE card width —
+                    // never to make room for the profile, which wraps instead.
+                    width: Math.min(implicitWidth, nameFlow.width)
                     text: stage.addMode ? qsTr("Add a host") : stage.hostName
                     color: stage._onBg
                     font.family: Theme.family
@@ -688,6 +854,7 @@ Item {
                     font.letterSpacing: -stage._u * 2.4
                     elide: Text.ElideRight
                     maximumLineCount: 1
+                }
                 }
 
                 /*
@@ -705,6 +872,14 @@ Item {
                  * whole cluster goes — badge included, since naming the only possible state
                  * tells the user nothing.
                  */
+                // The Flow's box for the cluster — see the note on nameFlow. Gated on the same
+                // condition as the cluster, NOT on the cluster's own `visible`: that one is
+                // inherited from this box, and reading it here would be a binding on itself.
+                Item {
+                    visible: stage._hasProfiles
+                    width: profileCluster.implicitWidth
+                    height: nameFlow._lineH
+
                 Row {
                     id: profileCluster
                     anchors.verticalCenter: parent.verticalCenter
@@ -740,7 +915,17 @@ Item {
                         width: profileBadgeText.implicitWidth + stage._px(34)
                         height: profileBadgeText.implicitHeight + stage._px(16)
                         radius: stage._px(10)
-                        color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.18)
+                        /*
+                         * Dark glass under an accent border and accent text (18/09/2026,
+                         * option B of three). It was an accent TINT under accent text — the
+                         * same hue on both, so over the card's picture the two met at almost
+                         * the same brightness (≈1:1). Raising the tint (0.18 → 0.28 → 0.40)
+                         * and darkening the text only moved them together. The page's own
+                         * near-black at 80% keeps the text about 9–10:1 on any picture and
+                         * any accent, and leaves the accent as the badge's mark rather than
+                         * a block of colour competing with the host's name.
+                         */
+                        color: Qt.rgba(Theme.ground.r, Theme.ground.g, Theme.ground.b, 0.80)
                         border.color: Theme.accent
                         border.width: Math.max(1, stage._px(2))
 
@@ -749,11 +934,14 @@ Item {
                             anchors.centerIn: parent
                             text: stage.activeProfileSlot >= 0 && stage.activeProfileName.length > 0
                                       ? stage.activeProfileName : qsTr("Global")
+                            // The full accent, on the dark glass above.
                             color: Theme.accent
                             font.family: Theme.family
                             // Below the host name, clearly above everything else: this is the
                             // second-most important thing on the card, not the first.
-                            font.pixelSize: stage._px(40)
+                            // 34 since 6.0.0 (was 40): in the narrower card it competed with
+                            // the name for the same line.
+                            font.pixelSize: stage._px(34)
                             font.weight: Font.DemiBold
                         }
                     }
@@ -781,6 +969,7 @@ Item {
                         }
                     }
                 }
+                }
             }
 
             // The status line, and on the same baseline what the next launch would look
@@ -791,15 +980,31 @@ Item {
             // No group label in front of them here. On the host page "STREAM" earns its place
             // by separating that half of the line from the Host half; on this card there is
             // nothing to separate it from, and the status line already introduces them.
+            //
+            // ⚠️ One line, shrunk to fit only when it has to (6.0.0) — the same rule as the
+            // chips at the top of the card, and for the same reason: in the narrower card the
+            // status and six badges can run past the edge, and which badges show is decided
+            // elsewhere and stays. A Flow that wrapped them onto a second line was tried first
+            // and turned down: this is one statement, and it reads as one only on one line.
+            // Every child is one _rowH tall and centres its own content, so the row needs no
+            // anchors — they would not survive the scale anyway.
+            Item {
+                id: subLineBox
+                width: parent.width
+                readonly property real _fit: Math.min(1, width / Math.max(1, subLineRow.implicitWidth))
+                height: subLineRow.implicitHeight * _fit
+
             Row {
                 id: subLineRow
-                width: parent.width
+                scale: subLineBox._fit
+                transformOrigin: Item.TopLeft
                 spacing: stage._px(14)
 
                 readonly property int _rowH: stage._px(28)
 
                 Text {
-                    anchors.verticalCenter: parent.verticalCenter
+                    height: subLineRow._rowH
+                    verticalAlignment: Text.AlignVCenter
                     text: stage._subLine
                     color: stage._onBg2
                     font.family: Theme.family
@@ -825,7 +1030,6 @@ Item {
                     }
 
                     delegate: Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
                         height: subLineRow._rowH
                         width: badgeText.implicitWidth + stage._px(20)
                         radius: stage._px(7)
@@ -849,21 +1053,34 @@ Item {
                     }
                 }
             }
+            }
         }
 
         // ── The data quadrant ────────────────────────────────────────────────
         // Fields appear only when they have something to say, so a plain LAN host shows
         // three and a Tailscale host with a pending link change shows five, without either
         // leaving a hole where the other's data would be.
-        Row {
+        //
+        // ⚠️ A Flow since 6.0.0, for the same reason as the badge line: in the narrower card
+        // an address and a GPU name no longer fit side by side, and a Row simply ran past the
+        // card's edge. One spacing for both directions — a Flow has only one — at a value
+        // between the old horizontal 46 and what reads as a line gap.
+        //
+        // ⚠️ Clipped above the action row. The worst case — a Tailscale host with a GPU name
+        // and a link change pending, five fields — can take three lines, and at that point a
+        // field running under the buttons is worse than one cut off: the buttons are what the
+        // user is about to press. It does not happen with the usual three fields.
+        Flow {
             id: fieldRow
             anchors.top: nameBlock.bottom
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.topMargin: stage._px(32)
             anchors.leftMargin: stage._px(38)
-            anchors.rightMargin: stage._px(38) + stage._lastPanelW
-            spacing: stage._px(46)
+            anchors.rightMargin: stage._px(38)
+            height: Math.max(0, actionRow.y - y - stage._px(16))
+            clip: true
+            spacing: stage._px(32)
             visible: !stage.addMode
 
             Repeater {
@@ -929,202 +1146,6 @@ Item {
             }
         }
 
-        // ── Last played ──────────────────────────────────────────────────────
-        /*
-         * The game you last streamed on this host — name, artwork, hours, sessions.
-         *
-         * ⚠️ Nothing here comes from the host. Until 5.6.1 this panel showed the host's last
-         * *session*, fetched over the bridge, which meant it described whatever had streamed
-         * — possibly from another client — and vanished entirely without StreamTweak. It now
-         * describes what YOU played, from a record kept on this machine, and works against a
-         * plain Sunshine host.
-         *
-         * ⚠️ The layout is GameFacts, the same component the host page's spotlight uses. It
-         * was laid out by hand here first — text beside the cover, no shadow, four figures —
-         * against the spotlight's cover-above-centred-shadowed-two-figures, and one idea
-         * wearing two faces is what that was. Do not re-implement it here.
-         *
-         * An empty map means draw nothing at all: never streamed here, record reset, or the
-         * game is gone from the host's app list. There is no empty state — the card simply
-         * goes back to what it looks like without one.
-         */
-        GameFacts {
-            id: lastPanel
-            visible: stage._hasLastPlayed
-            u: stage._u
-
-            anchors.right: parent.right
-            anchors.rightMargin: stage._px(46)
-            anchors.top: parent.top
-            anchors.topMargin: stage._px(30)
-            width: stage._px(380)
-
-            /*
-             * ⚠️ It ends where the Play again button begins, and that button is pinned to the
-             * action row on the other side of the card. So this is not centred in the card and
-             * must not be: the two sides of the bottom edge line up because BOTH are measured
-             * from the same row, and centring this block would put its button a few pixels off
-             * from the ones beside it — which is exactly the kind of near-alignment the eye
-             * reads as a mistake rather than as a choice.
-             */
-            availableHeight: playAgainBtn.y - y - stage._px(16)
-
-            badgeMain: qsTr("Last played for %1")
-                       .arg(stage.lastPlayed.total !== undefined ? stage.lastPlayed.total : "")
-            badgeMuted: stage.lastPlayed.ago !== undefined ? stage.lastPlayed.ago : ""
-
-            title: stage.lastPlayed.name !== undefined ? stage.lastPlayed.name : ""
-            cover: stage.lastPlayed.cover !== undefined ? stage.lastPlayed.cover : ""
-
-            // The title box takes only the lines the name needs, so the cover is biggest on a
-            // one-line title and stands back on a three-line one. Safe here and nowhere else:
-            // this card shows one game until you change host — see titleFitsContent.
-            titleFitsContent: true
-
-            /*
-             * Deliberately all empty: title and cover, nothing else.
-             *
-             * The hours are in the badge above the picture and the age beside them, so
-             * repeating them under the title would be saying them twice. The store's mark
-             * belongs to the host page, where you are choosing between games and the
-             * storefront is one of the things you choose by; here there is one game and the
-             * room is worth more to the artwork.
-             */
-            store: ""
-            metaExtra: ""
-            played: ""
-            sessions: 0
-        }
-
-        /*
-         * ── Play again ───────────────────────────────────────────────────────
-         *
-         * Same body as the buttons in the action row and on the same baseline as them, so the
-         * card has one row of controls that happens to span both halves rather than two rows
-         * at two heights.
-         *
-         * ⚠️ It is not IN the action row, and that is the point of the whole arrangement: down
-         * there it read as a generic verb next to Open and Profiles, with the game it refers
-         * to a card's width away. Under the cover and the title, "Play again" has already been
-         * told what it plays.
-         *
-         * The pad reaches it as one stop past the last button — geometrically it is to the
-         * right of them, which is what Right already means here. That was true of the cover
-         * too, and the cover was still the wrong target: a picture does not look like a
-         * control. A button does.
-         */
-        Rectangle {
-            id: playAgainBtn
-            // The same condition the focus chain uses, read from one place: written out twice
-            // it would eventually be true for the pad and false for the eye.
-            visible: stage._playAgainReachable
-
-            anchors.horizontalCenter: lastPanel.horizontalCenter
-            anchors.verticalCenter: actionRow.verticalCenter
-
-            readonly property bool _focused:
-                stage.zoneActive && stage.actionIndex === stage.actions.length && !stage.pointerMode
-            readonly property bool _hovered: playAgainMouse.containsMouse && stage.pointerMode
-            readonly property bool _lit: _focused || _hovered
-
-            height: stage._px(58)
-            width: playAgainRow.implicitWidth + stage._px(54)
-            radius: stage._px(10)
-
-            // The same pair the action row carries, on the same terms and with the same
-            // fade — it is one row of controls that happens to span both halves of the card,
-            // so it has to dim as one. Written here rather than inherited because this button
-            // is deliberately NOT inside that Row (see the note above).
-            opacity: stage._playAgainEnabled ? 1.0 : 0.4
-            enabled: stage._playAgainEnabled
-            Behavior on opacity {
-                enabled: !Theme.reduceAnimations
-                NumberAnimation { duration: 160 }
-            }
-
-            color: _lit ? Theme.accent : "#14ffffff"
-            border.width: _focused ? 2 : 1
-            border.color: _lit ? Theme.accent : Theme.lineHigh
-
-            Behavior on color {
-                enabled: !Theme.reduceAnimations
-                ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
-            }
-            Behavior on border.color {
-                enabled: !Theme.reduceAnimations
-                ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
-            }
-            Behavior on scale {
-                enabled: !Theme.reduceAnimations
-                NumberAnimation { duration: 130; easing.type: Easing.OutBack; easing.overshoot: 2.2 }
-            }
-            scale: _focused && !Theme.reduceAnimations ? 1.04 : 1.0
-
-            Row {
-                id: playAgainRow
-                anchors.centerIn: parent
-                spacing: stage._px(10)
-
-                // The same prompt badge the action row draws, on the same terms: it appears
-                // on the focused button and nowhere else, because A activates what has the
-                // focus and only that button can honestly claim it.
-                Rectangle {
-                    id: playBadge
-                    readonly property bool   _padMode: InputHints.padActive
-                    readonly property string _padSet: SdlGamepadKeyNavigation.controllerType
-                    readonly property string _padLetter:
-                        _padSet === "ps"     ? "✕"
-                      : _padSet === "switch" ? "B"
-                      :                        "A"
-                    readonly property string _letter:
-                        !playAgainBtn._focused ? "" : (_padMode ? _padLetter : qsTr("Enter"))
-
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: _letter.length > 0
-                    width: _padMode ? stage._px(26)
-                                    : Math.max(stage._px(26), playBadgeText.implicitWidth + stage._px(14))
-                    height: stage._px(26)
-                    radius: _padMode ? width / 2 : stage._px(7)
-                    color: playAgainBtn._lit ? Theme.onAccent : "#26ffffff"
-
-                    Text {
-                        id: playBadgeText
-                        anchors.centerIn: parent
-                        text: playBadge._letter
-                        color: playAgainBtn._lit ? Theme.accent : stage._onBg
-                        font.family: Theme.family
-                        font.pixelSize: stage._px(Theme.fontSmall)
-                        font.weight: Font.Bold
-                    }
-                }
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Play again")
-                    color: playAgainBtn._lit ? Theme.onAccent : Theme.text
-                    font.family: Theme.family
-                    font.pixelSize: stage._px(Theme.fontTitle)
-                    font.weight: playAgainBtn._lit ? Font.Bold : Font.Normal
-
-                    Behavior on color {
-                        enabled: !Theme.reduceAnimations
-                        ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
-                    }
-                }
-            }
-
-            MouseArea {
-                id: playAgainMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    stage.actionIndex = stage.actions.length
-                    stage.activated("continue")
-                }
-            }
-        }
-
         // ── The add panel's body ─────────────────────────────────────────────
         Row {
             anchors.top: nameBlock.bottom
@@ -1141,6 +1162,10 @@ Item {
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
+                // Wraps inside the card: since 6.0.0 the card is narrower than this sentence
+                // was ever measured against.
+                width: card.width - stage._px(38) * 2 - stage._px(16) - stage._px(14)
+                wrapMode: Text.WordWrap
                 text: qsTr("Hosts found on the network appear as tabs above.")
                 color: stage._onBg3
                 font.family: Theme.family
@@ -1319,5 +1344,298 @@ Item {
             }
         }
 
+    }
+
+    // ── Last played ──────────────────────────────────────────────────────
+    /*
+     * The game you last streamed on this host — name, artwork, hours, sessions.
+     *
+     * ⚠️ Nothing here comes from the host. Until 5.6.1 this panel showed the host's last
+     * *session*, fetched over the bridge, which meant it described whatever had streamed
+     * — possibly from another client — and vanished entirely without StreamTweak. It now
+     * describes what YOU played, from a record kept on this machine, and works against a
+     * plain Sunshine host.
+     *
+     * ⚠️ The layout is GameFacts, the same component the host page's spotlight uses. It
+     * was laid out by hand here first — text beside the cover, no shadow, four figures —
+     * against the spotlight's cover-above-centred-shadowed-two-figures, and one idea
+     * wearing two faces is what that was. Do not re-implement it here.
+     *
+     * An empty map means draw nothing at all: never streamed here, record reset, or the
+     * game is gone from the host's app list. There is no empty state — the card simply
+     * goes back to what it looks like without one.
+     *
+     * ⚠️ 6.0.0: while the host is streaming, the same block shows THAT instead — see
+     * runningApp. Every field below picks between the two, and only those fields: the
+     * geometry is one, so the running session is sized, scaled and aligned by exactly the
+     * rules that were already tuned for Last played.
+     *
+     * ⚠️ 6.0.0: a child of the STAGE now, not of the card — the card became the left part of
+     * the stage (see _cardW) and this block stands on the floor beside it. Every number below
+     * is the one it had inside the full-width card, and `parent` still means an item whose
+     * right and top edges are where that card's were, so the block sits exactly where it did.
+     */
+    GameFacts {
+        id: lastPanel
+        visible: stage._hasPanel
+        u: stage._u
+
+        anchors.right: parent.right
+        anchors.rightMargin: stage._px(46)
+        anchors.top: parent.top
+        anchors.topMargin: stage._px(30)
+        width: stage._px(380)
+
+        /*
+         * ⚠️ It ends where the Play again button begins, and that button is pinned to the
+         * action row on the other side of the card. So this is not centred in the card and
+         * must not be: the two sides of the bottom edge line up because BOTH are measured
+         * from the same row, and centring this block would put its button a few pixels off
+         * from the ones beside it — which is exactly the kind of near-alignment the eye
+         * reads as a mistake rather than as a choice.
+         */
+        availableHeight: panelActionBtn.y - y - stage._px(16)
+
+        // "Streaming now" in the words and with the live dot of the host page's STREAMING
+        // tag: the badge is where this block says WHY it shows this game, and a session
+        // in progress is a different why from the last one you closed. No figure beside
+        // it — the host does not say how long the session has run, nor whose it is.
+        // ⚠️ When first, the total second and named as a total (6.0.0). This read
+        // "LAST PLAYED FOR 18 H · 2 H AGO", and "for" tied the hours to the last session
+        // when they are every session on this host added up.
+        badgeMain: stage._hasRunning
+                   ? qsTr("Streaming now")
+                   : (stage.lastPlayed.ago !== undefined && stage.lastPlayed.ago !== ""
+                      ? qsTr("Last played %1").arg(stage.lastPlayed.ago)
+                      : qsTr("Last played"))
+        badgeMuted: stage._hasRunning ? ""
+                    : (stage.lastPlayed.total !== undefined && stage.lastPlayed.total !== ""
+                       ? qsTr("%1 total").arg(stage.lastPlayed.total) : "")
+        badgeDot: stage._hasRunning ? Theme.accent : "transparent"
+
+        title: stage._hasRunning
+               ? stage.runningApp.name
+               : (stage.lastPlayed.name !== undefined ? stage.lastPlayed.name : "")
+        cover: stage._hasRunning
+               ? (stage.runningApp.cover !== undefined ? stage.runningApp.cover : "")
+               : (stage.lastPlayed.cover !== undefined ? stage.lastPlayed.cover : "")
+
+        // The title box takes only the lines the name needs, so the cover is biggest on a
+        // one-line title and stands back on a three-line one. Safe here and nowhere else:
+        // this card shows one game until you change host, or until a session starts or
+        // ends on it — see titleFitsContent.
+        titleFitsContent: true
+
+        /*
+         * Deliberately all empty: title and cover, nothing else.
+         *
+         * The hours are in the badge above the picture and the age beside them, so
+         * repeating them under the title would be saying them twice. The store's mark
+         * belongs to the host page, where you are choosing between games and the
+         * storefront is one of the things you choose by; here there is one game and the
+         * room is worth more to the artwork.
+         */
+        store: ""
+        metaExtra: ""
+        played: ""
+        sessions: 0
+    }
+
+    /*
+     * ── Play again / Resume ──────────────────────────────────────────────
+     *
+     * Resume while the host is streaming (6.0.0), the same word the host page puts on
+     * the running game; Play again otherwise.
+     *
+     * Same body as the buttons in the action row and on the same baseline as them, so the
+     * card has one row of controls that happens to span both halves rather than two rows
+     * at two heights.
+     *
+     * ⚠️ It is not IN the action row, and that is the point of the whole arrangement: down
+     * there it read as a generic verb next to Open and Profiles, with the game it refers
+     * to a card's width away. Under the cover and the title, "Play again" has already been
+     * told what it plays.
+     *
+     * The pad reaches it as one stop past the last button — geometrically it is to the
+     * right of them, which is what Right already means here. That was true of the cover
+     * too, and the cover was still the wrong target: a picture does not look like a
+     * control. A button does.
+     */
+    Rectangle {
+        id: panelActionBtn
+        // The same condition the focus chain uses, read from one place: written out twice
+        // it would eventually be true for the pad and false for the eye.
+        visible: stage._panelActionReachable
+
+        anchors.horizontalCenter: lastPanel.horizontalCenter
+        // On the line of the action row, as before. It can no longer ANCHOR there: since 6.0.0
+        // the row is inside the card and this button is not, and QML only anchors to a parent
+        // or a sibling. The card starts at the stage's top, so the row's own y is the stage's.
+        y: card.y + actionRow.y + (actionRow.height - height) / 2
+
+        readonly property bool _focused:
+            stage.zoneActive && stage.actionIndex === stage.actions.length && !stage.pointerMode
+        readonly property bool _hovered: panelActionMouse.containsMouse && stage.pointerMode
+        readonly property bool _lit: _focused || _hovered
+
+        height: stage._px(58)
+        width: panelActionRow.implicitWidth + stage._px(54)
+        radius: stage._px(10)
+
+        // The same pair the action row carries, on the same terms and with the same
+        // fade — it is one row of controls that happens to span both halves of the card,
+        // so it has to dim as one. Written here rather than inherited because this button
+        // is deliberately NOT inside that Row (see the note above).
+        opacity: stage._panelActionEnabled ? 1.0 : 0.4
+        enabled: stage._panelActionEnabled
+        Behavior on opacity {
+            enabled: !Theme.reduceAnimations
+            NumberAnimation { duration: 160 }
+        }
+
+        color: _lit ? Theme.accent : "#14ffffff"
+        border.width: _focused ? 2 : 1
+        border.color: _lit ? Theme.accent : Theme.lineHigh
+
+        Behavior on color {
+            enabled: !Theme.reduceAnimations
+            ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
+        }
+        Behavior on border.color {
+            enabled: !Theme.reduceAnimations
+            ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
+        }
+        Behavior on scale {
+            enabled: !Theme.reduceAnimations
+            NumberAnimation { duration: 130; easing.type: Easing.OutBack; easing.overshoot: 2.2 }
+        }
+        scale: _focused && !Theme.reduceAnimations ? 1.04 : 1.0
+
+        Row {
+            id: panelActionRow
+            anchors.centerIn: parent
+            spacing: stage._px(10)
+
+            // The same prompt badge the action row draws, on the same terms: it appears
+            // on the focused button and nowhere else, because A activates what has the
+            // focus and only that button can honestly claim it.
+            Rectangle {
+                id: playBadge
+                readonly property bool   _padMode: InputHints.padActive
+                readonly property string _padSet: SdlGamepadKeyNavigation.controllerType
+                readonly property string _padLetter:
+                    _padSet === "ps"     ? "✕"
+                  : _padSet === "switch" ? "B"
+                  :                        "A"
+                readonly property string _letter:
+                    !panelActionBtn._focused ? "" : (_padMode ? _padLetter : qsTr("Enter"))
+
+                anchors.verticalCenter: parent.verticalCenter
+                visible: _letter.length > 0
+                width: _padMode ? stage._px(26)
+                                : Math.max(stage._px(26), playBadgeText.implicitWidth + stage._px(14))
+                height: stage._px(26)
+                radius: _padMode ? width / 2 : stage._px(7)
+                color: panelActionBtn._lit ? Theme.onAccent : "#26ffffff"
+
+                Text {
+                    id: playBadgeText
+                    anchors.centerIn: parent
+                    text: playBadge._letter
+                    // Theme.text, not the card's reading colour (_onBg): this button stands on
+                    // the app's floor now, not on the host's backdrop.
+                    color: panelActionBtn._lit ? Theme.accent : Theme.text
+                    font.family: Theme.family
+                    font.pixelSize: stage._px(Theme.fontSmall)
+                    font.weight: Font.Bold
+                }
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: stage._hasRunning ? qsTr("Resume") : qsTr("Play again")
+                color: panelActionBtn._lit ? Theme.onAccent : Theme.text
+                font.family: Theme.family
+                font.pixelSize: stage._px(Theme.fontTitle)
+                font.weight: panelActionBtn._lit ? Font.Bold : Font.Normal
+
+                Behavior on color {
+                    enabled: !Theme.reduceAnimations
+                    ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
+                }
+            }
+        }
+
+        MouseArea {
+            id: panelActionMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                stage.actionIndex = stage.actions.length
+                stage.activated(stage._panelActionKind)
+            }
+        }
+    }
+
+    /*
+     * ── Before the first game (6.0.0) ───────────────────────────────────────
+     *
+     * The badge the block will carry, and one line — centred in the space where the block
+     * will stand, level with the middle of the card. It sat on the line where Play again will
+     * appear at first, and read as a footnote down there (Marcello, 18/09/2026). The rest of
+     * the space is left to the waves, which is what the card got narrower for.
+     *
+     * ⚠️ Deliberately NOT an outline of the block. That was built first — the cover's exact
+     * box, dashed, with "Your last game" at title size — and it was the ugliest thing on the
+     * screen: the largest object on that side, holding nothing, so the eye went to it and
+     * found a hole. Anything that draws the shape of the missing cover repeats that. Also not
+     * a stand-in with content of its own (the host's library, pinned games): the first launch
+     * replaces it with Last played for good, so it would be a screen seen once.
+     */
+    Column {
+        id: lastPlayedHint
+        visible: stage._panelPlaceholder
+        anchors.horizontalCenter: lastPanel.horizontalCenter
+        // Centred on the card's height: the block it stands in for spans nearly all of it.
+        y: card.y + (card.height - height) / 2
+        spacing: stage._px(12)
+
+        // The recipe of GameFacts' badge — height, radius, border, type — so it is the same
+        // badge the real block will show in this place.
+        Rectangle {
+            id: hintBadge
+            anchors.horizontalCenter: parent.horizontalCenter
+            height: stage._px(30)
+            width: hintBadgeText.implicitWidth + stage._px(26)
+            radius: stage._px(6)
+            color: "transparent"
+            border.color: Theme.line
+            border.width: 1
+
+            Text {
+                id: hintBadgeText
+                anchors.centerIn: parent
+                text: qsTr("Last played").toUpperCase()
+                color: Theme.text3
+                font.family: Theme.family
+                font.pixelSize: stage._px(Theme.fontBody)
+                font.weight: Font.DemiBold
+                font.letterSpacing: stage._u * 1.1
+            }
+        }
+
+        Text {
+            id: hintText
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: qsTr("Your last game on %1 will show up here").arg(stage.hostName)
+            // A long host name wraps within the block's width instead of running off the edge.
+            width: Math.min(implicitWidth, lastPanel.width)
+            wrapMode: Text.WordWrap
+            horizontalAlignment: Text.AlignHCenter
+            color: Theme.text2
+            font.family: Theme.family
+            font.pixelSize: stage._px(Theme.fontBody)
+        }
     }
 }

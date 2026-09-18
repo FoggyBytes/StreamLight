@@ -62,6 +62,21 @@ public:
     };
     Q_ENUM(VideoDecoderSelection)
 
+    // Persisted IDs also identify the VRR controller's timing profile. Keep
+    // the numeric values stable when changing the user-facing names.
+    enum VrrLatencyMode
+    {
+        VLM_SMOOTH = 0,
+        VLM_BALANCED_TARGET = 1,
+        VLM_LOW_LATENCY = 2,
+
+        // Source compatibility for code using the former profile names.
+        VLM_SMOOTHEST = VLM_SMOOTH,
+        VLM_BALANCED = VLM_BALANCED_TARGET,
+        VLM_LOWEST_LATENCY = VLM_LOW_LATENCY
+    };
+    Q_ENUM(VrrLatencyMode)
+
     enum WindowMode
     {
         WM_FULLSCREEN,
@@ -155,7 +170,8 @@ public:
         // a retired bit permanently unusable, and it is cheaper to spend a new bit than
         // to reason about who might still have the old one set.
         OI_CADENCE      = 1 << 14,  // presentation cadence, queue depth, Present() wait
-        OI_ALL          = ((1 << 15) - 1) & ~(1 << 11) & ~(1 << 13)
+        OI_VRR          = 1 << 15,  // VRR pacing: smoothness and interval error, or why it is inactive (6.0.0)
+        OI_ALL          = ((1 << 16) - 1) & ~(1 << 11) & ~(1 << 13)
     };
     Q_ENUM(OverlayItem)
 
@@ -217,6 +233,9 @@ public:
     Q_PROPERTY(bool autoAdjustBitrate MEMBER autoAdjustBitrate NOTIFY autoAdjustBitrateChanged)
     Q_PROPERTY(bool enableVsync MEMBER enableVsync NOTIFY enableVsyncChanged)
     Q_PROPERTY(bool fractionalVsync MEMBER fractionalVsync NOTIFY fractionalVsyncChanged)
+    Q_PROPERTY(bool enableVrr MEMBER enableVrr NOTIFY enableVrrChanged)
+    Q_PROPERTY(int vrrLatencyMode MEMBER vrrLatencyMode NOTIFY vrrLatencyModeChanged)
+    Q_PROPERTY(bool smoothVrrFrameTiming MEMBER smoothVrrFrameTiming NOTIFY smoothVrrFrameTimingChanged)
     Q_PROPERTY(bool gameOptimizations MEMBER gameOptimizations NOTIFY gameOptimizationsChanged)
     Q_PROPERTY(bool playAudioOnHost MEMBER playAudioOnHost NOTIFY playAudioOnHostChanged)
     Q_PROPERTY(bool multiController MEMBER multiController NOTIFY multiControllerChanged)
@@ -275,6 +294,12 @@ public:
     // what it is not.
     bool fractionalVsync;
 
+    bool enableVrr;
+    int vrrLatencyMode;
+    // Re-present the last frame inside a host gap longer than the panel's
+    // adaptive-refresh floor, so the panel never engages its own
+    // low-framerate compensation.
+    bool smoothVrrFrameTiming;
     bool gameOptimizations;
     bool playAudioOnHost;
     bool multiController;
@@ -332,6 +357,9 @@ signals:
     void autoAdjustBitrateChanged();
     void enableVsyncChanged();
     void fractionalVsyncChanged();
+    void enableVrrChanged();
+    void vrrLatencyModeChanged();
+    void smoothVrrFrameTimingChanged();
     void gameOptimizationsChanged();
     void playAudioOnHostChanged();
     void multiControllerChanged();

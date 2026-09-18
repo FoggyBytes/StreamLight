@@ -199,7 +199,7 @@ Popup {
                 Layout.alignment: Qt.AlignHCenter
                 labels: [qsTr("Security + Defender"), qsTr("All updates")]
                 currentIndex: 0
-                Keys.onDownPressed: { installBtn.forceActiveFocus(); event.accepted = true }
+                Keys.onDownPressed: function(event) { installBtn.forceActiveFocus(); event.accepted = true }
             }
         }
 

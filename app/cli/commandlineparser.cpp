@@ -347,6 +347,8 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     parser.addFlagOption("4K", "3840x2160 resolution");
     parser.addValueOption("resolution", "custom <width>x<height> resolution");
     parser.addToggleOption("vsync", "V-Sync");
+    parser.addToggleOption("vrr", "VRR");
+    parser.addToggleOption("vrr-smooth-frame-timing", "VRR frame timing smoothing");
     parser.addValueOption("fps", "FPS");
     parser.addValueOption("bitrate", "bitrate in Kbps");
     parser.addValueOption("packet-size", "video packet size");
@@ -437,6 +439,13 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
 
     // Resolve --vsync and --no-vsync options
     preferences->enableVsync = parser.getToggleOptionValue("vsync", preferences->enableVsync);
+
+    // This is intentionally an in-memory override, like the other stream
+    // command-line settings.  It must not persist a CLI choice back to the
+    // normal settings UI.
+    preferences->enableVrr = parser.getToggleOptionValue("vrr", preferences->enableVrr);
+    preferences->smoothVrrFrameTiming = parser.getToggleOptionValue(
+        "vrr-smooth-frame-timing", preferences->smoothVrrFrameTiming);
 
     // Resolve --audio-config option
     if (parser.isSet("audio-config")) {

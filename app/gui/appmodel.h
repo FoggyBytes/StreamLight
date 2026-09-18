@@ -42,6 +42,7 @@ class AppModel : public QAbstractListModel
         SectionRole,
         IsAppRole,
         ControlRole,
+        PinnedRole,
     };
 
 public:
@@ -116,9 +117,20 @@ public:
      */
     Q_INVOKABLE void refreshPlaytime();
 
-    /// The index of the game this host was last played on, or -1. Drives the "Continue"
-    /// section — see the sort order in updateAppList().
-    Q_INVOKABLE int lastPlayedIndex() const;
+    // ── Pinned (6.0.0) ───────────────────────────────────────────────────────────────────
+    /**
+     * Pins or unpins the game at this row, stores it (PlaytimeManager::setPinned) and puts
+     * the list back in order. Returns the new state; does nothing on the APPS tab or for an
+     * entry that is not a game.
+     *
+     * ⚠️ The order usually MOVES, and moving is a model reset: the index passed in is stale
+     * afterwards. The caller re-finds the row by app id — see AppsScreen.togglePinFocused().
+     */
+    Q_INVOKABLE bool togglePinned(int appIndex);
+
+    /// The section a row belongs to — "continue", "pinned" or "all". The page asks for row 0
+    /// to decide which heading is the first one and needs no gap above it.
+    Q_INVOKABLE QString sectionAt(int row) const;
 
     QVariant data(const QModelIndex &index, int role) const override;
 
@@ -145,6 +157,14 @@ private:
     /// The last-played name the sort and the Continue section use — empty on the APPS tab,
     /// where the running-game copy carries the game's own title and must not be promoted.
     QString lastPlayedForSort() const;
+
+    /// Re-reads the pinned names into m_Pinned — empty on the APPS tab, for the same reason
+    /// lastPlayedForSort() is. Called wherever the list is sorted, so the sort and the
+    /// section/role answers work from one copy.
+    void reloadPinned();
+
+    /// Pinned, as the rows are drawn: a game on the GAMES tab whose name is in m_Pinned.
+    bool isPinnedApp(const NvApp& app) const;
 
     /// Recounts both tabs and the retained-monitor flag; emits countsChanged when any moved.
     void updateCounts();
@@ -179,4 +199,8 @@ private:
     // refreshPlaytime() and by resetPlaytime(), which are the only two ways the underlying
     // value can move while this model is alive.
     mutable QHash<int, QString> m_PlaytimeLabels;
+
+    // Normalised pinned names for this host, cached for the same reason as the labels above:
+    // data() asks per row, per repaint. Reloaded by reloadPinned() at every sort.
+    QSet<QString> m_Pinned;
 };

@@ -100,6 +100,13 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
         return computer->stageImagePath;
     case StageSeedRole:
         return computer->stageSeedColor;
+    case StageOpacityRole:
+        // 0 is "never set" — every host saved before 6.0.0 — and reads as the default.
+        // Clamped on the way out as well as on the way in: the floor has already moved once
+        // (60 → 70) and a value stored under the old one must not draw below the new one.
+        return computer->stageOpacity > 0
+                   ? qBound(int(StageOpacityMin), computer->stageOpacity, 100)
+                   : StageOpacityDefault;
     case StreamTweakEnabledRole:
         return computer->streamTweakEnabled;
     case DetailsRole: {
@@ -184,6 +191,7 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
     names[StageColorToRole] = "stageColorTo";
     names[StageImageRole] = "stageImage";
     names[StageSeedRole] = "stageSeed";
+    names[StageOpacityRole] = "stageOpacity";
     names[StreamTweakEnabledRole] = "streamTweakEnabled";
 
     return names;
@@ -456,6 +464,26 @@ void ComputerModel::setHostStageBackground(int computerIndex, const QString& ima
     // just picked a colour — repaint now so the stage answers the click.
     QModelIndex idx = createIndex(computerIndex, 0);
     emit dataChanged(idx, idx, { StageColorFromRole, StageColorToRole, StageImageRole, StageSeedRole });
+}
+
+void ComputerModel::setHostStageOpacity(int computerIndex, int percent)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString uuid;
+    {
+        QReadLocker lock(&computer->lock);
+        uuid = computer->uuid;
+    }
+    if (uuid.isEmpty()) return;
+
+    m_ComputerManager->setStageOpacity(uuid, qBound(int(StageOpacityMin), percent, 100));
+
+    // Same reason as setHostStageBackground: the slider is being dragged, and the card has
+    // to follow it now rather than on the next poll tick.
+    QModelIndex idx = createIndex(computerIndex, 0);
+    emit dataChanged(idx, idx, { StageOpacityRole });
 }
 
 bool ComputerModel::streamTweakEnabled(int computerIndex) const
@@ -1166,6 +1194,44 @@ QVariantMap ComputerModel::lastPlayedFor(int computerIndex) const
     out[QStringLiteral("targetFps")] = rec.lastTargetFps;
     out[QStringLiteral("dropsPct")]  = rec.lastDropsPct;
 
+    return out;
+}
+
+QVariantMap ComputerModel::runningAppFor(int computerIndex) const
+{
+    QVariantMap out;
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return out;
+
+    NvComputer* computer = m_Computers[computerIndex];
+
+    QString name;
+    int appId = 0;
+    {
+        QReadLocker lock(&computer->lock);
+        // ⚠️ Online first: currentGameId is whatever the last serverinfo said, and a host that
+        // has since gone away would otherwise keep offering to resume a session it cannot hold.
+        if (computer->state != NvComputer::CS_ONLINE || computer->currentGameId == 0)
+            return out;
+        for (const NvApp& app : computer->appList) {
+            if (app.id == computer->currentGameId) {
+                name = app.name;
+                appId = app.id;
+                break;
+            }
+        }
+    }
+
+    if (name.isEmpty())
+        return out;
+
+    out[QStringLiteral("name")] = name;
+    // Same artwork rule as lastPlayedFor(): the cache only, never a fetch, and the shared
+    // placeholder when the picture is not on disk.
+    QUrl cover = BoxArtManager::cachedBoxArt(computer, appId);
+    out[QStringLiteral("cover")] = cover.isEmpty()
+                                   ? QStringLiteral("qrc:/res/no_app_image.png")
+                                   : cover.toString();
     return out;
 }
 

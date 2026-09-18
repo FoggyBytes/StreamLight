@@ -3,6 +3,7 @@
 #include "singleinstance.h"
 #include "storereset.h"
 #include "utils.h"
+#include "streaming/vrrratepolicy.h"
 
 #include <QCoreApplication>
 #include <QFileInfo>
@@ -359,6 +360,30 @@ void SystemProperties::refreshDisplays()
     VideoOptions::setNativeDisplays(nativeSizes, monitorRefreshRates);
 
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
+}
+
+QVariantMap SystemProperties::vrrRecommendation()
+{
+    if (VideoOptions::displayCount() == 0) {
+        refreshDisplays();
+    }
+
+    // The highest usable refresh among the client displays: on a two-screen desk the
+    // recommendation that matters is the one the stream can actually reach.
+    int bestRefresh = 0;
+    for (int hz : monitorRefreshRates) {
+        if (hz > bestRefresh) {
+            bestRefresh = hz;
+        }
+    }
+
+    const int fps = VrrRatePolicy::vrrRateForRefresh(bestRefresh);
+    QVariantMap map;
+    if (fps > 0) {
+        map.insert(QStringLiteral("fps"), fps);
+        map.insert(QStringLiteral("refreshHz"), bestRefresh);
+    }
+    return map;
 }
 
 QVariantMap SystemProperties::videoOptions()

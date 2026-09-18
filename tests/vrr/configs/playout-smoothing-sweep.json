@@ -1,0 +1,42 @@
+{
+    "config_schema": 1,
+    "scenarios": [
+        { "name": "session-policy", "mode": "fixed" },
+        { "name": "smoothing-off", "mode": "fixed", "parameters": { "controller": {
+            "timestamp_playout_enabled": 1, "playout_delay_adaptive": 1, "playout_delay_start_us": 6000, "playout_delay_minimum_us": 1000, "playout_delay_maximum_us": 8000,
+            "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 300, "playout_burst_exclusion_per_mille": 750, "pacing_latency_queue_mode_extra": 0,
+            "playout_smoothing_gain_per_mille": 0 } } },
+        { "name": "gain-250", "mode": "fixed", "parameters": { "controller": {
+            "timestamp_playout_enabled": 1, "playout_delay_adaptive": 1, "playout_delay_start_us": 6000, "playout_delay_minimum_us": 1000, "playout_delay_maximum_us": 8000,
+            "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 300, "playout_burst_exclusion_per_mille": 750, "pacing_latency_queue_mode_extra": 0,
+            "playout_smoothing_gain_per_mille": 250, "playout_smoothing_period_alpha_per_mille": 50, "playout_smoothing_max_lag_us": 8000 } } },
+        { "name": "gain-150", "mode": "fixed", "parameters": { "controller": {
+            "timestamp_playout_enabled": 1, "playout_delay_adaptive": 1, "playout_delay_start_us": 6000, "playout_delay_minimum_us": 1000, "playout_delay_maximum_us": 8000,
+            "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 300, "playout_burst_exclusion_per_mille": 750, "pacing_latency_queue_mode_extra": 0,
+            "playout_smoothing_gain_per_mille": 150, "playout_smoothing_period_alpha_per_mille": 50, "playout_smoothing_max_lag_us": 8000 } } },
+        { "name": "gain-100", "mode": "fixed", "parameters": { "controller": {
+            "timestamp_playout_enabled": 1, "playout_delay_adaptive": 1, "playout_delay_start_us": 6000, "playout_delay_minimum_us": 1000, "playout_delay_maximum_us": 8000,
+            "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 300, "playout_burst_exclusion_per_mille": 750, "pacing_latency_queue_mode_extra": 0,
+            "playout_smoothing_gain_per_mille": 100, "playout_smoothing_period_alpha_per_mille": 50, "playout_smoothing_max_lag_us": 8000 } } },
+        { "name": "gain-50", "mode": "fixed", "parameters": { "controller": {
+            "timestamp_playout_enabled": 1, "playout_delay_adaptive": 1, "playout_delay_start_us": 6000, "playout_delay_minimum_us": 1000, "playout_delay_maximum_us": 8000,
+            "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 300, "playout_burst_exclusion_per_mille": 750, "pacing_latency_queue_mode_extra": 0,
+            "playout_smoothing_gain_per_mille": 50, "playout_smoothing_period_alpha_per_mille": 50, "playout_smoothing_max_lag_us": 8000 } } },
+        { "name": "gain-150-lag4", "mode": "fixed", "parameters": { "controller": {
+            "timestamp_playout_enabled": 1, "playout_delay_adaptive": 1, "playout_delay_start_us": 6000, "playout_delay_minimum_us": 1000, "playout_delay_maximum_us": 8000,
+            "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 300, "playout_burst_exclusion_per_mille": 750, "pacing_latency_queue_mode_extra": 0,
+            "playout_smoothing_gain_per_mille": 150, "playout_smoothing_period_alpha_per_mille": 50, "playout_smoothing_max_lag_us": 4000 } } },
+        { "name": "gain-150-lag12", "mode": "fixed", "parameters": { "controller": {
+            "timestamp_playout_enabled": 1, "playout_delay_adaptive": 1, "playout_delay_start_us": 6000, "playout_delay_minimum_us": 1000, "playout_delay_maximum_us": 8000,
+            "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 300, "playout_burst_exclusion_per_mille": 750, "pacing_latency_queue_mode_extra": 0,
+            "playout_smoothing_gain_per_mille": 150, "playout_smoothing_period_alpha_per_mille": 50, "playout_smoothing_max_lag_us": 12000 } } },
+        { "name": "gain-150-max12", "mode": "fixed", "parameters": { "controller": {
+            "timestamp_playout_enabled": 1, "playout_delay_adaptive": 1, "playout_delay_start_us": 6000, "playout_delay_minimum_us": 1000, "playout_delay_maximum_us": 12000,
+            "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 300, "playout_burst_exclusion_per_mille": 750, "pacing_latency_queue_mode_extra": 0,
+            "playout_smoothing_gain_per_mille": 150, "playout_smoothing_period_alpha_per_mille": 50, "playout_smoothing_max_lag_us": 8000 } } },
+        { "name": "gain-150-alpha20", "mode": "fixed", "parameters": { "controller": {
+            "timestamp_playout_enabled": 1, "playout_delay_adaptive": 1, "playout_delay_start_us": 6000, "playout_delay_minimum_us": 1000, "playout_delay_maximum_us": 8000,
+            "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 300, "playout_burst_exclusion_per_mille": 750, "pacing_latency_queue_mode_extra": 0,
+            "playout_smoothing_gain_per_mille": 150, "playout_smoothing_period_alpha_per_mille": 20, "playout_smoothing_max_lag_us": 8000 } } }
+    ]
+}

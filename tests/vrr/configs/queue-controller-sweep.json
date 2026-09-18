@@ -1,0 +1,42 @@
+{
+  "config_schema": 1,
+  "parameters": {
+    "controller": {
+      "timestamp_playout_enabled": 1,
+      "playout_delay_adaptive": 1,
+      "playout_delay_start_us": 4000,
+      "playout_delay_minimum_us": 1000,
+      "playout_delay_maximum_us": 8000,
+      "playout_burst_exclusion_per_mille": 750,
+      "playout_smoothing_gain_per_mille": 0,
+      "playout_metronome_enabled": 0,
+      "pacing_latency_extra_period_numerator": 0,
+      "pacing_latency_queue_mode_extra": 0
+    },
+    "worker": {
+      "queue_capacity": 3
+    }
+  },
+  "scenarios": [
+    { "name": "p980-m0",   "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 980, "playout_delay_margin_us": 0 } } },
+    { "name": "p980-m150", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 980, "playout_delay_margin_us": 150 } } },
+    { "name": "p980-m300", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 980, "playout_delay_margin_us": 300 } } },
+    { "name": "p980-m600", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 980, "playout_delay_margin_us": 600 } } },
+    { "name": "p985-m0",   "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 985, "playout_delay_margin_us": 0 } } },
+    { "name": "p985-m150", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 985, "playout_delay_margin_us": 150 } } },
+    { "name": "p985-m300", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 985, "playout_delay_margin_us": 300 } } },
+    { "name": "p985-m600", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 985, "playout_delay_margin_us": 600 } } },
+    { "name": "p990-m0",   "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 990, "playout_delay_margin_us": 0 } } },
+    { "name": "p990-m150", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 990, "playout_delay_margin_us": 150 } } },
+    { "name": "p990-m300", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 990, "playout_delay_margin_us": 300 } } },
+    { "name": "p990-m600", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 990, "playout_delay_margin_us": 600 } } },
+    { "name": "p995-m0",   "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 995, "playout_delay_margin_us": 0 } } },
+    { "name": "p995-m150", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 995, "playout_delay_margin_us": 150 } } },
+    { "name": "p995-m300", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 995, "playout_delay_margin_us": 300 } } },
+    { "name": "p995-m600", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 995, "playout_delay_margin_us": 600 } } },
+    { "name": "p999-m0",   "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 0 } } },
+    { "name": "p999-m150", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 150 } } },
+    { "name": "p999-m300", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 300 } } },
+    { "name": "p999-m600", "mode": "worker", "parameters": { "controller": { "playout_delay_percentile_per_mille": 999, "playout_delay_margin_us": 600 } } }
+  ]
+}

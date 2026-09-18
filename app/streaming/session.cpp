@@ -1,8 +1,11 @@
+#include <QNetworkInterface>
+#include <QSysInfo>
 #include "session.h"
 #include "settings/playtime.h"
 #include "settings/streamingpreferences.h"
 #include "streaming/streamutils.h"
 #include "backend/nvhttp.h"
+#include "streaming/vrrratepolicy.h"
 #include "backend/richpresencemanager.h"
 
 #include <Limelight.h>
@@ -323,14 +326,18 @@ void Session::clSetAdaptiveTriggers(uint16_t controllerNumber, uint8_t eventFlag
 bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
                             SDL_Window* window, int videoFormat, int width, int height,
                             int frameRate, bool enableVsync, bool enableFramePacing, bool testOnly, IVideoDecoder*& chosenDecoder,
-                            int framePacingMode, bool fractionalVsync)
+                            int framePacingMode, bool fractionalVsync,
+                            bool enableVrr, int vrrDisplayRefreshHz,
+                            [[maybe_unused]] bool* effectiveVrr, bool smoothVrrFrameTiming,
+                            int vrrLatencyMode)
 {
-    DECODER_PARAMETERS params;
+    DECODER_PARAMETERS params = {};
 
     // We should never have vsync enabled for test-mode.
     // It introduces unnecessary delay for renderers that may
     // block while waiting for a backbuffer swap.
     SDL_assert(!enableVsync || !testOnly);
+    SDL_assert(!enableVrr || !testOnly);
 
     params.width = width;
     params.height = height;
@@ -356,16 +363,39 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
     // the renderer's gate would reject it anyway.
     params.fractionalVsync = !testOnly && fractionalVsync;
 
+    params.enableVrr = enableVrr;
+    params.vrrLatencyMode = vrrLatencyMode;
+    params.smoothVrrFrameTiming = smoothVrrFrameTiming;
+    params.vrrDisplayRefreshHz = vrrDisplayRefreshHz;
     params.testOnly = testOnly;
     params.vds = vds;
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                 "V-sync %s",
                 enableVsync ? "enabled" : "disabled");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "VRR %s",
+                enableVrr ? "enabled" : "disabled");
 
 #ifdef HAVE_SLVIDEO
+    // SLVideo owns its own presentation path and has no VRR backend. Try it
+    // as the normal fixed-presentation fallback without passing a misleading
+    // active-VRR request; if it cannot initialize, FFmpeg still receives the
+    // original parameters and may provide a real VRR-capable renderer.
+    DECODER_PARAMETERS slVideoParams = params;
+    slVideoParams.enableVrr = false;
+    slVideoParams.vrrDisplayRefreshHz = 0;
     chosenDecoder = new SLVideoDecoder(testOnly);
-    if (chosenDecoder->initialize(&params)) {
+    if (chosenDecoder->initialize(&slVideoParams)) {
+        if (enableVrr) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR pacing unavailable: unsupported renderer (SLVideo); using fixed presentation");
+            if (effectiveVrr != nullptr) {
+                // Keep the session snapshot aligned with the decoder that was
+                // actually selected without changing the stored preference.
+                *effectiveVrr = false;
+            }
+        }
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "SLVideo video decoder chosen");
         return true;
@@ -762,6 +792,124 @@ Session::~Session()
     SDL_DestroyMutex(m_DecoderLock);
 }
 
+void Session::snapshotPresentationSettings(SDL_Window* window)
+{
+    const bool requestedVrr = m_Preferences->enableVrr;
+    m_VrrRequested = requestedVrr;
+    m_VrrInactiveReason = nullptr;
+    m_PresentationSettings.decoderSelection = m_Preferences->videoDecoderSelection;
+    m_PresentationSettings.effectiveWindowMode = m_Preferences->windowMode;
+
+    int strictRefreshRate = 0;
+    const bool hasStrictRefreshRate = StreamUtils::tryGetDisplayRefreshRate(window, strictRefreshRate);
+    m_PresentationSettings.refreshRate = hasStrictRefreshRate ? strictRefreshRate : 0;
+
+    // Retain the legacy V-sync behavior when display information is incomplete,
+    // but do not use its 60 Hz fallback to qualify VRR.
+    const int vsyncRefreshRate = hasStrictRefreshRate ? strictRefreshRate : 60;
+    if (!hasStrictRefreshRate) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Refresh rate unavailable; assuming 60 Hz for legacy pacing");
+    }
+    m_PresentationSettings.effectiveVsync = m_Preferences->enableVsync;
+    if (m_PresentationSettings.effectiveVsync && vsyncRefreshRate + 5 < m_StreamConfig.fps) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Disabling V-sync because refresh rate limit exceeded");
+        m_PresentationSettings.effectiveVsync = false;
+    }
+
+    m_PresentationSettings.enableFramePacing = m_PresentationSettings.effectiveVsync &&
+                                               m_Preferences->framePacingMode != StreamingPreferences::FP_OFF;
+    m_PresentationSettings.enableVrr = false;
+    m_PresentationSettings.vrrLatencyMode = m_Preferences->vrrLatencyMode;
+    m_PresentationSettings.smoothVrrFrameTiming = m_Preferences->smoothVrrFrameTiming;
+
+    if (requestedVrr) {
+        const bool hasAdaptiveHeadroom = hasStrictRefreshRate &&
+            VrrRatePolicy::hasAdaptiveHeadroom(m_StreamConfig.fps,
+                                               strictRefreshRate);
+        if (!hasStrictRefreshRate) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR disabled: invalid display refresh");
+            m_VrrInactiveReason = "display refresh unknown";
+        }
+        if (!m_PresentationSettings.effectiveVsync) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR disabled: ineffective V-sync");
+            // ⚠️ V-Sync the user left ON was switched off just above because the frame rate
+            // is past refresh + 5. Saying "V-Sync off" then blamed a setting that is on, while
+            // Settings rightly names the frame rate (§73.16).
+            m_VrrInactiveReason = m_Preferences->enableVsync ? "frame rate above display refresh"
+                                                             : "V-Sync off";
+        }
+        if (hasStrictRefreshRate && m_PresentationSettings.effectiveVsync &&
+                !hasAdaptiveHeadroom) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR disabled: %d FPS exceeds the display maximum of %d Hz",
+                        m_StreamConfig.fps, strictRefreshRate);
+            m_VrrInactiveReason = "frame rate above display refresh";
+        }
+        if (hasStrictRefreshRate && m_PresentationSettings.effectiveVsync &&
+                hasAdaptiveHeadroom) {
+            m_PresentationSettings.enableVrr = true;
+            m_PresentationSettings.effectiveWindowMode = StreamingPreferences::WM_FULLSCREEN_DESKTOP;
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "VRR requested at %d Hz; forcing borderless desktop fullscreen for this session",
+                        strictRefreshRate);
+        }
+    }
+
+    // A rejected VRR request still uses the seamless fixed-V-sync fallback.
+    // Keep that fallback paced even when the separate frame-pacing preference
+    // is off, matching renderer-level VRR rejection later in initialization.
+    if (requestedVrr &&
+            !m_PresentationSettings.enableVrr &&
+            m_PresentationSettings.effectiveVsync) {
+        m_PresentationSettings.enableFramePacing = true;
+    }
+
+    // 5.6.0 Fractional V-Sync (§64), resolved HERE and nowhere else, with the cascade it
+    // has always had: V-Sync (which the refresh-rate check above can force off whatever
+    // the profile says), frame pacing, and the setting itself — all read from
+    // m_Preferences, the CLONE that carries host-profile overrides. Reading the global
+    // singleton instead is the defect §64 shipped once and caught by accident.
+    m_PresentationSettings.fractionalVsync = m_PresentationSettings.effectiveVsync &&
+                                             m_PresentationSettings.enableFramePacing &&
+                                             m_Preferences->fractionalVsync;
+
+    // ⚠️ VRR and Fractional V-Sync are mutually exclusive, and VRR wins. On the VRR path
+    // the present uses sync interval 0 (or the tearing flag), so a fractional interval
+    // cannot apply at all: leaving the setting "on" would make it lie rather than do
+    // anything. Said out loud in the log, because a dependent setting ignored in silence
+    // is precisely what appsettings.h warns about for this family of options.
+    //
+    // ⚠️ The consequence worth knowing: a session that qualifies for VRR but has it
+    // refused by the renderer later runs on fixed V-sync WITHOUT the fractional cadence.
+    // Switching VRR off restores it. Re-deciding after the renderer has answered would
+    // mean two places owning this setting, which is the arrangement §64 exists to prevent.
+    if (m_PresentationSettings.enableVrr && m_PresentationSettings.fractionalVsync) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Fractional V-Sync switched off for this session: VRR is active and "
+                    "presents with sync interval 0");
+        m_PresentationSettings.fractionalVsync = false;
+    }
+
+    // This is session-local state.  The stored window preference remains
+    // untouched, so disabling VRR for a later stream returns to that choice.
+    m_IsFullScreen = m_PresentationSettings.effectiveWindowMode != StreamingPreferences::WM_WINDOWED ||
+                     !WMUtils::isRunningDesktopEnvironment();
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Presentation snapshot: V-sync %s, VRR requested %s, VRR enabled %s, "
+                "fractional V-sync %s, refresh %d Hz, window mode %d",
+                m_PresentationSettings.effectiveVsync ? "enabled" : "disabled",
+                requestedVrr ? "yes" : "no",
+                m_PresentationSettings.enableVrr ? "yes" : "no",
+                m_PresentationSettings.fractionalVsync ? "on" : "off",
+                m_PresentationSettings.refreshRate,
+                static_cast<int>(m_PresentationSettings.effectiveWindowMode));
+}
+
 bool Session::initialize(QQuickWindow* qtWindow)
 {
     m_QtWindow = qtWindow;
@@ -845,6 +993,12 @@ bool Session::initialize(QQuickWindow* qtWindow)
         return false;
     }
 
+    // createTestWindow() normally starts on display zero.  Move it to the
+    // display selected for the real streaming window before snapshotting the
+    // refresh rate, otherwise a multi-monitor session could qualify VRR using
+    // the wrong panel's refresh.
+    SDL_SetWindowPosition(testWindow, x, y);
+
     qInfo() << "Server GPU:" << m_Computer->gpuModel;
     qInfo() << "Server GFE version:" << m_Computer->gfeVersion;
 
@@ -852,6 +1006,7 @@ bool Session::initialize(QQuickWindow* qtWindow)
     m_VideoCallbacks.setup = drSetup;
 
     m_StreamConfig.fps = m_Preferences->fps;
+    snapshotPresentationSettings(testWindow);
     m_StreamConfig.bitrate = m_Preferences->bitrateKbps;
 
 #ifndef STEAM_LINK
@@ -1066,44 +1221,52 @@ bool Session::initialize(QQuickWindow* qtWindow)
         m_SupportedVideoFormats.deprioritizeByMask(~VIDEO_FORMAT_MASK_10BIT);
     }
 
-    switch (m_Preferences->windowMode)
-    {
-    default:
-        // Normally we'd default to fullscreen desktop when starting in windowed
-        // mode, but in the case of a slow GPU, we want to use real fullscreen
-        // to allow the display to assist with the video scaling work.
-        if (WMUtils::isGpuSlow()) {
-            m_FullScreenFlag = SDL_WINDOW_FULLSCREEN;
-            break;
-        }
-        // Fall-through
-    case StreamingPreferences::WM_FULLSCREEN_DESKTOP:
-        // Only use full-screen desktop mode if we're running a desktop environment
-        if (WMUtils::isRunningDesktopEnvironment()) {
-            m_FullScreenFlag = SDL_WINDOW_FULLSCREEN_DESKTOP;
-            break;
-        }
-        // Fall-through
-    case StreamingPreferences::WM_FULLSCREEN:
+    if (m_PresentationSettings.enableVrr) {
+        // The session snapshot has already established that this is an active
+        // VRR request.  Do not overwrite the saved mode, but always create the
+        // streaming window in the compatible borderless mode.
+        m_FullScreenFlag = SDL_WINDOW_FULLSCREEN_DESKTOP;
+    }
+    else {
+        switch (m_PresentationSettings.effectiveWindowMode)
+        {
+        default:
+            // Normally we'd default to fullscreen desktop when starting in windowed
+            // mode, but in the case of a slow GPU, we want to use real fullscreen
+            // to allow the display to assist with the video scaling work.
+            if (WMUtils::isGpuSlow()) {
+                m_FullScreenFlag = SDL_WINDOW_FULLSCREEN;
+                break;
+            }
+            // Fall-through
+        case StreamingPreferences::WM_FULLSCREEN_DESKTOP:
+            // Only use full-screen desktop mode if we're running a desktop environment
+            if (WMUtils::isRunningDesktopEnvironment()) {
+                m_FullScreenFlag = SDL_WINDOW_FULLSCREEN_DESKTOP;
+                break;
+            }
+            // Fall-through
+        case StreamingPreferences::WM_FULLSCREEN:
 #ifdef Q_OS_DARWIN
-        if (qEnvironmentVariableIntValue("I_WANT_BUGGY_FULLSCREEN") == 0) {
-            // Don't use "real" fullscreen on macOS by default. See comments above.
-            m_FullScreenFlag = SDL_WINDOW_FULLSCREEN_DESKTOP;
-        }
-        else {
-            m_FullScreenFlag = SDL_WINDOW_FULLSCREEN;
-        }
+            if (qEnvironmentVariableIntValue("I_WANT_BUGGY_FULLSCREEN") == 0) {
+                // Don't use "real" fullscreen on macOS by default. See comments above.
+                m_FullScreenFlag = SDL_WINDOW_FULLSCREEN_DESKTOP;
+            }
+            else {
+                m_FullScreenFlag = SDL_WINDOW_FULLSCREEN;
+            }
 #else
-        m_FullScreenFlag = SDL_WINDOW_FULLSCREEN;
+            m_FullScreenFlag = SDL_WINDOW_FULLSCREEN;
 #endif
-        break;
+            break;
+        }
     }
 
 #if !SDL_VERSION_ATLEAST(2, 0, 11)
     // HACK: Using a full-screen window breaks mouse capture on the Pi's LXDE
     // GUI environment. Force the session to use windowed mode (which won't
     // really matter anyway because the MMAL renderer always draws full-screen).
-    if (qgetenv("DESKTOP_SESSION") == "LXDE-pi") {
+    if (!m_PresentationSettings.enableVrr && qgetenv("DESKTOP_SESSION") == "LXDE-pi") {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Forcing windowed mode on LXDE-Pi");
         m_FullScreenFlag = 0;
@@ -1767,8 +1930,14 @@ void Session::toggleFullscreen()
     // to deadlock when transitioning out of fullscreen. Destroy the decoder before
     // exiting fullscreen as a workaround. See issue #973.
     SDL_LockMutex(m_DecoderLock);
-    delete m_VideoDecoder;
-    m_VideoDecoder = nullptr;
+    // Detached before the delete (6.0.0, §73.19): the destructor tears down D3D11 and
+    // can pump window messages, and a Qt timer running inside that pump must not find
+    // a decoder half-destroyed behind this pointer.
+    {
+        IVideoDecoder* oldDecoder = m_VideoDecoder;
+        m_VideoDecoder = nullptr;
+        delete oldDecoder;
+    }
     SDL_UnlockMutex(m_DecoderLock);
 #endif
 
@@ -2705,6 +2874,20 @@ void Session::exec()
     // Hijack this thread to be the SDL main thread. We have to do this
     // because we want to suspend all Qt processing until the stream is over.
     SDL_Event event;
+    auto notifyDecoderWindowState = [this](uint32_t stateChangeFlags) {
+        if (m_VideoDecoder == nullptr) {
+            return;
+        }
+
+        WINDOW_STATE_CHANGE_INFO windowChangeInfo = {};
+        windowChangeInfo.window = m_Window;
+        windowChangeInfo.stateChangeFlags = stateChangeFlags;
+
+        // State-only notifications are advisory.  Legacy renderers may return
+        // false for these new flags, but they must never force a renderer reset.
+        m_VideoDecoder->notifyWindowChanged(&windowChangeInfo);
+    };
+
     for (;;) {
 #if SDL_VERSION_ATLEAST(2, 0, 18) && !defined(STEAM_LINK)
         // SDL 2.0.18 has a proper wait event implementation that uses platform
@@ -2742,6 +2925,14 @@ void Session::exec()
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                         "Quit event received");
             goto DispatchDeferredCleanup;
+
+        case SDL_APP_WILLENTERBACKGROUND:
+            notifyDecoderWindowState(WINDOW_STATE_CHANGE_SUSPENDED);
+            break;
+
+        case SDL_APP_DIDENTERFOREGROUND:
+            notifyDecoderWindowState(WINDOW_STATE_CHANGE_RESTORED);
+            break;
 
         case SDL_USEREVENT:
             switch (event.user.code) {
@@ -2787,6 +2978,17 @@ void Session::exec()
             break;
 
         case SDL_WINDOWEVENT:
+            switch (event.window.event) {
+            case SDL_WINDOWEVENT_MINIMIZED:
+            case SDL_WINDOWEVENT_HIDDEN:
+                notifyDecoderWindowState(WINDOW_STATE_CHANGE_MINIMIZED);
+                break;
+            case SDL_WINDOWEVENT_RESTORED:
+            case SDL_WINDOWEVENT_SHOWN:
+                notifyDecoderWindowState(WINDOW_STATE_CHANGE_RESTORED);
+                break;
+            }
+
             // Early handling of some events
             switch (event.window.event) {
             case SDL_WINDOWEVENT_FOCUS_LOST:
@@ -2869,21 +3071,52 @@ void Session::exec()
                 }
 
                 int newDisplayIndex = SDL_GetWindowDisplayIndex(m_Window);
+
+                // A DISPLAY_CHANGED notification can describe a refresh-mode
+                // switch on the same monitor, not just a move to another
+                // display. Some backends report that mode transition as a
+                // size change instead, so cover both before letting an
+                // adapter retain the old immutable timing period.
+                bool refreshMayHaveChanged = newDisplayIndex != currentDisplayIndex ||
+                    event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED;
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+                refreshMayHaveChanged = refreshMayHaveChanged ||
+                    event.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED;
+#endif
+                if (m_PresentationSettings.enableVrr && refreshMayHaveChanged) {
+                    int currentRefreshRate = 0;
+                    if (!StreamUtils::tryGetDisplayRefreshRate(m_Window,
+                                                               currentRefreshRate) ||
+                            currentRefreshRate != m_PresentationSettings.refreshRate) {
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                    "VRR disabled for this session after display refresh changed or became unavailable; falling back to fixed pacing");
+                        m_PresentationSettings.enableVrr = false;
+                        m_VrrInactiveReason = "display refresh changed";
+                        forceRecreation = true;
+                    }
+                }
+
                 if (newDisplayIndex != currentDisplayIndex) {
                     windowChangeInfo.stateChangeFlags |= WINDOW_STATE_CHANGE_DISPLAY;
 
                     windowChangeInfo.displayIndex = newDisplayIndex;
 
-                    // If the refresh rates have changed, we will need to go through the full
-                    // decoder recreation path to ensure Pacer is switched to the new display
-                    // and that we apply any V-Sync disablement rules that may be needed for
-                    // this display.
+                    // A VRR session's refresh is intentionally immutable. If
+                    // the window crosses to a display with a different (or
+                    // unreadable) refresh, recreate the decoder on the safe
+                    // legacy path instead of pacing against a stale period.
                     SDL_DisplayMode oldMode, newMode;
                     if (SDL_GetCurrentDisplayMode(currentDisplayIndex, &oldMode) < 0 ||
                             SDL_GetCurrentDisplayMode(newDisplayIndex, &newMode) < 0 ||
                             oldMode.refresh_rate != newMode.refresh_rate) {
                         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                                     "Forcing renderer recreation due to refresh rate change between displays");
+                        if (m_PresentationSettings.enableVrr) {
+                            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                        "VRR disabled for this session after display refresh changed; falling back to fixed pacing");
+                            m_PresentationSettings.enableVrr = false;
+                            m_VrrInactiveReason = "display refresh changed";
+                        }
                         forceRecreation = true;
                     }
                 }
@@ -2917,8 +3150,27 @@ void Session::exec()
 
             SDL_LockMutex(m_DecoderLock);
 
+            // ⚠️ 6.0.0 (§73.19) — the crash both dumps of 16/09 recorded. From here to the end
+            // of chooseDecoder() this thread pumps window messages more than once
+            // (flushWindowEvents(), the renderer teardown, D3D11 creation), and Qt runs its
+            // timers inside those pumps. SessionTelemetrySampler then took m_DecoderLock — an
+            // SDL mutex is recursive, so on the same thread it succeeds — and ran a
+            // dynamic_cast on the decoder this block had just deleted; on freed memory MSVC
+            // throws std::__non_rtti_object, and nothing catches it. VRR made it frequent,
+            // because a decode-ready fence timeout lands here several times a minute.
+            //
+            // Two guards: the pointer is detached BEFORE the delete, and readers skip while
+            // m_ReplacingVideoDecoder is set — chooseDecoder() assigns the new decoder before
+            // initialising it and deletes it before nulling it on failure, so a null pointer
+            // alone would not cover the whole window.
+            m_ReplacingVideoDecoder = true;
+
             // Destroy the old decoder
-            delete m_VideoDecoder;
+            {
+                IVideoDecoder* oldDecoder = m_VideoDecoder;
+                m_VideoDecoder = nullptr;
+                delete oldDecoder;
+            }
 
             // Insert a barrier to discard any additional window events
             // that could cause the renderer to be and recreated again.
@@ -2962,24 +3214,31 @@ void Session::exec()
                                    s_ActiveSession->m_VideoDecoder,
                                    enableVsync ? (int)m_Preferences->framePacingMode
                                                : (int)StreamingPreferences::FP_OFF,
-                                   // 5.6.0. The cascade is resolved here rather than in the
-                                   // renderer so that all three arrive already agreeing:
-                                   // V-Sync (which the refresh-rate check just above can
-                                   // force off whatever the profile says), frame pacing,
-                                   // and the setting itself — all read from the session's
-                                   // preferences, which is where a host profile's overrides
-                                   // have been applied. The renderer gates on the same three
-                                   // again plus the refresh ratio; it is the only thing that
-                                   // knows the ratio, and nothing here tries to guess it.
-                                   enableVsync &&
-                                   m_Preferences->framePacingMode != StreamingPreferences::FP_OFF &&
-                                   m_Preferences->fractionalVsync)) {
+                                   // 5.6.0 + 6.0.0: the cascade is no longer rebuilt here.
+                                   // snapshotPresentationSettings() resolved it once, from
+                                   // the session's cloned preferences, and also settled the
+                                   // mutual exclusion with VRR. Two places deciding this was
+                                   // the shape of the defect §64 warns about.
+                                   m_PresentationSettings.fractionalVsync,
+                                   // VRR (6.0.0): from the session snapshot, never from the live
+                                   // preferences — it is taken once in initialize(), so a decoder
+                                   // reset mid-stream cannot land on a different pacing mode than
+                                   // the one the session was qualified for. effectiveVrr points
+                                   // back at the snapshot: the renderer is allowed to refuse.
+                                   m_PresentationSettings.enableVrr,
+                                   m_PresentationSettings.refreshRate,
+                                   &m_PresentationSettings.enableVrr,
+                                   m_PresentationSettings.smoothVrrFrameTiming,
+                                   m_PresentationSettings.vrrLatencyMode)) {
+                    m_ReplacingVideoDecoder = false;
                     SDL_UnlockMutex(m_DecoderLock);
                     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                                  "Failed to recreate decoder after reset");
                     emit displayLaunchError(tr("Unable to initialize video decoder. Please check your streaming settings and try again."));
                     goto DispatchDeferredCleanup;
                 }
+
+                m_ReplacingVideoDecoder = false;
 
                 // As of SDL 2.0.12, SDL_RecreateWindow() doesn't carry over mouse capture
                 // or mouse hiding state to the new window. By capturing after the decoder
@@ -3109,8 +3368,14 @@ DispatchDeferredCleanup:
     // NB: This must happen before LiStopConnection() for pull-based
     // decoders.
     SDL_LockMutex(m_DecoderLock);
-    delete m_VideoDecoder;
-    m_VideoDecoder = nullptr;
+    // Detached before the delete (6.0.0, §73.19): the destructor tears down D3D11 and
+    // can pump window messages, and a Qt timer running inside that pump must not find
+    // a decoder half-destroyed behind this pointer.
+    {
+        IVideoDecoder* oldDecoder = m_VideoDecoder;
+        m_VideoDecoder = nullptr;
+        delete oldDecoder;
+    }
     SDL_UnlockMutex(m_DecoderLock);
 
     // Propagate state changes from the SDL window back to the Qt window
@@ -3159,4 +3424,22 @@ DispatchDeferredCleanup:
     // When it is complete, it will release our s_ActiveSessionSemaphore
     // reference.
     QThreadPool::globalInstance()->start(new DeferredSessionCleanupTask(this));
+}
+
+QString Session::vrrCalibrationContext() const
+{
+    QStringList networks;
+    for (const auto& iface : QNetworkInterface::allInterfaces()) {
+        if (!(iface.flags() & QNetworkInterface::IsUp) ||
+            !(iface.flags() & QNetworkInterface::IsRunning) ||
+            (iface.flags() & QNetworkInterface::IsLoopBack)) continue;
+        QStringList addresses;
+        for (const auto& entry : iface.addressEntries()) addresses << entry.ip().toString();
+        addresses.sort();
+        networks << iface.hardwareAddress() + ":" + addresses.join(",");
+    }
+    networks.sort();
+    return QString("vrr13-history-1|%1|%2|%3|%4|%5")
+        .arg(m_Computer->uuid).arg(m_App.id).arg(m_StreamConfig.bitrate)
+        .arg(QSysInfo::kernelVersion()).arg(networks.join(";"));
 }

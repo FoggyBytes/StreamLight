@@ -1,0 +1,55 @@
+{
+  "config_schema": 1,
+  "scenarios": [
+    {
+      "name": "session-policy",
+      "mode": "fixed",
+      "assertions": [
+        {"metric": "simulation.sender_cadence.spacing_accuracy_percent", "operator": ">=", "value": 99.95},
+        {"metric": "simulation.playout_delay_us.max", "operator": "<=", "value": 16000},
+        {"metric": "simulation.latency_us.decode_to_submission.p99", "operator": "<=", "value": 30000},
+        {"metric": "simulation.tear.modelled_interval_violations", "operator": "<=", "value": 0}
+      ]
+    },
+    {
+      "name": "periodic-decision",
+      "mode": "fixed",
+      "parameters": {"execution": {"periodic_stall_every_frames": 37, "periodic_stall_us": 3000}},
+      "assertions": [
+        {"metric": "simulation.playout_delay_us.max", "operator": "<=", "value": 16000},
+        {"metric": "simulation.latency_us.decode_to_submission.p99", "operator": "<=", "value": 30000},
+        {"metric": "simulation.tear.modelled_interval_violations", "operator": "<=", "value": 0}
+      ]
+    },
+    {
+      "name": "periodic-preparation",
+      "mode": "fixed",
+      "parameters": {"execution": {"periodic_stall_every_frames": 31, "periodic_preparation_stall_us": 4000}},
+      "assertions": [
+        {"metric": "simulation.playout_delay_us.max", "operator": "<=", "value": 16000},
+        {"metric": "simulation.latency_us.decode_to_submission.p99", "operator": "<=", "value": 30000},
+        {"metric": "simulation.tear.modelled_interval_violations", "operator": "<=", "value": 0}
+      ]
+    },
+    {
+      "name": "periodic-submission",
+      "mode": "fixed",
+      "parameters": {"execution": {"periodic_stall_every_frames": 43, "periodic_submission_stall_us": 3000}},
+      "assertions": [
+        {"metric": "simulation.playout_delay_us.max", "operator": "<=", "value": 16000},
+        {"metric": "simulation.latency_us.decode_to_submission.p99", "operator": "<=", "value": 30000},
+        {"metric": "simulation.tear.modelled_interval_violations", "operator": "<=", "value": 0}
+      ]
+    },
+    {
+      "name": "scheduler-burst",
+      "mode": "fixed",
+      "parameters": {"execution": {"periodic_stall_every_frames": 53, "periodic_stall_burst_frames": 3, "periodic_render_wake_delay_us": 2500, "periodic_target_wake_delay_us": 2500}},
+      "assertions": [
+        {"metric": "simulation.playout_delay_us.max", "operator": "<=", "value": 16000},
+        {"metric": "simulation.latency_us.decode_to_submission.p99", "operator": "<=", "value": 30000},
+        {"metric": "simulation.tear.modelled_interval_violations", "operator": "<=", "value": 0}
+      ]
+    }
+  ]
+}

@@ -26,7 +26,7 @@ Item {
 
     /*
      * Optional badge above the picture, in two tones: the statement, then the quieter figure
-     * beside it — "LAST PLAYED FOR 18 H 42 M" · "2 H AGO".
+     * beside it — "LAST PLAYED 2 H AGO" · "18 H 42 M TOTAL".
      *
      * Home needs one; without it the card simply has a game on it and never says why. The
      * spotlight does not: the library beside it already establishes that this is the selected
@@ -39,6 +39,11 @@ Item {
      */
     property string badgeMain: ""
     property string badgeMuted: ""
+    // A live dot at the head of the badge (6.0.0), for a state that is happening now rather
+    // than a fact about the past — Home's "Streaming now". It pulses on the same rhythm as the
+    // STREAMING tag on the host page's rows, and holds still with reduced animations.
+    // Transparent means no dot.
+    property color  badgeDot: "transparent"
     property string title: ""
     property url    cover: ""
 
@@ -172,6 +177,23 @@ Item {
                 id: badgeRow
                 anchors.centerIn: parent
                 spacing: root._px(9)
+
+                Rectangle {
+                    id: badgeDotMark
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.badgeDot.a > 0
+                    width: root._px(8); height: width
+                    radius: width / 2
+                    color: root.badgeDot
+
+                    SequentialAnimation on opacity {
+                        running: badgeDotMark.visible && !Theme.reduceAnimations
+                        loops: Animation.Infinite
+                        alwaysRunToEnd: true
+                        NumberAnimation { to: 0.45; duration: 900; easing.type: Easing.InOutSine }
+                        NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutSine }
+                    }
+                }
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter

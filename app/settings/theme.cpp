@@ -16,6 +16,7 @@ namespace
 
     const char* SER_ACCENT = "theme/accent";
     const char* SER_REDUCE = "theme/reduceanimations";
+    const char* SER_STARTUP = "theme/startupanimation";
 
     /**
      * Perceived brightness, not the average of the channels: green reads far lighter than blue
@@ -41,6 +42,7 @@ Theme::Theme(QObject* parent)
         m_Accent = DefaultAccent;
     }
     m_ReduceAnimations = settings.value(SER_REDUCE, false).toBool();
+    m_StartupAnimation = settings.value(SER_STARTUP, true).toBool();
 }
 
 Theme* Theme::get(QQmlEngine* qmlEngine)
@@ -134,6 +136,17 @@ void Theme::setReduceAnimations(bool on)
     emit changed();
 }
 
+void Theme::setStartupAnimation(bool on)
+{
+    if (on == m_StartupAnimation) {
+        return;
+    }
+
+    m_StartupAnimation = on;
+    save();
+    emit changed();
+}
+
 void Theme::resetAccent()
 {
     setAccent(DefaultAccent);
@@ -146,4 +159,5 @@ void Theme::save() const
     QSettings settings;
     settings.setValue(SER_ACCENT, m_Accent.name());
     settings.setValue(SER_REDUCE, m_ReduceAnimations);
+    settings.setValue(SER_STARTUP, m_StartupAnimation);
 }

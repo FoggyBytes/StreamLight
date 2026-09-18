@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include <QAtomicInt>
 #include <QElapsedTimer>
 #include <QSemaphore>
@@ -180,6 +182,17 @@ public:
     // Host and app of this session — used by the live Stream Settings overlay to
     // resolve which profile layer (per-game / host profile / global) to save to.
     NvComputer* getComputer() const { return m_Computer; }
+
+    // Whether THIS session runs VRR pacing — the snapshot, which the renderer can still
+    // turn false by refusing it. The live Stream Settings overlay locks Frame pacing on it.
+    bool isVrrActive() const { return m_PresentationSettings.enableVrr; }
+
+    // Whether the user asked for VRR on this session, and — when it is not running — why
+    // Session refused it or turned it off. The reason is a string literal behind an atomic
+    // pointer: it can change mid-stream (display refresh changed) while the decoder thread
+    // formats the overlay. nullptr when nothing was refused here.
+    bool isVrrRequested() const { return m_VrrRequested; }
+    const char* vrrInactiveReason() const { return m_VrrInactiveReason.load(); }
     const NvApp& getApp() const { return m_App; }
 
     // Show or hide the performance overlay — bound to the overlay hotkey
@@ -213,7 +226,12 @@ public:
 
     /** Accessors used by SessionTelemetrySampler for thread-safe decoder stat reads. */
     SDL_mutex*    decoderLock()  const { return m_DecoderLock;  }
+    // True while Session is replacing the decoder after a renderer reset (6.0.0, §73.19).
+    // Readers that can run inside a window-message pump on this thread — Qt timers — must
+    // skip, because videoDecoder() is not a usable object for that whole stretch.
+    bool          isReplacingVideoDecoder() const { return m_ReplacingVideoDecoder; }
     IVideoDecoder* videoDecoder() const { return m_VideoDecoder; }
+    QString vrrCalibrationContext() const;
 
     void flushWindowEvents();
 
@@ -375,6 +393,8 @@ private:
 
     bool populateDecoderProperties(SDL_Window* window);
 
+    void snapshotPresentationSettings(SDL_Window* window);
+
     IAudioRenderer* createAudioRenderer(const POPUS_MULTISTREAM_CONFIGURATION opusConfig);
 
     bool initializeAudioRenderer();
@@ -419,7 +439,13 @@ private:
                        bool testOnly,
                        IVideoDecoder*& chosenDecoder,
                        int framePacingMode = 0,
-                       bool fractionalVsync = false);
+                       bool fractionalVsync = false,
+                       // VRR (6.0.0): enableVrr is the request, effectiveVrr the answer —
+                       // the renderer can still refuse it. vrrDisplayRefreshHz is strict:
+                       // zero means the session was never qualified for VRR.
+                       bool enableVrr = false, int vrrDisplayRefreshHz = 0,
+                       bool* effectiveVrr = nullptr, bool smoothVrrFrameTiming = true,
+                       int vrrLatencyMode = 0);
 
     static
     void clStageStarting(int stage);
@@ -474,7 +500,27 @@ private:
     static
     int drSubmitDecodeUnit(PDECODE_UNIT du);
 
+    struct PresentationSettings {
+        bool effectiveVsync = false;
+        bool enableFramePacing = false;
+        bool enableVrr = false;
+        int vrrLatencyMode = 0;
+        bool smoothVrrFrameTiming = true;
+        // Resolved in snapshotPresentationSettings(): the §64 cascade, and off whenever
+        // VRR is on — the two are mutually exclusive.
+        bool fractionalVsync = false;
+        int refreshRate = 0;
+        StreamingPreferences::WindowMode effectiveWindowMode = StreamingPreferences::WM_WINDOWED;
+        StreamingPreferences::VideoDecoderSelection decoderSelection = StreamingPreferences::VDS_AUTO;
+    };
+
     StreamingPreferences* m_Preferences;
+    PresentationSettings m_PresentationSettings;
+    bool m_VrrRequested = false;
+    std::atomic<const char*> m_VrrInactiveReason{nullptr};
+    // Main thread only, like its one reader (SessionTelemetrySampler): the re-entrancy it
+    // guards against is on the same thread, so there is nothing to synchronise.
+    bool m_ReplacingVideoDecoder = false;
     bool m_IsFullScreen;
     SupportedVideoFormatList m_SupportedVideoFormats; // Sorted in order of descending priority
     STREAM_CONFIGURATION m_StreamConfig;

@@ -50,7 +50,7 @@ win32 {
     }
 
     INCLUDEPATH += $$PWD/../libs/windows/include
-    LIBS += ws2_32.lib winmm.lib dxva2.lib ole32.lib gdi32.lib user32.lib d3d9.lib dwmapi.lib dbghelp.lib iphlpapi.lib
+    LIBS += dcomp.lib advapi32.lib ws2_32.lib winmm.lib dxva2.lib ole32.lib gdi32.lib user32.lib d3d9.lib dwmapi.lib dbghelp.lib iphlpapi.lib
 }
 macx:!disable-prebuilts {
     INCLUDEPATH += $$PWD/../libs/mac/include $$PWD/../libs/mac/include/SDL2
@@ -167,6 +167,7 @@ SOURCES += \
     backend/linkspeed.cpp \
     backend/linkmatcher.cpp \
     backend/powerstatus.cpp \
+    backend/windowmove.cpp \
     backend/gradientimage.cpp \
     backend/launchgate.cpp \
     streaming/launchcurtain.cpp \
@@ -220,6 +221,7 @@ SOURCES += \
     gui/sdlgamepadkeynavigation.cpp \
     streaming/video/overlaymanager.cpp \
     streaming/video/streamsettingsoverlay.cpp \
+    streaming/vrrratepolicy.cpp \
     backend/systemproperties.cpp \
     backend/appupdate.cpp \
     wm.cpp
@@ -231,6 +233,7 @@ HEADERS += \
     backend/linkspeed.h \
     backend/linkmatcher.h \
     backend/powerstatus.h \
+    backend/windowmove.h \
     backend/gradientimage.h \
     backend/launchgate.h \
     streaming/launchcurtain.h \
@@ -272,6 +275,7 @@ HEADERS += \
     HueSyncManager.h \
     TailscaleManager.h \
     streaming/video/decoder.h \
+    streaming/vrrratepolicy.h \
     streaming/bandwidth.h \
     streaming/streamutils.h \
     path.h \
@@ -281,6 +285,7 @@ HEADERS += \
     streaming/video/overlaymanager.h \
     streaming/video/streamsettingsoverlay.h \
     backend/systemproperties.h \
+    windowsvblankvirtualization.h \
     backend/appupdate.h
 
 # Platform-specific renderers and decoders
@@ -293,15 +298,41 @@ ffmpeg {
         streaming/video/ffmpeg-renderers/genhwaccel.cpp \
         streaming/video/ffmpeg-renderers/sdlvid.cpp \
         streaming/video/ffmpeg-renderers/swframemapper.cpp \
-        streaming/video/ffmpeg-renderers/pacer/pacer.cpp
+        streaming/video/ffmpeg-renderers/pacer/pacer.cpp \
+        streaming/video/ffmpeg-renderers/pacer/vrrpacingworker.cpp \
+        streaming/video/ffmpeg-renderers/pacer/vrr/vrrtimingcontroller.cpp \
+        streaming/video/ffmpeg-renderers/pacer/vrr/vrrtargetwaiter.cpp \
+        streaming/video/ffmpeg-renderers/pacer/vrr/profile.cpp
 
     HEADERS += \
         streaming/video/ffmpeg.h \
+        streaming/video/incomingframetiming.h \
         streaming/video/ffmpeg-renderers/renderer.h \
         streaming/video/ffmpeg-renderers/genhwaccel.h \
         streaming/video/ffmpeg-renderers/sdlvid.h \
         streaming/video/ffmpeg-renderers/swframemapper.h \
-        streaming/video/ffmpeg-renderers/pacer/pacer.h
+        streaming/video/ffmpeg-renderers/pacer/pacer.h \
+        streaming/video/ffmpeg-renderers/pacer/pacertelemetry.h \
+        streaming/video/ffmpeg-renderers/pacer/vrrpacingworker.h \
+        streaming/video/ffmpeg-renderers/ivrrframepresenter.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/vrrtypes.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/presentationtiming.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/prediction.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/recentreadiness.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/readinesswindow.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/readinessfeedback.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/smoothnessfeedback.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/vrrtimingcontroller.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/vrrframedroppolicy.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/vrrtargetwaiter.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/profile.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/profilecodec.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/intervalbuffer.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/meanmissbuffer.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/reserve.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/tracequeue.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/workload.h \
+        streaming/video/ffmpeg-renderers/overlaycompletion.h
 }
 libva {
     message(VAAPI renderer selected)
@@ -433,11 +464,17 @@ win32:!winrt {
     SOURCES += \
         streaming/video/ffmpeg-renderers/dxva2.cpp \
         streaming/video/ffmpeg-renderers/d3d11va.cpp \
+        streaming/video/ffmpeg-renderers/d3d11composition.cpp \
         streaming/video/ffmpeg-renderers/pacer/dxvsyncsource.cpp
 
     HEADERS += \
         streaming/video/ffmpeg-renderers/dxva2.h \
         streaming/video/ffmpeg-renderers/d3d11va.h \
+        streaming/video/ffmpeg-renderers/d3d11composition.h \
+        streaming/video/ffmpeg-renderers/presentationclock.h \
+        streaming/video/ffmpeg-renderers/dxgipresent.h \
+        streaming/video/ffmpeg-renderers/d3d11fencewait.h \
+        streaming/video/ffmpeg-renderers/d3d11bindpolicy.h \
         streaming/video/ffmpeg-renderers/pacer/dxvsyncsource.h
 }
 macx {
