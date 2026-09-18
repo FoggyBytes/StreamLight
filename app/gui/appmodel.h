@@ -13,14 +13,17 @@ class AppModel : public QAbstractListModel
     Q_OBJECT
 
     /**
-     * Which half of the host's list the rows show (5.9.0): "games", "apps", or "" for all of
-     * it. Empty by default, so every model built before the tabs existed — the unlock flow
-     * looking for Desktop, the host stage — still sees the whole list.
+     * Which part of the host's list the rows show (5.9.0): "games", "apps", "all" (6.1.0 —
+     * everything but the host controls, see isAllCategory()), or
+     * "" for the whole list unfiltered. Empty by default, so every model built before the tabs
+     * existed — the unlock flow looking for Desktop, the host stage — still sees everything.
+     * ⚠️ "all" is NOT "": the ALL tab leaves out the 2.0 host controls.
      */
     Q_PROPERTY(QString category READ category WRITE setCategory NOTIFY categoryChanged)
     /// How many entries each tab would show, hidden ones filtered exactly as the rows are.
     Q_PROPERTY(int gamesCount READ gamesCount NOTIFY countsChanged)
     Q_PROPERTY(int appsCount READ appsCount NOTIFY countsChanged)
+    Q_PROPERTY(int allCount READ allCount NOTIFY countsChanged)
     /**
      * This client holds a Remote Monitor the server kept after its stream ended. The 2.0
      * servers then send only Resume and Disconnect Monitor, which is the whole app list — so
@@ -43,6 +46,7 @@ class AppModel : public QAbstractListModel
         IsAppRole,
         ControlRole,
         PinnedRole,
+        MovableRole,
     };
 
 public:
@@ -52,6 +56,7 @@ public:
     void setCategory(const QString& category);
     int gamesCount() const { return m_GamesCount; }
     int appsCount() const { return m_AppsCount; }
+    int allCount() const { return m_AllCount; }
     bool remoteMonitorActive() const { return m_RemoteMonitorActive; }
 
     /// Index of a visible app by id, or -1. Used to relaunch the same entry after a host
@@ -67,6 +72,9 @@ public:
     // Desktop app, which is the only thing worth launching on a host where nobody has
     // logged in yet.
     Q_INVOKABLE int indexOfAppNamed(const QString& name) const;
+
+    /// Index of the host's desktop entry under either of its names (isDesktopName()), or -1.
+    Q_INVOKABLE int indexOfDesktop() const;
 
     Q_INVOKABLE int getDirectLaunchAppIndex();
 
@@ -128,6 +136,17 @@ public:
      */
     Q_INVOKABLE bool togglePinned(int appIndex);
 
+    // ── GAMES / APPS by hand (6.1.0) ─────────────────────────────────────────────────────
+    /**
+     * Moves the entry at this row to the other of GAMES and APPS, stores the choice
+     * (PlaytimeManager::setCategoryOverride) and rebuilds the rows. Returns true when it now
+     * sits under APPS. Does nothing for a host control (role `movable` is false).
+     *
+     * ⚠️ A model reset: on GAMES or APPS the row leaves the list, so the index passed in is
+     * stale afterwards.
+     */
+    Q_INVOKABLE bool moveToOtherTab(int appIndex);
+
     /// The section a row belongs to — "continue", "pinned" or "all". The page asks for row 0
     /// to decide which heading is the first one and needs no gap above it.
     Q_INVOKABLE QString sectionAt(int row) const;
@@ -153,6 +172,13 @@ private:
 
     /// Does this app belong in the current tab? Always true with no category set.
     bool matchesCategory(const NvApp& app) const;
+
+    /// APPS rather than GAMES: the user's choice when there is one, isAppsCategory() otherwise.
+    /// ⚠️ Use this, never isAppsCategory() directly, anywhere in the model.
+    bool isApp(const NvApp& app) const;
+
+    /// Rebuilds m_VisibleApps for the current tab and sorts it, as one model reset.
+    void rebuildVisibleApps();
 
     /// The last-played name the sort and the Continue section use — empty on the APPS tab,
     /// where the running-game copy carries the game's own title and must not be promoted.
@@ -190,6 +216,7 @@ private:
     QString m_Category;
     int m_GamesCount = 0;
     int m_AppsCount = 0;
+    int m_AllCount = 0;
     bool m_RemoteMonitorActive = false;
 
     // Formatted play time by app id, filled on first read of each row.
@@ -203,4 +230,8 @@ private:
     // Normalised pinned names for this host, cached for the same reason as the labels above:
     // data() asks per row, per repaint. Reloaded by reloadPinned() at every sort.
     QSet<QString> m_Pinned;
+
+    // The user's GAMES / APPS moves for this host (normalised name → under APPS), read at
+    // initialize() and after every move; only this model writes them.
+    QHash<QString, bool> m_CategoryOverrides;
 };

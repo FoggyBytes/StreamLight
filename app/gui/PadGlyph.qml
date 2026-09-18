@@ -9,7 +9,7 @@ import SdlGamepadKeyNavigation 1.0
 Item {
     id: glyph
 
-    property string buttonKey: ""   // "A","B","X","Y","LB","RB","START","SELECT"
+    property string buttonKey: ""   // "A","B","X","Y","LB","RB","LT","RT","START","SELECT","RS" (right stick click)
     property string label: ""        // text fallback
     property string glyphSet: SdlGamepadKeyNavigation.controllerType // "xbox"/"ps"/"switch"/...
     // Height of a face button. Shoulders and the Select/Start pills are wider than they are
@@ -45,6 +45,7 @@ Item {
         : buttonKey === "RT"     ? (_ps ? "qrc:/res/pad_ps_r2.svg"       : _sw ? "qrc:/res/pad_switch_zr.svg"    : "qrc:/res/pad_xbox_rt.svg")
         : buttonKey === "SELECT" ? (_ps ? "qrc:/res/pad_ps_create.svg"   : _sw ? "qrc:/res/pad_switch_minus.svg" : "qrc:/res/pad_xbox_view.svg")
         : buttonKey === "START"  ? (_ps ? "qrc:/res/pad_ps_options.svg"  : _sw ? "qrc:/res/pad_switch_plus.svg"  : "qrc:/res/pad_xbox_start.svg")
+        : buttonKey === "RS"     ? (_ps ? "qrc:/res/pad_ps_r3.svg"       : _sw ? "qrc:/res/pad_switch_rs.svg"    : "qrc:/res/pad_xbox_rs.svg")
         : ""
 
     Image {

@@ -8,6 +8,7 @@ import Theme 1.0
 import ComputerManager 1.0
 import StreamingPreferences 1.0
 import SdlGamepadKeyNavigation 1.0
+import WindowMove 1.0
 
 /*
  * The host page — the showcase.
@@ -291,12 +292,23 @@ FocusScope {
      * Remote Monitor, Resume, Terminate, Disconnect). LT/RT on the pad, PgUp/PgDn on the
      * keyboard; the triggers only cycle hosts on Home, so here they are free.
      *
-     * Opens on GAMES, or on APPS when there are no games — a host set up without StreamTweak
-     * may have nothing but Desktop — or when this client still holds a Remote Monitor, because
-     * the server then lists only Resume and Disconnect Monitor.
+     * 6.1.0 (issue #22): ALL in front of the two — the games plus Desktop, Virtual Display and
+     * Steam Big Picture (isAllCategory() in nvapp.h). The 2.0 host controls stay on APPS only.
+     *
+     * Opens on ALL, or on APPS when ALL would be empty or when this client still holds a
+     * Remote Monitor, because the server then lists only Resume and Disconnect Monitor.
      */
-    property string libraryTab: "games"
+    readonly property var _tabs: ["all", "games", "apps"]
+    property string libraryTab: "all"
     property bool _tabChosenByUser: false
+
+    function _countFor(m, tab) {
+        return tab === "all" ? m.allCount : tab === "games" ? m.gamesCount : m.appsCount
+    }
+
+    function _defaultTabFor(m) {
+        return (m.remoteMonitorActive || m.allCount === 0) ? "apps" : "all"
+    }
 
     function setLibraryTab(tab, byUser) {
         if (!appGrid || !appGrid.appModel) return
@@ -310,14 +322,69 @@ FocusScope {
         appsRoot._playtimeEpoch++
     }
 
+    // LB/RB, one step left or right. The ring wraps, like the tabs of Settings (SectionTabBar).
     function switchLibraryTab(dir) {
-        setLibraryTab(dir < 0 ? "games" : "apps", true)
+        var n = _tabs.length
+        var i = (_tabs.indexOf(libraryTab) + (dir < 0 ? -1 : 1) + n) % n
+        setLibraryTab(_tabs[i], true)
+    }
+
+    // ── GAMES / APPS by hand (6.1.0) ─────────────────────────────────────────
+    /*
+     * The right stick click (M on the keyboard) moves the selected entry to the other of
+     * GAMES and APPS; the model stores it per host (AppModel.moveToOtherTab). Not on ALL,
+     * where both halves are shown together and "the other tab" means nothing, and never for
+     * a host control — those are not applications and stay on APPS.
+     */
+    readonly property bool focusedMovable:
+        libraryTab !== "all" && appGrid && appGrid.currentItem
+        ? appGrid.currentItem._movable === true : false
+    // Read by the status bar, beside the right-stick prompt.
+    readonly property string focusedMoveLabel:
+        !focusedMovable ? "" : focusedIsApp ? qsTr("Move to GAMES") : qsTr("Move to APPS")
+
+    /*
+     * The page follows the entry to the tab it was moved to, and the cursor stays on it.
+     *
+     * ⚠️ _tabChosenByUser is set BEFORE the move. The move changes the counts, and
+     * onCountsChanged runs inside moveToOtherTab(): on a page whose tab was never chosen by
+     * hand it would pick the default tab — ALL — before this function got to say where to go.
+     */
+    function moveFocused() {
+        if (!focusedMovable) return
+        var appId = appGrid.currentItem._appId
+        _tabChosenByUser = true
+        var toApps = appGrid.appModel.moveToOtherTab(appGrid.currentIndex)
+        setLibraryTab(toApps ? "apps" : "games", true)
+
+        var i = appGrid.appModel.indexOfAppId(appId)
+        if (i >= 0) {
+            appGrid.currentIndex = i
+            appGrid.positionViewAtIndex(i, ListView.Contain)
+        }
+        appGrid.updateContinue()
+        appsRoot._playtimeEpoch++
     }
 
     function _pickDefaultTab() {
         if (!appGrid || !appGrid.appModel) return
-        var m = appGrid.appModel
-        setLibraryTab((m.remoteMonitorActive || m.gamesCount === 0) ? "apps" : "games", false)
+        setLibraryTab(_defaultTabFor(appGrid.appModel), false)
+    }
+
+    /// Selects the entry with this id on whichever tab has it, the current one first. False
+    /// when no tab does.
+    function _selectAppIdAnyTab(appId) {
+        var order = [libraryTab].concat(_tabs.filter(function(t) { return t !== libraryTab }))
+        for (var k = 0; k < order.length; ++k) {
+            setLibraryTab(order[k], false)
+            var i = appGrid.appModel.indexOfAppId(appId)
+            if (i >= 0) {
+                appGrid.currentIndex = i
+                return true
+            }
+        }
+        setLibraryTab(order[0], false)
+        return false
     }
 
     // The list can change under an open page — a poll brings the app list, a Remote Monitor is
@@ -331,7 +398,8 @@ FocusScope {
                 appsRoot._pickDefaultTab()
             } else if (m.remoteMonitorActive && appsRoot.libraryTab !== "apps") {
                 appsRoot.setLibraryTab("apps", false)
-            } else if (appsRoot.libraryTab === "games" && m.gamesCount === 0 && m.appsCount > 0) {
+            } else if (appsRoot.libraryTab !== "apps"
+                       && appsRoot._countFor(m, appsRoot.libraryTab) === 0 && m.appsCount > 0) {
                 appsRoot.setLibraryTab("apps", false)
             }
         }
@@ -388,19 +456,18 @@ FocusScope {
             event.accepted = true
         }
         /*
-         * Profile cycling, the same pair as Home: LB/RB on the pad, Q/E on the keyboard.
-         *
-         * ⚠️ Handled here and not in AppShell even though the shell already owns F16/F17.
-         * Its handler returns early on any page but Home, and a key travels up the focus
-         * chain, so this page sees them first — which is where they belong, next to the
-         * badge they move. The shoulders carry inert keys of their own precisely so they
-         * cannot be confused with the host cycling on PgUp/PgDn.
+         * ⚠️ The shoulders and the triggers are handled here and not in AppShell even though
+         * the shell owns them on Home (LB/RB the profile, LT/RT the host). Its handler returns
+         * early on any page but Home, and a key travels up the focus chain, so this page sees
+         * them first. Since 6.1.0 the pairs mean something else here than on Home — LB/RB the
+         * tabs, LT/RT the profile — by decision: each is drawn beside what it moves.
          */
-        // GAMES / APPS: LT/RT on the pad (Key_F14/F15), PgUp/PgDn on the keyboard.
-        else if (event.key === Qt.Key_F14 || event.key === Qt.Key_PageUp) {
+        // ALL / GAMES / APPS: LB/RB on the pad (Key_F16/F17), PgUp/PgDn on the keyboard —
+        // 6.1.0, it was LT/RT. The shoulders are drawn at the two ends of the tabs.
+        else if (event.key === Qt.Key_F16 || event.key === Qt.Key_PageUp) {
             switchLibraryTab(-1)
             event.accepted = true
-        } else if (event.key === Qt.Key_F15 || event.key === Qt.Key_PageDown) {
+        } else if (event.key === Qt.Key_F17 || event.key === Qt.Key_PageDown) {
             switchLibraryTab(1)
             event.accepted = true
         }
@@ -409,10 +476,17 @@ FocusScope {
             togglePinFocused()
             event.accepted = true
         }
-        else if (event.key === Qt.Key_F16 || event.key === Qt.Key_Q) {
+        // Move to GAMES / APPS (6.1.0): right stick click (Key_F19), M on the keyboard.
+        else if (event.key === Qt.Key_F19 || event.key === Qt.Key_M) {
+            moveFocused()
+            event.accepted = true
+        }
+        // The profile: LT/RT on the pad (Key_F14/F15) since 6.1.0 — the shoulders went to the
+        // tabs — and still Q/E on the keyboard.
+        else if (event.key === Qt.Key_F14 || event.key === Qt.Key_Q) {
             cycleProfile(-1)
             event.accepted = true
-        } else if (event.key === Qt.Key_F17 || event.key === Qt.Key_E) {
+        } else if (event.key === Qt.Key_F15 || event.key === Qt.Key_E) {
             cycleProfile(1)
             event.accepted = true
         }
@@ -579,7 +653,7 @@ FocusScope {
         hostOverride    = hostComputerModel.hostActiveOverride(computerIndex)
     }
 
-    // LB/RB and Q/E. The cycle includes Global at -1, so one profile is still two positions
+    // LT/RT and Q/E. The cycle includes Global at -1, so one profile is still two positions
     // to move between — hence `< 1` and not `< 2`.
     function cycleProfile(dir) {
         if (!hostComputerModel || computerIndex < 0 || hostProfileCount < 1) return
@@ -701,7 +775,8 @@ FocusScope {
                     var c = [{ text: qsTr("Online"), dot: Theme.online }]
                     /*
                      * The profile, with its shoulders on either side — the same arrangement
-                     * as the host card on Home, and for the same reason: LB/RB attached to
+                     * as the host card on Home, and for the same reason: LT/RT (LB/RB on Home,
+                     * where the shoulders are free) attached to
                      * the thing they move need no caption, because the badge between them
                      * says what they change.
                      *
@@ -749,7 +824,7 @@ FocusScope {
                     ProfileShoulder {
                         visible: modelData.kind === "profile"
                         anchors.verticalCenter: parent.verticalCenter
-                        buttonKey: "LB"; keyLabel: "Q"
+                        buttonKey: "LT"; keyLabel: "Q"
                         onTriggered: appsRoot.cycleProfile(-1)
                     }
 
@@ -787,7 +862,7 @@ FocusScope {
                     ProfileShoulder {
                         visible: modelData.kind === "profile"
                         anchors.verticalCenter: parent.verticalCenter
-                        buttonKey: "RB"; keyLabel: "E"
+                        buttonKey: "RT"; keyLabel: "E"
                         onTriggered: appsRoot.cycleProfile(1)
                     }
                 }
@@ -1098,22 +1173,33 @@ FocusScope {
      * axis to move along instead of two: on a pad that is the difference between arriving at
      * a game and hunting for it.
      */
-    // The two tabs over the library (5.9.0). Clickable for the mouse; the pad's LT/RT and the
-    // keyboard's PgUp/PgDn are named in the status bar.
+    // The tabs over the library (5.9.0; ALL since 6.1.0). Clickable for the mouse. LB/RB sit at
+    // the two ends (6.1.0 — they were LT/RT, named in the status bar), the way the dialogs'
+    // SectionTabBar draws them: the prompt beside the thing it moves needs no caption.
     Row {
         id: libraryTabs
         anchors.top: cfgLine.bottom
         anchors.left: parent.left
         anchors.topMargin: appsRoot._px(16)
         anchors.leftMargin: appsRoot._sideMargin
+        spacing: appsRoot._px(14)
+
+        ProfileShoulder {
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.verticalCenterOffset: -appsRoot._px(5)   // centred on the labels, not the underline
+            size: appsRoot._px(26)
+            buttonKey: "LB"; keyLabel: "PgUp"
+            onTriggered: { appsRoot.switchLibraryTab(-1); appsRoot.focusLibrary() }
+        }
+
+        Row {
         spacing: appsRoot._px(26)
 
         Repeater {
             model: [
-                { tab: "games", label: qsTr("GAMES"),
-                  n: (appGrid && appGrid.appModel) ? appGrid.appModel.gamesCount : 0 },
-                { tab: "apps",  label: qsTr("APPS"),
-                  n: (appGrid && appGrid.appModel) ? appGrid.appModel.appsCount : 0 }
+                { tab: "all",   label: qsTr("ALL") },
+                { tab: "games", label: qsTr("GAMES") },
+                { tab: "apps",  label: qsTr("APPS") }
             ]
 
             delegate: Item {
@@ -1134,12 +1220,9 @@ FocusScope {
                         font.weight: tabItem._on ? Font.DemiBold : Font.Normal
                         font.letterSpacing: appsRoot._u * 1.6
                     }
-                    Label {
-                        text: modelData.n
-                        color: Theme.text3
-                        font.family: Theme.family
-                        font.pixelSize: appsRoot._px(Theme.fontBody)
-                    }
+                    // No count beside the label (6.1.0): ALL leaves out the host controls, so
+                    // the three numbers never added up, and they said little anyway. The
+                    // counts still exist in the model — they choose the tab the page opens on.
                 }
 
                 Rectangle {
@@ -1161,6 +1244,15 @@ FocusScope {
                     }
                 }
             }
+        }
+        }
+
+        ProfileShoulder {
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.verticalCenterOffset: -appsRoot._px(5)
+            size: appsRoot._px(26)
+            buttonKey: "RB"; keyLabel: "PgDn"
+            onTriggered: { appsRoot.switchLibraryTab(1); appsRoot.focusLibrary() }
         }
     }
 
@@ -1250,7 +1342,8 @@ FocusScope {
                 anchors.bottomMargin: appsRoot._px(8)
                 text: parent._isContinue ? qsTr("LAST PLAYED")
                     : section === "pinned" ? qsTr("PINNED")
-                    : appsRoot.libraryTab === "apps" ? qsTr("ALL APPS") : qsTr("ALL GAMES")
+                    : appsRoot.libraryTab === "apps" ? qsTr("ALL APPS")
+                    : appsRoot.libraryTab === "games" ? qsTr("ALL GAMES") : qsTr("ALL")
                 color: parent._isContinue ? Theme.accent : Theme.text3
                 font.family: Theme.family
                 font.pixelSize: appsRoot._px(Theme.fontSmall)
@@ -1288,12 +1381,15 @@ FocusScope {
             activated = true
 
             if (!showGames && !appsRoot.showHiddenGames) {
-                // The direct-launch entry can sit on either tab, so look on the other one too.
+                // The direct-launch entry can sit on any tab, so look on the others too.
                 var directLaunchAppIndex = model.getDirectLaunchAppIndex()
                 if (directLaunchAppIndex < 0) {
                     var startTab = appsRoot.libraryTab
-                    appsRoot.setLibraryTab(startTab === "games" ? "apps" : "games", false)
-                    directLaunchAppIndex = model.getDirectLaunchAppIndex()
+                    for (var t = 0; t < appsRoot._tabs.length && directLaunchAppIndex < 0; ++t) {
+                        if (appsRoot._tabs[t] === startTab) continue
+                        appsRoot.setLibraryTab(appsRoot._tabs[t], false)
+                        directLaunchAppIndex = model.getDirectLaunchAppIndex()
+                    }
                     if (directLaunchAppIndex < 0) appsRoot.setLibraryTab(startTab, false)
                 }
                 if (directLaunchAppIndex >= 0) {
@@ -1339,7 +1435,7 @@ FocusScope {
             // resetting a model that has already filled it: that reset left the spotlight with no
             // focused item for an instant, and everything bound to it — the blurred backdrop
             // above all — had to recover from a flicker nobody asked for.
-            var tab = (model.remoteMonitorActive || model.gamesCount === 0) ? "apps" : "games"
+            var tab = appsRoot._defaultTabFor(model)
             model.category = tab
             appsRoot.libraryTab = tab
             return model
@@ -1360,6 +1456,7 @@ FocusScope {
             property string _boxArt:     model.boxart
             property bool   _overridden: model.overridden
             property bool   _isApp:      model.isApp
+            property bool   _movable:    model.movable
             property bool   _pinned:     model.pinned
 
             opacity: model.hidden ? 0.45 : 1.0
@@ -1509,6 +1606,8 @@ FocusScope {
 
                     SequentialAnimation on opacity {
                         running: runTag.visible && !Theme.reduceAnimations
+                        // Held while the window is dragged — see WindowMove / AmbientWaves.
+                        paused: running && WindowMove.moving
                         loops: Animation.Infinite
                         alwaysRunToEnd: true
                         NumberAnimation { to: 0.45; duration: 900; easing.type: Easing.InOutSine }
@@ -1641,7 +1740,9 @@ FocusScope {
         visible: appGrid.count === 0
         text: appsRoot.libraryTab === "games"
               ? qsTr("No games to show — some may be hidden on the host")
-              : qsTr("No apps to show — some may be hidden on the host")
+              : appsRoot.libraryTab === "apps"
+              ? qsTr("No apps to show — some may be hidden on the host")
+              : qsTr("Nothing to show — some entries may be hidden on the host")
         color: Theme.text2
         font.family: Theme.family
         font.pixelSize: appsRoot._px(Theme.fontTitle)
@@ -1708,15 +1809,9 @@ FocusScope {
 
         onAccepted: {
             if (!confirm || !appGrid.appModel) return
-            var i = appGrid.appModel.indexOfAppId(appId)
-            if (i < 0) {
-                // The confirmation can be for an entry on the other tab (a normal app replacing
-                // a running one); look there before giving up.
-                appsRoot.setLibraryTab(appsRoot.libraryTab === "games" ? "apps" : "games", false)
-                i = appGrid.appModel.indexOfAppId(appId)
-            }
-            if (i < 0) return
-            appGrid.currentIndex = i
+            // The confirmation can be for an entry on another tab (a normal app replacing a
+            // running one); look there before giving up.
+            if (!appsRoot._selectAppIdAnyTab(appId)) return
             if (appGrid.currentItem) appGrid.currentItem.launchOrResumeSelectedApp(true)
         }
         onClosed: appsRoot.focusLibrary()

@@ -32,6 +32,13 @@ Item {
      *  from the opening animation. The quit and launch screens stand on a floor in place. */
     property real rise: 1.0
 
+    /**
+     * Draw the waves at all (6.1.0). They belong to Home, Settings and the PIN pad only; every
+     * other screen standing on this floor — the host page, the launch and quit screens —
+     * keeps the wash and nothing on it. Hidden, the layer's FrameAnimation stops too.
+     */
+    property bool waves: true
+
     DitheredGradient {
         anchors.fill: parent
         orientation: Qt.Vertical
@@ -46,6 +53,7 @@ Item {
 
     AmbientWaves {
         anchors.fill: parent
+        visible: ambient.waves
         speed: ambient.streaming ? 2.0 : 1.0
         rise: ambient.rise
     }

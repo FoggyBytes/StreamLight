@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Shapes
 import Theme 1.0
+import WindowMove 1.0
 
 // The app's busy spinner, drawn here instead of using Material's BusyIndicator.
 //
@@ -101,8 +102,9 @@ Item {
 
         // Stopped when not running or not on screen: a rotation animator left going
         // behind a closed dialog is a wakeup per frame for something nobody can see.
+        // And while the window is dragged — see WindowMove / AmbientWaves.
         RotationAnimator on rotation {
-            running: root.running && root.visible
+            running: root.running && root.visible && !WindowMove.moving
             from: 0
             to: 360
             duration: 900

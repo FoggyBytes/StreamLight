@@ -4,6 +4,28 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-----------------------------------
+Version 6.1.0 - Sorted (18/09/2026)
+-----------------------------------
+
+No StreamTweak update required — everything in 6.1.0 is client-side. The host page gets an All tab with everything you can launch in one list, and the split between Games and Apps becomes yours to correct: anything StreamLight put on the wrong side can be moved to the other.
+
+✨ NEW FEATURES:
+• All on the host page — every game plus Desktop, Virtual Display and Steam Big Picture in one list, under Last played and Pinned, so starting from the desktop or a virtual display no longer means changing tab. The page now opens on All
+• Move between Games and Apps — on either tab, the right stick click (M on the keyboard) moves the selected entry to the other one and takes you there. The choice is remembered per host, and the host's own controls such as Remote Input and Remote Monitor stay on Apps
+
+🎨 UI:
+• LB / RB switch the host page's tabs and sit at the two ends of the strip, where Settings and the profile dialogs have them; the profile moves to LT / RT beside its badge, Q / E unchanged on the keyboard
+• The tabs no longer show a count, and Virtual Display sits right after Desktop
+• The moving background now runs only on Home, Settings and the PIN pad — the host page and the launch and quit screens stand on the plain background
+
+🐛 FIXES:
+• The pulsing Streaming marks and the spinner pause while the window is being moved, as the waves already did — moving the window could stutter while a host was streaming
+• Desktop (fallback), the entry Apollo and Vibepollo add when their app list cannot be read, counts as Desktop — it sits under Apps and the PIN unlock can use it
+
+🙏 THANKS:
+• Thanks to @Soladus (https://github.com/FoggyBytes/StreamLight/issues/22) for asking for an All tab
+
 -------------------------------------
 Version 6.0.0 - Free Run (18/09/2026)
 -------------------------------------

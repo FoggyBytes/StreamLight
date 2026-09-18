@@ -14,7 +14,7 @@ import InputHints 1.0
 Item {
     id: hint
 
-    property string buttonKey: ""   // "A","B","X","Y","LB","RB","SELECT","START"
+    property string buttonKey: ""   // "A","B","X","Y","LB","RB","LT","RT","SELECT","START","RS"
     property string keyLabel:  ""   // keyboard equivalent, e.g. "S", "Esc", "PgDn"
     property int    size:      26   // face-button height, as in the status bar
 

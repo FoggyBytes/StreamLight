@@ -28,6 +28,7 @@
 // the normalised name, and the readable name is stored as a value inside it.
 
 #include <QDateTime>
+#include <QHash>
 #include <QSet>
 #include <QString>
 
@@ -144,6 +145,23 @@ public:
     /// Normalised names (normaliseGameName) — the form appSortOrder() looks them up in.
     QSet<QString> pinnedOn(const QString& hostUuid) const;
     void setPinned(const QString& hostUuid, const QString& appName, bool pinned);
+
+    // ── GAMES / APPS moved by hand (6.1.0) ───────────────────────────────────────────────
+    /*
+     * The entries the user moved to the other tab on this host, which win over the automatic
+     * GAMES / APPS split (isAppsCategory() in nvapp.h). Kept like the pins and for the same
+     * reasons: host uuid + NAME, one list per direction in the host node, so forgetHost()
+     * takes them along.
+     *
+     * Only a departure from the automatic answer is stored: moving an entry back to where it
+     * would land by itself removes it, so a later change to the automatic split still reaches
+     * every entry the user never touched.
+     */
+    /// Normalised name → true when the user put it under APPS, false when under GAMES.
+    QHash<QString, bool> categoryOverridesOn(const QString& hostUuid) const;
+    /// `asApp` is where it goes; `automatic` is where it would go by itself.
+    void setCategoryOverride(const QString& hostUuid, const QString& appName,
+                             bool asApp, bool automatic);
 
     /**
      * Desktop and Steam Big Picture are not games and never accumulate hours.

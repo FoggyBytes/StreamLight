@@ -9,7 +9,8 @@ Item {
 
     // Same floor as the rest of the app: this used to be the one screen that showed the bare
     // window behind it, so ending a session dropped out of the app's own surface for a moment.
-    AmbientBackground {}
+    // No waves here (6.1.0): they belong to Home, Settings and the PIN pad only.
+    AmbientBackground { waves: false }
 
     // ...with the blurred artwork of whatever is being closed over it, the same drawing the
     // host page and the launch screen use. Quitting is the other half of launching, and it

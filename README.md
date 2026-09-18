@@ -33,10 +33,11 @@ Everything below is in the current release, whichever version first introduced i
 
 **🏠 Home and the host page**
 - **Home** is your hosts as tabs under the wordmark. The selected one's card takes the left of the screen — name, state, addresses, stream settings and actions at once — and its game stands beside it. **LT / RT** move between hosts, **LB / RB** between that host's profiles
-- **Moving background** *(6.0.0+)* — waves in your accent colour rise over the lower three quarters of every screen, twice as fast while a host is streaming. Still with *Reduce animations*, paused behind dialogs
+- **Moving background** *(6.0.0+)* — waves in your accent colour rise over the lower three quarters of Home, Settings and the PIN pad, twice as fast while a host is streaming. Still with *Reduce animations*, paused behind dialogs
 - **Opening animation** *(6.0.0+)* — the waves rise, the icon fades in and a band of light writes STREAMLIGHT before Home appears; any button skips it, and *Settings → Session* turns it off
 - **The host page** puts the library down the left at full height and the game in the spotlight beside it — cover, name, store, and the right verb (*Resume* if it is already running, *Play* if not)
-- **Games and Apps** *(5.9.0+)* — **LT / RT** split the host page between its games and everything else: Desktop, Steam Big Picture and the host's controls, which open with *Open* and never count hours. A host with no games opens on Apps
+- **All, Games and Apps** *(5.9.0+, All 6.1.0+)* — **LB / RB** switch the host page between everything you can launch, the games, and everything else: Desktop, Virtual Display, Steam Big Picture and the host's controls, which open with *Open* and never count hours. The page opens on All; **LT / RT** move the host's profile
+- **Move between Games and Apps** *(6.1.0+)* — the **right stick click** or **M** moves the selected entry to the other tab, remembered per host. The host's own controls stay on Apps
 - **Remote Input and Remote Monitor** *(5.9.0+)* — the host controls of Vibeshine and Vibepollo 2.0 open beside a running game, and their results and confirmation requests appear as messages and Yes/No questions rather than errors
 - **Last played** *(5.7.0+)* — the game you last streamed on that host fills the right of its card, with how long ago you left it and the hours you have played it in total. **Play again** starts it without opening the library, and the same game sits first on the host page under *Last played*
 - **Play time** *(5.7.0+)* — how long you have streamed each game, beside the store on every row. Filed under the game's name, so it survives a reinstall, and resettable from the per-game panel
@@ -89,18 +90,15 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 
-## ✨ What's New in 6.0.0 — Free Run
+## ✨ What's New in 6.1.0 — Sorted
 
-VRR presentation arrives, built on Nonary's VRR work for Moonlight. Home is redrawn around a moving background and takes you straight back into a game that is still streaming, favourite games can be pinned, and the profile dialogs are rebuilt on the tabs of Settings. Client-side, works with any host.
+The host page gets an **All** tab, and the split between Games and Apps becomes yours to correct. Client-side, works with any host.
 
-- **VRR** *(experimental)* — on a variable-refresh display each frame is shown as soon as it is ready. Three timing profiles and *Reduce judder* in *Settings → Video*, per host profile too, and a *VRR pacing* line in the overlay that says how evenly frames land or why VRR is not running
-- **Settings follow VRR** — while it runs, the rows it depends on show the value the stream will use and lock, and the Frame rate row suggests the rate for your display
-- **Resume from Home** — a host that is streaming shows the game in progress on its card, with **Resume** in place of *Play again*
-- **Pinned games** — **Start** or **P** pins a game to the top of the host page, right after *Last played*
-- **A new Home** — the host's card on the left, the game beside it on a background of waves in your accent colour, faster while a host streams, and an opening animation before it. How much of it shows through the card is up to you, per host
-- **Profiles, rebuilt** — host profiles and per-game settings follow the tabs of Settings, the accent marks only what you changed, every row says where its value comes from, and the whole dialog works from the pad — renaming included
-- **A clearer Last played** — the badge on Home reads *Last played 2 h ago · 18 h total*, instead of hours that looked like the length of the last session
-- **Fix** for a crash while the video renderer was being recreated during a stream
+- **All** — every game plus Desktop, Virtual Display and Steam Big Picture in one list, under *Last played* and *Pinned*. The host page now opens on it
+- **Move between Games and Apps** — the **right stick click** or **M** moves the selected entry to the other tab, remembered per host
+- **LB / RB for the tabs**, drawn at the ends of the strip; the profile moves to **LT / RT** beside its badge
+- **The moving background** runs on Home, Settings and the PIN pad only
+- **Fixes** for a window drag that could stutter while a host was streaming, and for the *Desktop (fallback)* entry of Apollo and Vibepollo, now treated as Desktop
 
 *Older releases are in [changelog.txt](changelog.txt).*
 

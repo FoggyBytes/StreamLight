@@ -30,6 +30,10 @@
 // The games pinned on this host (6.0.0), as a list of readable names in the host node.
 #define SER_PINNED      "pinned"
 
+// Entries moved by hand to the other tab (6.1.0), one list of readable names per direction.
+#define SER_ASAPPS      "movedToApps"
+#define SER_ASGAMES     "movedToGames"
+
 PlaytimeManager* PlaytimeManager::get()
 {
     static PlaytimeManager instance;
@@ -282,6 +286,58 @@ void PlaytimeManager::setPinned(const QString& hostUuid, const QString& appName,
         settings.remove(QStringLiteral(SER_PINNED));
     else
         settings.setValue(QStringLiteral(SER_PINNED), names);
+    settings.endGroup();
+}
+
+QHash<QString, bool> PlaytimeManager::categoryOverridesOn(const QString& hostUuid) const
+{
+    QHash<QString, bool> out;
+    if (hostUuid.isEmpty())
+        return out;
+
+    QSettings settings;
+    settings.beginGroup(hostGroup(hostUuid));
+    const QStringList asGames = settings.value(QStringLiteral(SER_ASGAMES)).toStringList();
+    const QStringList asApps  = settings.value(QStringLiteral(SER_ASAPPS)).toStringList();
+    settings.endGroup();
+
+    for (const QString& name : asGames) {
+        if (!name.isEmpty())
+            out.insert(normalise(name), false);
+    }
+    for (const QString& name : asApps) {
+        if (!name.isEmpty())
+            out.insert(normalise(name), true);
+    }
+    return out;
+}
+
+void PlaytimeManager::setCategoryOverride(const QString& hostUuid, const QString& appName,
+                                          bool asApp, bool automatic)
+{
+    if (hostUuid.isEmpty() || appName.isEmpty())
+        return;
+
+    QSettings settings;
+    settings.beginGroup(hostGroup(hostUuid));
+
+    // Out of both lists first, whatever spelling it went in under — then into the one it now
+    // belongs to, unless that is where it would land anyway.
+    const QString key = normalise(appName);
+    for (const char* list : { SER_ASAPPS, SER_ASGAMES }) {
+        QStringList names = settings.value(QLatin1String(list)).toStringList();
+        for (int i = names.size() - 1; i >= 0; i--) {
+            if (normalise(names.at(i)) == key)
+                names.removeAt(i);
+        }
+        if (asApp != automatic && QLatin1String(list) == QLatin1String(asApp ? SER_ASAPPS : SER_ASGAMES))
+            names.append(appName);
+
+        if (names.isEmpty())
+            settings.remove(QLatin1String(list));
+        else
+            settings.setValue(QLatin1String(list), names);
+    }
     settings.endGroup();
 }
 

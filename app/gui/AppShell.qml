@@ -279,11 +279,8 @@ FocusScope {
         case "change":
             SdlGamepadKeyNavigation.simulateKey(Qt.Key_Space)
             break
-        case "gamesTab":
-            if (appsLoader.item && appsLoader.item.switchLibraryTab) appsLoader.item.switchLibraryTab(-1)
-            break
-        case "appsTab":
-            if (appsLoader.item && appsLoader.item.switchLibraryTab) appsLoader.item.switchLibraryTab(1)
+        case "move":
+            if (appsLoader.item && appsLoader.item.moveFocused) appsLoader.item.moveFocused()
             break
         case "pin":
             if (appsLoader.item && appsLoader.item.togglePinFocused) appsLoader.item.togglePinFocused()
@@ -340,8 +337,9 @@ FocusScope {
     AmbientBackground {
         id: ambientBackground
         z: -1
-        // The waves run twice as fast while a host is streaming (6.0.0). Home is
-        // always loaded (see homeLoader), so this holds on the Apps and Settings pages too.
+        // Waves on Home and Settings (6.1.0): the host page stands on the bare wash.
+        waves: currentPage === 0 || currentPage === 2
+        // The waves run twice as fast while a host is streaming (6.0.0).
         streaming: homeLoader.item ? homeLoader.item.anyStreaming : false
         // The waves rise from the bottom only as the first act of the opening animation, on its
         // clock. With it off (splash never running) this is 1: Home opens on waves in place.
@@ -514,9 +512,8 @@ FocusScope {
         // page, and B leaves it. "Hosts", not "Back" — B always lands in the same place from
         // here, and naming the destination is the one thing the removed corner button did
         // that the bar could not. "Back" says you are leaving, "Hosts" says where you arrive.
-        // 5.9.0: LT/RT switch the host page between GAMES and APPS. They sit here rather than
-        // on the tabs because there is no button on the tabs to carry a glyph, and on this page
-        // the triggers belong to nothing else.
+        // 5.9.0: LT/RT switched the host page between GAMES and APPS, from here. 6.1.0: the
+        // tabs are on LB/RB, drawn at the ends of the strip, and LT/RT on the profile badge.
         // 6.0.0: Start / P pins the selected game. In the bar rather than on the spotlight's
         // buttons, by decision, and only while a game is selected — the APPS tab has nothing to
         // pin, so there the prompt is not drawn at all. The word follows the row: Unpin on a
@@ -531,8 +528,11 @@ FocusScope {
                 h.push({ btn: "START", key: "P",
                          act: page.focusedPinned === true ? qsTr("Unpin") : qsTr("Pin"),
                          kind: "pin" })
-            h.push({ btn: "LT", key: "PgUp", act: qsTr("Games"), kind: "gamesTab" })
-            h.push({ btn: "RT", key: "PgDn", act: qsTr("Apps"),  kind: "appsTab" })
+            // 6.1.0: the tabs moved to LB/RB, drawn at the ends of the tab strip, so the bar
+            // no longer carries them. It carries the right stick instead, on GAMES and APPS:
+            // it moves the selected entry to the other one, and the word says which way.
+            if (page && page.focusedMoveLabel)
+                h.push({ btn: "RS", key: "M", act: page.focusedMoveLabel, kind: "move" })
             return h
         }
         // Settings prompts add "X · Default" when the bitrate differs from recommended.

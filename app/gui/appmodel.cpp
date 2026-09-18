@@ -29,6 +29,7 @@ void AppModel::initialize(ComputerManager* computerManager, int computerIndex, b
     m_Computer = m_ComputerManager->getComputers().at(computerIndex);
     m_CurrentGameId = m_Computer->currentGameId;
     m_ShowHiddenGames = showHiddenGames;
+    m_CategoryOverrides = PlaytimeManager::get()->categoryOverridesOn(m_Computer->uuid);
 
     updateAppList(m_Computer->appList);
 }
@@ -78,6 +79,22 @@ int AppModel::indexOfAppNamed(const QString& name) const
     return -1;
 }
 
+int AppModel::indexOfDesktop() const
+{
+    // "Desktop" first: a host whose apps.json lists it and also shows a fallback copy should
+    // unlock through the real one.
+    const int i = indexOfAppNamed(QStringLiteral("Desktop"));
+    if (i >= 0) {
+        return i;
+    }
+    for (int j = 0; j < m_VisibleApps.count(); j++) {
+        if (isDesktopName(m_VisibleApps.at(j).name)) {
+            return j;
+        }
+    }
+    return -1;
+}
+
 int AppModel::indexOfAppId(int appId) const
 {
     for (int i = 0; i < m_VisibleApps.count(); i++) {
@@ -94,7 +111,12 @@ void AppModel::setCategory(const QString& category)
         return;
     }
     m_Category = category;
+    rebuildVisibleApps();
+    emit categoryChanged();
+}
 
+void AppModel::rebuildVisibleApps()
+{
     // A reset, and the visible list rebuilt from scratch: switching tabs replaces every row,
     // and getVisibleApps() keeps a hidden app only while it is already on screen, which after
     // a switch it never is.
@@ -112,8 +134,6 @@ void AppModel::setCategory(const QString& category)
     m_VisibleApps = visible;
     m_PlaytimeLabels.clear();
     endResetModel();
-
-    emit categoryChanged();
 }
 
 bool AppModel::matchesCategory(const NvApp& app) const
@@ -121,7 +141,21 @@ bool AppModel::matchesCategory(const NvApp& app) const
     if (m_Category.isEmpty()) {
         return true;
     }
-    return isAppsCategory(app) == (m_Category == QLatin1String("apps"));
+    if (m_Category == QLatin1String("all")) {
+        return isAllCategory(app);
+    }
+    return isApp(app) == (m_Category == QLatin1String("apps"));
+}
+
+bool AppModel::isApp(const NvApp& app) const
+{
+    // The host controls never leave APPS, whatever a stale entry in the store says.
+    if (!m_CategoryOverrides.isEmpty() && !isHostControlEntry(app)) {
+        auto it = m_CategoryOverrides.constFind(normaliseGameName(app.name));
+        if (it != m_CategoryOverrides.constEnd())
+            return *it;
+    }
+    return isAppsCategory(app);
 }
 
 QString AppModel::lastPlayedForSort() const
@@ -141,17 +175,28 @@ void AppModel::reloadPinned()
         return;
     }
     m_Pinned = PlaytimeManager::get()->pinnedOn(m_Computer->uuid);
+
+    // A pin on something that now counts as an app — a game moved to APPS by hand (6.1.0) —
+    // stays in the store, so moving it back brings the pin back, but it must not reach the
+    // sort: on ALL it would be ordered with the pinned games while its row says it is not
+    // one, and the PINNED heading would break in two.
+    if (!m_Pinned.isEmpty()) {
+        for (const NvApp& app : std::as_const(m_AllApps)) {
+            if (isApp(app))
+                m_Pinned.remove(normaliseGameName(app.name));
+        }
+    }
 }
 
 bool AppModel::isPinnedApp(const NvApp& app) const
 {
-    return !m_Pinned.isEmpty() && !isAppsCategory(app)
+    return !m_Pinned.isEmpty() && !isApp(app)
            && m_Pinned.contains(normaliseGameName(app.name));
 }
 
 void AppModel::updateCounts()
 {
-    int games = 0, apps = 0;
+    int games = 0, apps = 0, all = 0;
     bool monitor = false;
     for (const NvApp& app : std::as_const(m_AllApps)) {
         if (hostControlKind(app.id, app.uuid, app.name) == HostControl::DisconnectMonitor) {
@@ -160,13 +205,16 @@ void AppModel::updateCounts()
         if (!m_ShowHiddenGames && app.hidden) {
             continue;
         }
-        if (isAppsCategory(app)) apps++;
+        if (isApp(app))          apps++;
         else                     games++;
+        if (isAllCategory(app))  all++;
     }
 
-    if (games != m_GamesCount || apps != m_AppsCount || monitor != m_RemoteMonitorActive) {
+    if (games != m_GamesCount || apps != m_AppsCount || all != m_AllCount
+            || monitor != m_RemoteMonitorActive) {
         m_GamesCount = games;
         m_AppsCount = apps;
+        m_AllCount = all;
         m_RemoteMonitorActive = monitor;
         emit countsChanged();
     }
@@ -334,7 +382,9 @@ QVariant AppModel::data(const QModelIndex &index, int role) const
     case PinnedRole:
         return isPinnedApp(app);
     case IsAppRole:
-        return isAppsCategory(app);
+        return isApp(app);
+    case MovableRole:
+        return !isHostControlEntry(app);
     case ControlRole:
         return hostControlName(hostControlKind(app.id, app.uuid, app.name));
     default:
@@ -439,7 +489,7 @@ bool AppModel::togglePinned(int appIndex)
         return false;
 
     const NvApp app = m_VisibleApps.at(appIndex);
-    if (isAppsCategory(app))
+    if (isApp(app))
         return false;
 
     const bool pinned = !isPinnedApp(app);
@@ -453,6 +503,27 @@ bool AppModel::togglePinned(int appIndex)
                          { PinnedRole, SectionRole });
     }
     return pinned;
+}
+
+bool AppModel::moveToOtherTab(int appIndex)
+{
+    if (m_Computer == nullptr || appIndex < 0 || appIndex >= m_VisibleApps.count())
+        return false;
+
+    const NvApp app = m_VisibleApps.at(appIndex);
+    if (isHostControlEntry(app))
+        return false;
+
+    const bool toApps = !isApp(app);
+    PlaytimeManager::get()->setCategoryOverride(m_Computer->uuid, app.name, toApps,
+                                                isAppsCategory(app));
+    m_CategoryOverrides = PlaytimeManager::get()->categoryOverridesOn(m_Computer->uuid);
+
+    // The row leaves GAMES or APPS, and on ALL it can change section (a pinned game moved to
+    // APPS drops out of PINNED) — every tab needs the list rebuilt and sorted again.
+    rebuildVisibleApps();
+    updateCounts();
+    return toApps;
 }
 
 QString AppModel::sectionAt(int row) const
@@ -479,6 +550,7 @@ QHash<int, QByteArray> AppModel::roleNames() const
     names[PinnedRole] = "pinned";
     names[IsAppRole] = "isApp";
     names[ControlRole] = "control";
+    names[MovableRole] = "movable";
 
     return names;
 }

@@ -464,7 +464,8 @@ FocusScope {
         // showHidden = true: this is not the user browsing a library, it is us looking for one
         // specific entry. Someone who hid Desktop from their grid still needs it here.
         unlockAppModel.initialize(ComputerManager, wakeIndex, true)
-        var appIndex = unlockAppModel.indexOfAppNamed("Desktop")
+        // Either name the server gives it — see isDesktopName() in nvapp.h.
+        var appIndex = unlockAppModel.indexOfDesktop()
         if (appIndex < 0) {
             if (appListWaitTimer.tries < 20) {
                 appListWaitTimer.tries++

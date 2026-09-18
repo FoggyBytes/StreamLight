@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 
 import Theme 1.0
+import WindowMove 1.0
 
 /*
  * ── One game, presented (5.7.0) ──────────────────────────────────────────────────────────
@@ -188,6 +189,8 @@ Item {
 
                     SequentialAnimation on opacity {
                         running: badgeDotMark.visible && !Theme.reduceAnimations
+                        // Held while the window is dragged — see WindowMove / AmbientWaves.
+                        paused: running && WindowMove.moving
                         loops: Animation.Infinite
                         alwaysRunToEnd: true
                         NumberAnimation { to: 0.45; duration: 900; easing.type: Easing.InOutSine }

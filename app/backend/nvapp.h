@@ -18,10 +18,28 @@
  * Trimmed before comparing: the 2.0 servers pad some control titles with leading spaces on
  * purpose, so that they sort first in a client that alphabetises the list.
  */
-inline bool isSystemApp(const QString& name)
+/**
+ * The host's desktop, under either of the names a server gives it (6.1.0): "Desktop", from
+ * apps.json, and "Desktop (fallback)", the entry Apollo and Vibepollo add on their own when
+ * apps.json cannot be read (src/process.cpp, FALLBACK_DESKTOP_UUID
+ * EAAC6159-089A-46A9-9E24-6436885F6610). Without the second the fallback sorted as a game.
+ *
+ * ⚠️ By name and not by that UUID: the callers — the sort, play time, the unlock flow — are
+ * handed names only, and the server writes this one as a fixed string, same as the UUID.
+ */
+inline bool isDesktopName(const QString& name)
 {
     const QString n = name.trimmed();
-    for (const char* known : { "Desktop", "Steam Big Picture", "Virtual Display",
+    return n.compare(QLatin1String("Desktop"), Qt::CaseInsensitive) == 0
+        || n.compare(QLatin1String("Desktop (fallback)"), Qt::CaseInsensitive) == 0;
+}
+
+inline bool isSystemApp(const QString& name)
+{
+    if (isDesktopName(name))
+        return true;
+    const QString n = name.trimmed();
+    for (const char* known : { "Steam Big Picture", "Virtual Display",
                                "Remote Input", "Remote Monitor", "Terminate", "Resume",
                                "Disconnect Monitor", "Disconnect Input" }) {
         if (n.compare(QLatin1String(known), Qt::CaseInsensitive) == 0)
@@ -134,7 +152,9 @@ inline QString normaliseGameName(const QString& name)
 
 /**
  * Where an app sits in the list: the game you last played first, then the games you pinned
- * (6.0.0), then the desktop, then Steam's shell, then everything else alphabetically.
+ * (6.0.0), then the desktop, the virtual display (6.1.0), Steam's shell, then everything
+ * else alphabetically. The three launchers are compared trimmed, like isSystemApp(): the 2.0
+ * servers pad some titles with leading spaces.
  *
  * ⚠️ Shared so the two sort sites cannot drift — NvComputer::sortAppList() orders the list
  * and AppModel::updateAppList() inserts against that order, then asserts the two agree.
@@ -150,9 +170,11 @@ inline int appSortOrder(const QString& name, const QString& lastPlayedName = QSt
     if (!lastPlayedName.isEmpty()
         && name.compare(lastPlayedName, Qt::CaseInsensitive) == 0) return 0;
     if (!pinned.isEmpty() && pinned.contains(normaliseGameName(name))) return 1;
-    if (name.compare(QStringLiteral("Desktop"), Qt::CaseInsensitive) == 0) return 2;
-    if (name.compare(QStringLiteral("Steam Big Picture"), Qt::CaseInsensitive) == 0) return 3;
-    return 4;
+    const QString n = name.trimmed();
+    if (isDesktopName(n)) return 2;
+    if (n.compare(QStringLiteral("Virtual Display"), Qt::CaseInsensitive) == 0) return 3;
+    if (n.compare(QStringLiteral("Steam Big Picture"), Qt::CaseInsensitive) == 0) return 4;
+    return 5;
 }
 
 class NvApp
@@ -208,4 +230,40 @@ Q_DECLARE_METATYPE(NvApp)
 inline bool isAppsCategory(const NvApp& app)
 {
     return isSystemApp(app.name) || hostControlKind(app.id, app.uuid, app.name) != HostControl::None;
+}
+
+/**
+ * An entry that is not an application but a control the server synthesises — the Vibeshine /
+ * Vibepollo 2.0 ones (Remote Input, Remote Monitor, Resume, Terminate, the Disconnects) and
+ * the running-game copy. Virtual Display is NOT one: it launches a stream like Desktop does.
+ *
+ * These stay on APPS whatever happens (6.1.0): they are never on ALL — the running-game copy
+ * would show the game twice — and the user cannot move them to GAMES.
+ */
+inline bool isHostControlEntry(const NvApp& app)
+{
+    const HostControl c = hostControlKind(app.id, app.uuid, app.name);
+    if (c == HostControl::VirtualDisplay)
+        return false;
+    if (c != HostControl::None)
+        return true;
+
+    // A system name that is none of the three launchers: "Resume" and the like on a server
+    // that sends neither a UUID nor a known id.
+    if (!isSystemApp(app.name))
+        return false;
+    const QString n = app.name.trimmed();
+    return !isDesktopName(n)
+        && n.compare(QLatin1String("Steam Big Picture"), Qt::CaseInsensitive) != 0
+        && n.compare(QLatin1String("Virtual Display"), Qt::CaseInsensitive) != 0;
+}
+
+/**
+ * The ALL tab (6.1.0, issue #22): everything but the host controls — every game, Desktop,
+ * Virtual Display, Steam Big Picture, and whatever the user moved to APPS by hand — so a user
+ * who starts from the desktop or a virtual display does not have to change tab for it.
+ */
+inline bool isAllCategory(const NvApp& app)
+{
+    return !isHostControlEntry(app);
 }
