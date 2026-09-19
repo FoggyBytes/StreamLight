@@ -116,10 +116,11 @@ FocusScope {
     }
 
     function openPowerClientOnly() {
-        powerDialog.clientOnly         = true
+        powerDialog.clientOnly         = true    // no host row at all
         powerDialog.pcIndex            = -1
         powerDialog.hostName           = ""
-        powerDialog.authState          = "none"   // Host & Both disabled; Client default
+        powerDialog.authState          = "none"
+        powerDialog.clientModes        = SystemProperties.clientPowerModes()
         powerDialog.clientUpdateState  = SystemProperties.updatesPending() ? "pending" : "none"
         powerDialog.hostUpdateState    = "unavailable"
         powerDialog.open()
@@ -1219,6 +1220,7 @@ FocusScope {
                     busy:              model.busy,
                     statusUnknown:     model.statusUnknown,
                     wakeable:          model.wakeable,
+                    asleep:            model.asleep,
                     serverSupported:   model.serverSupported,
                     details:           model.details,
                     address:           model.address,
@@ -1809,6 +1811,7 @@ FocusScope {
         paired:            _h ? _h.paired            : false
         statusUnknown:     _h ? _h.statusUnknown     : false
         wakeable:          _h ? _h.wakeable          : false
+        asleep:            _h ? _h.asleep            : false
         serverSupported:   _h ? _h.serverSupported   : true
         hasTailscale:      _h ? _h.hasTailscale      : false
         tailscaleActive:   _h ? _h.tailscaleActive   : false
@@ -2014,11 +2017,21 @@ FocusScope {
             powerDialog.pcIndex           = h.index
             powerDialog.hostName          = h.name
             powerDialog.authState         = h.auth
+            // This device's modes are read here, on every open; the host's arrive over the
+            // bridge (POWERCAPS) and fill its row in when they do.
+            powerDialog.clientModes       = SystemProperties.clientPowerModes()
+            powerDialog.hostCaps          = "checking"
+            powerDialog.hostModes         = []
+            powerDialog.hostWakeLan       = true
+            powerDialog.hostWakeable      = h.wakeable
+            // A magic packet is a LAN broadcast: through Tailscale it never reaches the host.
+            powerDialog.hostAway          = h.tailscaleActive || h.isTailscaleClone
             // Seed update status: client read synchronously; host arrives async.
             powerDialog.clientUpdateState = SystemProperties.updatesPending() ? "pending" : "none"
             if (h.auth === "authorized") {
                 powerDialog.hostUpdateState = "checking"
                 computerModel.requestUpdateState(h.index)
+                computerModel.requestPowerCaps(h.index)
             } else {
                 powerDialog.hostUpdateState = "unavailable"
             }
@@ -2082,7 +2095,7 @@ FocusScope {
                          reason: why })
         }
         if (h.online && h.paired && h.auth === "authorized")
-            items.push({ kind: "updateHost", icon: "🪟", label: qsTr("Windows Update") })
+            items.push({ kind: "updateHost", winMark: true, label: qsTr("Windows Update") })
         if (h.online && h.paired && (h.auth === "pending" || h.auth === "denied"))
             items.push({ kind: "requestStAuth", icon: "🔑", label: qsTr("Request Access") })
         return items
@@ -2293,7 +2306,6 @@ FocusScope {
         }
     }
 
-    // ── Power-off chooser (host / client / both) ──────────────────────────────
     LinkRestoreDialog {
         id: linkRestoreDialog
         onClosed: navRoot.forceActiveFocus()
@@ -2302,39 +2314,76 @@ FocusScope {
         }
     }
 
+    // ── Power chooser: one row per machine (6.2.0) ────────────────────────────
+    // The host always goes first, and this device only follows once the host has taken the
+    // command: once this device is asleep or off, nothing is left to send it.
     PowerDialog {
         id: powerDialog
         onClosed: navRoot.forceActiveFocus()
-        onConfirmed: function(target, installUpdates) {
-            if (target === "host") {
-                homeScreen.computerModel.shutdownHost(powerDialog.pcIndex, installUpdates)
-            } else if (target === "client") {
-                SystemProperties.shutdownClient(installUpdates)
-            } else if (target === "both") {
-                // Send the host shutdown first, then power off the client after a short
-                // delay so the bridge socket finishes writing the command.
-                homeScreen.computerModel.shutdownHost(powerDialog.pcIndex, installUpdates)
-                bothShutdownTimer.installUpdates = installUpdates
-                bothShutdownTimer.restart()
+        onConfirmed: function(hostMode, hostUpdates, clientMode, clientUpdates) {
+            if (hostMode === "keep") {
+                if (clientMode !== "keep")
+                    SystemProperties.powerClient(clientMode, clientUpdates)
+                return
             }
+
+            clientPowerTimer.mode = clientMode
+            clientPowerTimer.installUpdates = clientUpdates
+
+            if (powerDialog.hostCaps === "legacy") {
+                // StreamTweak older than 8.6.0: the old SHUTDOWN, fire-and-forget, so this
+                // device waits a moment for the bridge socket to finish writing it.
+                homeScreen.computerModel.shutdownHost(powerDialog.pcIndex, hostUpdates)
+                if (clientMode !== "keep")
+                    clientPowerTimer.restart()
+                return
+            }
+
+            // POWER is answered: this device acts on the host's OK (onPowerHostResult).
+            clientPowerTimer.pendingHost = powerDialog.pcIndex
+            homeScreen.computerModel.powerHost(powerDialog.pcIndex, hostMode, hostUpdates)
         }
     }
 
-    // Receives the host's update state (async) and resolves the Power dialog's host row.
+    // Receives the host's update state and power modes (async) and resolves its row.
     Connections {
         target: computerModel
         function onUpdateStateReceived(idx, pending) {
             if (idx === powerDialog.pcIndex)
                 powerDialog.hostUpdateState = pending ? "pending" : "none"
         }
+        function onPowerCapsReceived(idx, supported, modes, wakeLan) {
+            if (idx !== powerDialog.pcIndex)
+                return
+            if (supported) {
+                powerDialog.hostModes   = modes
+                powerDialog.hostWakeLan = wakeLan
+                powerDialog.hostCaps    = "ready"
+            } else {
+                powerDialog.hostCaps    = "legacy"
+            }
+        }
+        function onPowerHostResult(idx, mode, ok) {
+            if (idx !== clientPowerTimer.pendingHost)
+                return
+            clientPowerTimer.pendingHost = -1
+            // A refusal (or no answer) leaves this device on too: switching off the machine in
+            // your hands while the host stayed up would hide that anything went wrong.
+            if (ok && clientPowerTimer.mode !== "keep")
+                clientPowerTimer.restart()
+        }
     }
 
     Timer {
-        id: bothShutdownTimer
+        id: clientPowerTimer
+        property string mode: "keep"
         property bool installUpdates: false
-        interval: 1800
+        property int pendingHost: -1
+        // After an answered POWER the host already has the command; the pause only matters
+        // for the old fire-and-forget SHUTDOWN, whose socket must finish writing.
+        interval: powerDialog.hostCaps === "legacy" ? 1800 : 300
         repeat: false
-        onTriggered: SystemProperties.shutdownClient(bothShutdownTimer.installUpdates)
+        onTriggered: SystemProperties.powerClient(clientPowerTimer.mode, clientPowerTimer.installUpdates)
     }
 
     // ── Remote "Update host" — dialog, poll timer, progress wiring ─────────────

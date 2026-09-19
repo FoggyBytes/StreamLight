@@ -24,6 +24,9 @@
 // Advapi32: OpenProcessToken / LookupPrivilegeValue / AdjustTokenPrivileges /
 // InitiateShutdownW (SeShutdownPrivilege handling in shutdownClient()).
 #pragma comment(lib, "Advapi32.lib")
+// PowrProf: GetPwrCapabilities / SetSuspendState (clientPowerModes(), powerClient()).
+#include <powrprof.h>
+#pragma comment(lib, "PowrProf.lib")
 // InitiateShutdown flags are not always exposed by the SDK headers in scope here.
 #ifndef SHUTDOWN_FORCE_SELF
 #define SHUTDOWN_FORCE_SELF      0x00000002
@@ -33,6 +36,9 @@
 #endif
 #ifndef SHUTDOWN_INSTALL_UPDATES
 #define SHUTDOWN_INSTALL_UPDATES 0x00000040
+#endif
+#ifndef SHUTDOWN_RESTART
+#define SHUTDOWN_RESTART         0x00000004
 #endif
 #endif
 
@@ -579,6 +585,120 @@ QVariantMap SystemProperties::localLinkInfo()
     out[QStringLiteral("reason")]  = info.reason;
     out[QStringLiteral("usable")]  = info.usable();
     return out;
+}
+
+#ifdef Q_OS_WIN32
+namespace
+{
+    // Enables SeShutdownPrivilege on our token; false when the account does not hold it.
+    bool enableShutdownPrivilege()
+    {
+        HANDLE token = nullptr;
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+            return false;
+        TOKEN_PRIVILEGES tp;
+        tp.PrivilegeCount = 1;
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+        bool ok = LookupPrivilegeValue(nullptr, SE_SHUTDOWN_NAME, &tp.Privileges[0].Luid)
+                  && AdjustTokenPrivileges(token, FALSE, &tp, 0, nullptr, nullptr)
+                  // TRUE even when nothing was assigned: ERROR_NOT_ALL_ASSIGNED says it wasn't.
+                  && GetLastError() == ERROR_SUCCESS;
+        CloseHandle(token);
+        return ok;
+    }
+}
+#endif
+
+QStringList SystemProperties::clientPowerModes()
+{
+    QStringList modes;
+#ifdef Q_OS_WIN32
+    if (!enableShutdownPrivilege())
+        return modes;
+
+    SYSTEM_POWER_CAPABILITIES caps = {};
+    if (GetPwrCapabilities(&caps)) {
+        if (caps.SystemS1 || caps.SystemS2 || caps.SystemS3 || caps.AoAc)
+            modes << QStringLiteral("sleep");
+        // No "hibernate" (decision of 19/09/2026): a host in hibernation woke by itself ~30 s
+        // after this client, holding it asleep, had stopped talking to it (§77). StreamTweak
+        // still reports and carries it out; the Power dialog does not offer it on either row.
+    }
+    modes << QStringLiteral("restart") << QStringLiteral("shutdown");
+#endif
+    return modes;
+}
+
+QString SystemProperties::clientName()
+{
+    return QSysInfo::machineHostName();
+}
+
+void SystemProperties::powerClient(const QString& mode, bool installUpdates)
+{
+    if (mode == QLatin1String("shutdown")) {
+        shutdownClient(installUpdates);
+        return;
+    }
+
+#ifdef Q_OS_WIN32
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SystemProperties: client power action '%s'%s",
+                qPrintable(mode), installUpdates ? " (installing pending updates first)" : "");
+    enableShutdownPrivilege();
+
+    if (mode == QLatin1String("restart")) {
+        DWORD rc = InitiateShutdownW(nullptr, nullptr, 0,
+                                     SHUTDOWN_RESTART | SHUTDOWN_FORCE_SELF
+                                     | (installUpdates ? SHUTDOWN_INSTALL_UPDATES : 0),
+                                     SHTDN_REASON_MAJOR_APPLICATION | SHTDN_REASON_FLAG_PLANNED);
+        if (rc == ERROR_SUCCESS)
+            return;
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "SystemProperties: InitiateShutdown(restart) failed (rc %lu); trying ExitWindowsEx", rc);
+        if (ExitWindowsEx(EWX_REBOOT, SHTDN_REASON_MAJOR_OTHER))
+            return;
+        const QString shutdownExe = qEnvironmentVariable("SystemRoot", QStringLiteral("C:\\Windows"))
+                                    + QStringLiteral("\\System32\\shutdown.exe");
+        QProcess::startDetached(shutdownExe, { QStringLiteral("/r"), QStringLiteral("/t"), QStringLiteral("0") });
+        return;
+    }
+
+    if (mode == QLatin1String("sleep")) {
+        SYSTEM_POWER_CAPABILITIES caps = {};
+        GetPwrCapabilities(&caps);
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "SystemProperties: S1 %d S2 %d S3 %d S4 %d hiberfile %d AoAc %d",
+                    caps.SystemS1, caps.SystemS2, caps.SystemS3, caps.SystemS4,
+                    caps.HiberFilePresent, caps.AoAc);
+
+        // Classic suspend (S1-S3): SetSuspendState, wake events left on.
+        if (caps.SystemS1 || caps.SystemS2 || caps.SystemS3) {
+            if (SetSuspendState(FALSE, FALSE, FALSE))
+                return;   // returns after the machine has resumed
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "SystemProperties: SetSuspendState(sleep) failed (err %lu)", GetLastError());
+            if (!caps.AoAc)
+                return;
+        }
+
+        // Modern Standby (S0 low-power idle) has no suspend call: Windows enters it when the
+        // display goes off, so that is what we ask for. ⚠️ Not verifiable on the dev machine
+        // (it has S3) — this is the path the Ally takes, and it is to be confirmed there.
+        if (caps.AoAc) {
+            DWORD_PTR result = 0;
+            SendMessageTimeoutW(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, 2,
+                                SMTO_ABORTIFHUNG, 2000, &result);
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SystemProperties: Modern Standby, display turned off");
+        }
+        return;
+    }
+
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "SystemProperties: unknown power mode '%s'", qPrintable(mode));
+#else
+    Q_UNUSED(installUpdates);
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                "SystemProperties: powerClient is only supported on Windows");
+#endif
 }
 
 bool SystemProperties::updatesPending()

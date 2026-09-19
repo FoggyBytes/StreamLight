@@ -4,6 +4,26 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+----------------------------------------
+Version 6.2.0 - Sleep Tight (19/09/2026)
+----------------------------------------
+
+StreamTweak 8.6.0 is needed on the host for the new host options — with an older StreamTweak the host can still be shut down as before. The Power dialog is rebuilt around the two machines: the host and the device in your hands each get their own choice of Keep on, Sleep, Restart or Shut down, and each shows only what that machine really supports.
+
+✨ NEW FEATURES:
+• Sleep and restart for the host and for this device — one row each in the Power dialog, so any pair works: the host asleep while the handheld shuts down, the host restarting while you keep playing on the client
+• Only what each machine can do — the host reports its own options through StreamTweak and this device reads its own, so a PC without standby or without the right to shut down shows exactly that
+• Install Windows updates per machine — offered on the row that restarts or shuts down, only when that machine has updates waiting
+• A warning before putting to sleep a host that could not be woken again — away from home over Tailscale, or with its network adapter not set to wake the PC
+• A host you put to sleep stays asleep — StreamLight stops contacting it until you choose Wake, so turning this device back on no longer wakes the host with it. It reads "Asleep" on Home meanwhile
+
+🎨 UI:
+• Each row says whether that machine's Windows is up to date, and a line under the rows says what is about to happen
+• The status bar calls X "Power" instead of "Shutdown"
+
+🙏 THANKS:
+• Thanks to @carlossgv (https://github.com/FoggyBytes/StreamTweak/issues/10) for asking for sleep
+
 -----------------------------------
 Version 6.1.0 - Sorted (18/09/2026)
 -----------------------------------

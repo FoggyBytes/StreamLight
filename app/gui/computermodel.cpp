@@ -109,6 +109,8 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
                    : StageOpacityDefault;
     case StreamTweakEnabledRole:
         return computer->streamTweakEnabled;
+    case AsleepRole:
+        return computer->heldAsleep;
     case DetailsRole: {
         QString state, pairState;
 
@@ -193,6 +195,7 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
     names[StageSeedRole] = "stageSeed";
     names[StageOpacityRole] = "stageOpacity";
     names[StreamTweakEnabledRole] = "streamTweakEnabled";
+    names[AsleepRole] = "asleep";
 
     return names;
 }
@@ -271,6 +274,18 @@ private:
 void ComputerModel::wakeComputer(int computerIndex)
 {
     Q_ASSERT(computerIndex < m_Computers.count());
+
+    // Wake is the one way back from heldAsleep: polling and the bridge resume with it, so the
+    // wake flow sees the host come online. If someone else already woke it, the magic packet
+    // lands on an awake NIC and does nothing, and the next poll finds it online.
+    {
+        QString uuid;
+        {
+            QReadLocker lock(&m_Computers[computerIndex]->lock);
+            uuid = m_Computers[computerIndex]->uuid;
+        }
+        m_ComputerManager->setHeldAsleep(uuid, false);
+    }
 
     DeferredWakeHostTask* wakeTask = new DeferredWakeHostTask(m_Computers[computerIndex], computerIndex);
     QObject::connect(wakeTask, &DeferredWakeHostTask::wakeCompleted,
@@ -387,9 +402,12 @@ void ComputerModel::requestHostNetInfo(int computerIndex)
     //
     // probeStreamTweakPresence() is the single deliberate exception; see its declaration.
     //
+    // bridgeAllowed() is streamTweakEnabled() AND not held asleep (6.2.0): a host this client
+    // put to sleep gets no bridge request either, because a TCP connection is what wakes it.
+    //
     // Where a caller is waiting on a signal, the guard emits the same "nothing" answer the
     // empty-address path emits. Returning silently would hang the waiter.
-    if (!streamTweakEnabled(computerIndex)) return;
+    if (!bridgeAllowed(computerIndex)) return;
 
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
 
@@ -429,7 +447,7 @@ void ComputerModel::requestHostNetInfo(int computerIndex)
 
 void ComputerModel::restoreHostLink(int computerIndex)
 {
-    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) return;   // see requestHostNetInfo()
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
 
     NvComputer* computer = m_Computers[computerIndex];
@@ -486,6 +504,19 @@ void ComputerModel::setHostStageOpacity(int computerIndex, int percent)
     emit dataChanged(idx, idx, { StageOpacityRole });
 }
 
+bool ComputerModel::heldAsleep(int computerIndex) const
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return false;
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+    return computer->heldAsleep;
+}
+
+bool ComputerModel::bridgeAllowed(int computerIndex) const
+{
+    return streamTweakEnabled(computerIndex) && !heldAsleep(computerIndex);
+}
+
 bool ComputerModel::streamTweakEnabled(int computerIndex) const
 {
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return false;
@@ -520,6 +551,12 @@ void ComputerModel::probeStreamTweakPresence(int computerIndex)
 {
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
 
+    // Not even CAPS to a host held asleep: any connection wakes it (see bridgeAllowed()).
+    if (heldAsleep(computerIndex)) {
+        emit streamTweakPresenceReceived(computerIndex, false);
+        return;
+    }
+
     NvComputer* computer = m_Computers[computerIndex];
     QString address;
     {
@@ -548,7 +585,7 @@ void ComputerModel::refreshTailscale(int computerIndex)
 {
     // Note this only drops the endpoint we would have LEARNED from the bridge. Tailscale
     // itself keeps working: the range classification in NvComputer is independent of us.
-    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) return;   // see requestHostNetInfo()
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
 
     NvComputer* computer = m_Computers[computerIndex];
@@ -639,7 +676,7 @@ void ComputerModel::shutdownHost(int computerIndex, bool installUpdates)
 {
     // Powering off the CLIENT is not a StreamTweak feature and is not affected — that lives
     // in SystemProperties. Only the host half goes away.
-    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) return;   // see requestHostNetInfo()
 
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
@@ -654,9 +691,84 @@ void ComputerModel::shutdownHost(int computerIndex, bool installUpdates)
     m_streamTweakBridge.sendShutdown(address, installUpdates);
 }
 
+void ComputerModel::requestPowerCaps(int computerIndex)
+{
+    if (!bridgeAllowed(computerIndex)) {         // see requestHostNetInfo()
+        emit powerCapsReceived(computerIndex, false, QStringList(), false);
+        return;
+    }
+
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+
+    QString address = computer->activeAddress.address();
+    if (address.isEmpty()) {
+        emit powerCapsReceived(computerIndex, false, QStringList(), false);
+        return;
+    }
+
+    m_streamTweakBridge.requestPowerCaps(address,
+        [this, computerIndex](const QString& response) {
+            // An older host answers "ERR" (unknown verb) or nothing: not an empty list of
+            // modes, but "ask me the old way".
+            QJsonObject obj = QJsonDocument::fromJson(response.toUtf8()).object();
+            if (!obj.contains(QLatin1String("modes"))) {
+                emit powerCapsReceived(computerIndex, false, QStringList(), false);
+                return;
+            }
+            QStringList modes;
+            for (const QJsonValue& v : obj.value(QLatin1String("modes")).toArray())
+                modes << v.toString();
+            emit powerCapsReceived(computerIndex, true, modes,
+                                   obj.value(QLatin1String("wake_lan")).toBool());
+        });
+}
+
+void ComputerModel::powerHost(int computerIndex, const QString& mode, bool installUpdates)
+{
+    if (!bridgeAllowed(computerIndex)) {         // see requestHostNetInfo()
+        emit powerHostResult(computerIndex, mode, false);
+        return;
+    }
+
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+
+    QString address = computer->activeAddress.address();
+    if (address.isEmpty()) {
+        emit powerHostResult(computerIndex, mode, false);
+        return;
+    }
+
+    m_streamTweakBridge.sendPower(address, mode, installUpdates,
+        [this, computerIndex, mode](const QString& response) {
+            bool ok = response.trimmed() == QLatin1String("OK");
+            if (!ok)
+                qWarning() << "POWER" << mode << "refused by host:" << response;
+            // Asleep or hibernating: from here on, not one connection until Wake — the next
+            // poll would otherwise be the packet that wakes it (NvComputer::heldAsleep).
+            if (ok && (mode == QLatin1String("sleep") || mode == QLatin1String("hibernate"))
+                    && computerIndex >= 0 && computerIndex < m_Computers.count()) {
+                QString uuid;
+                {
+                    QReadLocker lock(&m_Computers[computerIndex]->lock);
+                    uuid = m_Computers[computerIndex]->uuid;
+                }
+                m_ComputerManager->setHeldAsleep(uuid, true);
+            }
+            emit powerHostResult(computerIndex, mode, ok);
+        });
+}
+
 void ComputerModel::requestUpdateState(int computerIndex)
 {
-    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) {         // see requestHostNetInfo()
         emit updateStateReceived(computerIndex, false);
         return;
     }
@@ -688,7 +800,7 @@ void ComputerModel::requestLockState(int computerIndex)
 {
     // supported=false, which every caller already reads as "this host cannot tell us" — the
     // same conclusion, arrived at without a round trip.
-    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) {         // see requestHostNetInfo()
         emit lockStateReceived(computerIndex, false, false);
         return;
     }
@@ -721,7 +833,7 @@ void ComputerModel::matchHostLinkSpeed(int computerIndex)
     // ⚠️ Must emit, not just return: the wake flow's last step waits for
     // linkMatchProgress(running=false) to finish, so a silent return would hang it on a host
     // whose integration is off.
-    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) {         // see requestHostNetInfo()
         emit linkMatchProgress(computerIndex, false, QString());
         return;
     }
@@ -753,7 +865,7 @@ void ComputerModel::matchHostLinkSpeed(int computerIndex)
 
 void ComputerModel::markUnlockSession(int computerIndex, bool begin)
 {
-    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) return;   // see requestHostNetInfo()
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
     NvComputer* computer = m_Computers[computerIndex];
@@ -772,7 +884,7 @@ void ComputerModel::markUnlockSession(int computerIndex, bool begin)
 
 void ComputerModel::startUpdateCheck(int computerIndex)
 {
-    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) return;   // see requestHostNetInfo()
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
     NvComputer* computer = m_Computers[computerIndex];
@@ -785,7 +897,7 @@ void ComputerModel::startUpdateCheck(int computerIndex)
 
 void ComputerModel::startUpdateInstall(int computerIndex, const QString& scope)
 {
-    if (!streamTweakEnabled(computerIndex)) return;   // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) return;   // see requestHostNetInfo()
     if (computerIndex < 0 || computerIndex >= m_Computers.count())
         return;
     NvComputer* computer = m_Computers[computerIndex];
@@ -798,7 +910,7 @@ void ComputerModel::startUpdateInstall(int computerIndex, const QString& scope)
 
 void ComputerModel::requestUpdateProgress(int computerIndex)
 {
-    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) {         // see requestHostNetInfo()
         emit updateProgressReceived(computerIndex, QVariantMap{{ "phase", "IDLE" }});
         return;
     }
@@ -832,7 +944,7 @@ void ComputerModel::requestUpdateProgress(int computerIndex)
 
 void ComputerModel::requestStreamTweakStatus(int computerIndex)
 {
-    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) {         // see requestHostNetInfo()
         emit streamTweakStatusReceived(computerIndex, QString());
         return;
     }
@@ -870,7 +982,7 @@ void ComputerModel::requestStreamTweakAuth(int computerIndex)
     // "none" is what a host that doesn't run StreamTweak reports, and it is what hides the
     // access chip and every Options tile gated on "authorized" — so switching the
     // integration off takes the whole UI surface with it for free, with no separate gates.
-    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) {         // see requestHostNetInfo()
         emit streamTweakAuthReceived(computerIndex, QStringLiteral("none"), QString());
         return;
     }
@@ -962,7 +1074,7 @@ void ComputerModel::rememberStreamTweakSeen(const QString& uuid)
 
 void ComputerModel::requestAppStores(int computerIndex)
 {
-    if (!streamTweakEnabled(computerIndex)) {         // see requestHostNetInfo()
+    if (!bridgeAllowed(computerIndex)) {         // see requestHostNetInfo()
         emit appStoresReceived(computerIndex, QVariantMap());
         return;
     }

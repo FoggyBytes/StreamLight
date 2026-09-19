@@ -5020,7 +5020,7 @@ FocusScope {
                                 // the bottom of the last line.
                                 [ { gap: 21 },
                                   { group: qsTr("Remote") },
-                                  { name: qsTr("Power the host off") },
+                                  { name: qsTr("Sleep, restart or power off the host") },
                                   { name: qsTr("Windows Update: check, install, restart") },
                                   { name: qsTr("Unlock with your PIN after waking it") } ],
 

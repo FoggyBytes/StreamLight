@@ -86,19 +86,19 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Session quality reporting** *(5.2.0+)* — FPS, drops, RTT, jitter, decode latency and bitrate sent every second; StreamTweak turns them into a grade and charts
 - **Delivered vs target bitrate** *(8.0.0+)* — StreamLight reports the rate it was told to aim for, so the host can show what it actually delivered against it. Neither side can work that out alone
 - **Remote host power-off** *(7.2.0+)* — a **Power…** chooser for the host, this PC, or both, on an authorized host only
+- **Sleep and restart** *(8.6.0+)* — one row per machine in the Power chooser, each offering only what that machine supports
 - **Remote Windows Update** *(7.3.0+)* — scan, classify and install updates on the host, rebooting only if required, with a backgroundable progress view. Updates can also be installed before a shutdown
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 
-## ✨ What's New in 6.1.0 — Sorted
+## ✨ What's New in 6.2.0 — Sleep Tight
 
-The host page gets an **All** tab, and the split between Games and Apps becomes yours to correct. Client-side, works with any host.
+The **Power** dialog gives each machine its own choice. Needs **StreamTweak 8.6.0** on the host for the new host options.
 
-- **All** — every game plus Desktop, Virtual Display and Steam Big Picture in one list, under *Last played* and *Pinned*. The host page now opens on it
-- **Move between Games and Apps** — the **right stick click** or **M** moves the selected entry to the other tab, remembered per host
-- **LB / RB for the tabs**, drawn at the ends of the strip; the profile moves to **LT / RT** beside its badge
-- **The moving background** runs on Home, Settings and the PIN pad only
-- **Fixes** for a window drag that could stutter while a host was streaming, and for the *Desktop (fallback)* entry of Apollo and Vibepollo, now treated as Desktop
+- **One row per machine** — the host and this device each pick *Keep on*, *Sleep*, *Restart* or *Shut down*, so any pair works
+- **Only what each machine supports** — the host reports its own options through StreamTweak, this device reads its own
+- **Install Windows updates per machine**, offered where that machine restarts or shuts down and has updates waiting
+- **A warning before sleeping a host you could not wake** — over Tailscale, or with its network adapter not set to wake the PC
 
 *Older releases are in [changelog.txt](changelog.txt).*
 

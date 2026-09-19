@@ -1,4 +1,4 @@
-; StreamLight 6.1.0 — Moonlight fork with StreamTweak integration.
+; StreamLight 6.2.0 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
@@ -11,7 +11,7 @@
 ; Reading version.txt from here was considered and left alone: that file carries a UTF-8
 ; BOM and no trailing newline, so an ISPP FileRead would have to skip three bytes by
 ; position, which is a more fragile thing than one line to remember at release time.
-#define AppVersion "6.1.0"
+#define AppVersion "6.2.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -281,7 +281,7 @@ begin
     '•  Game library sync with store badges (Steam, Epic, GOG, Xbox, …)' + #13#10 +
     '•  Session quality grading, and the host''s last session on your Home' + #13#10 +
     '•  Live bitrate shown against your configured target on the host dashboard' + #13#10 +
-    '•  Remote host power-off and Windows Update' + #13#10 +
+    '•  Remote host sleep, restart, power-off and Windows Update' + #13#10 +
     '•  Tailscale presence for remote streaming over the internet';
 
   StreamTweakOutroLabel := TNewStaticText.Create(StreamTweakPage);

@@ -1,14 +1,30 @@
 import Theme 1.0
+import SystemProperties 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 import QtQuick.Layouts 1.3
 
-// Power-off chooser for a paired host. Lets the user shut down the host PC
-// (via StreamTweak), the local client PC, or both. Standalone Popup (like
-// AddHostDialog) so the focus chain is fully controllable for gamepad/keyboard:
-//   SegmentedSelector ⇄ Confirm ⇄ Cancel   (Up/Down between rows, Left/Right between buttons)
-// Follows the app dialog convention (§22): affirmative on the LEFT, green accent
-// reserved for FOCUS only, and the safe/dismissive button (Cancel) focused first.
+// POWER chooser (6.2.0, StreamTweak issue #10). One row per machine — the host and this
+// device — and each row picks what THAT machine does: Keep on, Sleep, Restart, Shut down.
+// "Both" is no longer a target of its own: it is simply two rows that are not Keep on.
+//
+// Each row shows only the modes its machine really has. The host reports its own over the
+// bridge (POWERCAPS, StreamTweak 8.6.0); this device reads them locally
+// (SystemProperties.clientPowerModes). Nothing here knows which hardware is on either end —
+// a host with Modern Standby, a machine without standby, an account without the right to
+// shut down all come out of those two lists.
+//
+// ⚠️ No Hibernate (19/09/2026). StreamTweak 8.6.0 still lists "hibernate" for a host that
+// has it; it simply has no key in _keys, so it is never drawn. A hibernating host woke by
+// itself ~30 s later with this client silent — the wake came from elsewhere (§77).
+//
+// A host older than 8.6.0 cannot answer POWERCAPS, so its row offers Shut down only — the
+// power-off it always understood — and the caller sends it the old SHUTDOWN.
+//
+// Standalone Popup, so the focus chain is ours for pad and keyboard:
+//   host row ⇅ host updates ⇅ device row ⇅ device updates ⇅ Confirm ⇄ Cancel
+// Dialog convention (§22): affirmative on the LEFT, accent reserved for focus, and the
+// dismissive button (Cancel) focused first.
 Popup {
     id: pop
 
@@ -20,37 +36,126 @@ Popup {
     property int    pcIndex: -1
     property string hostName: ""
     // StreamTweak access state of the host, mirrors HomeScreen's currentHost.auth.
-    // Host/Both targets need an approved ("authorized") host; Client is always allowed.
     property string authState: "none"
     readonly property bool hostAllowed: authState === "authorized"
 
-    // Client-only mode: opened from the X shortcut when there's no reachable/paired
-    // host (offline host, the "+ Add" tile, or no hosts at all). Host & Both stay
-    // disabled and the access hint is suppressed — the user can still power off THIS
-    // PC. Set by the caller before open(); reset to false for the full host chooser.
+    // Client-only mode: no reachable/paired host (offline host, the "+ Add" tile, no hosts).
+    // The host row is not drawn at all. Set by the caller before open().
     property bool clientOnly: false
 
+    // What the host row can offer, set by HomeScreen:
+    //   "checking" — POWERCAPS asked, not answered yet
+    //   "ready"    — hostModes holds the host's own list
+    //   "legacy"   — a host older than StreamTweak 8.6.0: Shut down only
+    property string hostCaps: "checking"
+    property var    hostModes: []
+    // Whether a magic packet can bring the host back, for the warning under its row.
+    property bool   hostWakeLan: true    // the host's NIC is armed for wake (POWERCAPS)
+    property bool   hostWakeable: true   // we know its MAC
+    property bool   hostAway: false      // reached through Tailscale: WOL does not get there
+
+    // This device's modes; HomeScreen reads them on every open.
+    property var    clientModes: []
+
     // Windows-update status of each side, set by HomeScreen when the dialog opens.
-    //   host:   "checking" | "pending" | "none" | "unavailable" (not authorized)
-    //   client: "pending" | "none"  (always determinable locally)
-    // Fast reboot-pending check (registry / UPDATESTATE) — for a full scan the user has the
-    // dedicated "Windows Update" flow. Drives the evidence rows and gates the checkbox.
+    //   host:   "checking" | "pending" | "none" | "unavailable"
+    //   client: "pending" | "none"
     property string hostUpdateState: "unavailable"
     property string clientUpdateState: "none"
 
-    readonly property bool _targetIncludesHost:   selector.currentIndex === 0 || selector.currentIndex === 2
-    readonly property bool _targetIncludesClient: selector.currentIndex === 1 || selector.currentIndex === 2
-    readonly property bool _targetHasPendingUpdates:
-           (_targetIncludesHost   && pop.hostUpdateState   === "pending")
-        || (_targetIncludesClient && pop.clientUpdateState === "pending")
-    readonly property bool _targetChecking:
-        _targetIncludesHost && pop.hostUpdateState === "checking"
+    // Emitted on confirm. A mode is one of _keys; "keep" means leave that machine alone.
+    // The update flags are only ever true for restart/shutdown on a side with updates pending.
+    signal confirmed(string hostMode, bool hostUpdates, string clientMode, bool clientUpdates)
 
-    // Emitted on confirm with target ("host"|"client"|"both") and whether to install
-    // pending Windows updates before powering off.
-    signal confirmed(string target, bool installUpdates)
+    // ── Modes ─────────────────────────────────────────────────────────────────
+    // One fixed list for both rows, so an index means the same mode everywhere; what a
+    // machine lacks is hidden, not removed.
+    readonly property var _keys:   ["keep", "sleep", "restart", "shutdown"]
+    readonly property var _labels: [qsTr("Keep on"), qsTr("Sleep"), qsTr("Restart"), qsTr("Shut down")]
 
-    readonly property var _targets: ["host", "client", "both"]
+    function _hiddenFor(modes) {
+        var hidden = []
+        for (var i = 1; i < _keys.length; ++i)
+            if (modes.indexOf(_keys[i]) < 0) hidden.push(i)
+        return hidden
+    }
+
+    readonly property bool _hostRow: !clientOnly
+    readonly property var  _hostOffer: hostCaps === "legacy" ? ["shutdown"]
+                                     : hostCaps === "ready"  ? hostModes : []
+    readonly property bool _hostSelectable: _hostRow && hostAllowed && hostCaps !== "checking"
+                                            && _hostOffer.length > 0
+
+    readonly property string hostMode:   _hostSelectable ? _keys[hostSel.currentIndex] : "keep"
+    readonly property string clientMode: clientModes.length > 0 ? _keys[clientSel.currentIndex] : "keep"
+
+    function _canUpdate(mode) { return mode === "restart" || mode === "shutdown" }
+    readonly property bool _hostUpdOffered:   pop._canUpdate(hostMode)   && hostUpdateState === "pending"
+    readonly property bool _clientUpdOffered: pop._canUpdate(clientMode) && clientUpdateState === "pending"
+
+    readonly property bool _nothingToDo: hostMode === "keep" && clientMode === "keep"
+
+    // Under the host row: only when the choice would leave it where we cannot reach it.
+    readonly property string _hostWarning: {
+        if (hostMode === "keep" || hostMode === "restart") return ""
+        if (hostAway) return qsTr("Away from home: can’t wake it")
+        if (hostMode === "sleep" && (!hostWakeLan || !hostWakeable))
+            return qsTr("Can’t be woken remotely")
+        return ""
+    }
+
+    function _phrase(name, mode, updates) {
+        var verb = mode === "sleep"     ? qsTr("sleeps")
+                 : mode === "restart"   ? (updates ? qsTr("updates and restarts") : qsTr("restarts"))
+                 :                        (updates ? qsTr("updates and shuts down") : qsTr("shuts down"))
+        return "<b>" + name + "</b> " + verb
+    }
+    readonly property string _clientLabel: {
+        var n = SystemProperties.clientName()
+        return n.length > 0 ? n : qsTr("This device")
+    }
+    readonly property string _summary: {
+        var parts = []
+        if (hostMode !== "keep")
+            parts.push(_phrase(hostName.length > 0 ? hostName : qsTr("Host"), hostMode, _hostUpdOffered && hostUpd.checked))
+        if (clientMode !== "keep")
+            parts.push(_phrase(_clientLabel, clientMode, _clientUpdOffered && clientUpd.checked))
+        return parts.length > 0 ? parts.join(qsTr(" · then ")) : qsTr("Nothing to do")
+    }
+
+    function _commit() {
+        if (pop._nothingToDo)
+            return
+        pop.confirmed(pop.hostMode,   pop._hostUpdOffered && hostUpd.checked,
+                      pop.clientMode, pop._clientUpdOffered && clientUpd.checked)
+        pop.close()
+    }
+
+    // ── Focus chain ───────────────────────────────────────────────────────────
+    function _chain() {
+        var c = []
+        if (hostSel.visible)   c.push(hostSel)
+        if (hostUpd.visible)   c.push(hostUpd)
+        if (clientSel.visible) c.push(clientSel)
+        if (clientUpd.visible) c.push(clientUpd)
+        c.push(cancelBtn)
+        return c
+    }
+    function _step(from, delta) {
+        var c = _chain()
+        var i = c.indexOf(from === confirmBtn ? cancelBtn : from)
+        var next = c[Math.max(0, Math.min(c.length - 1, i + delta))]
+        next.forceActiveFocus()
+    }
+
+    function _updateChip(state) {
+        switch (state) {
+        case "pending":  return qsTr("Updates pending")
+        case "none":     return qsTr("Up to date")
+        case "checking": return qsTr("Checking…")
+        }
+        return ""
+    }
 
     modal: true
     Overlay.modal: Rectangle { color: "#cc000000" }
@@ -66,44 +171,84 @@ Popup {
         radius: pop._px(12)
     }
 
-    function _bodyText() {
-        switch (selector.currentIndex) {
-        case 0:
-            return qsTr("Shut down the host%1. The streaming session will end.")
-                     .arg(pop.hostName.length > 0 ? (" (" + pop.hostName + ")") : "")
-        case 1:
-            return qsTr("Shut down this device (the one you are using now).")
-        case 2:
-            return qsTr("Shut down the host%1, then this device.")
-                     .arg(pop.hostName.length > 0 ? (" (" + pop.hostName + ")") : "")
+    // One machine's heading: role caption, name, update status.
+    component RowHead: RowLayout {
+        id: head
+        property string role: ""
+        property string name: ""
+        property string updates: ""
+        Layout.alignment: Qt.AlignHCenter
+        spacing: pop._px(10)
+        Label {
+            text: head.role
+            font.family: Theme.family; font.pixelSize: pop._px(Theme.fontCaption)
+            font.bold: true; font.letterSpacing: 1.4
+            color: Theme.text3
+            Layout.alignment: Qt.AlignBaseline
         }
-        return ""
+        Label {
+            text: head.name
+            font.family: Theme.family; font.pixelSize: pop._px(Theme.fontBody); font.bold: true
+            color: Theme.text
+            elide: Text.ElideRight
+            Layout.maximumWidth: pop._px(300)
+            Layout.alignment: Qt.AlignBaseline
+        }
+        // Windows mark + status, so "up to date" reads as the OS and not as StreamLight.
+        WinMark {
+            visible: head.updates.length > 0 && head.updates !== "unavailable"
+            Layout.alignment: Qt.AlignVCenter
+            Layout.leftMargin: pop._px(4)
+        }
+        Label {
+            visible: text.length > 0
+            text: pop._updateChip(head.updates)
+            font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall)
+            color: head.updates === "pending" ? Theme.warning : Theme.text2
+            Layout.alignment: Qt.AlignBaseline
+        }
     }
 
-    function _commit() {
-        var idx = selector.currentIndex
-        if (selector.isDisabled(idx))
-            return
-        // Only ever send installUpdates when the option is enabled (target has updates).
-        pop.confirmed(pop._targets[idx], pop._targetHasPendingUpdates && updatesCheck.checked)
-        pop.close()
+    // The Windows mark, drawn: four squares, lighter at the top left and deeper towards the
+    // bottom right (Grid fills row by row: TL, TR, BL, BR). Stands for "Windows" next to
+    // update status, where the word took more room than the fact.
+    component WinMark: Grid {
+        columns: 2
+        spacing: Math.max(1, pop._px(1.5))
+        Repeater {
+            model: ["#6CD2FE", "#4ACFFF", "#38C0FF", "#20AEFF"]
+            Rectangle {
+                required property string modelData
+                width: pop._px(6); height: pop._px(6)
+                color: modelData
+            }
+        }
     }
 
-    function _pillText(state) {
-        switch (state) {
-        case "pending":     return "🟠  " + qsTr("Updates pending")
-        case "none":        return "✓  " + qsTr("Up to date")
-        case "checking":    return "⏳  " + qsTr("Checking…")
-        case "unavailable": return "—  " + qsTr("needs StreamTweak access")
+    // "Install updates" with its Off/On pills, under a row that restarts or shuts down.
+    // ⚠️ OnOffSelector never writes `checked` itself (it is meant to be bound to a setting);
+    // here the pills ARE the state, so onToggled stores it.
+    component UpdateRow: RowLayout {
+        property alias selector: pills
+        Layout.alignment: Qt.AlignHCenter
+        spacing: pop._px(12)
+        WinMark { Layout.alignment: Qt.AlignVCenter; Layout.rightMargin: -pop._px(4) }
+        Label {
+            text: qsTr("Install updates")
+            font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall)
+            color: Theme.text2
+            Layout.alignment: Qt.AlignVCenter
         }
-        return ""
-    }
-    function _pillColor(state) {
-        return state === "pending" ? Theme.warning : state === "none" ? Theme.accent : Theme.text2
+        OnOffSelector {
+            id: pills
+            onToggled: function(value) { pills.checked = value }
+            Keys.onUpPressed:   function(event) { pop._step(pills, -1); event.accepted = true }
+            Keys.onDownPressed: function(event) { pop._step(pills,  1); event.accepted = true }
+        }
     }
 
     contentItem: ColumnLayout {
-        spacing: pop._px(22)
+        spacing: pop._px(18)
 
         Label {
             text: qsTr("POWER")
@@ -115,141 +260,101 @@ Popup {
             Layout.alignment: Qt.AlignHCenter
         }
 
-        SegmentedSelector {
-            id: selector
-            Layout.alignment: Qt.AlignHCenter
-            labels: [qsTr("Host"), qsTr("Client"), qsTr("Both")]
-            // Host (0) and Both (2) require an approved host; Client (1) is always on.
-            disabledIndices: pop.hostAllowed ? [] : [0, 2]
-            currentIndex: 1   // default to Client — always available, safe
-            Keys.onDownPressed: function(event) { (updatesCheck.enabled ? updatesCheck : cancelBtn).forceActiveFocus(); event.accepted = true }
-        }
-
-        Label {
-            text: pop._bodyText()
-            font.family: Theme.family
-            font.pixelSize: pop._px(Theme.fontTitle)
-            color: Theme.text
-            wrapMode: Text.Wrap
-            horizontalAlignment: Text.AlignHCenter
-            Layout.alignment: Qt.AlignHCenter
-            Layout.maximumWidth: pop._px(520)
-        }
-
-        // Inline hint shown when the host hasn't approved this device yet. Suppressed
-        // in client-only mode (no host context — the hint would be misleading).
-        Label {
-            visible: !pop.hostAllowed && !pop.clientOnly
-            text: qsTr("Host shutdown needs StreamTweak access. Approve this device on the host (Settings → Bridge security) to enable Host and Both.")
-            font.family: Theme.family
-            font.pixelSize: pop._px(Theme.fontSmall)
-            color: Theme.text2
-            wrapMode: Text.Wrap
-            horizontalAlignment: Text.AlignHCenter
-            Layout.alignment: Qt.AlignHCenter
-            Layout.maximumWidth: pop._px(520)
-        }
-
-        // ── Evidence: Windows-update status per side (rows shown for the target) ──
+        // ── Host ──────────────────────────────────────────────────────────────
         ColumnLayout {
-            Layout.alignment: Qt.AlignHCenter
-            Layout.maximumWidth: pop._px(520)
-            spacing: pop._px(4)
+            visible: pop._hostRow
+            Layout.fillWidth: true
+            Layout.preferredWidth: pop._px(560)
+            spacing: pop._px(8)
 
+            RowHead {
+                role: qsTr("HOST")
+                name: pop.hostName
+                updates: pop.hostAllowed ? pop.hostUpdateState : ""
+            }
+
+            SegmentedSelector {
+                id: hostSel
+                visible: pop._hostSelectable
+                labels: pop._labels
+                Layout.alignment: Qt.AlignHCenter
+                hiddenIndices: pop._hiddenFor(pop._hostOffer)
+                Keys.onUpPressed:   function(event) { pop._step(hostSel, -1); event.accepted = true }
+                Keys.onDownPressed: function(event) { pop._step(hostSel,  1); event.accepted = true }
+            }
+
+            // In place of the selector when there is nothing to choose from.
             Label {
-                text: qsTr("WINDOWS UPDATES")
-                font.family: Theme.family; font.pixelSize: pop._px(Theme.fontCaption); font.bold: true; font.letterSpacing: 1.2
+                visible: pop._hostRow && !pop._hostSelectable
+                text: !pop.hostAllowed          ? qsTr("Needs StreamTweak access")
+                    : pop.hostCaps === "checking" ? qsTr("Checking…")
+                    :                               qsTr("Not available")
+                font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall)
                 color: Theme.text3
                 Layout.alignment: Qt.AlignHCenter
             }
-            RowLayout {
-                visible: pop._targetIncludesHost
+
+            Label {
+                visible: pop._hostWarning.length > 0
+                text: "▲  " + pop._hostWarning
+                font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall)
+                color: Theme.warning
                 Layout.alignment: Qt.AlignHCenter
-                spacing: pop._px(10)
-                Label {
-                    text: "🖥  " + qsTr("Host") + (pop.hostName.length ? " (" + pop.hostName + ")" : "")
-                    font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall); color: Theme.text2
-                }
-                Label {
-                    text: pop._pillText(pop.hostUpdateState)
-                    font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall); color: pop._pillColor(pop.hostUpdateState)
-                }
             }
-            RowLayout {
-                visible: pop._targetIncludesClient
-                Layout.alignment: Qt.AlignHCenter
-                spacing: pop._px(10)
-                Label {
-                    text: "💻  " + qsTr("This device")
-                    font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall); color: Theme.text2
-                }
-                Label {
-                    text: pop._pillText(pop.clientUpdateState)
-                    font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall); color: pop._pillColor(pop.clientUpdateState)
-                }
+
+            UpdateRow {
+                id: hostUpdRow
+                visible: pop._hostUpdOffered
             }
         }
 
-        // "Update and shut down": install pending Windows updates before power-off.
-        // Default OFF (opt-in) and ENABLED only when the selected target has updates
-        // pending — installing can make shutdown take much longer.
-        CheckBox {
-            id: updatesCheck
-            Layout.alignment: Qt.AlignHCenter
-            checked: false
-            enabled: pop._targetHasPendingUpdates
-            opacity: enabled ? 1.0 : 0.4
-            activeFocusOnTab: true
-            text: qsTr("Install pending updates before shutting down")
-            onEnabledChanged: if (!enabled) checked = false
+        // ── This device ───────────────────────────────────────────────────────
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.preferredWidth: pop._px(560)
+            spacing: pop._px(8)
 
-            Keys.onUpPressed:     selector.forceActiveFocus()
-            Keys.onDownPressed:   cancelBtn.forceActiveFocus()
-            Keys.onReturnPressed: updatesCheck.toggle()
-            Keys.onEnterPressed:  updatesCheck.toggle()
-            Keys.onSpacePressed:  updatesCheck.toggle()
-
-            indicator: Rectangle {
-                implicitWidth: pop._px(20)
-                implicitHeight: pop._px(20)
-                radius: pop._px(4)
-                y: updatesCheck.height / 2 - height / 2
-                color: updatesCheck.checked ? Theme.accent : "transparent"
-                border.color: (updatesCheck.activeFocus || updatesCheck.checked) ? Theme.accent : Theme.lineHigh
-                border.width: updatesCheck.activeFocus ? 2 : 1
-                Label {
-                    anchors.centerIn: parent
-                    visible: updatesCheck.checked
-                    text: "✓"
-                    color: Theme.ground
-                    font.pixelSize: pop._px(Theme.fontSmall)
-                    font.bold: true
-                }
+            RowHead {
+                role: qsTr("THIS DEVICE")
+                name: pop._clientLabel
+                updates: pop.clientUpdateState
             }
-            contentItem: Label {
-                text: updatesCheck.text
-                font.family: Theme.family
-                font.pixelSize: pop._px(Theme.fontSmall)
-                color: Theme.text2
-                verticalAlignment: Text.AlignVCenter
-                leftPadding: updatesCheck.indicator.width + pop._px(10)
+
+            SegmentedSelector {
+                id: clientSel
+                visible: pop.clientModes.length > 0
+                labels: pop._labels
+                Layout.alignment: Qt.AlignHCenter
+                hiddenIndices: pop._hiddenFor(pop.clientModes)
+                Keys.onUpPressed:   function(event) { pop._step(clientSel, -1); event.accepted = true }
+                Keys.onDownPressed: function(event) { pop._step(clientSel,  1); event.accepted = true }
+            }
+
+            Label {
+                visible: pop.clientModes.length === 0
+                text: qsTr("Not available")
+                font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall)
+                color: Theme.text3
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            UpdateRow {
+                id: clientUpdRow
+                visible: pop._clientUpdOffered
             }
         }
 
-        // Note shown when the checkbox is disabled: either still checking, or nothing
-        // pending (with a pointer to the full Windows Update flow).
         Label {
-            visible: !pop._targetHasPendingUpdates
-            text: pop._targetChecking
-                  ? qsTr("Checking for updates…")
-                  : qsTr("Nothing pending for the selected device. For a full check, use \"Windows Update\".")
+            text: pop._summary
+            textFormat: Text.StyledText
             font.family: Theme.family
-            font.pixelSize: pop._px(Theme.fontSmall)
-            color: Theme.text2
+            font.pixelSize: pop._px(Theme.fontTitle)
+            color: pop._nothingToDo ? Theme.text3 : Theme.text
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
-            Layout.alignment: Qt.AlignHCenter
-            Layout.maximumWidth: pop._px(520)
+            Layout.fillWidth: true
+            Layout.preferredWidth: pop._px(560)
+            Layout.topMargin: pop._px(4)
         }
 
         RowLayout {
@@ -260,18 +365,20 @@ Popup {
             Button {
                 id: confirmBtn
                 text: qsTr("Confirm")
+                enabled: !pop._nothingToDo
                 activeFocusOnTab: true
                 onClicked: pop._commit()
                 Keys.onReturnPressed: pop._commit()
                 Keys.onEnterPressed:  pop._commit()
                 Keys.onSpacePressed:  pop._commit()
                 Keys.onRightPressed:  cancelBtn.forceActiveFocus()
-                Keys.onUpPressed:     (updatesCheck.enabled ? updatesCheck : selector).forceActiveFocus()
+                Keys.onUpPressed:     pop._step(confirmBtn, -1)
 
                 background: Rectangle {
                     implicitWidth: pop._px(140)
                     implicitHeight: pop._px(42)
                     radius: pop._px(8)
+                    opacity: confirmBtn.enabled ? 1.0 : 0.4
                     color: confirmBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
                          : confirmBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
                          :                          Theme.card
@@ -283,6 +390,7 @@ Popup {
                 contentItem: Label {
                     text: confirmBtn.text
                     color: Theme.accent
+                    opacity: confirmBtn.enabled ? 1.0 : 0.4
                     font.family: Theme.family
                     font.pixelSize: pop._px(Theme.fontBody)
                     font.bold: true
@@ -299,8 +407,8 @@ Popup {
                 Keys.onReturnPressed: pop.close()
                 Keys.onEnterPressed:  pop.close()
                 Keys.onSpacePressed:  pop.close()
-                Keys.onLeftPressed:   confirmBtn.forceActiveFocus()
-                Keys.onUpPressed:     (updatesCheck.enabled ? updatesCheck : selector).forceActiveFocus()
+                Keys.onLeftPressed:   if (confirmBtn.enabled) confirmBtn.forceActiveFocus()
+                Keys.onUpPressed:     pop._step(cancelBtn, -1)
 
                 background: Rectangle {
                     implicitWidth: pop._px(140)
@@ -327,12 +435,19 @@ Popup {
         }
     }
 
-    // Reset to the always-safe Client target on every open (clears any stale
-    // Host/Both selection from a previous, authorized host), then put focus on
-    // the dismissive button (destructive action — §22).
+    // The two update selectors, named for the focus chain and _commit(). Read out of the
+    // UpdateRow instances, so the rows stay one component.
+    readonly property var hostUpd:   hostUpdRow.selector
+    readonly property var clientUpd: clientUpdRow.selector
+
+    // Every open starts from the same safe state: the host kept on, this device shut down
+    // (the old default target, Client), no updates, focus on Cancel (§22).
     onOpened: {
-        selector.currentIndex = 1
-        updatesCheck.checked = false   // explicit opt-in every time (§ default OFF)
+        hostSel.currentIndex = 0
+        var off = pop._keys.indexOf("shutdown")
+        clientSel.currentIndex = pop.clientModes.indexOf("shutdown") >= 0 ? off : 0
+        hostUpd.checked = false
+        clientUpd.checked = false
         cancelBtn.forceActiveFocus()
     }
     onClosed: {

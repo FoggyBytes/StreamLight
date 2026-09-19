@@ -49,7 +49,8 @@ class ComputerModel : public QAbstractListModel
         StageImageRole,
         StageSeedRole,
         StageOpacityRole,
-        StreamTweakEnabledRole
+        StreamTweakEnabledRole,
+        AsleepRole          // put to sleep by this client, not polled until Wake (6.2.0)
     };
 
 public:
@@ -90,6 +91,16 @@ public:
     // approved this client; fire-and-forget over the authenticated bridge.
     // installUpdates: install pending Windows updates before powering off.
     Q_INVOKABLE void shutdownHost(int computerIndex, bool installUpdates = false);
+
+    /**
+     * Host power modes (StreamTweak 8.6.0+). requestPowerCaps answers with
+     * powerCapsReceived(index, supported, modes, wakeLan): `supported` is false for a host
+     * that predates POWERCAPS, whose only mode is the old SHUTDOWN — the dialog shows it as
+     * Shut down and the caller uses shutdownHost(). powerHost sends POWER and reports
+     * powerHostResult(index, mode, ok) once the host has answered.
+     */
+    Q_INVOKABLE void requestPowerCaps(int computerIndex);
+    Q_INVOKABLE void powerHost(int computerIndex, const QString& mode, bool installUpdates);
 
     Q_INVOKABLE void requestStreamTweakStatus(int computerIndex);
 
@@ -196,6 +207,11 @@ public:
      * away now, not on the next visit to the screen.
      */
     Q_INVOKABLE bool streamTweakEnabled(int computerIndex) const;
+
+    // NvComputer::heldAsleep: this client put the host to sleep and has not woken it since.
+    bool heldAsleep(int computerIndex) const;
+    // The gate on every bridge call: the integration is on AND the host is not held asleep.
+    bool bridgeAllowed(int computerIndex) const;
     Q_INVOKABLE void setStreamTweakEnabled(int computerIndex, bool enabled);
 
     /**
@@ -316,6 +332,8 @@ signals:
 
     void appStoresReceived(int computerIndex, QVariantMap stores);
     void updateStateReceived(int computerIndex, bool pending);
+    void powerCapsReceived(int computerIndex, bool supported, QStringList modes, bool wakeLan);
+    void powerHostResult(int computerIndex, QString mode, bool ok);
     /** supported=false means the host does not know LOCKSTATE — not that it is unlocked. */
     void lockStateReceived(int computerIndex, bool supported, bool locked);
     /** detail is the change being made ("2.5 Gbps → 1 Gbps"), empty once finished. */

@@ -33,6 +33,7 @@
 #define SER_STAGETO "stageto"
 #define SER_STAGEOPACITY "stageopacity"
 #define SER_STENABLED "streamtweakenabled"
+#define SER_HELDASLEEP "heldasleep"
 
 NvComputer::NvComputer(QSettings& settings)
 {
@@ -60,6 +61,7 @@ NvComputer::NvComputer(QSettings& settings)
     this->stageColorTo   = settings.value(SER_STAGETO).toString();
     // Absent on every host saved before 6.0.0: 0, which means "use the default".
     this->stageOpacity   = settings.value(SER_STAGEOPACITY, 0).toInt();
+    this->heldAsleep     = settings.value(SER_HELDASLEEP, false).toBool();
 
     // ⚠️ Absence of the key is NOT the same as false, and reading it as false would be a
     // regression shipped in a release: everyone already using StreamTweak would upgrade and
@@ -182,6 +184,7 @@ void NvComputer::serialize(QSettings& settings, bool serializeApps) const
     settings.setValue(SER_STAGETO, stageColorTo);
     settings.setValue(SER_STAGEOPACITY, stageOpacity);
     settings.setValue(SER_STENABLED, streamTweakEnabled);
+    settings.setValue(SER_HELDASLEEP, heldAsleep);
 
     // Avoid deleting an existing applist if we couldn't get one
     if (!appList.isEmpty() && serializeApps) {
@@ -216,6 +219,7 @@ bool NvComputer::isEqualSerialized(const NvComputer &that) const
            this->stageColorTo == that.stageColorTo &&
            this->stageOpacity == that.stageOpacity &&
            this->streamTweakEnabled == that.streamTweakEnabled &&
+           this->heldAsleep == that.heldAsleep &&
            this->appList == that.appList;
 }
 

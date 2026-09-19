@@ -247,6 +247,9 @@ public:
     // a place people leave by killing the app, so waiting for teardown would lose the choice.
     bool setStreamTweakEnabled(QString uuid, bool enabled);
 
+    // See NvComputer::heldAsleep. Set after this client put the host to sleep; cleared by Wake.
+    bool setHeldAsleep(QString uuid, bool held);
+
     void addNewHost(NvAddress address, bool mdns, QString name = QString(), NvAddress mdnsIpv6Address = NvAddress(), QString aliasSuffix = QString());
 
     QString generatePinString();

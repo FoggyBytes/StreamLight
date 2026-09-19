@@ -30,6 +30,9 @@ Item {
     property bool   paired: false
     property bool   statusUnknown: false
     property bool   wakeable: false
+    // Put to sleep by this client and not polled until Wake (6.2.0): reads "Asleep" rather
+    // than "Offline", because offline is exactly what we cannot know about it.
+    property bool   asleep: false
     property bool   serverSupported: true
     property string address: ""
     property string tailscaleAddress: ""
@@ -463,6 +466,7 @@ Item {
           statusUnknown          ? qsTr("Checking")
         : online && paired       ? qsTr("Online")
         : online                 ? qsTr("Reachable")
+        : asleep                 ? qsTr("Asleep")
         :                          qsTr("Offline")
 
     readonly property color _stateColor:
@@ -493,6 +497,7 @@ Item {
              : online && paired ? (serverSupported ? qsTr("Ready to stream")
                                                    : qsTr("This host needs a newer StreamLight"))
              : online           ? qsTr("Not paired yet")
+             : asleep           ? qsTr("Asleep · wake it to use it")
              : wakeable         ? qsTr("Offline · can be woken up")
              :                    qsTr("Offline")
     }

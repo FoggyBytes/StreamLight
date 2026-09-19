@@ -85,6 +85,20 @@ void StreamTweakBridge::sendShutdown(const QString& hostAddress, bool installUpd
                                             : QStringLiteral("SHUTDOWN"));
 }
 
+void StreamTweakBridge::requestPowerCaps(const QString& hostAddress, ResponseCallback onResult)
+{
+    sendRequest(hostAddress, QStringLiteral("POWERCAPS"), std::move(onResult));
+}
+
+void StreamTweakBridge::sendPower(const QString& hostAddress, const QString& mode, bool installUpdates,
+                                  ResponseCallback onResult)
+{
+    QString command = QStringLiteral("POWER ") + mode.toUpper();
+    if (installUpdates)
+        command += QStringLiteral(" UPDATE");
+    sendRequest(hostAddress, command, std::move(onResult));
+}
+
 void StreamTweakBridge::sendCommand(const QString& hostAddress, const QString& command)
 {
     // Authenticated: AUTH1 line then the command. The reply ("OK") is discarded.

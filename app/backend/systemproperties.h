@@ -107,6 +107,23 @@ public:
     // ("Update and shut down", via InitiateShutdown + SHUTDOWN_INSTALL_UPDATES).
     Q_INVOKABLE void shutdownClient(bool installUpdates = false);
 
+    /*
+     * THIS device's power modes (6.2.0), read from the running system — never from what the
+     * Ally or any particular client is known to have. Same rules as StreamTweak's
+     * HostPowerCapabilities, so both rows of the Power dialog mean the same thing:
+     *   "sleep"     — S1-S3, or Modern Standby (entered by turning the display off)
+     *   "restart", "shutdown" — whenever the user holds SeShutdownPrivilege
+     * No "hibernate", though StreamTweak offers it for the host: see clientPowerModes().
+     * An empty list means the account may not power the machine down at all.
+     */
+    Q_INVOKABLE QStringList clientPowerModes();
+
+    // Carries out one of clientPowerModes(). installUpdates applies to restart and shutdown.
+    Q_INVOKABLE void powerClient(const QString& mode, bool installUpdates = false);
+
+    // This machine's name, as the Power dialog labels the "This device" row.
+    Q_INVOKABLE QString clientName();
+
     // True when this (client) PC has a Windows update installed and waiting for a
     // reboot. Read-only registry probe; Windows-only (false elsewhere). Used to hint
     // the user in the Power dialog. Like the host side, a false result does not

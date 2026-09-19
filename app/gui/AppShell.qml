@@ -499,7 +499,7 @@ FocusScope {
         // btn = the controller button, key = the keyboard equivalent. Both travel together and
         // ActionHint picks; a prompt with no key stays on the glyph.
         readonly property var _hintsHome: [
-            { btn: "X", key: "P",   act: qsTr("Shutdown"), kind: "shutdownHost" },
+            { btn: "X", key: "P",   act: qsTr("Power"),    kind: "shutdownHost" },
             { btn: "Y", key: "S",   act: qsTr("Settings"), kind: "settings" },
             { btn: "B", key: "Esc", act: qsTr("Exit"),     kind: "back" }
         ]

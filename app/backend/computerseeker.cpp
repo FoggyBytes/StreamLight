@@ -9,6 +9,14 @@ ComputerSeeker::ComputerSeeker(ComputerManager *manager, QString computerName, Q
     // If we know this computer, send a WOL packet to wake it up in case it is asleep.
     NvComputer* matchingComputer = findMatchingComputer();
     if (matchingComputer) {
+        // A command-line launch is a wake too: drop the hold, or polling would never see the
+        // host come back (NvComputer::heldAsleep).
+        QString uuid;
+        {
+            QReadLocker lock(&matchingComputer->lock);
+            uuid = matchingComputer->uuid;
+        }
+        m_ComputerManager->setHeldAsleep(uuid, false);
         matchingComputer->wake();
     }
 

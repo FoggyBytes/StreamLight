@@ -97,6 +97,26 @@ private:
         // Always fetch the applist the first time
         int pollsSinceLastAppListFetch = POLLS_PER_APPLIST_FETCH;
         while (!isInterruptionRequested()) {
+            // Put to sleep by this client (NvComputer::heldAsleep): not one packet until Wake.
+            // A serverinfo poll is a TCP connection, and its SYN is exactly what a sleeping NIC
+            // with "wake on pattern match" wakes up for. The host is shown offline meanwhile.
+            bool held;
+            {
+                QReadLocker lock(&m_Computer->lock);
+                held = m_Computer->heldAsleep;
+            }
+            if (held) {
+                if (m_Computer->state != NvComputer::CS_OFFLINE) {
+                    qInfo() << m_Computer->name << "is held asleep: not polling it until Wake";
+                    m_Computer->state = NvComputer::CS_OFFLINE;
+                    emit computerStateChanged(m_Computer);
+                }
+                for (int i = 0; i < 10 && !isInterruptionRequested(); i++) {
+                    QThread::msleep(100);
+                }
+                continue;
+            }
+
             bool stateChanged = false;
             bool online = false;
             bool wasOnline = m_Computer->state == NvComputer::CS_ONLINE;
@@ -498,6 +518,34 @@ void ComputerManager::startPollingComputer(NvComputer* computer)
 void ComputerManager::handleMdnsServiceResolved(MdnsPendingComputer* computer,
                                                 QVector<QHostAddress>& addresses)
 {
+    // ⚠️ An mDNS answer can come from the resolver's cache as well as from the host, and
+    // following it up means a serverinfo request — a TCP connection — to that address. For a
+    // host this client put to sleep that would be the very packet that wakes it, so answers
+    // pointing at a held host are dropped here. The host comes back through Wake.
+    {
+        QReadLocker lock(&m_Lock);
+        for (NvComputer* known : std::as_const(m_KnownHosts)) {
+            bool held;
+            {
+                QReadLocker cLock(&known->lock);
+                held = known->heldAsleep;
+            }
+            // uniqueAddresses() takes the lock itself: not while we hold it.
+            if (!held) {
+                continue;
+            }
+            for (const NvAddress& a : known->uniqueAddresses()) {
+                for (const QHostAddress& resolved : std::as_const(addresses)) {
+                    if (a.address() == resolved.toString()) {
+                        m_PendingResolution.removeOne(computer);
+                        computer->deleteLater();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     QHostAddress v6Global = getBestGlobalAddressV6(addresses);
     bool added = false;
 
@@ -1303,6 +1351,37 @@ bool ComputerManager::setStageOpacity(QString uuid, int percent)
         computer->stageOpacity = percent;
     }
 
+    saveHost(computer);
+    emit computerStateChanged(computer);
+    return true;
+}
+
+bool ComputerManager::setHeldAsleep(QString uuid, bool held)
+{
+    if (uuid.isEmpty()) {
+        return false;
+    }
+
+    NvComputer* computer = nullptr;
+    {
+        QReadLocker lock(&m_Lock);
+        computer = m_KnownHosts.value(uuid);
+    }
+    if (computer == nullptr) {
+        return false;
+    }
+
+    {
+        QWriteLocker cLock(&computer->lock);
+        if (computer->heldAsleep == held) {
+            return true;
+        }
+        computer->heldAsleep = held;
+    }
+    qInfo() << computer->name << (held ? "put to sleep by this client: held until Wake"
+                                       : "no longer held asleep");
+
+    // The polling thread notices on its next tick (within ~3 s) and marks the host offline.
     saveHost(computer);
     emit computerStateChanged(computer);
     return true;

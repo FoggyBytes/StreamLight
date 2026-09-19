@@ -50,7 +50,23 @@ public:
     explicit StreamTweakBridge(QObject* parent = nullptr);
 
     // installUpdates: send SHUTDOWN_UPDATE ("Update and shut down") instead of SHUTDOWN.
+    // Kept for hosts older than StreamTweak 8.6.0, which do not know POWER.
     void sendShutdown(const QString& hostAddress, bool installUpdates = false);
+
+    /**
+     * Host power modes (StreamTweak 8.6.0+).
+     *
+     *  - requestPowerCaps: which modes the host machine supports, read there from the running
+     *    system: {"v":1,"modes":["sleep","hibernate","restart","shutdown"],"wake_lan":bool}.
+     *    "" / "ERR" on an older host — the caller falls back to SHUTDOWN, i.e. to what the
+     *    Power dialog offered before.
+     *
+     *  - sendPower: POWER <mode> [UPDATE]. Authenticated like SHUTDOWN, but the reply is read:
+     *    OK / ERR_UNSUPPORTED / ERR, or "" on timeout.
+     */
+    void requestPowerCaps(const QString& hostAddress, ResponseCallback onResult);
+    void sendPower(const QString& hostAddress, const QString& mode, bool installUpdates,
+                   ResponseCallback onResult);
 
     /**
      * Asynchronously queries the NIC speed from StreamTweak.
