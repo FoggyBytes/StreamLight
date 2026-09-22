@@ -206,6 +206,18 @@ public:
     };
     Q_ENUM(GlyphSet)
 
+    // Which prompts the interface draws: pad glyphs or key names. IP_AUTO follows the last
+    // device that produced real input (InputHints). The other two pin it, for setups where
+    // one controller also produces keyboard and mouse input — Steam Input, the Steam Deck —
+    // which nothing inside the app can tell apart from a real keyboard. Issue #24.
+    enum InputPrompts
+    {
+        IP_AUTO,
+        IP_CONTROLLER,
+        IP_KEYBOARD_MOUSE
+    };
+    Q_ENUM(InputPrompts)
+
     // How the Home page reads the clock back. A setting rather than the system locale
     // because this app is English-only by design: following the locale would hand the
     // format to whichever English variant Windows is set to, and en-US would put the
@@ -252,6 +264,7 @@ public:
     Q_PROPERTY(bool autoReconnectNoVideo MEMBER autoReconnectNoVideo NOTIFY autoReconnectNoVideoChanged)
     Q_PROPERTY(bool matchHostLinkSpeed MEMBER matchHostLinkSpeed NOTIFY matchHostLinkSpeedChanged)
     Q_PROPERTY(bool waitForGameOnScreen MEMBER waitForGameOnScreen NOTIFY waitForGameOnScreenChanged)
+    Q_PROPERTY(bool clipboardSync MEMBER clipboardSync NOTIFY clipboardSyncChanged)
     Q_PROPERTY(bool showPerfOverlay MEMBER showPerfOverlay NOTIFY overlayChanged)
     Q_PROPERTY(OverlayPosition overlayPosition MEMBER overlayPosition NOTIFY overlayChanged)
     Q_PROPERTY(OverlayTextColor overlayTextColor MEMBER overlayTextColor NOTIFY overlayChanged)
@@ -277,6 +290,7 @@ public:
     Q_PROPERTY(bool tailscaleAutoStart MEMBER tailscaleAutoStart NOTIFY tailscaleAutoStartChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
     Q_PROPERTY(GlyphSet glyphSet MEMBER glyphSet NOTIFY glyphSetChanged)
+    Q_PROPERTY(InputPrompts inputPrompts MEMBER inputPrompts NOTIFY inputPromptsChanged)
     Q_PROPERTY(ClockFormat clockFormat MEMBER clockFormat NOTIFY clockFormatChanged)
     Q_PROPERTY(DateFormat dateFormat MEMBER dateFormat NOTIFY dateFormatChanged)
     // Directly accessible members for preferences
@@ -320,6 +334,10 @@ public:
     // the stream as soon as there is a picture. Off by default — the opt-in is the wait, not
     // the other way round. Overridable per host profile and per game.
     bool waitForGameOnScreen;
+    // Share the clipboard with a StreamTweak host while streaming (6.3.0, §79). Off by default:
+    // a feature that moves data between machines must not switch itself on with an update.
+    // The host has its own switch, on by default.
+    bool clipboardSync;
     bool showPerfOverlay;
     OverlayPosition overlayPosition;
     OverlayTextColor overlayTextColor;
@@ -347,6 +365,7 @@ public:
     UIDisplayMode uiDisplayMode;
     CaptureSysKeysMode captureSysKeysMode;
     GlyphSet glyphSet;
+    InputPrompts inputPrompts;
     ClockFormat clockFormat;
     DateFormat dateFormat;
 
@@ -384,6 +403,7 @@ signals:
     void autoReconnectNoVideoChanged();
     void matchHostLinkSpeedChanged();
     void waitForGameOnScreenChanged();
+    void clipboardSyncChanged();
     // One signal for the whole overlay group: the settings page redraws its preview
     // from all six at once, so six signals would only mean six ways to forget one.
     void overlayChanged();
@@ -398,6 +418,7 @@ signals:
     void hideHostIpsChanged();
     void tailscaleAutoStartChanged();
     void glyphSetChanged();
+    void inputPromptsChanged();
     void clockFormatChanged();
     void dateFormatChanged();
 private:

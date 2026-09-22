@@ -273,6 +273,54 @@ void StreamTweakBridge::requestUpdateProgress(const QString& hostAddress, Respon
     sendRequest(hostAddress, QStringLiteral("UPDATEPROGRESS"), std::move(onResult));
 }
 
+// ── Shared clipboard (StreamTweak 8.7.0, §79) ───────────────────────────────
+
+void StreamTweakBridge::requestClipKey(const QString& hostAddress, ResponseCallback onResult)
+{
+    sendRequest(hostAddress, QStringLiteral("CLIPKEY"), std::move(onResult));
+}
+
+void StreamTweakBridge::sendClipSet(const QString& hostAddress, const QString& sealedB64,
+                                    ResponseCallback onResult)
+{
+    // AUTH1 signs the verb; the sealed line after it carries its own integrity (AES-GCM).
+    QStringList lines;
+    QString auth = buildAuthLine(QStringLiteral("CLIPSET"));
+    if (!auth.isEmpty())
+        lines << auth;
+    lines << QStringLiteral("CLIPSET") << sealedB64;
+    sendRawRequest(hostAddress, lines, std::move(onResult));
+}
+
+void StreamTweakBridge::requestClipGet(const QString& hostAddress, ResponseCallback onResult)
+{
+    sendRequest(hostAddress, QStringLiteral("CLIPGET"), std::move(onResult));
+}
+
+QString StreamTweakBridge::requestSync(const QString& hostAddress, const QString& command, int timeoutMs)
+{
+    // Same reason as sendSessionDataSync(): the stream's event loop has returned and the Qt
+    // loop is not running yet, so an async socket would never complete.
+    QTcpSocket socket;
+    socket.connectToHost(hostAddress, BridgePort);
+    if (!socket.waitForConnected(timeoutMs))
+        return QString();
+
+    QTextStream stream(&socket);
+    QString auth = buildAuthLine(command);
+    if (!auth.isEmpty())
+        stream << auth << "\n";
+    stream << command << "\n";
+    stream.flush();
+
+    QByteArray reply;
+    while (!reply.contains('\n') && socket.waitForReadyRead(timeoutMs))
+        reply += socket.readAll();
+    socket.disconnectFromHost();
+    int nl = reply.indexOf('\n');
+    return QString::fromUtf8(nl >= 0 ? reply.left(nl) : reply).trimmed();
+}
+
 // ── Capability negotiation / enrollment (unauthenticated bootstrap) ─────────
 
 void StreamTweakBridge::requestCaps(const QString& hostAddress, ResponseCallback onResult)

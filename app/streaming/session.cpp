@@ -232,6 +232,10 @@ void Session::clConnectionStatusUpdate(int connectionStatus)
         return;
     }
 
+    // The status corner is ours from here: a clipboard notice showing in it must not be hidden
+    // on top of this warning when its 3 s run out.
+    s_ActiveSession->m_ClipboardNoticeShown = false;
+
     switch (connectionStatus)
     {
     case CONN_STATUS_POOR:
@@ -697,6 +701,8 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
     {
         QReadLocker lock(&computer->lock);
         m_StreamTweakEnabled = computer->streamTweakEnabled;
+        // 6.3.0: rejoining what is already running, not launching it — see m_RejoinsRunningApp.
+        m_RejoinsRunningApp = computer->currentGameId != 0 && computer->currentGameId == app.id;
     }
 
     // Start polling StreamTweak for host metrics immediately.
@@ -2070,6 +2076,7 @@ void Session::notifyMouseEmulationMode(bool enabled)
     SDL_assert(m_MouseEmulationRefCount >= 0);
 
     // We re-use the status update overlay for mouse mode notification
+    m_ClipboardNoticeShown = false;
     if (m_MouseEmulationRefCount > 0) {
         m_OverlayManager.updateOverlayText(Overlay::OverlayStatusUpdate, "Gamepad mouse mode active\nLong press Start to deactivate");
         m_OverlayManager.setOverlayState(Overlay::OverlayStatusUpdate, true);
@@ -2077,6 +2084,22 @@ void Session::notifyMouseEmulationMode(bool enabled)
     else {
         m_OverlayManager.setOverlayState(Overlay::OverlayStatusUpdate, false);
     }
+}
+
+void Session::showClipboardNotice(const QString& text)
+{
+    // The corner is shared: never over gamepad mouse mode or a connection warning.
+    if (m_MouseEmulationRefCount > 0 || m_OverlayManager.isOverlayEnabled(Overlay::OverlayStatusUpdate))
+        return;
+
+    m_OverlayManager.updateOverlayText(Overlay::OverlayStatusUpdate, text.toUtf8().constData());
+    m_OverlayManager.setOverlayState(Overlay::OverlayStatusUpdate, true);
+    m_ClipboardNoticeShown = true;
+    QTimer::singleShot(3000, this, [this]() {
+        // Only if nothing has taken the corner since: a warning that arrived meanwhile stays.
+        if (m_ClipboardNoticeShown.exchange(false))
+            m_OverlayManager.setOverlayState(Overlay::OverlayStatusUpdate, false);
+    });
 }
 
 class AsyncConnectionStartThread : public QThread
@@ -2317,6 +2340,24 @@ bool Session::startConnectionAsync()
         int bitrateKbps = m_StreamConfig.bitrate;
         QMetaObject::invokeMethod(m_TelemetrySampler, [this, hostAddr, fps, bitrateKbps]() {
             m_TelemetrySampler->start(hostAddr, fps, bitrateKbps);
+        }, Qt::QueuedConnection);
+    }
+
+    // The shared clipboard (6.3.0, §79): off unless turned on in Settings → StreamTweak, and
+    // never for the PIN unlock, which is plumbing rather than a session. Created on the main
+    // thread for the same reason as the sampler above — it owns a QTimer and a window. It
+    // rides on the metrics poller, whose STATS carry the host's clipboard sequence number.
+    if (!m_UnlockMode && m_StreamTweakEnabled && m_HostMetricsPoller && m_Preferences->clipboardSync) {
+        QString hostAddr = m_Computer->activeAddress.address();
+        QMetaObject::invokeMethod(this, [this, hostAddr]() {
+            // A stream quit before this ran must not open a clipboard session after finish().
+            if (m_EventLoopDone)
+                return;
+            m_ClipboardSync = new ClipboardSync(hostAddr, this);
+            connect(m_HostMetricsPoller, &HostMetricsPoller::hostClipboardSeq,
+                    m_ClipboardSync, &ClipboardSync::onHostClipboardSeq);
+            connect(m_ClipboardSync, &ClipboardSync::notice, this, &Session::showClipboardNotice);
+            m_ClipboardSync->start();
         }, Qt::QueuedConnection);
     }
 
@@ -2900,6 +2941,10 @@ void Session::exec()
         // issues that could cause indefinite timeouts, delayed joystick detection,
         // and other problems.
         if (!SDL_WaitEventTimeout(&event, 1000)) {
+            // The clipboard is read on every wake, the idle one included: on Windows SDL
+            // reports a clipboard change only when the window regains focus (§79.5b).
+            if (m_ClipboardSync)
+                m_ClipboardSync->poll();
             presence.runCallbacks();
             continue;
         }
@@ -2916,10 +2961,15 @@ void Session::exec()
             // ARM core in the Steam Link, so we will wait 10 ms instead.
             SDL_Delay(10);
 #endif
+            if (m_ClipboardSync)
+                m_ClipboardSync->poll();
             presence.runCallbacks();
             continue;
         }
 #endif
+        if (m_ClipboardSync)
+            m_ClipboardSync->poll();
+
         switch (event.type) {
         case SDL_QUIT:
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -2996,12 +3046,18 @@ void Session::exec()
                     m_AudioMuted = true;
                 }
                 m_InputHandler->notifyFocusLost();
+                // Leaving the stream: fetch the host's clipboard now, for the Ctrl+V to come.
+                if (m_ClipboardSync)
+                    m_ClipboardSync->onFocusLost();
                 break;
             case SDL_WINDOWEVENT_FOCUS_GAINED:
                 if (m_Preferences->muteOnFocusLoss) {
                     m_AudioMuted = false;
                 }
                 m_InputHandler->notifyFocusGained();
+                // Back in the stream: send what was copied meanwhile before it is pasted.
+                if (m_ClipboardSync)
+                    m_ClipboardSync->onFocusGained();
                 break;
             case SDL_WINDOWEVENT_LEAVE:
                 m_InputHandler->notifyMouseLeave();
@@ -3334,6 +3390,8 @@ void Session::exec()
     }
 
 DispatchDeferredCleanup:
+    m_EventLoopDone = true;
+
     // Switch back to synchronous logging mode
     StreamUtils::exitAsyncLoggingMode();
 
@@ -3359,6 +3417,11 @@ DispatchDeferredCleanup:
     // so the final batch can still read stats from the live decoder.
     if (m_TelemetrySampler)
         m_TelemetrySampler->flushAndStop();
+
+    // Same window: a last look at the host's clipboard, any password we hold dropped, the
+    // key let go (CLIPEND). Blocking, like the flush above, and for the same reason.
+    if (m_ClipboardSync)
+        m_ClipboardSync->finish();
 
     // Same window, and for the same reason: the play-time record keeps how the session went,
     // and those totals live in the decoder that is about to be deleted three lines below.

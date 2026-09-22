@@ -68,6 +68,17 @@ void HostMetricsPoller::onStatsReceived(const QString& statsJson)
     if (obj.value(QStringLiteral("stop")).toInt() == 1)
         emit stopRequested();
 
+    // The host's clipboard sequence number (StreamTweak 8.7.0, only while it shares its
+    // clipboard). The host never pushes: this is how the client learns there is something new
+    // to ask for with CLIPGET. Absent means nothing to report — not a change.
+    //
+    // ⚠️ Reported on every reply, not only when it moves: ClipboardSync is created after the
+    // poller, and the first number it hears is where it starts from. Filtering here would hand
+    // it the first CHANGE as that starting point, and the copy behind it would be lost.
+    QJsonValue clip = obj.value(QStringLiteral("clip"));
+    if (clip.isDouble())
+        emit hostClipboardSeq(static_cast<qint64>(clip.toDouble()));
+
     HostMetrics parsed = parseObject(obj);
 
     QMutexLocker locker(&m_mutex);

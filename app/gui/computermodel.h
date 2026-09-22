@@ -325,7 +325,9 @@ signals:
     // Answer to probeStreamTweakPresence(). `found` is false for a host that is offline,
     // unreachable, or simply not running StreamTweak — the tab says which from what it
     // already knows about the host, so this stays a single bit.
-    void streamTweakPresenceReceived(int computerIndex, bool found);
+    // `clip` is the host's clipboard sharing from the same CAPS reply (6.3.0, §79): "on",
+    // "off", or "" for a StreamTweak older than 8.7.0 (and whenever `found` is false).
+    void streamTweakPresenceReceived(int computerIndex, bool found, QString clip);
 
     /** @param info {allowsLinkControl, currentMbps} — empty map on hosts without NETINFO. */
     void hostNetInfoReceived(int computerIndex, QVariantMap info);

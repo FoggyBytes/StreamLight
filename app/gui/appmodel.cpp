@@ -526,6 +526,17 @@ bool AppModel::moveToOtherTab(int appIndex)
     return toApps;
 }
 
+QString AppModel::savedTab() const
+{
+    return m_Computer ? PlaytimeManager::get()->lastTabOn(m_Computer->uuid) : QString();
+}
+
+void AppModel::saveTab(const QString& tab)
+{
+    if (m_Computer)
+        PlaytimeManager::get()->setLastTab(m_Computer->uuid, tab);
+}
+
 QString AppModel::sectionAt(int row) const
 {
     if (row < 0 || row >= m_VisibleApps.count())

@@ -1277,7 +1277,7 @@ Item {
                             // resolved by SDL POSITION exactly like PadGlyph maps buttonKey
                             // "A": the south face button is ✕ on PlayStation and B on
                             // Nintendo, which swaps A/B against Xbox. `controllerType`
-                            // already returns the set forced in Settings → Shortcuts when
+                            // already returns the set forced in Settings → Session when
                             // there is one, so the preference is not read a second time.
                             // Direct ternary rather than a helper call, for the same reason
                             // as PadGlyph._resolved: a function-call binding can fail to

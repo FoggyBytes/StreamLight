@@ -804,6 +804,10 @@ int main(int argc, char *argv[])
 
     QGuiApplication app(argc, argv);
 
+    // The shared clipboard sends, at the start of a stream, only what was copied since the
+    // last one — and before the first, since now (§79.6).
+    ClipboardSync::captureBaseline();
+
 #ifdef Q_OS_UNIX
     // Register signal handlers to arbitrate between SDL and Qt.
     // NB: This has to be done after the QGuiApplication is constructed to

@@ -34,6 +34,9 @@
 #define SER_ASAPPS      "movedToApps"
 #define SER_ASGAMES     "movedToGames"
 
+// The host page's tab the user last chose (6.3.0).
+#define SER_LASTTAB     "lastTab"
+
 PlaytimeManager* PlaytimeManager::get()
 {
     static PlaytimeManager instance;
@@ -339,6 +342,24 @@ void PlaytimeManager::setCategoryOverride(const QString& hostUuid, const QString
             settings.setValue(QLatin1String(list), names);
     }
     settings.endGroup();
+}
+
+QString PlaytimeManager::lastTabOn(const QString& hostUuid) const
+{
+    if (hostUuid.isEmpty())
+        return QString();
+
+    QSettings settings;
+    return settings.value(hostGroup(hostUuid) + QStringLiteral("/" SER_LASTTAB)).toString();
+}
+
+void PlaytimeManager::setLastTab(const QString& hostUuid, const QString& tab)
+{
+    if (hostUuid.isEmpty() || tab.isEmpty())
+        return;
+
+    QSettings settings;
+    settings.setValue(hostGroup(hostUuid) + QStringLiteral("/" SER_LASTTAB), tab);
 }
 
 void PlaytimeManager::forgetHost(const QString& hostUuid)

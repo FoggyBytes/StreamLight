@@ -553,7 +553,7 @@ void ComputerModel::probeStreamTweakPresence(int computerIndex)
 
     // Not even CAPS to a host held asleep: any connection wakes it (see bridgeAllowed()).
     if (heldAsleep(computerIndex)) {
-        emit streamTweakPresenceReceived(computerIndex, false);
+        emit streamTweakPresenceReceived(computerIndex, false, QString());
         return;
     }
 
@@ -566,7 +566,7 @@ void ComputerModel::probeStreamTweakPresence(int computerIndex)
     if (address.isEmpty()) {
         // Offline, or no address resolved yet — nothing to ask. The tab distinguishes this
         // from "asked and got nothing" using the host's own online state.
-        emit streamTweakPresenceReceived(computerIndex, false);
+        emit streamTweakPresenceReceived(computerIndex, false, QString());
         return;
     }
 
@@ -576,8 +576,16 @@ void ComputerModel::probeStreamTweakPresence(int computerIndex)
     // from a pre-7.1 host, a plain Sunshine box refusing the port) means not found.
     m_streamTweakBridge.requestCaps(address,
         [this, computerIndex](const QString& caps) {
-            emit streamTweakPresenceReceived(computerIndex,
-                                             caps.startsWith(QLatin1String("CAPS1")));
+            const bool found = caps.startsWith(QLatin1String("CAPS1"));
+            // "clip=on|off" rides on the same line from StreamTweak 8.7.0; absent before.
+            QString clip;
+            if (found) {
+                for (const QString& token : caps.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+                    if (token.startsWith(QLatin1String("clip=")))
+                        clip = token.mid(5);
+                }
+            }
+            emit streamTweakPresenceReceived(computerIndex, found, clip);
         });
 }
 

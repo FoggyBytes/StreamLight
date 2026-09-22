@@ -57,6 +57,10 @@ signals:
      */
     void stopRequested();
 
+    /** The host's clipboard sequence number, from every STATS reply that has one (6.3.0, §79).
+     *  Main thread. ClipboardSync decides what counts as a change. */
+    void hostClipboardSeq(qint64 seq);
+
 private slots:
     void poll();
     void onStatsReceived(const QString& statsJson);

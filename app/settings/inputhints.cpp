@@ -1,4 +1,5 @@
 #include "inputhints.h"
+#include "streamingpreferences.h"
 
 #include <QCoreApplication>
 #include <QCursor>
@@ -18,10 +19,37 @@ InputHints::InputHints(QObject* parent)
     // Application-wide, so no screen has to remember to report input. Installed on the
     // application object rather than a window: dialogs and popups are windows of their own.
     QCoreApplication::instance()->installEventFilter(this);
+
+    // The Settings choice applies the moment it is picked, not at the next input.
+    connect(StreamingPreferences::get(), &StreamingPreferences::inputPromptsChanged,
+            this, &InputHints::updatePadActive);
+    updatePadActive();
 }
 
 void InputHints::setPadActive(bool padActive)
 {
+    // Detection keeps running under a pinned choice, so switching back to Auto lands on the
+    // device actually in use rather than on whatever was true before the pin.
+    m_PadDetected = padActive;
+    updatePadActive();
+}
+
+void InputHints::updatePadActive()
+{
+    bool padActive;
+    switch (StreamingPreferences::get()->inputPrompts) {
+    case StreamingPreferences::IP_CONTROLLER:
+        padActive = true;
+        break;
+    case StreamingPreferences::IP_KEYBOARD_MOUSE:
+        padActive = false;
+        break;
+    case StreamingPreferences::IP_AUTO:
+    default:
+        padActive = m_PadDetected;
+        break;
+    }
+
     if (m_PadActive == padActive) {
         return;
     }
@@ -53,6 +81,7 @@ void InputHints::setPointerHidden(bool hidden)
 
 void InputHints::notePadInput()
 {
+    m_SeenRealInput = true;
     setPadActive(true);
     setPointerHidden(true);
 }
@@ -62,7 +91,9 @@ void InputHints::seedFromConnectedPads(bool anyConnected)
     // Prompts only. A pad merely being plugged in is enough to draw controller glyphs on the
     // first frame, but not enough to take the pointer away from someone who has not touched
     // it yet — on a desktop with a pad in a drawer that would blank the cursor at launch.
-    setPadActive(anyConnected);
+    if (!m_SeenRealInput) {
+        setPadActive(anyConnected);
+    }
 }
 
 bool InputHints::eventFilter(QObject* watched, QEvent* event)
@@ -77,6 +108,7 @@ bool InputHints::eventFilter(QObject* watched, QEvent* event)
         //
         // Auto-repeat is ignored as well: holding a key is one intent, not fifty.
         if (event->spontaneous() && !static_cast<QKeyEvent*>(event)->isAutoRepeat()) {
+            m_SeenRealInput = true;
             setPadActive(false);
             setPointerHidden(false);
         }
@@ -87,6 +119,7 @@ bool InputHints::eventFilter(QObject* watched, QEvent* event)
         // prompts that name keys. Movement deliberately does not — a mouse knocked on a desk
         // must not repaint the whole interface.
         if (event->spontaneous()) {
+            m_SeenRealInput = true;
             setPadActive(false);
             setPointerHidden(false);
         }

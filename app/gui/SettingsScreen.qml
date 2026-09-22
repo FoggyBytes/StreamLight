@@ -239,12 +239,14 @@ FocusScope {
         switch (idx) {
             case 0: if (resolutionSelector)    resolutionSelector.forceActiveFocus();    break
             case 1: if (audioConfigSelector)   audioConfigSelector.forceActiveFocus();   break
-            case 2: if (absMouseSwitch)        absMouseSwitch.forceActiveFocus();        break
+            case 2: if (swapFaceSwitch)        swapFaceSwitch.forceActiveFocus();        break
             case 3: if (decoderSelector)       decoderSelector.forceActiveFocus();       break
             case 4: if (mdnsSwitch)            mdnsSwitch.forceActiveFocus();            break
             case 5: if (gameOptSwitch)         gameOptSwitch.forceActiveFocus();         break
             case 6: if (perfOverlaySwitch)     perfOverlaySwitch.forceActiveFocus();     break
-            case 7: if (glyphSetSelector)      glyphSetSelector.forceActiveFocus();      break
+            case 7:
+                if (padComboRepeater.count > 0) padComboRepeater.itemAt(0).firstControl.forceActiveFocus()
+                break
             case 8: if (stGithubBtn)           stGithubBtn.forceActiveFocus();           break
             // Update now first when there is one: it is the only thing on this tab that changes,
             // and the startup prompt's Yes lands here to press it. A stray press only downloads
@@ -1681,6 +1683,169 @@ FocusScope {
                 visible: tabBar.currentIndex === 2
                 spacing: settingsScreen._px(16)
 
+                // ── GAMEPAD section ───────────────────────────────────────────
+                Label {
+                    text: qsTr("Controller")
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                    font.bold: true
+                    font.letterSpacing: 1.4
+                    font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut
+                    leftPadding: settingsScreen._px(14)
+                }
+
+                Rectangle {
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: settingsScreen._px(8)
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: gpCol.implicitHeight + settingsScreen._px(8)
+
+                    Column {
+                        id: gpCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: settingsScreen._px(4)
+                        spacing: 0
+
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Swap A/B and X/Y controller buttons")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Nintendo-style button layout")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: swapFaceSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.swapFaceButtons
+                                onToggled: function(v) { StreamingPreferences.swapFaceButtons = v; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Force controller #1 always connected")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Keeps a virtual pad on the host. Enable only for games that don't support hot-plug.")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: singleCtrlSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: !StreamingPreferences.multiController
+                                onToggled: function(v) { StreamingPreferences.multiController = !v; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeight
+
+                            Label {
+                                text: qsTr("Mouse control with controller (Start)")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                font.bold: true
+                                color: settingsScreen._text
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+
+                            OnOffSelector {
+                                id: gamepadMouseSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.gamepadMouse
+                                onToggled: function(v) { StreamingPreferences.gamepadMouse = v; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Process controller input in background")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Captures controller input even when the window is not focused")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: bgGamepadSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.backgroundGamepad
+                                onToggled: function(v) { StreamingPreferences.backgroundGamepad = v; StreamingPreferences.save() }
+                            }
+                        }
+                    }
+                }
+
                 // ── MOUSE & KEYBOARD section ──────────────────────────────────
                 Label {
                     text: qsTr("Mouse & Keyboard")
@@ -1886,169 +2051,6 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.reverseScrollDirection
                                 onToggled: function(v) { StreamingPreferences.reverseScrollDirection = v; StreamingPreferences.save() }
-                            }
-                        }
-                    }
-                }
-
-                // ── GAMEPAD section ───────────────────────────────────────────
-                Label {
-                    text: qsTr("Controller")
-                    font.family: Theme.family
-                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                    font.bold: true
-                    font.letterSpacing: 1.4
-                    font.capitalization: Font.AllUppercase
-                    color: settingsScreen._textMut
-                    leftPadding: settingsScreen._px(14)
-                }
-
-                Rectangle {
-                    width: parent.width
-                    color: settingsScreen._bg2
-                    radius: settingsScreen._px(8)
-                    border.color: settingsScreen._border
-                    border.width: 1
-                    implicitHeight: gpCol.implicitHeight + settingsScreen._px(8)
-
-                    Column {
-                        id: gpCol
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.topMargin: settingsScreen._px(4)
-                        spacing: 0
-
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Swap A/B and X/Y controller buttons")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Nintendo-style button layout")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: swapFaceSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.swapFaceButtons
-                                onToggled: function(v) { StreamingPreferences.swapFaceButtons = v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Force controller #1 always connected")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Keeps a virtual pad on the host. Enable only for games that don't support hot-plug.")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: singleCtrlSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: !StreamingPreferences.multiController
-                                onToggled: function(v) { StreamingPreferences.multiController = !v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeight
-
-                            Label {
-                                text: qsTr("Mouse control with controller (Start)")
-                                font.family: Theme.family
-                                font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                font.bold: true
-                                color: settingsScreen._text
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            OnOffSelector {
-                                id: gamepadMouseSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.gamepadMouse
-                                onToggled: function(v) { StreamingPreferences.gamepadMouse = v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Process controller input in background")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Captures controller input even when the window is not focused")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: bgGamepadSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.backgroundGamepad
-                                onToggled: function(v) { StreamingPreferences.backgroundGamepad = v; StreamingPreferences.save() }
                             }
                         }
                     }
@@ -2916,6 +2918,108 @@ FocusScope {
                                     StreamingPreferences.uiDisplayMode = _values[idx]
                                     StreamingPreferences.save()
                                     uiModeRestartDialog.open()
+                                }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Button icon set ───────────────────────────────────
+                        // This row and the next only change how the interface draws the buttons it
+                        // asks for, not what any input does — hence Interface, not Input or
+                        // Shortcuts, where they lived before 6.3.0.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Button icon set")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Auto follows the connected pad. Force a vendor for generic controllers.")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            SegmentedSelector {
+                                id: glyphSetSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                labels: [qsTr("Auto"), qsTr("Xbox"), qsTr("PlayStation"), qsTr("Nintendo")]
+                                Binding on currentIndex { value: StreamingPreferences.glyphSet }
+                                onActivated: function(idx) {
+                                    StreamingPreferences.glyphSet = idx
+                                    StreamingPreferences.save()
+                                    SdlGamepadKeyNavigation.refreshGlyphPreference()
+                                }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Button prompts ────────────────────────────────────
+                        // Issue #24: with Steam Input one controller also sends keyboard and mouse
+                        // input, and the prompts flipped with every trackpad click. Auto is the
+                        // InputHints rule; the other two pin the prompts regardless of input.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Button prompts")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Auto follows the last device used. Pin one for Steam Input.")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            SegmentedSelector {
+                                id: inputPromptsSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                labels: [qsTr("Auto"), qsTr("Controller"), qsTr("Keyboard & mouse")]
+                                property var _values: [
+                                    StreamingPreferences.IP_AUTO,
+                                    StreamingPreferences.IP_CONTROLLER,
+                                    StreamingPreferences.IP_KEYBOARD_MOUSE
+                                ]
+                                Binding on currentIndex {
+                                    value: {
+                                        var v = StreamingPreferences.inputPrompts
+                                        for (var i = 0; i < inputPromptsSelector._values.length; i++) {
+                                            if (inputPromptsSelector._values[i] === v) return i
+                                        }
+                                        return -1
+                                    }
+                                }
+                                onActivated: function(idx) {
+                                    StreamingPreferences.inputPrompts = _values[idx]
+                                    StreamingPreferences.save()
                                 }
                             }
                         }
@@ -4816,7 +4920,8 @@ FocusScope {
                             // app driven from a couch.
                             function wireNavigation() {
                                 var first = count > 0 ? itemAt(0) : null
-                                stGithubBtn.KeyNavigation.down = first ? first.switchItem : null
+                                var last = count > 0 ? itemAt(count - 1) : null
+                                stGithubBtn.KeyNavigation.down = first ? first.switchItem : stClipSwitch
 
                                 for (var i = 0; i < count; i++) {
                                     var it = itemAt(i)
@@ -4825,9 +4930,11 @@ FocusScope {
                                     var next = i + 1 < count ? itemAt(i + 1) : null
                                     it.switchItem.KeyNavigation.up =
                                         prev ? prev.switchItem : stGithubBtn
+                                    // The last host leads to the clipboard switch below it.
                                     it.switchItem.KeyNavigation.down =
-                                        next ? next.switchItem : null
+                                        next ? next.switchItem : stClipSwitch
                                 }
+                                stClipSwitch.KeyNavigation.up = last ? last.switchItem : stGithubBtn
                             }
 
                             delegate: Item {
@@ -4840,21 +4947,39 @@ FocusScope {
                                 // with the row it describes.
                                 property string presence: ""
 
+                                // The host's clipboard sharing, from the same CAPS reply:
+                                // "on", "off", or "" for a StreamTweak older than 8.7.0.
+                                property string clip: ""
+
+                                // Why the clipboard will not be shared with this host even
+                                // though it is on here — "" when there is nothing to say. Only
+                                // for a host StreamTweak was found on and is switched on for:
+                                // anywhere else the row already says the larger thing.
+                                readonly property string clipIssue:
+                                    !StreamingPreferences.clipboardSync || !model.online
+                                        || !model.streamTweakEnabled || presence !== "found" ? ""
+                                    : clip === "off" ? qsTr("Clipboard off on host")
+                                    : clip === ""    ? qsTr("Clipboard needs StreamTweak 8.7.0")
+                                    : ""
+
                                 // Exposed so wireNavigation() can chain the switches without
                                 // reaching into the delegate's internals.
                                 property alias switchItem: stHostSwitch
 
                                 function probe() {
                                     presence = ""
+                                    clip = ""
                                     if (settingsScreen.hostModel)
                                         settingsScreen.hostModel.probeStreamTweakPresence(index)
                                 }
 
                                 Connections {
                                     target: settingsScreen.hostModel
-                                    function onStreamTweakPresenceReceived(idx, found) {
-                                        if (idx === index)
+                                    function onStreamTweakPresenceReceived(idx, found, clip) {
+                                        if (idx === index) {
                                             stHostRow.presence = found ? "found" : "missing"
+                                            stHostRow.clip = clip
+                                        }
                                     }
                                 }
 
@@ -4917,6 +5042,22 @@ FocusScope {
                                                    ? Theme.accent
                                                    : settingsScreen._textDim
                                         }
+                                        Label {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            visible: stHostRow.clipIssue !== ""
+                                            text: "·"
+                                            font.family: Theme.family
+                                            font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                            color: settingsScreen._textMut
+                                        }
+                                        Label {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            visible: stHostRow.clipIssue !== ""
+                                            text: stHostRow.clipIssue
+                                            font.family: Theme.family
+                                            font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                            color: Theme.warning
+                                        }
                                     }
                                 }
 
@@ -4948,153 +5089,210 @@ FocusScope {
                     }
                 }
 
-                // ── Section: FEATURES ─────────────────────────────────────────
-                Label {
-                    text: qsTr("Features")
-                    font.family: Theme.family
-                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                    font.bold: true
-                    font.letterSpacing: 1.4
-                    font.capitalization: Font.AllUppercase
-                    color: settingsScreen._textMut
-                    leftPadding: settingsScreen._px(14)
-                }
-
-                // ⚠️ Three columns, and the reason is navigation rather than taste: this block
-                // has no interactive element in it, so a controller cannot scroll it. Anything
-                // that falls below the fold is unreachable with a pad — it has to fit.
-                //
-                // The groups are distributed by height, not in order, so no column runs long
-                // enough to push the card past the bottom of the screen at 1080p.
-                Rectangle {
+                // Clipboard and Features as one block, so the clipboard switch can reveal both:
+                // Features holds nothing focusable, and a pad reaches only what focus scrolls to.
+                // See revealTarget on stClipSwitch.
+                Column {
+                    id: stLowerBlock
                     width: parent.width
-                    color: settingsScreen._bg2
-                    radius: settingsScreen._px(8)
-                    border.color: settingsScreen._border
-                    border.width: 1
-                    implicitHeight: stFeatRow.implicitHeight + settingsScreen._px(32)
+                    spacing: settingsScreen._px(16)
 
-                    Row {
-                        id: stFeatRow
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.leftMargin: settingsScreen._px(16)
-                        anchors.rightMargin: settingsScreen._px(16)
-                        anchors.top: parent.top
-                        anchors.topMargin: settingsScreen._px(16)
-                        spacing: settingsScreen._px(18)
+                    // ── Section: CLIPBOARD (6.3.0, §79) ───────────────────────────
+                    // One switch for every host: the host has its own, and turns it down per host
+                    // with "Clipboard off on host" in the row above. Off by default — see
+                    // StreamingPreferences::clipboardSync.
+                    Label {
+                        text: qsTr("Clipboard")
+                        font.family: Theme.family
+                        font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                        font.bold: true
+                        font.letterSpacing: 1.4
+                        font.capitalization: Font.AllUppercase
+                        color: settingsScreen._textMut
+                        leftPadding: settingsScreen._px(14)
+                    }
 
-                        Repeater {
-                            // Two groups in the outer columns, one in the middle — and the
-                            // middle one is padded rather than anchored. A verticalCenter
-                            // anchor inside a Row whose own height comes from its tallest
-                            // child is the kind of arrangement that produces a binding loop
-                            // warning; a spacer entry is declarative and cannot.
-                            //
-                            // Read left to right, the columns go from the reason StreamTweak
-                            // exists to what it merely adds to the picture: the link speed,
-                            // then the things you can do to the host from here, then what
-                            // turns up on screen once it is installed.
-                            //
-                            // ⚠️ Every line has to fit on ONE line. A wrap adds 17 px to one
-                            // column only, which unbalances the row and makes the spacer below
-                            // wrong. Measured: nothing here wraps down to a text width of
-                            // 380 px, which is a narrower window than the app can be resized to.
-                            model: [
-                                [ { group: qsTr("Network") },
-                                  { name: qsTr("Host link speed matched to this device") },
-                                  { name: qsTr("Speed put back when you stop streaming") },
-                                  { name: qsTr("Host link speed shown on its card") },
-                                  { group: qsTr("Launch") },
-                                  { name: qsTr("Wait until the game is on screen") } ],
+                    Rectangle {
+                        width: parent.width
+                        color: settingsScreen._bg2
+                        radius: settingsScreen._px(8)
+                        border.color: settingsScreen._border
+                        border.width: 1
+                        implicitHeight: settingsScreen._rowHeightTall
 
-                                // ⚠️ The spacer centres this column against the two beside it,
-                                // and 21 is not a round number by accident: the outer columns
-                                // are 166 px and this one is 117 without the spacer, so the
-                                // boxes would centre at 24.5 — but the group label is anchored
-                                // to the BOTTOM of its box, so 10 of its 30 px are blank space
-                                // above the word. What the eye balances is the text, and that
-                                // lands at 21. Recompute it if the entries below change:
-                                // gap = (rowHeight − blockHeight) / 2 − (30 − 3 − labelHeight),
-                                // with blockHeight measured from the top of the group label to
-                                // the bottom of the last line.
-                                [ { gap: 21 },
-                                  { group: qsTr("Remote") },
-                                  { name: qsTr("Sleep, restart or power off the host") },
-                                  { name: qsTr("Windows Update: check, install, restart") },
-                                  { name: qsTr("Unlock with your PIN after waking it") } ],
+                        Column {
+                            anchors.left: parent.left
+                            anchors.leftMargin: settingsScreen._px(16)
+                            anchors.right: stClipSwitch.left
+                            anchors.rightMargin: settingsScreen._px(16)
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: settingsScreen._px(3)
 
-                                [ { group: qsTr("On screen") },
-                                  { name: qsTr("Host GPU, CPU and network in the overlay") },
-                                  { name: qsTr("How your last session went, on its card") },
-                                  { name: qsTr("Which store each game comes from") },
-                                  { group: qsTr("History") },
-                                  { name: qsTr("Sessions graded and charted in StreamTweak") } ]
-                            ]
+                            Label {
+                                text: qsTr("Share clipboard")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                font.bold: true
+                                color: settingsScreen._text
+                            }
+                            Label {
+                                text: qsTr("Text, up to 32 KB")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                color: settingsScreen._textDim
+                            }
+                        }
 
-                            delegate: Column {
-                                // Thirds of the row, minus its two gaps. Fixed rather than
-                                // implicit so the three columns line up regardless of how long
-                                // the longest line in each happens to be.
-                                width: (stFeatRow.width - stFeatRow.spacing * 2) / 3
-                                spacing: 0
+                        OnOffSelector {
+                            id: stClipSwitch
+                            // Reveal Features along with this row: it is the last thing on the
+                            // tab a pad can focus, and the list below it has nothing to land on.
+                            readonly property Item revealTarget: stLowerBlock
+                            anchors.right: parent.right
+                            anchors.rightMargin: settingsScreen._px(16)
+                            anchors.verticalCenter: parent.verticalCenter
+                            checked: StreamingPreferences.clipboardSync
+                            onToggled: function(v) {
+                                StreamingPreferences.clipboardSync = v
+                                // Persisted on the toggle, like "Wait for the game to appear".
+                                StreamingPreferences.save()
+                            }
+                        }
+                    }
 
-                                property var entries: modelData
+                    // ── Section: FEATURES ─────────────────────────────────────────
+                    Label {
+                        text: qsTr("Features")
+                        font.family: Theme.family
+                        font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                        font.bold: true
+                        font.letterSpacing: 1.4
+                        font.capitalization: Font.AllUppercase
+                        color: settingsScreen._textMut
+                        leftPadding: settingsScreen._px(14)
+                    }
 
-                                Repeater {
-                                    model: parent.entries
+                    // ⚠️ Three columns, and the reason is navigation rather than taste: this block
+                    // has no interactive element in it, so a controller cannot scroll it. Anything
+                    // that falls below the fold is unreachable with a pad — it has to fit.
+                    //
+                    // The groups are distributed by height, not in order, so no column runs long
+                    // enough to push the card past the bottom of the screen at 1080p.
+                    Rectangle {
+                        width: parent.width
+                        color: settingsScreen._bg2
+                        radius: settingsScreen._px(8)
+                        border.color: settingsScreen._border
+                        border.width: 1
+                        implicitHeight: stFeatRow.implicitHeight + settingsScreen._px(32)
 
-                                    delegate: Item {
-                                        width: parent.width
-                                        // ⚠️ Scaled here rather than in the model above: the
-                                        // entries are data, and `gap` is a measurement whose
-                                        // formula (in the comment beside it) is written in the
-                                        // same design units as every other number on this page.
-                                        height: modelData.gap !== undefined
-                                                ? settingsScreen._px(modelData.gap)
-                                                : modelData.group !== undefined
-                                                  ? settingsScreen._px(index === 0 ? 20 : 30)
-                                                  : stEntryText.implicitHeight + settingsScreen._px(12)
+                        Row {
+                            id: stFeatRow
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: settingsScreen._px(16)
+                            anchors.rightMargin: settingsScreen._px(16)
+                            anchors.top: parent.top
+                            anchors.topMargin: settingsScreen._px(16)
+                            spacing: settingsScreen._px(18)
 
-                                        Label {
-                                            visible: modelData.group !== undefined
-                                            anchors.left: parent.left
-                                            anchors.bottom: parent.bottom
-                                            anchors.bottomMargin: settingsScreen._px(3)
-                                            text: modelData.group !== undefined ? modelData.group : ""
-                                            font.family: Theme.family
-                                            font.pixelSize: settingsScreen._px(Theme.fontCaption)
-                                            font.bold: true
-                                            font.letterSpacing: 1.2
-                                            font.capitalization: Font.AllUppercase
-                                            color: settingsScreen._textMut
-                                        }
+                            Repeater {
+                                // Two groups per column, three lines then one — the same shape in
+                                // all three, so the columns come out the same height and line up
+                                // without any padding. ⚠️ Keep it that way: up to 6.2.0 the middle
+                                // column had one group and needed a hand-measured 21 px spacer to
+                                // sit centred, which is what adding Clipboard to it made redundant.
+                                //
+                                // Read left to right, the columns go from the reason StreamTweak
+                                // exists to what it merely adds to the picture: the link speed,
+                                // then the things you can do to the host from here, then what
+                                // turns up on screen once it is installed.
+                                //
+                                // ⚠️ Every line has to fit on ONE line. A wrap adds 17 px to one
+                                // column only, which unbalances the row. Measured: nothing here
+                                // wraps down to a text width of 380 px, which is a narrower window
+                                // than the app can be resized to.
+                                model: [
+                                    [ { group: qsTr("Network") },
+                                      { name: qsTr("Host link speed matched to this device") },
+                                      { name: qsTr("Speed put back when you stop streaming") },
+                                      { name: qsTr("Host link speed shown on its card") },
+                                      { group: qsTr("Launch") },
+                                      { name: qsTr("Wait until the game is on screen") } ],
 
-                                        Row {
-                                            // Only an entry that has something to say gets a
-                                            // bullet. The test is on `name` rather than on the
-                                            // absence of `group`, because the spacer above has
-                                            // neither: the negative test let it through and
-                                            // drew it an arrow with no text next to it.
-                                            visible: modelData.name !== undefined
-                                            anchors.left: parent.left
-                                            anchors.right: parent.right
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            spacing: settingsScreen._px(9)
+                                    [ { group: qsTr("Remote") },
+                                      { name: qsTr("Sleep, restart or power off the host") },
+                                      { name: qsTr("Windows Update: check, install, restart") },
+                                      { name: qsTr("Unlock with your PIN after waking it") },
+                                      { group: qsTr("Clipboard") },
+                                      { name: qsTr("Copy on one side, paste on the other") } ],
+
+                                    [ { group: qsTr("On screen") },
+                                      { name: qsTr("Host GPU, CPU and network in the overlay") },
+                                      { name: qsTr("How your last session went, on its card") },
+                                      { name: qsTr("Which store each game comes from") },
+                                      { group: qsTr("History") },
+                                      { name: qsTr("Sessions graded and charted in StreamTweak") } ]
+                                ]
+
+                                delegate: Column {
+                                    // Thirds of the row, minus its two gaps. Fixed rather than
+                                    // implicit so the three columns line up regardless of how long
+                                    // the longest line in each happens to be.
+                                    width: (stFeatRow.width - stFeatRow.spacing * 2) / 3
+                                    spacing: 0
+
+                                    property var entries: modelData
+
+                                    Repeater {
+                                        model: parent.entries
+
+                                        delegate: Item {
+                                            width: parent.width
+                                            height: modelData.group !== undefined
+                                                    ? settingsScreen._px(index === 0 ? 20 : 30)
+                                                    : stEntryText.implicitHeight + settingsScreen._px(12)
 
                                             Label {
-                                                text: "▸"
-                                                font.pixelSize: settingsScreen._px(Theme.fontCaption)
-                                                color: Theme.accent
-                                            }
-                                            Label {
-                                                id: stEntryText
-                                                width: parent.width - settingsScreen._px(21)
-                                                text: modelData.name !== undefined ? modelData.name : ""
+                                                visible: modelData.group !== undefined
+                                                anchors.left: parent.left
+                                                anchors.bottom: parent.bottom
+                                                anchors.bottomMargin: settingsScreen._px(3)
+                                                text: modelData.group !== undefined ? modelData.group : ""
                                                 font.family: Theme.family
-                                                font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                                color: settingsScreen._text
-                                                wrapMode: Text.WordWrap
+                                                font.pixelSize: settingsScreen._px(Theme.fontCaption)
+                                                font.bold: true
+                                                font.letterSpacing: 1.2
+                                                font.capitalization: Font.AllUppercase
+                                                color: settingsScreen._textMut
+                                            }
+
+                                            Row {
+                                                // Only an entry that has something to say gets a
+                                                // bullet. The test is on `name` rather than on the
+                                                // absence of `group`: a spacer entry, which this
+                                                // list had until 6.2.0, has neither, and the
+                                                // negative test drew it an arrow with no text.
+                                                visible: modelData.name !== undefined
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                spacing: settingsScreen._px(9)
+
+                                                Label {
+                                                    text: "▸"
+                                                    font.pixelSize: settingsScreen._px(Theme.fontCaption)
+                                                    color: Theme.accent
+                                                }
+                                                Label {
+                                                    id: stEntryText
+                                                    width: parent.width - settingsScreen._px(21)
+                                                    text: modelData.name !== undefined ? modelData.name : ""
+                                                    font.family: Theme.family
+                                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                                    color: settingsScreen._text
+                                                    wrapMode: Text.WordWrap
+                                                }
                                             }
                                         }
                                     }
@@ -5322,53 +5520,6 @@ FocusScope {
                     }
                 }
 
-                // ── CONTROLLER GLYPHS ─────────────────────────────────────────
-                Label {
-                    text: qsTr("Controller glyphs")
-                    font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontSmall); font.bold: true
-                    font.letterSpacing: 1.4; font.capitalization: Font.AllUppercase
-                    color: settingsScreen._textMut; leftPadding: settingsScreen._px(14)
-                }
-                Rectangle {
-                    width: parent.width
-                    color: settingsScreen._bg2
-                    radius: settingsScreen._px(8)
-                    border.color: settingsScreen._border
-                    border.width: 1
-                    implicitHeight: settingsScreen._rowHeightTall
-                    Item {
-                        width: parent.width
-                        height: settingsScreen._rowHeightTall
-                        Column {
-                            anchors.left: parent.left; anchors.leftMargin: settingsScreen._px(16)
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: settingsScreen._px(3)
-                            Label {
-                                text: qsTr("Button icon set")
-                                font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontBody); font.bold: true
-                                color: settingsScreen._text
-                            }
-                            Label {
-                                text: qsTr("Auto follows the connected pad. Force a vendor for generic controllers.")
-                                font.family: Theme.family; font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                color: settingsScreen._textDim
-                            }
-                        }
-                        SegmentedSelector {
-                            id: glyphSetSelector
-                            anchors.right: parent.right; anchors.rightMargin: settingsScreen._px(16)
-                            anchors.verticalCenter: parent.verticalCenter
-                            labels: [qsTr("Auto"), qsTr("Xbox"), qsTr("PlayStation"), qsTr("Nintendo")]
-                            Binding on currentIndex { value: StreamingPreferences.glyphSet }
-                            onActivated: function(idx) {
-                                StreamingPreferences.glyphSet = idx
-                                StreamingPreferences.save()
-                                SdlGamepadKeyNavigation.refreshGlyphPreference()
-                            }
-                        }
-                    }
-                }
-
                 // ── GAMEPAD ───────────────────────────────────────────────────
                 Label {
                     text: qsTr("Controller")
@@ -5407,11 +5558,14 @@ FocusScope {
                             }
                         }
                         Repeater {
+                            id: padComboRepeater
                             model: shortcutsTab.padModel
                             delegate: Item {
                                 width: padCol.width
                                 height: settingsScreen._px(56)
                                 property var rd: modelData
+                                // Where focus lands on entering the tab (focusFirstControl).
+                                readonly property Item firstControl: padRebindBtn
                                 Label {
                                     anchors.left: parent.left; anchors.leftMargin: settingsScreen._px(16)
                                     anchors.verticalCenter: parent.verticalCenter
@@ -5442,6 +5596,7 @@ FocusScope {
                                     }
                                     Item { width: settingsScreen._px(8); height: 1 }
                                     MiniButton {
+                                        id: padRebindBtn
                                         label: qsTr("Rebind")
                                         onTriggered: padCaptureDialog.openFor(rd.action, rd.name, rd.mask)
                                     }

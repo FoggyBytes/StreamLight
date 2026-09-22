@@ -163,6 +163,18 @@ public:
     void setCategoryOverride(const QString& hostUuid, const QString& appName,
                              bool asApp, bool automatic);
 
+    // ── The host page's last tab (6.3.0) ─────────────────────────────────────────────────
+    /*
+     * ALL, GAMES or APPS — the one the user last chose on this host's page, so the page
+     * reopens there, after Home and after a restart alike. In the host node beside the pins
+     * and the moves, so forgetHost() takes it along and a Tailscale clone shares it.
+     * Only a choice made by hand is stored: the page's own fallbacks (an empty tab, a Remote
+     * Monitor still held) never overwrite it.
+     */
+    /// "all", "games" or "apps"; empty when nothing was ever chosen on this host.
+    QString lastTabOn(const QString& hostUuid) const;
+    void setLastTab(const QString& hostUuid, const QString& tab);
+
     /**
      * Desktop and Steam Big Picture are not games and never accumulate hours.
      *

@@ -147,6 +147,11 @@ public:
      */
     Q_INVOKABLE bool moveToOtherTab(int appIndex);
 
+    /// The tab the user last chose on this host's page, or empty (6.3.0) — stored by
+    /// PlaytimeManager::setLastTab, read by the page when it opens.
+    Q_INVOKABLE QString savedTab() const;
+    Q_INVOKABLE void saveTab(const QString& tab);
+
     /// The section a row belongs to — "continue", "pinned" or "all". The page asks for row 0
     /// to decide which heading is the first one and needs no gap above it.
     Q_INVOKABLE QString sectionAt(int row) const;

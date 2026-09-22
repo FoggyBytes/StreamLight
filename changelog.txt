@@ -4,6 +4,32 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+----------------------------------------------
+Version 6.3.0 - Where You Left It (22/09/2026)
+----------------------------------------------
+
+StreamTweak 8.7.0 is needed on the host for the shared clipboard — everything else in 6.3.0 is client-side and works with any host. Text copied on one side now pastes on the other, a resumed game appears straight away, the host page remembers its tab, and the button prompts can be pinned to the controller.
+
+✨ NEW FEATURES:
+• Shared clipboard — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Off until you turn it on in Settings → StreamTweak; the host can refuse from its own switch
+• Passwords don't linger — text marked by a password manager (KeePass, KeePassXC, Bitwarden, Proton Pass, Chrome, Firefox) stays out of Win+V history on the other side and is cleared there when the original is, within 60 seconds anyway
+• Button prompts: Auto, Controller or Keyboard & mouse — in Settings → Session, beside the button icon set. Pin them to the controller when Steam Input or a Steam Deck sends mouse clicks and keys from the same pad, and the prompts stop switching back and forth
+
+🎨 UI:
+• Settings → StreamTweak gets a Clipboard section under Hosts, and a host's row says when its StreamTweak is too old for it or has it switched off
+• The button icon set moves from Settings → Shortcuts to Settings → Session, under Interface after GUI mode
+• Settings → Input starts with Controller, then Mouse & Keyboard
+
+🐛 FIXES:
+• Prompts return to the controller's icons as soon as the stick or a trigger is used, not only on a button press
+• Prompts show the controller's icons from the first screen when a controller is connected, instead of the keyboard's until the first press
+• Resume no longer waits behind the launch screen — with Wait for the game to appear on, rejoining a game or app the host is already running could hold the launch screen up over a picture that was ready. A resume, from Home or from the host page, now shows the stream on its first frame
+• The host page reopens on the tab you last chose — All, Games or Apps, per host, after going back to Home and after closing StreamLight. A Remote Monitor still in use still opens on Apps, and a tab with nothing on it falls back to the usual one
+
+🙏 THANKS:
+• Thanks to @vitorhugoaranda (https://github.com/FoggyBytes/StreamLight/issues/23) for asking for a shared clipboard
+• Thanks to @MariolloPL (https://github.com/FoggyBytes/StreamLight/issues/24) for asking for controller-only prompts
+
 ----------------------------------------
 Version 6.2.0 - Sleep Tight (19/09/2026)
 ----------------------------------------

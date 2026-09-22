@@ -47,6 +47,7 @@
 #define SER_AUTORECONNECTNOVIDEO "autoreconnectnovideo"
 #define SER_MATCHHOSTLINKSPEED "matchhostlinkspeed"
 #define SER_WAITFORGAME "waitforgame"
+#define SER_CLIPBOARDSYNC "clipboardsync"
 #define SER_SHOWPERFOVERLAY "showperfoverlay"
 #define SER_OVERLAYMODE "overlaymode"
 #define SER_OVERLAYPOSITION "overlayposition"
@@ -65,6 +66,7 @@
 #define SER_HIDEHOSTIPS "hidehostips"
 #define SER_TAILSCALE_AUTOSTART "tailscaleautostart"
 #define SER_GLYPHSET "glyphset"
+#define SER_INPUTPROMPTS "inputprompts"
 #define SER_CLOCKFORMAT "clockformat"
 #define SER_DATEFORMAT "dateformat"
 #define CURRENT_DEFAULT_VER 2
@@ -147,6 +149,7 @@ StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
     p->autoReconnectNoVideo = autoReconnectNoVideo;
     p->matchHostLinkSpeed = matchHostLinkSpeed;
     p->waitForGameOnScreen = waitForGameOnScreen;
+    p->clipboardSync = clipboardSync;
     p->showPerfOverlay = showPerfOverlay;
     p->overlayPosition = overlayPosition;
     p->overlayTextColor = overlayTextColor;
@@ -173,6 +176,7 @@ StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
     p->uiDisplayMode = uiDisplayMode;
     p->captureSysKeysMode = captureSysKeysMode;
     p->glyphSet = glyphSet;
+    p->inputPrompts = inputPrompts;
     p->clockFormat = clockFormat;
     p->dateFormat = dateFormat;
 
@@ -282,6 +286,7 @@ void StreamingPreferences::reload()
     // screen is the opt-in, because it is the answer to a problem not everyone has — and a
     // title that opens its own launcher never satisfies it at all.
     waitForGameOnScreen = settings.value(SER_WAITFORGAME, false).toBool();
+    clipboardSync = settings.value(SER_CLIPBOARDSYNC, false).toBool();
     // ── Performance overlay ──────────────────────────────────────────────────
     // On/off migrates through two older shapes: the 4-state profile of 4.x/5.0.0
     // (anything but Off meant on) and, before that, a plain boolean. Neither is
@@ -334,6 +339,8 @@ void StreamingPreferences::reload()
                                                          static_cast<int>(CaptureSysKeysMode::CSK_OFF)).toInt());
     glyphSet = static_cast<GlyphSet>(settings.value(SER_GLYPHSET,
                                                     static_cast<int>(GlyphSet::GS_AUTO)).toInt());
+    inputPrompts = static_cast<InputPrompts>(settings.value(SER_INPUTPROMPTS,
+                                                            static_cast<int>(InputPrompts::IP_AUTO)).toInt());
     clockFormat = static_cast<ClockFormat>(settings.value(SER_CLOCKFORMAT,
                                                     static_cast<int>(ClockFormat::CF_24H)).toInt());
     dateFormat = static_cast<DateFormat>(settings.value(SER_DATEFORMAT,
@@ -408,6 +415,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_AUTORECONNECTNOVIDEO, autoReconnectNoVideo);
     settings.setValue(SER_MATCHHOSTLINKSPEED, matchHostLinkSpeed);
     settings.setValue(SER_WAITFORGAME, waitForGameOnScreen);
+    settings.setValue(SER_CLIPBOARDSYNC, clipboardSync);
     settings.setValue(SER_SHOWPERFOVERLAY, showPerfOverlay);
     settings.setValue(SER_OVERLAYPOSITION, static_cast<int>(overlayPosition));
     settings.setValue(SER_OVERLAYTEXTCOLOR, static_cast<int>(overlayTextColor));
@@ -437,6 +445,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_HIDEHOSTIPS, hideHostIps);
     settings.setValue(SER_TAILSCALE_AUTOSTART, tailscaleAutoStart);
     settings.setValue(SER_GLYPHSET, static_cast<int>(glyphSet));
+    settings.setValue(SER_INPUTPROMPTS, static_cast<int>(inputPrompts));
     settings.setValue(SER_CLOCKFORMAT, static_cast<int>(clockFormat));
     settings.setValue(SER_DATEFORMAT, static_cast<int>(dateFormat));
 }

@@ -297,6 +297,11 @@ FocusScope {
      *
      * Opens on ALL, or on APPS when ALL would be empty or when this client still holds a
      * Remote Monitor, because the server then lists only Resume and Disconnect Monitor.
+     *
+     * 6.3.0: or on the tab the user last chose on this host, kept across Home and across a
+     * restart (AppModel.savedTab). Only a choice made by hand is saved — the fallbacks below
+     * move the page, never the memory — and a saved tab counts as chosen by the user, so the
+     * same two exceptions still apply to it.
      */
     readonly property var _tabs: ["all", "games", "apps"]
     property string libraryTab: "all"
@@ -310,9 +315,27 @@ FocusScope {
         return (m.remoteMonitorActive || m.allCount === 0) ? "apps" : "all"
     }
 
+    // The tab the page opens on. An empty list is one not fetched yet, so the saved tab is
+    // taken on trust and onCountsChanged corrects it if it turns out empty.
+    //
+    // ⚠️ Sets _tabChosenByUser both ways. The page is built with computerIndex 0 and only then
+    // told its real host (AppShell's onLoaded), so this runs once for host 0 first: setting the
+    // flag only to true would carry host 0's saved choice onto a host that has none.
+    function _openingTabFor(m) {
+        var saved = m.savedTab()
+        _tabChosenByUser = _tabs.indexOf(saved) >= 0
+        if (!_tabChosenByUser) return _defaultTabFor(m)
+        if (m.remoteMonitorActive) return "apps"
+        var listed = m.allCount + m.appsCount > 0
+        return (!listed || _countFor(m, saved) > 0) ? saved : _defaultTabFor(m)
+    }
+
     function setLibraryTab(tab, byUser) {
         if (!appGrid || !appGrid.appModel) return
-        if (byUser) _tabChosenByUser = true
+        if (byUser) {
+            _tabChosenByUser = true
+            appGrid.appModel.saveTab(tab)
+        }
         if (tab === libraryTab && appGrid.appModel.category === tab) return
         libraryTab = tab
         appGrid.appModel.category = tab
@@ -366,9 +389,12 @@ FocusScope {
         appsRoot._playtimeEpoch++
     }
 
-    function _pickDefaultTab() {
+    // ⚠️ The opening tab, never the bare default: this runs from the list's onCompleted, after
+    // createModel() has already opened on the saved tab, and until 6.3.0 it put ALL back on top
+    // of it. On the first host (index 0) nothing re-created the model afterwards, so ALL stuck.
+    function _pickOpeningTab() {
         if (!appGrid || !appGrid.appModel) return
-        setLibraryTab(_defaultTabFor(appGrid.appModel), false)
+        setLibraryTab(_openingTabFor(appGrid.appModel), false)
     }
 
     /// Selects the entry with this id on whichever tab has it, the current one first. False
@@ -395,7 +421,7 @@ FocusScope {
         function onCountsChanged() {
             var m = appGrid.appModel
             if (!appsRoot._tabChosenByUser) {
-                appsRoot._pickDefaultTab()
+                appsRoot._pickOpeningTab()
             } else if (m.remoteMonitorActive && appsRoot.libraryTab !== "apps") {
                 appsRoot.setLibraryTab("apps", false)
             } else if (appsRoot.libraryTab !== "apps"
@@ -1374,7 +1400,7 @@ FocusScope {
             // The tab first: it decides which rows exist. Then row 0 is the game you last
             // played whenever there is one — the model sorts it there — so opening the page
             // already has A pointed at it.
-            appsRoot._pickDefaultTab()
+            appsRoot._pickOpeningTab()
             currentIndex = 0
             updateContinue()
             appModel.computerLost.connect(computerLost)
@@ -1435,7 +1461,7 @@ FocusScope {
             // resetting a model that has already filled it: that reset left the spotlight with no
             // focused item for an instant, and everything bound to it — the blurred backdrop
             // above all — had to recover from a flicker nobody asked for.
-            var tab = appsRoot._defaultTabFor(model)
+            var tab = appsRoot._openingTabFor(model)
             model.category = tab
             appsRoot.libraryTab = tab
             return model

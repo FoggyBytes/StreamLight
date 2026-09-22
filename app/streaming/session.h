@@ -16,6 +16,7 @@
 #include "audio/renderers/renderer.h"
 #include "video/overlaymanager.h"
 #include "../HostMetricsPoller.h"
+#include "clipboardsync.h"
 #include "../backend/linkmatcher.h"
 #include "../backend/launchgate.h"
 #include "launchcurtain.h"
@@ -138,7 +139,13 @@ public:
         // 5.9.0: never for a Vibeshine / Vibepollo host control. Remote Input and Remote Monitor
         // put no game window on screen, and Terminate or a Disconnect never stream at all, so
         // a wait for "the game on screen" would only run to its cap.
-        return !m_UnlockMode && m_StreamTweakEnabled && m_Preferences->waitForGameOnScreen
+        //
+        // 6.3.0: never on a resume either, game or app alike. What we are rejoining is already
+        // on the host's screen, and the host's launch watcher is still reporting on the launch
+        // that started it — a phase that has nothing to do with this connection, and that kept
+        // the curtain up over a picture ready from the first frame.
+        return !m_UnlockMode && !m_RejoinsRunningApp
+            && m_StreamTweakEnabled && m_Preferences->waitForGameOnScreen
             && hostControlKind(m_App.id, m_App.uuid, m_App.name) == HostControl::None;
     }
 
@@ -162,6 +169,10 @@ public:
     // protocol-level BYE to the host. Use this for stop requests that arrive
     // after the stream is fully running (e.g. StreamTweak "Return to client").
     void requestGracefulStop();
+
+    // A one-line notice from the shared clipboard (6.3.0, §79), in the status corner for 3 s.
+    // It gives way to what already uses that corner — connection warnings, gamepad mouse mode.
+    void showClipboardNotice(const QString& text);
     Q_PROPERTY(QStringList launchWarnings MEMBER m_LaunchWarnings NOTIFY launchWarningsChanged);
 
     static
@@ -579,6 +590,11 @@ private:
 
     Overlay::OverlayManager m_OverlayManager;
     HostMetricsPoller*       m_HostMetricsPoller      = nullptr;
+    ClipboardSync*           m_ClipboardSync          = nullptr;
+    // True while the status corner shows a clipboard notice and nothing has written over it
+    // since. Cleared from the connection-status callback (another thread), hence atomic.
+    std::atomic<bool>        m_ClipboardNoticeShown{false};
+    bool                     m_EventLoopDone          = false;   // exec()'s loop has returned
     LinkMatcher*             m_LinkMatcher            = nullptr;
     LaunchGate*              m_LaunchGate             = nullptr;
     LaunchCurtain            m_Curtain;
@@ -614,6 +630,16 @@ private:
     // nothing else expects it. Gates the metrics poller, the telemetry sampler, the launch
     // gate and the link match.
     bool m_StreamTweakEnabled = false;
+
+    // 6.3.0: the host was already running this very app when the session was built — Resume
+    // from Home or from the host page, a no-video retry, a live reconfigure. Latched for the
+    // same reason as the flag above: waitsForGame() is read at the gate AND at the reveal, and
+    // currentGameId turns non-zero halfway through every fresh launch, so a live read would
+    // make the two disagree and the window would never be revealed. Compared with the app's
+    // id, not just with zero: a different game still running is one the UI is about to quit,
+    // and the launch that follows is a real one. The /resume-or-/launch choice on the wire,
+    // in startConnectionAsync(), is untouched.
+    bool m_RejoinsRunningApp = false;
 
     // Remote PIN unlock. The buffer is fixed and small: a Windows Hello PIN is a handful of
     // digits, and a fixed array is something we can actually overwrite afterwards.

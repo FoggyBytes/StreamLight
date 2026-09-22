@@ -203,6 +203,23 @@ public:
      */
     void sendSessionDataSync(const QString& hostAddress, const QString& jsonPayload);
 
+    /**
+     * Shared clipboard (StreamTweak 8.7.0, §79), all authenticated. CLIPKEY answers
+     * "KEY <base64>" (the session key, RSA-OAEP for our certificate) or ERR_NOT_ALLOWED;
+     * CLIPSET takes one sealed line; CLIPGET answers "CLIP <seq> <base64>", OWN, EMPTY,
+     * NOTEXT or an ERR_*. See streaming/clipboardsync.h for who calls what, and when.
+     */
+    void requestClipKey(const QString& hostAddress, ResponseCallback onResult);
+    void sendClipSet(const QString& hostAddress, const QString& sealedB64, ResponseCallback onResult);
+    void requestClipGet(const QString& hostAddress, ResponseCallback onResult);
+
+    /**
+     * Blocking authenticated request, for the end of a stream only (final CLIPGET, CLIPEND):
+     * there the Qt event loop is not running and an async socket would never complete.
+     * Returns the reply line, or "" on timeout.
+     */
+    QString requestSync(const QString& hostAddress, const QString& command, int timeoutMs);
+
     static constexpr quint16 BridgePort = 47998;
 
     // Per-request watchdog: how long to wait for a newline-terminated reply
