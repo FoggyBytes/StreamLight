@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue.svg)](https://github.com/FoggyBytes/StreamLight) [![Framework](https://img.shields.io/badge/Framework-Qt%206-brightgreen.svg)](https://www.qt.io/) [![Downloads](.badges/downloads.svg)](https://github.com/FoggyBytes/StreamLight/releases) [![Built on Moonlight](https://img.shields.io/badge/built%20on-Moonlight-blue?&logo=github)](https://github.com/moonlight-stream/moonlight-qt) [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-brightgreen.svg)](https://claude.ai/code)
 
 <div align="center">
-  <img width="960" height="540" alt="Immagine 2026-09-18 222853" src="https://github.com/user-attachments/assets/99e8f5da-d31c-47e8-80b0-a40b1118acc8" />
+  <img width="3840" height="2160" alt="Screenshot 2026-10-01 204951" src="https://github.com/user-attachments/assets/eeabaf5c-de75-4f8e-959b-abb975399d4f" />
 </div>
 
 **StreamLight** is the client half of the FoggyBytes streaming duo: a fork of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) with a gamepad-first interface and native integration with its host-side companion, [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak).
@@ -11,7 +11,7 @@
 The streaming engine is upstream Moonlight's — FFmpeg, D3D11VA, DXVA2, libplacebo, `moonlight-common-c` — with Nonary's VRR pacing added in 6.0.0 and his PyroWave codec in 6.4.0. What is new sits around it: the interface, and everything the two apps can do together over a local TCP bridge — host link matching, host metrics in the overlay, the store each game comes from, session quality reports, remote power-off and Windows Update, Tailscale, and signing a woken host in with its PIN from the sofa.
 
 <div align="center">
-  <img width="960" height="540" alt="Immagine 2026-09-18 222938" src="https://github.com/user-attachments/assets/db14c1d5-e703-472d-a136-f636625252dc" />
+  <img width="3840" height="2160" alt="Immagine 2026-10-01 205104" src="https://github.com/user-attachments/assets/8f006d85-b670-4c40-9de7-9a8b9ed8dc39" />
 </div>
 
 ## ✅ Compatibility
