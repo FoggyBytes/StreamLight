@@ -62,10 +62,17 @@ Popup {
     x: (Overlay.overlay ? (Overlay.overlay.width  - width)  / 2 : 0)
     y: (Overlay.overlay ? Math.max(40, Overlay.overlay.height * 0.12) : 40)
     closePolicy: Popup.CloseOnEscape
-    padding: 32
+
+    // The window scale every other dialog is drawn at (6.3.1): this one opens over Settings,
+    // which scales, and was itself in fixed pixels. Hairlines stay 1 px. ModToggle below is an
+    // inline component and cannot see this id, so it multiplies by Theme.uiScale itself.
+    readonly property real _u: Theme.uiScale
+    function _px(n) { return Math.round(n * _u) }
+
+    padding: _px(32)
 
     background: Rectangle {
-        color: Theme.card; border.color: Theme.line; border.width: 1; radius: 12
+        color: Theme.card; border.color: Theme.line; border.width: 1; radius: pop._px(12)
     }
 
     component ModToggle: Button {
@@ -74,14 +81,14 @@ Popup {
         property bool on: false
         signal flip()
         activeFocusOnTab: true
-        implicitWidth: 96
-        implicitHeight: 46
+        implicitWidth: Math.round(96 * Theme.uiScale)
+        implicitHeight: Math.round(46 * Theme.uiScale)
         onClicked: flip()
         Keys.onReturnPressed: flip()
         Keys.onEnterPressed:  flip()
         Keys.onSpacePressed:  flip()
         background: Rectangle {
-            radius: 8
+            radius: Math.round(8 * Theme.uiScale)
             color: mt.on ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16) : Theme.card
             border.color: mt.activeFocus ? Theme.accent : mt.on ? Qt.darker(Theme.accent, 1.55) : Theme.line
             border.width: (mt.activeFocus || mt.on) ? 2 : 1
@@ -89,36 +96,36 @@ Popup {
         contentItem: Label {
             text: mt.lbl
             color: mt.on ? Theme.accent : Theme.text2
-            font.family: Theme.family; font.pixelSize: Theme.fontBody; font.bold: mt.on
+            font.family: Theme.family; font.pixelSize: Math.round(Theme.fontBody * Theme.uiScale); font.bold: mt.on
             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
         }
     }
 
     contentItem: ColumnLayout {
-        spacing: 16
+        spacing: pop._px(16)
 
         Label {
             text: qsTr("REBIND SHORTCUT")
-            font.family: Theme.family; font.pixelSize: Theme.fontSmall; font.bold: true
-            font.letterSpacing: 1.6; color: Theme.text3
+            font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall); font.bold: true
+            font.letterSpacing: 1.6 * pop._u; color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
         }
         Label {
             text: pop.actionName
-            font.family: Theme.family; font.pixelSize: Theme.fontTitle; color: Theme.text
+            font.family: Theme.family; font.pixelSize: pop._px(Theme.fontTitle); color: Theme.text
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-            Layout.alignment: Qt.AlignHCenter; Layout.maximumWidth: 520
+            Layout.alignment: Qt.AlignHCenter; Layout.maximumWidth: pop._px(520)
         }
 
         Label {
             text: qsTr("MODIFIERS")
-            font.family: Theme.family; font.pixelSize: Theme.fontCaption; font.bold: true
-            font.letterSpacing: 1.4; color: Theme.text3
+            font.family: Theme.family; font.pixelSize: pop._px(Theme.fontCaption); font.bold: true
+            font.letterSpacing: 1.4 * pop._u; color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
         }
         RowLayout {
             Layout.alignment: Qt.AlignHCenter
-            spacing: 12
+            spacing: pop._px(12)
             ModToggle { id: ctrlTg;  lbl: "Ctrl";  on: pop._ctrl;  onFlip: pop._toggle("ctrl") }
             ModToggle { id: altTg;   lbl: "Alt";   on: pop._alt;   onFlip: pop._toggle("alt") }
             ModToggle { id: shiftTg; lbl: "Shift"; on: pop._shift; onFlip: pop._toggle("shift") }
@@ -126,16 +133,16 @@ Popup {
 
         Label {
             text: qsTr("KEY")
-            font.family: Theme.family; font.pixelSize: Theme.fontCaption; font.bold: true
-            font.letterSpacing: 1.4; color: Theme.text3
+            font.family: Theme.family; font.pixelSize: pop._px(Theme.fontCaption); font.bold: true
+            font.letterSpacing: 1.4 * pop._u; color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
-            Layout.topMargin: 2
+            Layout.topMargin: pop._px(2)
         }
         Button {
             id: keyBtn
             Layout.alignment: Qt.AlignHCenter
-            Layout.preferredWidth: 320
-            Layout.preferredHeight: 56
+            Layout.preferredWidth: pop._px(320)
+            Layout.preferredHeight: pop._px(56)
             activeFocusOnTab: true
             focus: true
 
@@ -164,7 +171,7 @@ Popup {
             }
 
             background: Rectangle {
-                radius: 10
+                radius: pop._px(10)
                 color: pop._keyListening ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12) : Theme.ground
                 border.color: (pop._keyListening || keyBtn.activeFocus) ? Theme.accent : Theme.line
                 border.width: (pop._keyListening || keyBtn.activeFocus) ? 2 : 1
@@ -174,7 +181,7 @@ Popup {
                     visible: pop._keyListening
                     anchors.centerIn: parent
                     text: qsTr("Press the key…")
-                    color: Theme.accent; font.family: Theme.family; font.pixelSize: Theme.fontBody; font.bold: true
+                    color: Theme.accent; font.family: Theme.family; font.pixelSize: pop._px(Theme.fontBody); font.bold: true
                 }
                 Label {
                     visible: !pop._keyListening
@@ -182,7 +189,7 @@ Popup {
                     text: pop._haveKey ? pop._label : qsTr("Press a key to set")
                     color: pop._haveKey ? Theme.text : Theme.text3
                     font.family: Theme.family
-                    font.pixelSize: pop._haveKey ? Theme.fontTitle : Theme.fontBody
+                    font.pixelSize: pop._px(pop._haveKey ? Theme.fontTitle : Theme.fontBody)
                     font.bold: pop._haveKey
                 }
             }
@@ -191,8 +198,8 @@ Popup {
         // Combined preview
         Row {
             Layout.alignment: Qt.AlignHCenter
-            Layout.topMargin: 2
-            spacing: 7
+            Layout.topMargin: pop._px(2)
+            spacing: pop._px(7)
             Repeater {
                 model: {
                     var a = []
@@ -203,11 +210,11 @@ Popup {
                     return a
                 }
                 delegate: Rectangle {
-                    width: pvl.implicitWidth + 18; height: 30; radius: 6
+                    width: pvl.implicitWidth + pop._px(18); height: pop._px(30); radius: pop._px(6)
                     color: Theme.cardHigh; border.color: Theme.lineHigh; border.width: 1
                     Label {
                         id: pvl; anchors.centerIn: parent; text: modelData
-                        color: Theme.text; font.family: Theme.family; font.pixelSize: Theme.fontSmall; font.bold: true
+                        color: Theme.text; font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall); font.bold: true
                     }
                 }
             }
@@ -216,72 +223,44 @@ Popup {
         Label {
             text: pop._err
             visible: pop._err !== ""
-            color: Theme.danger; font.family: Theme.family; font.pixelSize: Theme.fontSmall
+            color: Theme.danger; font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall)
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-            Layout.alignment: Qt.AlignHCenter; Layout.maximumWidth: 380
+            Layout.alignment: Qt.AlignHCenter; Layout.maximumWidth: pop._px(380)
         }
         Label {
             text: qsTr("Keep at least two modifiers.")
             visible: pop._modCount() < 2
-            color: Theme.warning; font.family: Theme.family; font.pixelSize: Theme.fontSmall
+            color: Theme.warning; font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall)
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
         }
         Label {
             text: qsTr("Already used by “%1” — pick a different combination.").arg(pop._conflictName)
             visible: pop._conflict >= 0
-            color: Theme.warning; font.family: Theme.family; font.pixelSize: Theme.fontSmall
+            color: Theme.warning; font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall)
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-            Layout.alignment: Qt.AlignHCenter; Layout.maximumWidth: 380
+            Layout.alignment: Qt.AlignHCenter; Layout.maximumWidth: pop._px(380)
         }
 
+        // The app's own dialog buttons, where these were hand-drawn copies of them: Save now
+        // greys out the same way every other disabled button does.
         RowLayout {
             Layout.alignment: Qt.AlignHCenter
-            Layout.topMargin: 4
-            spacing: 14
-            Button {
+            Layout.topMargin: pop._px(4)
+            spacing: pop._px(14)
+            DialogButton {
                 id: saveBtn
                 text: qsTr("Save")
+                affirmative: true
                 enabled: pop._canSave
-                opacity: enabled ? 1.0 : 0.4
-                activeFocusOnTab: true
-                onClicked: pop._commit()
-                Keys.onReturnPressed: pop._commit()
-                Keys.onEnterPressed:  pop._commit()
-                Keys.onSpacePressed:  pop._commit()
-                Keys.onRightPressed:  cancelBtn.forceActiveFocus()
-                background: Rectangle {
-                    implicitWidth: 140; implicitHeight: 42; radius: 8
-                    color: saveBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20) : Theme.card
-                    border.color: saveBtn.activeFocus ? Theme.accent : Theme.line
-                    border.width: saveBtn.activeFocus ? 2 : 1
-                }
-                contentItem: Label {
-                    text: saveBtn.text; color: Theme.accent
-                    font.family: Theme.family; font.pixelSize: Theme.fontBody; font.bold: true
-                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                }
+                onActivated: pop._commit()
+                Keys.onRightPressed: cancelBtn.forceActiveFocus()
             }
-            Button {
+            DialogButton {
                 id: cancelBtn
                 text: qsTr("Cancel")
-                activeFocusOnTab: true
-                onClicked: pop.close()
-                Keys.onReturnPressed: pop.close()
-                Keys.onEnterPressed:  pop.close()
-                Keys.onSpacePressed:  pop.close()
-                Keys.onLeftPressed:   saveBtn.forceActiveFocus()
-                background: Rectangle {
-                    implicitWidth: 140; implicitHeight: 42; radius: 8
-                    color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20) : Theme.card
-                    border.color: cancelBtn.activeFocus ? Theme.accent : Theme.line
-                    border.width: cancelBtn.activeFocus ? 2 : 1
-                }
-                contentItem: Label {
-                    text: cancelBtn.text; color: Theme.text
-                    font.family: Theme.family; font.pixelSize: Theme.fontBody; font.bold: true
-                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                }
+                onActivated: pop.close()
+                Keys.onLeftPressed: saveBtn.forceActiveFocus()
             }
         }
     }

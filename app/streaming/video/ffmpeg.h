@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
+#include <memory>
 #include <QQueue>
 #include <set>
 
@@ -10,6 +12,7 @@
 #include "incomingframetiming.h"
 #include "ffmpeg-renderers/renderer.h"
 #include "ffmpeg-renderers/pacer/pacer.h"
+#include "pyrowave/pyrowaveframing.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -25,6 +28,7 @@ struct TelemetryWindowStats {
     float   hostLatencyAvgMs;  // host capture+encode latency (avg), 0 if not reported
     float   hostLatencyMaxMs;  // host capture+encode latency (max), 0 if not reported
 };
+class PyroWaveDecoder;
 
 class FFmpegVideoDecoder : public IVideoDecoder {
 public:
@@ -82,6 +86,13 @@ private:
                                 TestMode testMode,
                                 bool useAlternateFrontend);
 
+    bool initializeAVCodecContext(const AVCodec* decoder,
+                                  enum AVPixelFormat requiredFormat,
+                                  PDECODER_PARAMETERS params,
+                                  TestMode testMode);
+
+    bool finishRenderInitialization(PDECODER_PARAMETERS params);
+
     // forceFullDetail ignores the user's overlay verbosity and always emits the
     // full set of metrics. Used by the log summary, which must not depend on how
     // the on-screen overlay happens to be configured.
@@ -138,6 +149,12 @@ private:
 
     void reset();
 
+    // PyroWave frames skip FFmpeg: a Vulkan decoder writes into surfaces owned
+    // by the renderer, and these two calls stand in for avcodec send/receive.
+    bool initializePyroWave(PDECODER_PARAMETERS params);
+    int sendPyroWaveFrame(int length, uint32_t rtpTimestamp);
+    int receiveFrame(AVFrame* frame);
+
     void writeBuffer(PLENTRY entry, int& offset);
 
     static
@@ -191,6 +208,37 @@ private:
     QQueue<DECODE_UNIT> m_FrameInfoQueue;
     // Parallel to m_FrameInfoQueue: when each packet was handed to the decoder.
     QQueue<uint64_t> m_FrameSubmitTimeQueue;
+    // Parallel to m_FrameSubmitTimeQueue: deliberate hold before submission.
+    QQueue<uint64_t> m_FrameDecodeHoldQueue;
+
+#ifdef HAVE_PYROWAVE
+    std::unique_ptr<PyroWaveDecoder> m_PyroWave;
+#endif
+    bool m_PyroWaveActive = false;
+    QQueue<AVFrame*> m_PyroWaveOutput;
+    // The current frame's RTP packets, and which were lost
+    std::vector<PyroWaveFraming::Segment> m_PyroWavePackets;
+    // Leading packets of the current frame that hold its coarsest wavelet level
+    size_t m_PyroWaveCriticalPackets = 0;
+    uint32_t m_PyroWaveRejectedFrames = 0;
+    uint32_t m_PyroWavePartialFrames = 0;
+    uint64_t m_PyroWaveLastErrorLogUs = 0;
+    uint32_t m_PyroWaveHeldDecodes = 0;
+    uint64_t m_PyroWaveHeldUs = 0;
+    uint32_t m_PyroWaveStaleSkips = 0;
+    // The current run of skipped frames, logged once a frame is decoded again
+    uint32_t m_PyroWaveSkipRun = 0;
+    // Smoothed RTP interval of consecutive frames, the source's actual cadence.
+    uint64_t m_PyroWaveSourcePeriodUs = 0;
+    uint32_t m_PyroWaveLastRtp = 0;
+    int m_PyroWaveLastFrameNumber = -1;
+    uint64_t m_PyroWaveSkipRunWaitUs = 0;
+    // Last valid VRR interval error and when it was read (6.4.0): shown with its age while
+    // the live one is still collecting. Atomic because the overlay and the end-of-session
+    // log format it from different threads.
+    std::atomic<uint64_t> m_VrrLastIntervalErrorNs{0};
+    std::atomic<uint64_t> m_VrrLastIntervalErrorAtUs{0};
+    uint64_t holdPyroWaveDecodeForPresent(uint32_t rtpTimestamp);
 
     static const uint8_t k_H264TestFrame[];
     static const uint8_t k_HEVCMainTestFrame[];

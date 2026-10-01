@@ -1,0 +1,23 @@
+{
+  "review_schema": 1,
+  "scenarios": [
+    {"name": "session-policy", "mode": "fixed"},
+    {
+      "name": "historical-cadence-gate", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_smoothing_windowed_cadence": 0,
+        "playout_smoothing_recovery_us": 200000
+      }}
+    },
+    {
+      "name": "prior-windowed-policy", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_smoothing_gain_per_mille": 500,
+        "playout_smoothing_period_alpha_per_mille": 100,
+        "playout_smoothing_max_lag_us": 2000,
+        "playout_smoothing_windowed_cadence": 1,
+        "playout_smoothing_recovery_us": 200000
+      }}
+    }
+  ]
+}

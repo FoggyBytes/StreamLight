@@ -1,0 +1,55 @@
+Expose the number of Granite frame contexts on a pyrowave device.
+With the default two, a decode blocks the submitting CPU thread whenever
+the GPU has not finished the decode submitted two frames earlier, so a
+brief GPU hiccup stalls the caller instead of queueing work.
+This changes no bitstream or shader arithmetic.
+
+diff --git a/pyrowave-shared.def b/pyrowave-shared.def
+index 091885d8..d2f6fd3d 100644
+--- a/pyrowave-shared.def
++++ b/pyrowave-shared.def
+@@ -10,6 +10,7 @@ EXPORTS
+ 	pyrowave_device_get_vk_device_handles
+ 	pyrowave_device_confirm_interop_support
+ 	pyrowave_device_set_queue_type
++	pyrowave_device_set_frame_contexts
+ 	pyrowave_device_destroy
+ 	pyrowave_sync_object_create
+ 	pyrowave_sync_object_get_semaphore
+diff --git a/pyrowave.h b/pyrowave.h
+index a7b2c1a5..3a11d8cc 100644
+--- a/pyrowave.h
++++ b/pyrowave.h
+@@ -197,6 +197,12 @@ pyrowave_device_set_command_buffer(pyrowave_device device, VkCommandBuffer cmd);
+ PYROWAVE_PUBLIC_API pyrowave_result
+ pyrowave_device_set_queue_type(pyrowave_device device, VkQueueFlagBits queue_flags);
+ 
++// Number of frame contexts, i.e. how many submissions may be in flight on the
++// GPU before the next one blocks the CPU waiting for the oldest (default 2).
++// Call before creating codecs on the device; it waits for the device to idle.
++PYROWAVE_PUBLIC_API pyrowave_result
++pyrowave_device_set_frame_contexts(pyrowave_device device, unsigned count);
++
+ PYROWAVE_PUBLIC_API bool
+ pyrowave_device_confirm_interop_support(pyrowave_device device);
+ 
+diff --git a/pyrowave_c.cpp b/pyrowave_c.cpp
+index 6fbd64d3..366f2bfd 100644
+--- a/pyrowave_c.cpp
++++ b/pyrowave_c.cpp
+@@ -425,6 +425,15 @@ pyrowave_device_set_queue_type(pyrowave_device device, VkQueueFlagBits queue_fla
+ 	return PYROWAVE_SUCCESS;
+ }
+ 
++pyrowave_result
++pyrowave_device_set_frame_contexts(pyrowave_device device, unsigned count)
++{
++	if (!device || count < 2 || count > 8)
++		return PYROWAVE_ERROR_INVALID_ARGUMENT;
++	device->device.init_frame_contexts(count);
++	return PYROWAVE_SUCCESS;
++}
++
+ void pyrowave_device_destroy(pyrowave_device device)
+ {
+ 	Util::set_thread_logging_interface(&null_logger);

@@ -20,7 +20,6 @@ class LaunchCurtain : public QObject
 
     Q_PROPERTY(bool         active   READ active   NOTIFY changed)
     Q_PROPERTY(QString      gameName READ gameName NOTIFY changed)
-    Q_PROPERTY(QUrl         coverUrl READ coverUrl NOTIFY changed)
     Q_PROPERTY(QString      title    READ title    NOTIFY changed)
     Q_PROPERTY(QString      detail   READ detail   NOTIFY changed)
     Q_PROPERTY(QString      warning  READ warning  NOTIFY changed)
@@ -34,7 +33,6 @@ public:
 
     bool         active()   const { return m_Active; }
     QString      gameName() const { return m_GameName; }
-    QUrl         coverUrl() const { return m_CoverUrl; }
     QString      title()    const { return m_Title; }
     QString      detail()   const { return m_Detail; }
     QString      warning()  const { return m_Warning; }
@@ -100,7 +98,6 @@ private:
 
     bool     m_Active = false;
     QString  m_GameName;
-    QUrl     m_CoverUrl;
     QString  m_Title;
     QString  m_Detail;
     QString  m_Warning;

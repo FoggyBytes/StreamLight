@@ -1,4 +1,4 @@
-// Imported from Nonary/moonlight-qt, branch vrr17.1 at tag v6.1.0-vrr17.1 (1ccefb6e), by Chase
+// Imported from Nonary/moonlight-qt, branch release/6.1.0-vrr18 at tag v6.1.0-vrr18 (1ad5848b), by Chase
 // Payne. GPLv3, the same licence as StreamLight. The body is verbatim: only this note was
 // added, so a later sync against Nonary is a plain diff. Say so here if you change anything.
 
@@ -9,6 +9,7 @@
 // by the legacy pacing path, while these values describe the frame as it
 // crossed the decoder/pacer boundary.
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -16,6 +17,9 @@
 // Three waiting frames plus the one owned by preparation/presentation.
 // Both admission and the delay budget use this same ownership contract.
 constexpr size_t VrrMaximumQueuedFrames = 3;
+// Largest waiting-frame capacity any timing profile may select (Smooth). The
+// decoder surface pool reserves the difference beyond the classic pacer.
+constexpr size_t VrrLargestQueuedFrames = 4;
 
 extern "C" {
 #include <libavutil/frame.h>
@@ -75,14 +79,22 @@ public:
         return m_Frame.release();
     }
 
-    // The historical decode-complete scheduling boundary advances when GPU
-    // work finishes, but the decoder-output timestamp remains unchanged for
-    // client-processing measurements.
+    // Preserve the decode-complete boundary independently of decoder output.
+    // Captured controller policy selects which boundary anchors source time.
     void noteGpuReadyUs(uint64_t gpuReadyUs)
     {
         if (gpuReadyUs > m_DecodeCompleteUs) {
             m_DecodeCompleteUs = gpuReadyUs;
         }
+    }
+
+    // The worker may have to block on a decoder/backend completion primitive
+    // after this frame leaves the decoder. Keep that service time separate
+    // from both immutable decoder output and the conservative completion
+    // bound: the controller uses each for a different purpose.
+    void noteDecodeSyncWaitUs(uint64_t waitUs)
+    {
+        m_DecodeSyncWaitUs = waitUs;
     }
 
     explicit operator bool() const
@@ -115,6 +127,21 @@ public:
         return m_DecoderOutputUs;
     }
 
+    void setDecoderOutputComplete(bool complete)
+    {
+        m_DecoderOutputComplete = complete;
+    }
+
+    bool decoderOutputComplete() const
+    {
+        return m_DecoderOutputComplete;
+    }
+
+    uint64_t decodeSyncWaitUs() const
+    {
+        return m_DecodeSyncWaitUs;
+    }
+
     // Pre-decode timeline of the same frame, all on the LiGetMicroseconds()
     // clock: first packet received from the network, complete frame
     // reassembled (queued for the decoder), and packet handed to the decoder.
@@ -145,6 +172,29 @@ public:
         return m_DecodeSubmitUs;
     }
 
+    // Time the decoder deliberately held this frame before decodeSubmitUs so
+    // its GPU decode would not delay the previous frame's flip. It is part of
+    // reassembled -> submit but is neither decoder backlog nor decode cost.
+    void setDecodeHoldUs(uint64_t holdUs)
+    {
+        m_DecodeHoldUs = holdUs;
+    }
+
+    uint64_t decodeHoldUs() const
+    {
+        return m_DecodeHoldUs;
+    }
+
+    // Reassembled -> decode submission, excluding a deliberate hold.
+    uint64_t decoderQueueUs() const
+    {
+        if (!m_ReassembledUs || m_DecodeSubmitUs < m_ReassembledUs) {
+            return 0;
+        }
+        const uint64_t queueUs = m_DecodeSubmitUs - m_ReassembledUs;
+        return queueUs - (std::min)(queueUs, m_DecodeHoldUs);
+    }
+
     void setDecodeBoundary(uint64_t decodeBoundary)
     {
         m_DecodeBoundary = decodeBoundary;
@@ -167,10 +217,13 @@ private:
     int m_FrameNumber = -1;
     uint32_t m_RtpTimestamp = 0;
     bool m_TimestampValid = false;
+    bool m_DecoderOutputComplete = true;
     uint64_t m_DecoderOutputUs = 0;
     uint64_t m_DecodeCompleteUs = 0;
+    uint64_t m_DecodeSyncWaitUs = 0;
     uint64_t m_ReceiveUs = 0;
     uint64_t m_ReassembledUs = 0;
     uint64_t m_DecodeSubmitUs = 0;
+    uint64_t m_DecodeHoldUs = 0;
     uint64_t m_DecodeBoundary = 0;
 };

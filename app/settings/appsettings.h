@@ -79,12 +79,19 @@ struct AppOverride
     // both switched on, and keeps both: the session decides, and says so in the log.
     bool hasVrr = false;          bool enableVrr = false;    // StreamingPreferences::enableVrr
 
+    // YUV 4:4:4 (6.4.0). Both levels, like HDR and the codec it goes with: the answer
+    // depends on the codec, and the codec is already overridable at both. PyroWave
+    // 4:4:4 and AV1 4:2:0 are two profiles on the same host — and with the switch only
+    // global, an AV1 profile under a 4:4:4 Settings asked for a format no NVENC host
+    // offers and launched with a warning every time.
+    bool hasYuv444 = false;       bool enableYuv444 = false; // StreamingPreferences::enableYUV444
+
     bool isEmpty() const
     {
         return !(hasResolution || hasFps || hasBitrate || hasHdr ||
                  hasCodec || hasFramePacing || hasAudio || hasHue || hasMatchLink ||
                  hasWaitForGame || hasDisplayMode || hasVsync || hasFractionalVsync ||
-                 hasVrr);
+                 hasVrr || hasYuv444);
     }
 };
 
@@ -92,7 +99,7 @@ struct AppOverride
 void applyAppOverride(StreamingPreferences* p, const AppOverride& ov);
 
 // QVariantMap (QML) ↔ AppOverride. Map keys (subset): width, height, fps,
-// bitrate, hdr, codec, framepacing, audio. A missing key = "inherit".
+// bitrate, hdr, yuv444, codec, framepacing, audio. A missing key = "inherit".
 QVariantMap appOverrideToMap(const AppOverride& ov);
 AppOverride appOverrideFromMap(const QVariantMap& m);
 

@@ -132,7 +132,7 @@ Popup {
         border.width: 1
     }
 
-    Overlay.modal: Rectangle { color: "#cc000000" }
+    Overlay.modal: Rectangle { color: Theme.scrim }
 
     contentItem: Column {
         spacing: dialog._px(16)

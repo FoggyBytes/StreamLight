@@ -187,7 +187,10 @@ typedef struct _PACING_MEASUREMENT {
     unsigned long long sequence;
 } PACING_MEASUREMENT, *PPACING_MEASUREMENT;
 class IVrrFramePresenter;
+class IPyroWaveSurfacePool;
+class IPyroWaveVulkanPool;
 
+class GpuTrace;
 class IFFmpegRenderer : public Overlay::IOverlayRenderer {
 public:
     enum class RendererType {
@@ -211,6 +214,7 @@ public:
     virtual bool initialize(PDECODER_PARAMETERS params) = 0;
     virtual bool prepareDecoderContext(AVCodecContext* context, AVDictionary** options) = 0;
     virtual void renderFrame(AVFrame* frame) = 0;
+    virtual GpuTrace* gpuDiagnosticTrace() { return nullptr; }
 
     enum class InitFailureReason
     {
@@ -337,6 +341,18 @@ public:
     // renderFrame().  The ordinary fixed and unpaced paths continue to call
     // renderFrame() exactly as before.
     virtual IVrrFramePresenter* getVrrFramePresenter() {
+        return nullptr;
+    }
+
+    // Renderers that can display PyroWave frames expose the surface pool the
+    // PyroWave decoder writes into. Only valid after initialize() succeeded
+    // for a PyroWave video format.
+    virtual IPyroWaveSurfacePool* getPyroWaveSurfacePool() {
+        return nullptr;
+    }
+
+    // Linux renderers on Vulkan lend planes on their own VkDevice instead
+    virtual IPyroWaveVulkanPool* getPyroWaveVulkanPool() {
         return nullptr;
     }
 

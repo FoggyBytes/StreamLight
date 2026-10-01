@@ -24,8 +24,8 @@ public:
     explicit SessionTelemetrySampler(QObject* parent = nullptr);
 
     /**
-     * Begin sampling. Requests the session ID from StreamTweak, then starts
-     * the 1s sample timer and the 10s batch timer.
+     * Begin sampling: starts the 1 s timer, and each tick sends its sample straight away.
+     * (There is no session-ID request and no batch timer any more — this used to say so.)
      */
     void start(const QString& hostAddress, int targetFps, int targetBitrateKbps);
 

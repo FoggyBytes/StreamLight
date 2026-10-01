@@ -67,6 +67,9 @@ private:
     bool
     needsRefresh(const QString& path);
 
+    void
+    startFetch(NvComputer* computer, NvApp& app);
+
     // A cover shorter than this is treated as a thumbnail rather than the real artwork.
     // The host's own sources bottom out at 600 (Steam's library capsule is 600x900), so
     // this accepts everything they produce and catches what predates them: a cache filled
@@ -79,6 +82,15 @@ private:
 
     // Covers this run has already looked at. Without it a game whose cover really is
     // small at every source would be re-downloaded on every visit to the host page.
-    QSet<QString> m_Checked;
-    QMutex m_CheckLock;
+    // ⚠️ Static (6.4.0): every visit to the host page builds a new AppModel, and with it a
+    // new BoxArtManager, so a member set was empty on each visit and did the opposite of
+    // what this comment promised — the small cover was fetched again every time.
+    static QSet<QString> s_Checked;
+    static QMutex s_CheckLock;
+
+    // Covers this manager is downloading right now. The list and the running-game lookup
+    // ask for the same app within the same frame, and two downloads of one cover used to
+    // write the same file while the view was reading it. GUI thread only: loadBoxArt() runs
+    // from the model and the completion slot is queued back to it.
+    QSet<QString> m_InFlight;
 };

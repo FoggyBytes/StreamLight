@@ -11,6 +11,7 @@
 #include <QTemporaryDir>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -146,6 +147,223 @@ PacedFrame frame(int number, TrackedFrameLifetime& lifetime)
                                  lifetime);
 }
 
+class PreparedFramePresenter : public FakeVrrFramePresenter {
+public:
+    struct Ticket : VrrPreparedFrame {
+        explicit Ticket(std::atomic_uint& count) : waits(count) {}
+        bool wait(const std::function<bool()>& interrupted) override
+        {
+            ++waits;
+            return VrrPreparedFrame::wait(interrupted);
+        }
+        std::atomic_uint& waits;
+    };
+    std::vector<std::shared_ptr<VrrPreparedFrame>> tickets;
+    std::atomic_uint activated { 0 };
+    std::atomic_uint waits { 0 };
+    bool automaticCompletion = true;
+    bool stopped = false;
+
+    std::shared_ptr<VrrPreparedFrame> queueFramePreparation(AVFrame* input, uint64_t) override
+    {
+        auto ticket = std::make_shared<Ticket>(waits);
+        ticket->timing.startUs = LiGetMicroseconds();
+        ticket->timing.decodeReadyUs = uint64_t(input->pkt_dts);
+        ticket->timing.renderStartUs = LiGetMicroseconds();
+        ticket->timing.renderEndUs = LiGetMicroseconds();
+        ticket->timing.readyUs = LiGetMicroseconds();
+        tickets.push_back(ticket);
+        if (automaticCompletion) ticket->complete(true);
+        return ticket;
+    }
+    VrrPrepareResult activatePreparedFrame(const std::shared_ptr<VrrPreparedFrame>&,
+        AVFrame* input, uint64_t boundary, const VrrPresentRequest& request) override
+    {
+        ++activated;
+        return prepareFrame(input, boundary, request);
+    }
+    void stopFramePreparation() override { stopped = true; }
+};
+
+void testPreparedFramesOverlapAndTrace()
+{
+    resetFakeClock();
+    QTemporaryDir directory;
+    const QString path = directory.filePath("prepared.vrrtrace");
+    qputenv("MOONLIGHT_VRR_TRACE", QFile::encodeName(path).constData());
+    qputenv("MOONLIGHT_VRR_DEEP_TRACE", "1");
+    PreparedFramePresenter backend;
+    backend.blockPreparation();
+    PacerTelemetry telemetry;
+    TrackedFrameLifetime first, second, pending;
+    {
+        VrrPacingWorker worker(&backend, enabledConfig(), &telemetry);
+        expect(worker.start(), "prepared-frame worker must start");
+        auto a = frame(1, first);
+        a.frame()->pkt_dts = a.decoderOutputUs();
+        worker.submit(std::move(a));
+        expect(backend.waitForPrepareCount(1), "completed stage must activate on the pacing thread");
+        auto b = frame(2, second);
+        b.frame()->pkt_dts = b.decoderOutputUs();
+        worker.submit(std::move(b));
+        expect(backend.tickets.size() == 2 && backend.tickets[1]->wait([] { return false; }),
+               "next image preparation must advance while the pacing thread owns the previous image");
+        backend.releasePreparation();
+        expect(backend.waitForPresentCount(2), "both completed images must be presented");
+        expect(backend.activated == 2 && backend.waitedDecodeBoundaries().empty(),
+               "prepared images must not repeat the decode wait on the pacing thread");
+        backend.automaticCompletion = false;
+        auto c = frame(3, pending);
+        c.frame()->pkt_dts = c.decoderOutputUs();
+        const auto priorWaits = backend.waits.load();
+        worker.submit(std::move(c));
+        expect(waitFor([&] { return backend.waits > priorWaits; }),
+               "shutdown fixture must include a dequeued image awaiting GPU preparation");
+    }
+    expect(backend.stopped && first.releases == 1 && second.releases == 1 && pending.releases == 1,
+           "prepared-frame shutdown must stop preparation and release each image exactly once");
+    const auto lines = readExpandedTrace(path).split('\n');
+    const auto columns = lines.value(0).split(',');
+    int stagedRows = 0;
+    for (int i = 1; i < lines.size(); ++i) {
+        const auto row = lines[i].split(',');
+        if (row.size() != columns.size()) continue;
+        const auto value = [&](const char* name) {
+            return row.value(columns.indexOf(name)).toULongLong();
+        };
+        if (!value("prepared_ahead")) continue;
+        ++stagedRows;
+        expect(value("stage_ready_us") <= value("decision_us") &&
+               value("stage_start_us") >= value("pacer_arrival_us") &&
+               value("decode_sync_wait_us") == 0,
+               "stage timestamps must retain actual overlap without inventing a pacing-thread decode wait");
+    }
+    expect(stagedRows == 2, "each prepared image must retain stage timing in its trace row");
+    const char* exportPath = SDL_getenv("MOONLIGHT_VRR_TEST_EXPORT_PREPARED_TRACE");
+    if (exportPath && exportPath[0]) {
+        QFile::remove(QString::fromLocal8Bit(exportPath));
+        expect(QFile::copy(path, QString::fromLocal8Bit(exportPath)),
+               "prepared-frame fixture must export for exact replay");
+    }
+    qputenv("MOONLIGHT_VRR_TRACE", "");
+    qputenv("MOONLIGHT_VRR_DEEP_TRACE", "0");
+}
+
+void testSlowPreparedFramesKeepPresenting()
+{
+    for (int mode : {0, 1, 2}) {
+        resetFakeClock();
+        PreparedFramePresenter backend;
+        backend.automaticCompletion = false;
+        PacerTelemetry telemetry;
+        std::array<TrackedFrameLifetime, 5> lifetimes;
+        auto config = enabledConfig();
+        config.latencyMode = mode;
+        config.streamRateHz = 120;
+        {
+            VrrPacingWorker worker(&backend, config, &telemetry);
+            expect(worker.start(), "slow preparation worker must start");
+            const auto submit = [&](int i) {
+                auto input = makeTrackedPacedFrame(i + 1, i * 750,
+                                                  LiGetMicroseconds(), lifetimes[i]);
+                input.frame()->pkt_dts = input.decoderOutputUs();
+                worker.submit(std::move(input));
+            };
+            submit(0);
+            for (int i = 0; i < 4; ++i) {
+                expect(waitFor([&] { return backend.waits > unsigned(i); }),
+                       "worker must wait for the next incomplete image");
+                // Every render exceeds the age limit. A newer admitted image
+                // is not ready, so discarding the completed one freezes video.
+                std::this_thread::sleep_for(std::chrono::milliseconds(40));
+                submit(i + 1);
+                backend.tickets[i]->timing.renderEndUs = LiGetMicroseconds();
+                backend.tickets[i]->timing.readyUs = LiGetMicroseconds();
+                backend.tickets[i]->complete(true);
+                expect(backend.waitForPresentCount(i + 1),
+                       "slow completed preparation must present despite a newer queued frame");
+            }
+            expect(backend.presentedFrames() == std::vector<int>({1, 2, 3, 4}),
+                   "sustained preparation overload must keep making visible progress");
+        }
+        for (const auto& lifetime : lifetimes)
+            expect(lifetime.releases == 1, "slow-stage frames must release exactly once");
+    }
+}
+
+void testPreparedFrameCancellationAndBound()
+{
+    resetFakeClock();
+    PreparedFramePresenter backend;
+    backend.automaticCompletion = false;
+    PacerTelemetry telemetry;
+    std::array<TrackedFrameLifetime, 5> lifetimes;
+    {
+        VrrPacingWorker worker(&backend, enabledConfig(), &telemetry);
+        expect(worker.start(), "pending preparation worker must start");
+        auto first = frame(1, lifetimes[0]);
+        first.frame()->pkt_dts = first.decoderOutputUs();
+        worker.submit(std::move(first));
+        for (int i = 1; i < 5; ++i) {
+            auto input = frame(i + 1, lifetimes[i]);
+            input.frame()->pkt_dts = input.decoderOutputUs();
+            worker.submit(std::move(input));
+        }
+        expect(waitFor([&] { return backend.tickets[0]->cancelled() ||
+                                   backend.tickets[1]->cancelled(); }),
+               "capacity eviction must cancel the corresponding preparation ticket");
+        expect(backend.activated == 0,
+               "an unfinished GPU image must never reach activation or presentation");
+    }
+    expect(backend.stopped, "shutdown must interrupt pending preparation without needing completion");
+    for (const auto& ticket : backend.tickets)
+        expect(ticket->cancelled(), "shutdown must cancel every admitted ticket");
+    for (const auto& lifetime : lifetimes)
+        expect(lifetime.releases == 1, "cancelled preparation must release each admitted frame exactly once");
+}
+
+void testPreparedFrameSuspendAndFallback()
+{
+    for (bool suspend : {false, true}) {
+        resetFakeClock();
+        PreparedFramePresenter backend;
+        backend.automaticCompletion = false;
+        PacerTelemetry telemetry;
+        TrackedFrameLifetime first, second;
+        {
+            VrrPacingWorker worker(&backend, enabledConfig(), &telemetry);
+            expect(worker.start(), "preparation lifecycle worker must start");
+            auto input = frame(1, first);
+            input.frame()->pkt_dts = input.decoderOutputUs();
+            worker.submit(std::move(input));
+            if (suspend) {
+                WINDOW_STATE_CHANGE_INFO state = {};
+                state.stateChangeFlags = WINDOW_STATE_CHANGE_MINIMIZED;
+                worker.notifyWindowChanged(&state);
+                expect(waitFor([&] { return backend.tickets[0]->cancelled(); }),
+                       "suspension must abandon pending offscreen work without presenting it");
+                backend.automaticCompletion = true;
+                state.stateChangeFlags = WINDOW_STATE_CHANGE_RESTORED;
+                worker.notifyWindowChanged(&state);
+                auto fresh = frame(2, second);
+                fresh.frame()->pkt_dts = fresh.decoderOutputUs();
+                worker.submit(std::move(fresh));
+                expect(backend.waitForPresentCount(1) &&
+                       backend.presentedFrames() == std::vector<int>{2},
+                       "restore must present only a fresh completed image");
+            }
+            else {
+                backend.tickets[0]->complete(false);
+                expect(backend.waitForPresentCount(1) && backend.activated == 0 &&
+                       backend.waitedDecodeBoundaries().size() == 1,
+                       "failed offscreen preparation must safely use the ordinary decode/render path");
+            }
+        }
+        expect(first.releases == 1 && (!suspend || second.releases == 1),
+               "suspension and fallback must preserve exact source ownership");
+    }
+}
+
 void testCapabilityRejection()
 {
     FakeVrrFramePresenter backend;
@@ -219,31 +437,31 @@ void testEmptyQueueDoesNotRepeatFrames()
            "a new frame must wake the idle worker");
 }
 
-void testQueueCapacityAndDrops()
+void testQueueCapacityAndDrops(int latencyMode, size_t capacity)
 {
     resetFakeClock();
     FakeVrrFramePresenter backend;
     backend.blockPreparation();
     PacerTelemetry telemetry;
-    TrackedFrameLifetime first;
-    TrackedFrameLifetime second;
-    TrackedFrameLifetime third;
-    TrackedFrameLifetime fourth;
-    TrackedFrameLifetime freshest;
+    // Active frame, `capacity` queued successors, and one freshest arrival.
+    std::vector<TrackedFrameLifetime> lifetimes(capacity + 2);
+    VrrSessionConfig config = enabledConfig();
+    config.latencyMode = latencyMode;
 
     {
-        VrrPacingWorker worker(&backend, enabledConfig(), &telemetry);
+        VrrPacingWorker worker(&backend, config, &telemetry);
         expect(worker.start(), "worker must start for a capable backend");
-        worker.submit(frame(1, first));
+        worker.submit(frame(1, lifetimes[0]));
         expect(backend.waitForPrepareCount(1),
                "first worker frame must enter the preparation gate");
 
-        // The active frame and three successors absorb a short decoder burst.
-        // A fourth successor evicts only the oldest queued frame.
-        worker.submit(frame(2, second));
-        worker.submit(frame(3, third));
-        worker.submit(frame(4, fourth));
-        worker.submit(frame(50, freshest));
+        // The active frame and `capacity` successors absorb a short decoder
+        // burst. One more successor evicts only the
+        // oldest queued frame.
+        for (size_t i = 1; i <= capacity; ++i) {
+            worker.submit(frame(static_cast<int>(i) + 1, lifetimes[i]));
+        }
+        worker.submit(frame(50, lifetimes[capacity + 1]));
         const PacerTelemetrySnapshot stats = telemetryStats(telemetry);
         expect(stats.vrrPacingDroppedFrames == 1 &&
                    stats.pacerDroppedFrames == 1,
@@ -256,14 +474,19 @@ void testQueueCapacityAndDrops()
         backend.releasePreparation();
         expect(backend.waitForPresentCount(1),
                "releasing preparation must present the active frame");
-        expect(backend.waitForPresentCount(4),
+        expect(backend.waitForPresentCount(static_cast<int>(capacity) + 1),
                "overflow recovery must drain every retained successor");
 
+        std::vector<int> expectedFrames {1};
+        for (size_t i = 3; i <= capacity + 1; ++i) {
+            expectedFrames.push_back(static_cast<int>(i));
+        }
+        expectedFrames.push_back(50);
         const std::vector<int> presentedFrames = backend.presentedFrames();
-        expect(presentedFrames.size() >= 4 && presentedFrames[0] == 1 &&
-                   presentedFrames[1] == 3 && presentedFrames[2] == 4 &&
-                   presentedFrames[3] == 50,
-               "queue overflow must retain the three freshest successors in cadence order");
+        expect(presentedFrames.size() >= expectedFrames.size() &&
+                   std::equal(expectedFrames.begin(), expectedFrames.end(),
+                              presentedFrames.begin()),
+               "queue overflow must retain the freshest successors in cadence order");
         const std::vector<uint64_t> calls = backend.presentCallTimesUs();
         expect(calls.size() >= 2 && calls[1] >= releaseUs &&
                    calls[1] - releaseUs < 100000,
@@ -272,7 +495,7 @@ void testQueueCapacityAndDrops()
 
     expect(backend.cancelCount() == 1,
            "worker shutdown must release the presenter exactly once");
-    expect(telemetryStats(telemetry).vrrReadiness.samples == 5 &&
+    expect(telemetryStats(telemetry).vrrReadiness.samples == capacity + 2 &&
                telemetryStats(telemetry).vrrReadiness.dropped == 1,
            "completion accounting must count each presented or evicted frame once");
 }
@@ -348,6 +571,79 @@ void testQueuedStaleFrameYieldsToFreshSuccessor()
     }
 }
 
+void testExpiredQueueSkipsBlockingDecode()
+{
+    for (int mode : {0, 1, 2}) {
+        resetFakeClock();
+        QTemporaryDir directory;
+        const QString path = directory.filePath("early-stale.vrrtrace");
+        qputenv("MOONLIGHT_VRR_TRACE", QFile::encodeName(path).constData());
+        FakeVrrFramePresenter backend;
+        backend.blockPreparation();
+        backend.blockDecodeFrame(2);
+        PacerTelemetry telemetry;
+        TrackedFrameLifetime first, stale, fresh;
+        auto config = enabledConfig();
+        config.latencyMode = mode;
+        {
+            VrrPacingWorker worker(&backend, config, &telemetry);
+            expect(worker.start(), "early-stale worker must start");
+            backend.setDecodeBoundary(1);
+            worker.submit(frame(1, first));
+            expect(backend.waitForPrepareCount(1), "first frame must establish queue gate");
+            FrozenTestClock clock;
+            backend.setDecodeBoundary(2);
+            worker.submit(frame(2, stale));
+            clock.advance(70000);
+            backend.setDecodeBoundary(3);
+            worker.submit(frame(3, fresh));
+            clock.resume();
+            backend.releasePreparation();
+            const bool recovered = backend.waitForPresentCount(2);
+            // Always release the fake gate, including when testing a broken
+            // worker, so the regression fails without hanging teardown.
+            backend.releaseDecode();
+            expect(recovered, "expired queued work must not enter its blocking decode wait");
+            expect(backend.waitedDecodeBoundaries() == std::vector<uint64_t>({1, 3}),
+                   "only the retained frames may wait for backend decode completion");
+            expect(backend.presentedFrames() == std::vector<int>({1, 3}),
+                   "recovery must deliver the fresh successor");
+            expect(telemetryStats(telemetry).vrrPacingDroppedFrames == 1,
+                   "early rejection must count exactly one client drop");
+        }
+        expect(first.releases == 1 && stale.releases == 1 && fresh.releases == 1,
+               "early stale recovery must release every image exactly once");
+        const QByteArray trace = readExpandedTrace(path);
+        expect(trace.contains(",queue_stale,"),
+               "early rejection must be distinguishable from a post-decode stale drop");
+        const char* exportPath = SDL_getenv("MOONLIGHT_VRR_TEST_EXPORT_EARLY_STALE_TRACE");
+        if (exportPath && exportPath[0] && mode == 1) {
+            QFile::remove(QString::fromLocal8Bit(exportPath));
+            expect(QFile::copy(path, QString::fromLocal8Bit(exportPath)),
+                   "early-stale fixture must export for exact replay");
+        }
+        qputenv("MOONLIGHT_VRR_TRACE", "");
+    }
+
+    // A 120-to-20 FPS source transition needs the slower adjacent interval,
+    // not only the preceding fitted 120 FPS period.
+    const PacedFrame a(nullptr, 2, 750, true, 1000);
+    const PacedFrame slower(nullptr, 3, 5250, true, 51000);
+    expect(!VrrFrameDropPolicy::beforeDecodeWait(a, slower, 1000, 51000, 8333, false),
+           "source-rate reduction must not prematurely reject queued work");
+    const PacedFrame discontinuous(nullptr, 3, 749, true, 51000);
+    expect(!VrrFrameDropPolicy::beforeDecodeWait(a, discontinuous, 1000, 71000, 8333, false),
+           "backward source timestamps must defer to normal discontinuity handling");
+    const PacedFrame steady(nullptr, 4, 6000, true, 1000);
+    const PacedFrame successor(nullptr, 5, 7500, true, 51000);
+    expect(!VrrFrameDropPolicy::beforeDecodeWait(
+               steady, successor, 1000, 51000, 16667, false, 65000),
+           "a queued frame inside learned Smooth playout must survive the two-period stale gate");
+    expect(VrrFrameDropPolicy::beforeDecodeWait(
+               steady, successor, 1000, 90000, 16667, false, 65000),
+           "work beyond the learned playout window must still skip blocking decode");
+}
+
 void testSinglePeriodQueueDelayPreservesFluidity()
 {
     resetFakeClock();
@@ -406,6 +702,22 @@ void testLatencyFixDropBoundaries()
            "post-wait replacement must preserve the exact two-period boundary");
     expect(!VrrFrameDropPolicy::afterRenderWait(decision, 10000, 18334, false, false),
            "ordinary post-wait policy must retain its target-relative horizon");
+    expect(!VrrFrameDropPolicy::afterRenderWait(decision, 10000, 66666, false, true, 40000),
+           "decode service must not turn the exact queue-age boundary into a post-wait drop");
+    expect(VrrFrameDropPolicy::afterRenderWait(decision, 10000, 66667, false, true, 40000),
+           "real queue or scheduler delay beyond the boundary must still yield to a successor");
+    expect(VrrFrameDropPolicy::afterRenderWait(decision, 10000, 66667, false, false, 40000),
+           "decode service cannot forgive a later target-relative scheduling stall");
+    decision.playoutDelayUs = 65000;
+    expect(!VrrFrameDropPolicy::beforeRender(decision, 8333, 50000, false, false, 65000),
+           "a ready frame inside learned playout must not be marked stale before rendering");
+    expect(!VrrFrameDropPolicy::afterRenderWait(decision, 10000, 60000, false, true, 0, 65000),
+           "render waiting inside learned playout must not discard the frame");
+    expect(VrrFrameDropPolicy::afterRenderWait(decision, 10000, 90000, false, false, 0, 65000),
+           "target-relative stale checks must not count playout delay twice");
+    expect(VrrFrameDropPolicy::ageExcludingDecodeWaitUs(10, 20, 40000) == 0 &&
+               VrrFrameDropPolicy::ageExcludingDecodeWaitUs(20, 10, 40000) == 0,
+           "service-age subtraction must not wrap on a reversed or coarsely sampled clock");
 
     decision.sourcePeriodUs = 9000;
     decision.presentationFloorPushUs = 4500;
@@ -421,6 +733,10 @@ void testLatencyFixDropBoundaries()
     expect(VrrFrameDropPolicy::maximumAgeUs(decision, false, false) ==
                std::numeric_limits<uint64_t>::max(),
            "age tolerance multiplication must saturate instead of wrapping");
+    expect(VrrFrameDropPolicy::staleHorizonUs(8333, 2,
+               std::numeric_limits<uint64_t>::max() - 100) ==
+               std::numeric_limits<uint64_t>::max(),
+           "learned-delay addition must saturate instead of wrapping");
 }
 
 void runLatencyFixQueuedRecovery(int streamRateHz, bool enabled,
@@ -511,12 +827,12 @@ void testLatencyFixQueuedRecovery()
     runLatencyFixQueuedRecovery(120, true, false);
 
     const QByteArray priorTracePath = qgetenv("MOONLIGHT_VRR_TRACE");
-    SDL_setenv("MOONLIGHT_VRR_TRACE", "", 1);
+    qputenv("MOONLIGHT_VRR_TRACE", "");
     // Admission time must exist even without diagnostics. Advancing the
     // application clock first exposes an accidental zero age origin while
     // the actual queued frame is only half a source interval old.
     runLatencyFixQueuedRecovery(120, true, true, 500, true);
-    SDL_setenv("MOONLIGHT_VRR_TRACE", priorTracePath.constData(), 1);
+    qputenv("MOONLIGHT_VRR_TRACE", priorTracePath.constData());
 }
 
 void testLatencyPresetsQueuedRecovery()
@@ -534,7 +850,7 @@ void testLatencyPresetsQueuedRecovery()
     }
 }
 
-void testLatencyFixQueueAgeIncludesDecodeWait()
+void testDecodeWaitDoesNotExpireReadyFrame()
 {
     resetFakeClock();
     QTemporaryDir traceDirectory;
@@ -542,7 +858,7 @@ void testLatencyFixQueueAgeIncludesDecodeWait()
            "decode-wait timing test must create a temporary directory");
     const QString tracePath = traceDirectory.filePath("decode-wait.vrrtrace");
     const QByteArray tracePathBytes = QFile::encodeName(tracePath);
-    SDL_setenv("MOONLIGHT_VRR_TRACE", tracePathBytes.constData(), 1);
+    qputenv("MOONLIGHT_VRR_TRACE", tracePathBytes.constData());
     FakeVrrFramePresenter backend;
     backend.setCanLatch(true);
     backend.blockPreparation();
@@ -566,6 +882,10 @@ void testLatencyFixQueueAgeIncludesDecodeWait()
         expect(backend.waitForPrepareCount(1),
                "first image must hold the worker before the decode gate");
         FrozenTestClock clock;
+        // Early preparation now reaches this gate before the first target.
+        // Let the next source interval elapse before admitting frame 2; the
+        // frozen clock must not prevent frame 1 from reaching its own target.
+        clock.advance(8333);
         worker.submit(makeFrame(2, delayed));
         clock.advance(5000);
         backend.releasePreparation();
@@ -577,16 +897,16 @@ void testLatencyFixQueueAgeIncludesDecodeWait()
         worker.submit(makeFrame(3, fresh));
         backend.releaseDecode();
         expect(backend.waitForPrepareCount(2),
-               "fresh image must reach preparation after delayed decode readiness");
-        expect(backend.preparedFrames() == std::vector<int>({1, 3}),
-               "updating GPU readiness must not erase stale transport-queue age");
-        expect(telemetryStats(telemetry).vrrPacingDroppedFrames == 1 &&
-                   delayed.releases.load() == 1,
-               "a decode-wait replacement must release and count only the stale image");
+               "the ready image must reach preparation after its decode wait");
+        expect(backend.preparedFrames() == std::vector<int>({1, 2}),
+               "decode service must not expire an image admitted with only five milliseconds of queue age");
+        expect(telemetryStats(telemetry).vrrPacingDroppedFrames == 0 &&
+                   delayed.releases.load() == 0,
+               "an unverified successor must not displace the image whose decode wait just completed");
         clock.resume();
         backend.setPreparationLimit(std::numeric_limits<size_t>::max());
-        expect(backend.waitForPresentCount(2), "fresh image must present after decode-wait recovery");
-        expect(backend.presentedFrames() == std::vector<int>({1, 3}),
+        expect(backend.waitForPresentCount(3), "both images must present after decode-wait recovery");
+        expect(backend.presentedFrames() == std::vector<int>({1, 2, 3}),
                "decode-wait recovery must retain presentation order");
     }
     expect(first.releases.load() == 1 && delayed.releases.load() == 1 &&
@@ -600,6 +920,8 @@ void testLatencyFixQueueAgeIncludesDecodeWait()
     const int decoderOutputColumn = columns.indexOf("decoder_output_us");
     const int decodeCompleteColumn = columns.indexOf("decode_complete_us");
     const int decodeWaitColumn = columns.indexOf("decode_sync_wait_us");
+    const int dequeueColumn = columns.indexOf("dequeue_us");
+    const int staleAgeColumn = columns.indexOf("stale_age_us");
     bool verifiedDecodeBoundary = false;
     for (int i = 1; i < lines.size(); ++i) {
         const QList<QByteArray> fields = lines[i].split(',');
@@ -607,13 +929,146 @@ void testLatencyFixQueueAgeIncludesDecodeWait()
         const uint64_t decoderOutputUs = fields.value(decoderOutputColumn).toULongLong();
         const uint64_t decodeCompleteUs = fields.value(decodeCompleteColumn).toULongLong();
         const uint64_t decodeWaitUs = fields.value(decodeWaitColumn).toULongLong();
+        const uint64_t dequeueUs = fields.value(dequeueColumn).toULongLong();
+        const uint64_t staleAgeUs = fields.value(staleAgeColumn).toULongLong();
+        const uint64_t expectedStaleAgeMinUs =
+            VrrTimingController(config).parameters().playoutSourceMappingDecoderOutput != 0 ?
+                26000 : 0;
         verifiedDecodeBoundary = decoderOutputUs != 0 && decodeWaitUs == 21000 &&
-            decodeCompleteUs - decoderOutputUs == decodeWaitUs;
+            dequeueUs > decoderOutputUs && decodeCompleteUs >= dequeueUs &&
+            decodeCompleteUs - dequeueUs >= decodeWaitUs &&
+            decodeCompleteUs - decoderOutputUs > decodeWaitUs &&
+            staleAgeUs >= expectedStaleAgeMinUs;
         break;
     }
     expect(verifiedDecodeBoundary,
-           "GPU readiness must add only the blocking fence wait and exclude pacing-queue residence");
-    SDL_setenv("MOONLIGHT_VRR_TRACE", "", 1);
+           "GPU readiness must keep the residual wait separate from its post-wait completion upper bound");
+    qputenv("MOONLIGHT_VRR_TRACE", "");
+}
+
+void testRepeatedDecodeContentionKeepsPresenting()
+{
+    // Reproduce the live freeze: each image finishes GPU decode after the
+    // age cutoff, and a newer image arrives during every wait. None of those
+    // successors is known to be ready. Dropping the completed image on each
+    // iteration makes the worker run indefinitely without presenting.
+    constexpr int count = 8;
+    for (int mode : {0, 1, 2}) {
+        resetFakeClock();
+        QTemporaryDir directory;
+        const QString path = directory.filePath("decode-contention.vrrtrace");
+        qputenv("MOONLIGHT_VRR_TRACE", QFile::encodeName(path).constData());
+        FakeVrrFramePresenter backend;
+        backend.blockDecodeFrame(1);
+        backend.setPreparationLimit(0);
+        PacerTelemetry telemetry;
+        std::array<TrackedFrameLifetime, count + 1> lifetimes;
+        auto config = enabledConfig();
+        config.streamRateHz = 120;
+        config.latencyMode = mode;
+        auto makeFrame = [&](int number) {
+            return makeTrackedPacedFrame(number, (number - 1) * 750,
+                LiGetMicroseconds(), lifetimes[number - 1]);
+        };
+        int submitted = 1;
+        {
+            VrrPacingWorker worker(&backend, config, &telemetry);
+            expect(worker.start(), "decode-contention worker must start");
+            std::unique_ptr<FrozenTestClock> clock = std::make_unique<FrozenTestClock>();
+            worker.submit(makeFrame(1));
+            for (int number = 1; number <= count; ++number) {
+                const bool waiting = backend.waitForDecodeWaitCount(number);
+                expect(waiting, "each retained image must enter the controlled decode wait");
+                if (!waiting) break;
+                if (!clock) {
+                    clock = std::make_unique<FrozenTestClock>();
+                }
+                clock->advance(40000);
+                worker.submit(makeFrame(++submitted));
+                // Freeze only the synthetic GPU delay. The target waiter
+                // needs an advancing clock to produce replay-valid render
+                // deadlines and preparation timestamps.
+                clock.reset();
+                backend.releaseDecode();
+                const bool prepared = backend.waitForPrepareCount(number);
+                expect(prepared, "repeated slow decode must keep producing prepared images");
+                if (!prepared) break;
+                backend.blockDecodeFrame(number + 1);
+                backend.setPreparationLimit(number);
+                const bool presented = backend.waitForPresentCount(number);
+                expect(presented, "every completed decode must make presentation progress under contention");
+                if (!presented) break;
+            }
+            std::vector<int> expected;
+            for (int number = 1; number <= count; ++number) expected.push_back(number);
+            expect(backend.presentedFrames() == expected,
+                   "a continuous supply of unfinished successors must not starve ready images in any preset");
+            expect(telemetryStats(telemetry).vrrPacingDroppedFrames == 0,
+                   "decode service alone must not count as stale queue residence");
+            // Release all gates even on failure so the regression reports an
+            // assertion instead of hanging in worker shutdown.
+            backend.releaseDecode();
+            backend.setPreparationLimit(std::numeric_limits<size_t>::max());
+        }
+        for (int i = 0; i < submitted; ++i) {
+            expect(lifetimes[i].releases == 1,
+                   "contention recovery must release each decoder surface exactly once");
+        }
+        const char* exportPath = SDL_getenv("MOONLIGHT_VRR_TEST_EXPORT_CONTENTION_TRACE");
+        if (exportPath && exportPath[0] && mode == 1) {
+            QFile::remove(QString::fromLocal8Bit(exportPath));
+            expect(QFile::copy(path, QString::fromLocal8Bit(exportPath)),
+                   "decode-contention fixture must export for exact replay");
+        }
+        qputenv("MOONLIGHT_VRR_TRACE", "");
+    }
+}
+
+void testFirstFrameDecodeReadinessTrace()
+{
+    resetFakeClock();
+    QTemporaryDir directory;
+    expect(directory.isValid(), "first-frame readiness fixture needs a trace directory");
+    const QString path = directory.filePath("first-decode-wait.vrrtrace");
+    qputenv("MOONLIGHT_VRR_TRACE", QFile::encodeName(path).constData());
+    qputenv("MOONLIGHT_VRR_DEEP_TRACE", "1");
+    FakeVrrFramePresenter backend;
+    backend.blockDecodeFrame(1);
+    PacerTelemetry telemetry;
+    TrackedFrameLifetime lifetime;
+    {
+        VrrPacingWorker worker(&backend, enabledConfig(), &telemetry);
+        expect(worker.start(), "first-frame readiness worker must start");
+        FrozenTestClock clock;
+        auto input = frame(1, lifetime);
+        clock.advance(1000);
+        worker.submit(std::move(input));
+        expect(backend.waitForDecodeWaitCount(1), "first frame must enter its GPU wait");
+        clock.advance(2000);
+        backend.releaseDecode();
+        clock.resume();
+        expect(backend.waitForPresentCount(1), "first frame must present after GPU readiness");
+    }
+    const auto lines = readExpandedTrace(path).split('\n');
+    const auto columns = lines.value(0).split(',');
+    const auto fields = lines.value(1).split(',');
+    auto value = [&](const char* name) {
+        return fields.value(columns.indexOf(name)).toULongLong();
+    };
+    expect(value("decode_sync_wait_us") >= 2000 &&
+               value("decode_complete_us") >= value("dequeue_us") + value("decode_sync_wait_us") &&
+               value("decode_complete_us") - value("decoder_output_us") > value("decode_sync_wait_us") &&
+               value("decode_complete_us") > value("pacer_arrival_us") &&
+               value("dequeue_us") > value("decoder_output_us"),
+           "first decision must retain immutable output, residual wait, and the post-wait completion bound");
+    const char* exportPath = SDL_getenv("MOONLIGHT_VRR_TEST_EXPORT_DECODE_TRACE");
+    if (exportPath && exportPath[0]) {
+        QFile::remove(QString::fromLocal8Bit(exportPath));
+        expect(QFile::copy(path, QString::fromLocal8Bit(exportPath)),
+               "first-frame decode fixture must export for exact replay");
+    }
+    qputenv("MOONLIGHT_VRR_TRACE", "");
+    qputenv("MOONLIGHT_VRR_DEEP_TRACE", "0");
 }
 
 void testTelemetrySnapshotsRemainCumulative()
@@ -689,6 +1144,11 @@ void testTelemetrySnapshotsRemainCumulative()
             sample.decisionTimeUs = i;
             sample.clientProcessingTimeUs = i * 3;
             sample.renderingTimeUs = i * 2;
+            sample.preparationUs = i;
+            sample.presentCallUs = i;
+            sample.gpuReadyWaitUs = i;
+            sample.gpuReadyWaitValid = i % 2 == 0;
+            sample.latched = i % 2 == 0;
             sample.prepareLate = (i % 2) == 0;
             sample.preparationLatenessUs = i;
             sample.cadenceIntervals = i / 2;
@@ -727,10 +1187,23 @@ void testTelemetrySnapshotsRemainCumulative()
     delayedSubmission.targetWaitEntryLate = true;
     delayedSubmission.clientProcessingTimeUs = 1000000;
     delayedSubmission.renderingTimeUs = 900000;
+    delayedSubmission.preparationUs = 800000;
+    delayedSubmission.presentCallUs = 100000;
+    delayedSubmission.gpuReadyWaitUs = 700000;
+    delayedSubmission.gpuReadyWaitValid = true;
+    delayedSubmission.latched = true;
     telemetry.recordVrrFrame(delayedSubmission);
 
     const PacerTelemetrySnapshot finalSnapshot = telemetryStats(telemetry);
     constexpr uint64_t sequenceSum = frameCount * (frameCount + 1) / 2;
+    expect(finalSnapshot.vrrPreparationUs == sequenceSum &&
+               finalSnapshot.vrrPresentCallUs == sequenceSum &&
+               finalSnapshot.vrrGpuReadyWaitUs == (frameCount / 2) * (frameCount / 2 + 1) &&
+               finalSnapshot.vrrGpuReadyWaitFrames == frameCount / 2 &&
+               finalSnapshot.vrrLatchedFrames == frameCount / 2 &&
+               finalSnapshot.vrrPresentedFrames == frameCount &&
+               finalSnapshot.vrrQueuePacingUs == sequenceSum,
+           "stage costs must exclude failed work and GPU detail must count only valid measurements");
     expect(finalSnapshot.vrrCadenceIntervals == frameCount / 2 &&
                finalSnapshot.vrrCadenceHitches == frameCount / 128,
            "publishing cumulative cadence snapshots must not count them repeatedly");
@@ -759,6 +1232,11 @@ void testTelemetrySnapshotsRemainCumulative()
                finalSnapshot.vrrPresentFailedFrames == 1 &&
                finalSnapshot.vrrStateSequence == finalSnapshot.sequence,
            "telemetry must keep bounded timing distributions and output outcomes separate");
+    telemetry.recordLegacyFrame(9000, 1000);
+    const auto mixed = telemetryStats(telemetry);
+    expect(mixed.renderedFrames == frameCount + 1 && mixed.vrrPresentedFrames == frameCount &&
+               mixed.vrrQueuePacingUs == sequenceSum && mixed.vrrPreparationUs == sequenceSum,
+           "legacy fallback frames must not dilute the separate VRR cost breakdown");
 }
 
 void testSuspendDiscardAndFreshFrame()
@@ -806,6 +1284,76 @@ void testSuspendDiscardAndFreshFrame()
         expect(backend.presentedFrames().front() == 4,
                "pre-suspend frames must not survive restoration");
     }
+}
+
+void testCancelledPreparedFenceTrace()
+{
+    resetFakeClock();
+    QTemporaryDir directory;
+    const QString path = directory.filePath("cancelled-fence.vrrtrace");
+    qputenv("MOONLIGHT_VRR_TRACE", QFile::encodeName(path).constData());
+    FakeVrrFramePresenter backend;
+    backend.blockPreparation();
+    backend.setCancelCompletesPreparedFence(true);
+    PacerTelemetry telemetry;
+    TrackedFrameLifetime interrupted, fresh;
+    {
+        VrrPacingWorker worker(&backend, enabledConfig(), &telemetry);
+        expect(worker.start(), "cancelled-fence worker must start");
+        worker.submit(frame(1, interrupted));
+        expect(backend.waitForPrepareCount(1), "interrupted image must enter preparation");
+        const uint64_t at = LiGetMicroseconds();
+        VrrPresentFeedback pending;
+        pending.gpuReadyAttempted = true;
+        pending.gpuReadySignalResultValid = true;
+        pending.gpuReadySetEventResultValid = true;
+        pending.gpuReadySignalStartUs = pending.gpuReadySignalEndUs = at;
+        pending.gpuReadyFlushStartUs = pending.gpuReadyFlushEndUs = at;
+        pending.gpuReadySetEventStartUs = pending.gpuReadySetEventEndUs = at;
+        pending.gpuReadyPollStartUs = pending.gpuReadyPollEndUs = at;
+        pending.gpuReadyFenceValue = 1;
+        backend.setPrepareFeedback(pending);
+        WINDOW_STATE_CHANGE_INFO minimized {};
+        minimized.stateChangeFlags = WINDOW_STATE_CHANGE_MINIMIZED;
+        worker.notifyWindowChanged(&minimized);
+        backend.releasePreparation();
+        expect(backend.waitForCancelCount(1), "prepared cancellation must drain its submitted fence");
+        expect(waitFor([&] { return backend.suspendedCount() == 1; }),
+               "fence cancellation must finish before suspension");
+        backend.setPrepareFeedback({});
+        backend.setCancelCompletesPreparedFence(false);
+        WINDOW_STATE_CHANGE_INFO restored {};
+        restored.stateChangeFlags = WINDOW_STATE_CHANGE_RESTORED;
+        worker.notifyWindowChanged(&restored);
+        worker.submit(frame(2, fresh));
+        expect(backend.waitForPresentCount(1), "presentation must resume after the fence drain");
+    }
+    expect(interrupted.releases == 1 && fresh.releases == 1,
+           "interrupted fence ownership must release both sources once");
+    const auto lines = readExpandedTrace(path).split('\n');
+    const auto columns = lines.value(0).split(',');
+    bool drained = false, untrained = false;
+    for (const auto& line : lines) {
+        const auto fields = line.split(',');
+        if (fields.size() != columns.size()) continue;
+        if (fields.value(columns.indexOf("frame")) == "1") {
+            drained = fields.value(columns.indexOf("disposition")) == "interrupted" &&
+                fields.value(columns.indexOf("gpu_ready_timing_valid")) == "1" &&
+                fields.value(columns.indexOf("gpu_ready_wait_us")).toULongLong() >= 1000;
+        }
+        if (fields.value(columns.indexOf("frame")) == "2") {
+            untrained = fields.value(columns.indexOf("gpu_readiness_lead_us")) == "0";
+        }
+    }
+    expect(drained && untrained,
+           "cancelled fence completion must be traced without training future readiness");
+    const char* exportPath = SDL_getenv("MOONLIGHT_VRR_TEST_EXPORT_CANCELLED_FENCE_TRACE");
+    if (exportPath && exportPath[0]) {
+        QFile::remove(QString::fromLocal8Bit(exportPath));
+        expect(QFile::copy(path, QString::fromLocal8Bit(exportPath)),
+               "cancelled-fence fixture must export for exact replay");
+    }
+    qputenv("MOONLIGHT_VRR_TRACE", "");
 }
 
 void testDeferredSurfaceLifetime()
@@ -1115,15 +1663,18 @@ void testTraceCapturesEveryDeliveredFrame()
            "replay trace test must create a temporary directory");
     const QString tracePath = traceDirectory.filePath("vrr-replay.csv");
     const QByteArray tracePathBytes = QFile::encodeName(tracePath);
-    SDL_setenv("MOONLIGHT_VRR_TRACE", tracePathBytes.constData(), 1);
-    SDL_setenv("MOONLIGHT_VRR_DEEP_TRACE", "0", 1);
+    qputenv("MOONLIGHT_VRR_TRACE", tracePathBytes.constData());
+    qputenv("MOONLIGHT_VRR_DEEP_TRACE", "0");
 
     FakeVrrFramePresenter backend;
     backend.blockPreparation();
     PacerTelemetry telemetry;
-    TrackedFrameLifetime lifetimes[10];
+    TrackedFrameLifetime lifetimes[11];
+    // The burst below (frames 2-5 and 11) overflows the four-frame queue.
+    VrrSessionConfig traceConfig = enabledConfig();
+    traceConfig.latencyMode = 1;
     {
-        VrrPacingWorker worker(&backend, enabledConfig(), &telemetry);
+        VrrPacingWorker worker(&backend, traceConfig, &telemetry);
         expect(worker.start(), "worker must start for replay tracing");
         worker.submit(frame(1, lifetimes[0]));
         expect(backend.waitForPrepareCount(1),
@@ -1131,8 +1682,9 @@ void testTraceCapturesEveryDeliveredFrame()
         for (int frameNumber = 2; frameNumber <= 5; ++frameNumber) {
             worker.submit(frame(frameNumber, lifetimes[frameNumber - 1]));
         }
+        worker.submit(frame(11, lifetimes[10]));
         backend.releasePreparation();
-        expect(backend.waitForPresentCount(4),
+        expect(backend.waitForPresentCount(5),
                "replay trace test must drain retained frames");
 
         WINDOW_STATE_CHANGE_INFO minimized {};
@@ -1148,7 +1700,7 @@ void testTraceCapturesEveryDeliveredFrame()
         restored.stateChangeFlags = WINDOW_STATE_CHANGE_RESTORED;
         worker.notifyWindowChanged(&restored);
         worker.submit(frame(7, lifetimes[6]));
-        expect(backend.waitForPresentCount(5),
+        expect(backend.waitForPresentCount(6),
                "restored trace frame must present after an explicit rebase");
 
         WINDOW_STATE_CHANGE_INFO resized {};
@@ -1157,12 +1709,12 @@ void testTraceCapturesEveryDeliveredFrame()
         resized.height = 1080;
         worker.notifyWindowChanged(&resized);
         worker.submit(frame(8, lifetimes[7]));
-        expect(backend.waitForPresentCount(6),
+        expect(backend.waitForPresentCount(7),
                "first frame after a geometry refresh must use a new trace epoch");
 
         backend.blockPreparation();
         worker.submit(frame(9, lifetimes[8]));
-        expect(backend.waitForPrepareCount(7),
+        expect(backend.waitForPrepareCount(8),
                "display-epoch race test must hold an in-flight frame");
         WINDOW_STATE_CHANGE_INFO displayChanged {};
         displayChanged.stateChangeFlags = WINDOW_STATE_CHANGE_DISPLAY;
@@ -1171,11 +1723,11 @@ void testTraceCapturesEveryDeliveredFrame()
         backend.releasePreparation();
         expect(backend.waitForCancelCount(1),
                "an in-flight frame must be cancelled after display state changes");
-        expect(backend.presentCount() == 6,
+        expect(backend.presentCount() == 7,
                "a decision from the prior display epoch must not be presented");
 
         worker.submit(frame(10, lifetimes[9]));
-        expect(backend.waitForPresentCount(7),
+        expect(backend.waitForPresentCount(8),
                "the post-interrupt frame must start the refreshed display epoch");
     }
 
@@ -1369,7 +1921,7 @@ void testTraceCapturesEveryDeliveredFrame()
                    [](int column) { return column >= 0; }),
            "replay schema must expose raw arrivals and terminal disposition");
 
-    bool observedFrames[11] = {};
+    bool observedFrames[12] = {};
     bool observedCapacityDrop = false;
     bool observedRejectedArrival = false;
     bool observedRestoreRebase = false;
@@ -1393,8 +1945,8 @@ void testTraceCapturesEveryDeliveredFrame()
             observedCleanFooter =
                 lines[i].contains("format_version=2") &&
                 lines[i].contains("clean_shutdown=1") &&
-                lines[i].contains("arrival_sequence_allocated=10") &&
-                lines[i].contains("rows_enqueued=10") &&
+                lines[i].contains("arrival_sequence_allocated=11") &&
+                lines[i].contains("rows_enqueued=11") &&
                 lines[i].contains("rows_dropped=0") &&
                 lines[i].contains("size_capped=0") &&
                 lines[i].contains("write_failed=0") &&
@@ -1415,7 +1967,7 @@ void testTraceCapturesEveryDeliveredFrame()
         }
         ++rowCount;
         const int frameNumber = fields[frameColumn].toInt();
-        if (frameNumber >= 1 && frameNumber <= 10) {
+        if (frameNumber >= 1 && frameNumber <= 11) {
             observedFrames[frameNumber] = true;
         }
         expect(fields[rtpColumn].toULongLong() ==
@@ -1489,12 +2041,12 @@ void testTraceCapturesEveryDeliveredFrame()
                 fields[midframeWindowStateFlagsColumn] == "0";
         }
     }
-    expect(rowCount == 10,
+    expect(rowCount == 11,
            "trace must contain exactly one terminal row per delivered frame");
     expect(observedFrames[1] && observedFrames[2] && observedFrames[3] &&
                observedFrames[4] && observedFrames[5] && observedFrames[6] &&
                observedFrames[7] && observedFrames[8] &&
-               observedFrames[9] && observedFrames[10],
+               observedFrames[9] && observedFrames[10] && observedFrames[11],
            "trace must not omit evicted or presented deliveries");
     expect(observedCapacityDrop,
            "trace must identify the frame evicted by queue capacity");
@@ -1520,7 +2072,7 @@ void testTraceCapturesEveryDeliveredFrame()
                observedFooterHash == expectedFooterHash,
            "trace footer must authenticate the decoded header and rows");
 
-    SDL_setenv("MOONLIGHT_VRR_TRACE", "", 1);
+    qputenv("MOONLIGHT_VRR_TRACE", "");
 }
 
 
@@ -1533,8 +2085,8 @@ void testSmoothnessTraceCapturesReadinessPolicy()
            "smoothness policy trace test must create a temporary directory");
     const QString tracePath = traceDirectory.filePath("vrr-smoothness-policy.csv");
     const QByteArray tracePathBytes = QFile::encodeName(tracePath);
-    SDL_setenv("MOONLIGHT_VRR_TRACE", tracePathBytes.constData(), 1);
-    SDL_setenv("MOONLIGHT_VRR_DEEP_TRACE", "0", 1);
+    qputenv("MOONLIGHT_VRR_TRACE", tracePathBytes.constData());
+    qputenv("MOONLIGHT_VRR_DEEP_TRACE", "0");
 
     FakeVrrFramePresenter backend;
     PacerTelemetry telemetry;
@@ -1590,6 +2142,16 @@ void testSmoothnessTraceCapturesReadinessPolicy()
             continue;
         }
         foundPresentedRow = true;
+        const auto field = [&](const char* name) { return fields.value(columns.indexOf(name)).toULongLong(); };
+        expect(field("buffer_update_valid") == 1 && field("buffer_update_frame") == field("frame") &&
+               field("buffer_cap_us") >= field("playout_delay_us") &&
+               field("buffer_queue_limit_us") >= field("buffer_cap_us") &&
+               field("buffer_request_before_us") == field("buffer_request_after_us"),
+               "the cold-start trace must expose caps and its actual outcome without invented growth");
+        expect(field("param_playout_interval_initial_warmup_us") == 500000 &&
+                   field("param_playout_interval_initial_minimum_samples") == 32 &&
+                   field("buffer_calibration_complete") == 0 && field("buffer_calibration_samples") == 0,
+               "cold-start tracing must capture the calibration policy without inventing learned evidence");
         expect(fields.value(additionalQueueColumn) == "0" &&
                    fields.value(lowPercentileColumn) == "0" &&
                    fields.value(loosePercentileColumn) == "80" &&
@@ -1607,8 +2169,8 @@ void testSmoothnessTraceCapturesReadinessPolicy()
     expect(foundPresentedRow,
            "smoothness policy trace must contain a presented row");
 
-    SDL_setenv("MOONLIGHT_VRR_TRACE", "", 1);
-    SDL_setenv("MOONLIGHT_VRR_DEEP_TRACE", "0", 1);
+    qputenv("MOONLIGHT_VRR_TRACE", "");
+    qputenv("MOONLIGHT_VRR_DEEP_TRACE", "0");
 }
 
 void testFailedCancellationNativeEvidenceIsTraced()
@@ -1620,8 +2182,8 @@ void testFailedCancellationNativeEvidenceIsTraced()
     const QString tracePath =
         traceDirectory.filePath("vrr-cancellation-failure.csv");
     const QByteArray tracePathBytes = QFile::encodeName(tracePath);
-    SDL_setenv("MOONLIGHT_VRR_TRACE", tracePathBytes.constData(), 1);
-    SDL_setenv("MOONLIGHT_VRR_DEEP_TRACE", "0", 1);
+    qputenv("MOONLIGHT_VRR_TRACE", tracePathBytes.constData());
+    qputenv("MOONLIGHT_VRR_DEEP_TRACE", "0");
 
     FakeVrrFramePresenter backend;
     backend.setPreparationSucceeds(false);
@@ -1669,7 +2231,7 @@ void testFailedCancellationNativeEvidenceIsTraced()
                "failed native cancellation must not be collapsed into generic cancellation");
     }
 
-    SDL_setenv("MOONLIGHT_VRR_TRACE", "", 1);
+    qputenv("MOONLIGHT_VRR_TRACE", "");
 }
 
 void testReconnectPreservesCompletedTraces()
@@ -1678,7 +2240,7 @@ void testReconnectPreservesCompletedTraces()
     QTemporaryDir directory;
     expect(directory.isValid(), "reconnect trace directory must exist");
     const QString tracePath = directory.filePath("capture.vrrtrace");
-    SDL_setenv("MOONLIGHT_VRR_TRACE", QFile::encodeName(tracePath).constData(), 1);
+    qputenv("MOONLIGHT_VRR_TRACE", QFile::encodeName(tracePath).constData());
     QByteArray previous;
     for (int connection = 1; connection <= 3; ++connection) {
         FakeVrrFramePresenter backend;
@@ -1702,7 +2264,7 @@ void testReconnectPreservesCompletedTraces()
     }
     expect(!readExpandedTrace(directory.filePath("capture-connection-1.vrrtrace")).isEmpty(),
            "third connection must retain the first archived capture");
-    SDL_setenv("MOONLIGHT_VRR_TRACE", "", 1);
+    qputenv("MOONLIGHT_VRR_TRACE", "");
 }
 
 void testDeepTraceRequestsNativeObservationsWithoutChangingMode()
@@ -1713,8 +2275,12 @@ void testDeepTraceRequestsNativeObservationsWithoutChangingMode()
            "deep diagnostics test must create a temporary directory");
     const QString tracePath = traceDirectory.filePath("vrr-deep-trace.vrrtrace");
     const QByteArray tracePathBytes = QFile::encodeName(tracePath);
-    SDL_setenv("MOONLIGHT_VRR_TRACE", tracePathBytes.constData(), 1);
-    SDL_setenv("MOONLIGHT_VRR_DEEP_TRACE", "1", 1);
+    // Match the Settings checkbox: update the process environment after SDL
+    // initialized, without relying on SDL2-compat's cached environment copy.
+    SDL_setenv("MOONLIGHT_VRR_TRACE", "", 1);
+    SDL_setenv("MOONLIGHT_VRR_DEEP_TRACE", "0", 1);
+    expect(qputenv("MOONLIGHT_VRR_TRACE", tracePathBytes), "checkbox trace path must be set");
+    expect(qputenv("MOONLIGHT_VRR_DEEP_TRACE", "1"), "checkbox deep tracing must be set");
     FakeVrrFramePresenter backend;
     PacerTelemetry telemetry;
     TrackedFrameLifetime first;
@@ -1773,6 +2339,7 @@ void testDeepTraceRequestsNativeObservationsWithoutChangingMode()
            "captured calibration must restore prior history without inventing fresh successes");
     expect(fields.value(columns.indexOf("param_playout_prediction_only")) == "1" &&
                fields.value(columns.indexOf("param_playout_responsive_buffer")) == "7" &&
+               fields.value(columns.indexOf("param_playout_smoothing_windowed_cadence")) == "2" &&
                fields.value(columns.indexOf("param_playout_native_hitch_adaptation")) == "0",
            "capture must identify production interval-quality adaptation for exact replay");
     expect(header.contains("frame_receive_us") &&
@@ -1867,8 +2434,8 @@ void testDeepTraceRequestsNativeObservationsWithoutChangingMode()
                "deep trace test must export its replay fixture when requested");
     }
 
-    SDL_setenv("MOONLIGHT_VRR_TRACE", "", 1);
-    SDL_setenv("MOONLIGHT_VRR_DEEP_TRACE", "0", 1);
+    qputenv("MOONLIGHT_VRR_TRACE", "");
+    qputenv("MOONLIGHT_VRR_DEEP_TRACE", "0");
 }
 
 void testTraceCapturesAllowTearingWithoutChangingController()
@@ -1879,8 +2446,8 @@ void testTraceCapturesAllowTearingWithoutChangingController()
         expect(directory.isValid(), "permission trace fixture needs a temporary directory");
         const QString tracePath = directory.filePath("vrr-permission.vrrtrace");
         const QByteArray tracePathBytes = QFile::encodeName(tracePath);
-        SDL_setenv("MOONLIGHT_VRR_TRACE", tracePathBytes.constData(), 1);
-        SDL_setenv("MOONLIGHT_VRR_DEEP_TRACE", "1", 1);
+        qputenv("MOONLIGHT_VRR_TRACE", tracePathBytes.constData());
+        qputenv("MOONLIGHT_VRR_DEEP_TRACE", "1");
         FakeVrrFramePresenter backend;
         PacerTelemetry telemetry;
         TrackedFrameLifetime lifetime;
@@ -1908,8 +2475,10 @@ void testTraceCapturesAllowTearingWithoutChangingController()
         const auto lines = expanded.split('\n');
         const auto columns = lines.value(0).split(',');
         const auto fields = lines.value(1).split(',');
-        expect(columns.size() == fields.size() && columns.last() == "session_allow_tearing",
-               "permission must be an appended schema-5 field aligned with the row");
+        expect(columns.size() == fields.size() &&
+                   columns.indexOf("session_allow_tearing") == columns.indexOf("latency_test_phase") + 1 &&
+                   columns.indexOf("buffer_cap_us") == columns.indexOf("session_allow_tearing") + 1,
+               "appended diagnostics must preserve the schema-5 permission position and row alignment");
         expect(fields.value(columns.indexOf("session_allow_tearing")) ==
                    (allowTearing ? "1" : "0"),
                "trace must identify the snapshotted native permission arm");
@@ -1924,8 +2493,8 @@ void testTraceCapturesAllowTearingWithoutChangingController()
                        "off-arm trace must export its exact replay fixture when requested");
             }
         }
-        SDL_setenv("MOONLIGHT_VRR_TRACE", "", 1);
-        SDL_setenv("MOONLIGHT_VRR_DEEP_TRACE", "0", 1);
+        qputenv("MOONLIGHT_VRR_TRACE", "");
+        qputenv("MOONLIGHT_VRR_DEEP_TRACE", "0");
     }
 }
 
@@ -1969,8 +2538,8 @@ void exportWarmHistoryReplayFixture()
     const char* exportPath = SDL_getenv("MOONLIGHT_VRR_TEST_EXPORT_WARM_TRACE");
     if (!exportPath || !exportPath[0]) return;
     resetFakeClock();
-    SDL_setenv("MOONLIGHT_VRR_TRACE", exportPath, 1);
-    SDL_setenv("MOONLIGHT_VRR_DEEP_TRACE", "1", 1);
+    qputenv("MOONLIGHT_VRR_TRACE", exportPath);
+    qputenv("MOONLIGHT_VRR_DEEP_TRACE", "1");
     FakeVrrFramePresenter backend;
     PacerTelemetry telemetry;
     TrackedFrameLifetime lifetime[180];
@@ -1993,8 +2562,8 @@ void exportWarmHistoryReplayFixture()
         }
         expect(backend.waitForPresentCount(180), "warm-history replay must drain every submitted frame");
     }
-    SDL_setenv("MOONLIGHT_VRR_TRACE", "", 1);
-    SDL_setenv("MOONLIGHT_VRR_DEEP_TRACE", "0", 1);
+    qputenv("MOONLIGHT_VRR_TRACE", "");
+    qputenv("MOONLIGHT_VRR_DEEP_TRACE", "0");
 }
 
 } // namespace
@@ -2041,8 +2610,115 @@ void testReadinessWindow()
            "old failures must expire and reversed producer lock order must preserve both outcomes");
 }
 
+void testReceiveDeadlineMath()
+{
+    namespace D = VrrReceiveDeadline;
+    const uint64_t nowUs = 5000000000ULL; // beyond 32 bits of microseconds
+    const uint64_t anchor = D::pack(0xFFFFFF00u, nowUs + 3000);
+    expect(D::deadlineUs(anchor, 0xFFFFFF00u, nowUs) == nowUs + 3000,
+           "the anchor frame's deadline must survive 32-bit packing");
+    // 900 ticks later wraps the RTP counter: 900 / 90 kHz = 10 ms.
+    expect(D::deadlineUs(anchor, 0xFFFFFF00u + 900u, nowUs) == nowUs + 13000,
+           "a later frame must extrapolate at the RTP rate across wrap");
+    expect(D::deadlineUs(anchor, 0xFFFFFF00u - 90u, nowUs) == nowUs + 2000,
+           "an earlier frame must extrapolate backwards");
+    expect(D::deadlineUs(anchor, 0xFFFFFF00u + 900000u, nowUs) == 0,
+           "a frame from another source epoch must not use the anchor");
+    expect(D::deadlineUs(0, 0xFFFFFF00u, nowUs) == 0,
+           "no published anchor means no deadline");
+    const uint64_t pastAnchor = D::pack(10, nowUs - 4000);
+    expect(D::deadlineUs(pastAnchor, 10, nowUs) == nowUs - 4000,
+           "a deadline already in the past must stay in the past");
+    expect(D::pack(0, 0) != 0, "a published anchor must never read as unpublished");
+
+    D::RecentDuration cost;
+    expect(!cost.ready(), "reassembly cost must not be used before enough samples");
+    for (uint64_t i = 0; i < D::RecentDuration::kWindow; i++) {
+        cost.observe(1000, 1000 + 1000 + i * 10);
+    }
+    cost.observe(0, 5000);
+    cost.observe(6000, 5000);
+    expect(cost.ready(), "reassembly cost must become ready");
+    const uint64_t p95 = cost.percentileUs();
+    expect(p95 >= 2190 && p95 <= 2220,
+           "reassembly cost must track a high percentile and ignore invalid samples");
+
+    D::RecentDuration gpuCost;
+    for (size_t i = 0; i < D::RecentDuration::kWindow; ++i) {
+        gpuCost.observeGpuCompletion(1000, 1500, 1500);
+    }
+    expect(!gpuCost.ready(),
+           "CPU decoder output alone must not qualify as GPU completion history");
+    for (size_t i = 0; i < D::RecentDuration::kMinimumSamples; ++i) {
+        gpuCost.observeGpuCompletion(1000, 1500, 5000);
+    }
+    expect(gpuCost.ready() && gpuCost.percentileUs() == 4000,
+           "observed GPU completion must qualify the decode protection cost");
+    for (size_t i = 0; i < D::RecentDuration::kWindow; ++i) {
+        gpuCost.observeGpuCompletion(1000, 1500, 1500);
+        gpuCost.observeGpuCompletion(1000, 1500, 1400);
+    }
+    expect(gpuCost.percentileUs() == 4000,
+           "already-ready or invalid samples must not replace GPU cost with CPU submit cost");
+
+    D::RecentDuration synchronousCost;
+    for (size_t i = 0; i < D::RecentDuration::kMinimumSamples; ++i) {
+        synchronousCost.observeGpuCompletion(1000, 5000, 5000, true);
+    }
+    expect(synchronousCost.ready() && synchronousCost.percentileUs() == 4000,
+           "synchronous readback output is valid completion evidence");
+
+    // Decode hold around the next Present: wait for the Present call, never
+    // past the frame's own deadline or the safety bound.
+    D::publishPresentWindow(nowUs - 500, nowUs + 1500);
+    const uint64_t window = D::g_PresentWindow.load();
+    const uint64_t roomy = D::pack(10, nowUs + 8000);
+    const uint64_t tight = D::pack(10, nowUs + 1000);
+    const auto held = D::decodeHold(window, roomy, 10, nowUs);
+    expect(held.window == window && held.limitUs == nowUs + D::kMaximumDecodeHoldUs,
+           "a decode inside the Present window must wait for the Present call");
+    expect(!D::decodeHoldReleased(held, nowUs + 1000),
+           "the hold must continue while the Present window is open");
+    D::clearPresentWindow();
+    expect(D::decodeHoldReleased(held, nowUs + 1000),
+           "the Present call returning must release the hold at once");
+    D::publishPresentWindow(nowUs + 7000, nowUs + 9500);
+    expect(D::decodeHoldReleased(held, nowUs + 1000),
+           "the next frame's window must not extend an earlier hold");
+    D::publishPresentWindow(nowUs - 500, nowUs + 1500);
+    expect(D::decodeHoldReleased(D::decodeHold(D::g_PresentWindow.load(), D::pack(10, nowUs + 3000), 10, nowUs),
+                                 nowUs + 3000),
+           "a hold must end at the frame's own deadline");
+    D::clearPresentWindow();
+    expect(D::decodeHold(window, tight, 10, nowUs).window == 0,
+           "a hold must never be taken when the expected close misses the frame's deadline");
+    expect(D::decodeHold(window, 0, 10, nowUs).window == 0,
+           "without a known slot the decode must not be held");
+    expect(D::decodeHold(window, roomy, 10, nowUs + 1600).window == 0 &&
+               D::decodeHold(window, roomy, 10, nowUs - 600).window == 0,
+           "a decode outside the window must go at once");
+    expect(D::decodeHold(0, roomy, 10, nowUs).window == 0,
+           "no published window means no hold");
+
+    // The hold budget must leave room for preparation, not only decode:
+    // a roomy reassembly deadline does not authorize a hold.
+    D::publishPresentWindow(nowUs - 500, nowUs + 1500);
+    D::publish(10, nowUs + 8000);
+    D::publishHold(10, nowUs + 1000);
+    expect(D::decodeHold(10, nowUs).window == 0,
+           "a hold must use the decode-and-preparation bound, not the reassembly deadline");
+    D::publishHold(10, nowUs + 8000);
+    expect(D::decodeHold(10, nowUs).window != 0,
+           "a hold within the decode-and-preparation bound is allowed");
+    D::clear();
+    expect(D::decodeHold(10, nowUs).window == 0,
+           "clearing the deadlines also clears the hold bound");
+    D::clearPresentWindow();
+}
+
 int main()
 {
+    testReceiveDeadlineMath();
     Vrr13::ReadinessWindow averageWindow;
     averageWindow.record(1000000, 500, false);
     averageWindow.record(1001000, 1500, false);
@@ -2063,19 +2739,30 @@ int main()
         return 1;
     }
 
+    testPreparedFramesOverlapAndTrace();
+    testSlowPreparedFramesKeepPresenting();
+    testPreparedFrameCancellationAndBound();
+    testPreparedFrameSuspendAndFallback();
     testCapabilityRejection();
     testPresentationRequestSelectedBeforePreparation();
     testEmptyQueueDoesNotRepeatFrames();
-    testQueueCapacityAndDrops();
+    // Every profile waits in the same queue
+    testQueueCapacityAndDrops(1, VrrLargestQueuedFrames);
+    testQueueCapacityAndDrops(2, VrrLargestQueuedFrames);
+    testQueueCapacityAndDrops(0, VrrLargestQueuedFrames);
     testLatePreparedFramePresentsImmediately();
     testQueuedStaleFrameYieldsToFreshSuccessor();
+    testExpiredQueueSkipsBlockingDecode();
     testSinglePeriodQueueDelayPreservesFluidity();
     testLatencyFixDropBoundaries();
     testLatencyFixQueuedRecovery();
     testLatencyPresetsQueuedRecovery();
-    testLatencyFixQueueAgeIncludesDecodeWait();
+    testDecodeWaitDoesNotExpireReadyFrame();
+    testRepeatedDecodeContentionKeepsPresenting();
+    testFirstFrameDecodeReadinessTrace();
     testTelemetrySnapshotsRemainCumulative();
     testSuspendDiscardAndFreshFrame();
+    testCancelledPreparedFenceTrace();
     testDeferredSurfaceLifetime();
     testReusableSurfaceReleasedWithoutSuccessor();
     testDecodeBoundaryCapturedBeforeQueueAndPreparedExactly();

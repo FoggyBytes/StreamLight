@@ -35,6 +35,13 @@ Popup {
     // greys itself against this rather than pretending the choice will be honoured.
     property bool effectiveVsync: true
 
+    // The codec this game inherits (its host's active profile, else global), passed in the
+    // same way: the bitrate scale follows the codec, and PyroWave's ceiling and step are its
+    // own (StreamingPreferences.getMaxBitrate).
+    property int inheritedCodec: StreamingPreferences.VCC_AUTO
+    readonly property int  _effCodec:     codecSel.currentIndex > 0 ? _codecVals[codecSel.currentIndex] : inheritedCodec
+    readonly property bool _effPyroWave:  _effCodec === StreamingPreferences.VCC_FORCE_PYROWAVE
+
     // Emitted when the dialog closes, so the opener can restore gamepad focus
     // to the grid behind it.
     signal closedByUser()
@@ -70,12 +77,12 @@ Popup {
     /*
      * The rows split into the tabs of Settings, with Settings' own names and order — the
      * same arrangement as HostProfilesDialog, minus Network: link matching is not per game.
-     * ⚠️ The row -> tab map was measured on SettingsScreen.qml (HDR is under Decoder there).
+     * ⚠️ The row -> tab map was measured on SettingsScreen.qml. No Decoder tab since 6.4.0: codec,
+     * HDR and 4:4:4 are in Video, under Stream, above the bitrate.
      */
     readonly property var _sections: [
         { label: qsTr("Video")   },
         { label: qsTr("Audio")   },
-        { label: qsTr("Decoder") },
         { label: qsTr("Session") }
     ]
     /*
@@ -85,9 +92,9 @@ Popup {
      */
     readonly property var _sectionCounts: [
         _n(resSel.currentIndex !== 0 || _customResW > 0) + _n(fpsSel.currentIndex !== 0 || _customFps > 0)
+            + _n(codecSel.currentIndex > 0) + _n(hdrSel.currentIndex > 0) + _n(yuv444Sel.currentIndex > 0)
             + _n(_bitrateOverridden) + _n(fpSel.currentIndex > 0),
         _n(audSel.currentIndex > 0),
-        _n(codecSel.currentIndex > 0) + _n(hdrSel.currentIndex > 0),
         _n(waitGameSel.currentIndex > 0) + _n(hueSel.currentIndex > 0)
     ]
 
@@ -102,8 +109,8 @@ Popup {
     property Item _focusedRow: null
 
     // Where the D-pad enters and leaves each tab: up from the footer lands on the last row.
-    function _firstOfSection(i) { return [resSel, audSel, codecSel, waitGameSel][i] || resSel }
-    function _lastOfSection(i)  { return [fpSel, audSel, hdrSel, hueSel][i] || fpSel }
+    function _firstOfSection(i) { return [resSel, audSel, waitGameSel][i] || resSel }
+    function _lastOfSection(i)  { return [fpSel, audSel, hueSel][i] || fpSel }
 
     // Whether the pad focus was inside the rows, kept by the Flickable below.
     property bool _focusInBody: false
@@ -249,10 +256,16 @@ Popup {
     readonly property var _fpsVals:   [0].concat(_video.fps.map(function(e) { return e.value }))
     readonly property var _fpsNative: _nativeIndices(_video.fps)
     readonly property var _hdrLabels: ["", "On", "Off"]
+    readonly property var _yuv444Labels: ["", "On", "Off"]
     readonly property var _waitLabels: ["", "On", "Off"]
     readonly property var _hueLabels:  ["", "On", "Off"]
-    readonly property var _codecLabels: ["", "H.264", "HEVC", "AV1"]
-    readonly property var _codecVals:   [-1, 1, 2, 4]   // VCC_FORCE_H264/HEVC/AV1
+    // PyroWave (6.4.0) only where this build can decode it, as in Settings.
+    readonly property var _codecLabels: SystemProperties.hasPyroWave
+                                        ? ["", "H.264", "HEVC", "AV1", "PyroWave"]
+                                        : ["", "H.264", "HEVC", "AV1"]
+    readonly property var _codecVals:   SystemProperties.hasPyroWave
+                                        ? [-1, 1, 2, 4, 5]   // VCC_FORCE_H264/HEVC/AV1/PYROWAVE
+                                        : [-1, 1, 2, 4]      // VCC_FORCE_H264/HEVC/AV1
     readonly property var _fpLabels:  ["", "Off", "On"]
     readonly property var _fpVals:    [-1, 0, 1]  // FP_OFF / FP_ON
     readonly property var _audLabels: ["", "Stereo", "5.1", "7.1"]
@@ -291,7 +304,7 @@ Popup {
     width: dlg._px(960)
     padding: dlg._px(0)
 
-    Overlay.modal: Rectangle { color: "#cc000000" }
+    Overlay.modal: Rectangle { color: Theme.scrim }
 
     background: Rectangle {
         color: Theme.card
@@ -366,6 +379,7 @@ Popup {
             fpsSel.currentIndex = 0
         }
         hdrSel.currentIndex   = (ov.hdr !== undefined) ? (ov.hdr ? 1 : 2) : 0
+        yuv444Sel.currentIndex = (ov.yuv444 !== undefined) ? (ov.yuv444 ? 1 : 2) : 0
         codecSel.currentIndex = (ov.codec !== undefined) ? _idxByVal(_codecVals, ov.codec) : 0
         fpSel.currentIndex    = (ov.framepacing !== undefined) ? _idxByVal(_fpVals, ov.framepacing) : 0
         audSel.currentIndex   = (ov.audio !== undefined) ? _idxByVal(_audVals, ov.audio) : 0
@@ -387,6 +401,7 @@ Popup {
         if (_bitrateOverridden && bitrateSlider.value >= bitrateSlider.from)
                                        m.bitrate = Math.round(bitrateSlider.value)
         if (hdrSel.currentIndex > 0)   m.hdr = (hdrSel.currentIndex === 1)
+        if (yuv444Sel.currentIndex > 0) m.yuv444 = (yuv444Sel.currentIndex === 1)
         if (codecSel.currentIndex > 0) m.codec = _codecVals[codecSel.currentIndex]
         if (fpSel.currentIndex > 0)    m.framepacing = _fpVals[fpSel.currentIndex]
         if (audSel.currentIndex > 0)   m.audio = _audVals[audSel.currentIndex]
@@ -456,6 +471,21 @@ Popup {
     // dialog's top level rather than inside the StackLayout that uses it (6.0.0) — nested there,
     // the linter takes the declaration for a child the layout manages. (Not worded "qmllint …"
     // at the start of a line: qmllint reads such a comment as one of its own directives.)
+    // A group's heading inside a tab (6.4.0): Video holds Stream and Display, as it does in
+    // Settings. Spelled like Settings' card titles, aligned with the row labels.
+    component GroupHeader: Label {
+        width: flick.width
+        leftPadding: dlg._padX
+        topPadding: dlg._px(14)
+        bottomPadding: dlg._px(4)
+        font.family: Theme.family
+        font.pixelSize: dlg._px(Theme.fontSmall)
+        font.bold: true
+        font.letterSpacing: 1.4
+        font.capitalization: Font.AllUppercase
+        color: Theme.text3
+    }
+
     component SettingRow: Item {
         id: row
         width: flick.width
@@ -721,6 +751,8 @@ Popup {
                 Column {
                     spacing: dlg._px(0)
 
+                    GroupHeader { text: qsTr("Stream") }
+
                     SettingRow {
                         label: qsTr("Resolution")
                         overridden: resSel.currentIndex !== 0 || dlg._customResW > 0
@@ -793,9 +825,52 @@ Popup {
                                     customFpsDialog.open()
                                 }
                                 KeyNavigation.up: fpsSel
-                                KeyNavigation.down: bitrateSlider
+                                KeyNavigation.down: codecSel
                                 KeyNavigation.left: fpsSel
                             }
+                        }
+                    }
+
+                    SettingRow {
+                        label: qsTr("Video codec")
+                        overridden: codecSel.currentIndex > 0
+                        source: dlg._srcText("codec", overridden)
+                        onResetRequested: { codecSel.currentIndex = 0; dlg.saveToModel() }
+                        SegmentedSelector {
+                            id: codecSel; labels: dlg._codecLabels
+                            inheritStrip: true
+                            inheritIndex: dlg._inheritIdx(dlg._codecLabels, "codec")
+                            KeyNavigation.up: fpsCustomBtn
+                            KeyNavigation.down: hdrSel
+                            onActivated: dlg.saveToModel()
+                        }
+                    }
+                    SettingRow {
+                        label: qsTr("HDR")
+                        overridden: hdrSel.currentIndex > 0
+                        source: dlg._srcText("hdr", overridden)
+                        onResetRequested: { hdrSel.currentIndex = 0; dlg.saveToModel() }
+                        SegmentedSelector {
+                            id: hdrSel; labels: dlg._hdrLabels
+                            inheritStrip: true
+                            inheritIndex: dlg._inheritIdx(dlg._hdrLabels, "hdr")
+                            KeyNavigation.up: codecSel
+                            KeyNavigation.down: yuv444Sel
+                            onActivated: dlg.saveToModel()
+                        }
+                    }
+                    SettingRow {
+                        label: qsTr("YUV 4:4:4")
+                        overridden: yuv444Sel.currentIndex > 0
+                        source: dlg._srcText("yuv444", overridden)
+                        onResetRequested: { yuv444Sel.currentIndex = 0; dlg.saveToModel() }
+                        SegmentedSelector {
+                            id: yuv444Sel; labels: dlg._yuv444Labels
+                            inheritStrip: true
+                            inheritIndex: dlg._inheritIdx(dlg._yuv444Labels, "yuv444")
+                            KeyNavigation.up: hdrSel
+                            KeyNavigation.down: bitrateSlider
+                            onActivated: dlg.saveToModel()
                         }
                     }
 
@@ -837,9 +912,9 @@ Popup {
                                 Slider {
                                     id: bitrateSlider
                                     anchors.fill: parent
-                                    from: 500
-                                    to: StreamingPreferences.unlockBitrate ? 500000 : 150000
-                                    stepSize: 500
+                                    from: dlg._effPyroWave ? 5000 : 500
+                                    to: StreamingPreferences.getMaxBitrate(dlg._effCodec)
+                                    stepSize: dlg._effPyroWave ? 5000 : 500
                                     snapMode: Slider.SnapAlways
 
                                     onMoved: dlg.setBitrateOverride()
@@ -873,7 +948,7 @@ Popup {
                                         if (event.isAutoRepeat) { event.accepted = true; return }
                                         if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) { _stopAccel(); event.accepted = true }
                                     }
-                                    KeyNavigation.up: fpsCustomBtn
+                                    KeyNavigation.up: yuv444Sel
                                     KeyNavigation.down: fpSel
 
                                     // Where the level below sits, as a position on the groove:
@@ -934,6 +1009,8 @@ Popup {
                         }
                     }
 
+                    GroupHeader { text: qsTr("Display") }
+
                     // Locked when V-Sync is off — the mode would be ignored at runtime
                     // (Session forces FP_OFF without V-Sync). V-Sync is a global-only
                     // preference, so there is nothing to override here to make it apply.
@@ -979,40 +1056,6 @@ Popup {
                             inheritStrip: true
                             inheritIndex: dlg._inheritIdx(dlg._audLabels, "audio")
                             KeyNavigation.up: doneBtn
-                            KeyNavigation.down: doneBtn
-                            onActivated: dlg.saveToModel()
-                        }
-                    }
-                }
-
-                // DECODER — Video codec above HDR, as in Settings
-                Column {
-                    spacing: dlg._px(0)
-
-                    SettingRow {
-                        label: qsTr("Video codec")
-                        overridden: codecSel.currentIndex > 0
-                        source: dlg._srcText("codec", overridden)
-                        onResetRequested: { codecSel.currentIndex = 0; dlg.saveToModel() }
-                        SegmentedSelector {
-                            id: codecSel; labels: dlg._codecLabels
-                            inheritStrip: true
-                            inheritIndex: dlg._inheritIdx(dlg._codecLabels, "codec")
-                            KeyNavigation.up: doneBtn
-                            KeyNavigation.down: hdrSel
-                            onActivated: dlg.saveToModel()
-                        }
-                    }
-                    SettingRow {
-                        label: qsTr("HDR")
-                        overridden: hdrSel.currentIndex > 0
-                        source: dlg._srcText("hdr", overridden)
-                        onResetRequested: { hdrSel.currentIndex = 0; dlg.saveToModel() }
-                        SegmentedSelector {
-                            id: hdrSel; labels: dlg._hdrLabels
-                            inheritStrip: true
-                            inheritIndex: dlg._inheritIdx(dlg._hdrLabels, "hdr")
-                            KeyNavigation.up: codecSel
                             KeyNavigation.down: doneBtn
                             onActivated: dlg.saveToModel()
                         }

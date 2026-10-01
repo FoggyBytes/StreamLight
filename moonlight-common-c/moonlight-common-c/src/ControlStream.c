@@ -1,4 +1,5 @@
 #include "Limelight-internal.h"
+#include "ControllerHaptics.h"
 
 // This is a private header, but it just contains some time macros
 #include <enet/time.h>
@@ -157,6 +158,7 @@ static const short packetTypesGen3[] = {
     -1,     // Rumble triggers (unused)
     -1,     // Set motion event (unused)
     -1,     // Set RGB LED (unused)
+    -1,     // Adaptive triggers (unused)
 };
 static const short packetTypesGen4[] = {
     0x0606, // Request IDR frame
@@ -171,6 +173,7 @@ static const short packetTypesGen4[] = {
     -1,     // Rumble triggers (unused)
     -1,     // Set motion event (unused)
     -1,     // Set RGB LED (unused)
+    -1,     // Adaptive triggers (unused)
 };
 static const short packetTypesGen5[] = {
     0x0305, // Start A
@@ -185,6 +188,7 @@ static const short packetTypesGen5[] = {
     -1,     // Rumble triggers (unused)
     -1,     // Set motion event (unused)
     -1,     // Set RGB LED (unused)
+    -1,     // Adaptive triggers (unused)
 };
 static const short packetTypesGen7[] = {
     0x0305, // Start A
@@ -199,6 +203,7 @@ static const short packetTypesGen7[] = {
     -1,     // Rumble triggers (unused)
     -1,     // Set motion event (unused)
     -1,     // Set RGB LED (unused)
+    -1,     // Adaptive triggers (unused)
 };
 static const short packetTypesGen7Enc[] = {
     0x0302, // Request IDR frame
@@ -1293,7 +1298,17 @@ static void controlReceiveThreadFunc(void* context) {
             }
 
             // Process client callbacks in a separate thread
-            if (needsAsyncCallback(ctlHdr->type)) {
+            if (ctlHdr->type == ML_HAPTICS_PACKET_TYPE) {
+                const uint8_t* payload = (const uint8_t*)(ctlHdr + 1);
+                if (packetLength >= (int)sizeof(*ctlHdr) &&
+                    MlHapticsValidate(payload, packetLength - sizeof(*ctlHdr)) &&
+                    ListenerCallbacks.controllerHaptics) {
+                    ListenerCallbacks.controllerHaptics(MlHapticsRead16(payload + 2),
+                        MlHapticsRead32(payload + 4), payload + ML_HAPTICS_HEADER_SIZE,
+                        MlHapticsRead16(payload + 8));
+                }
+            }
+            else if (needsAsyncCallback(ctlHdr->type)) {
                 queueAsyncCallback(ctlHdr, packetLength);
             }
             else if (ctlHdr->type == packetTypes[IDX_TERMINATION]) {

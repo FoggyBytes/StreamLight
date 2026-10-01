@@ -28,6 +28,19 @@ int main(int argc, char** argv)
         Vrr13::Reserve otherPolicy(version == 16 ? 15 : 16);
         assert(!otherPolicy.loadProfile(words));
     }
+    {
+        const auto startPath = dir.filePath("start-delay.json");
+        assert(Vrr13::loadStartDelay(startPath, "setup-A") == 0);
+        assert(!Vrr13::saveStartDelay(startPath, "", 4000));
+        assert(!Vrr13::saveStartDelay(startPath, "setup-A", 0));
+        assert(Vrr13::saveStartDelay(startPath, "setup-A", 4200));
+        assert(Vrr13::saveStartDelay(startPath, "setup-B", 9100));
+        assert(Vrr13::loadStartDelay(startPath, "setup-A") == 4200);
+        assert(Vrr13::loadStartDelay(startPath, "setup-B") == 9100);
+        assert(Vrr13::loadStartDelay(startPath, "setup-C") == 0);
+        assert(Vrr13::saveStartDelay(startPath, "setup-A", 3100));
+        assert(Vrr13::loadStartDelay(startPath, "setup-A") == 3100);
+    }
     const auto path = dir.filePath("profiles.json");
     Vrr13::Reserve history;
     for (int i = 0; i < 400; ++i)

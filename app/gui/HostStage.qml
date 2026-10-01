@@ -70,7 +70,7 @@ Item {
     readonly property int  _effAudio:   (streamOverride && streamOverride.audio   !== undefined) ? streamOverride.audio   : StreamingPreferences.audioConfig
 
     // Same wording as the host page, deliberately: a host has to read the same on both.
-    function _codecLabel(c) { return c === 1 ? "H.264" : c === 2 ? "HEVC" : c === 4 ? "AV1" : qsTr("Auto codec") }
+    function _codecLabel(c) { return c === 1 ? "H.264" : c === 2 ? "HEVC" : c === 4 ? "AV1" : c === 5 ? "PyroWave" : qsTr("Auto codec") }
     function _audioLabel(a) { return a === 1 ? "5.1" : a === 2 ? "7.1" : qsTr("Stereo") }
 
     function _resLabel() {

@@ -3,6 +3,7 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QDeadlineTimer>
 #include <QStringList>
 #include <QSysInfo>
 #include <QTcpSocket>
@@ -17,6 +18,18 @@
 StreamTweakBridge::StreamTweakBridge(QObject* parent)
     : QObject(parent)
 {
+}
+
+StreamTweakBridge::~StreamTweakBridge()
+{
+    // No callback may run from here on (6.3.1). A request still in flight owns a socket that
+    // is our child, and children are deleted after this body — by which time the object that
+    // made the request is itself being destroyed (every owner holds its bridge as a member).
+    // A connected socket aborts in its own destructor, and aborting can emit disconnected(),
+    // whose handler here calls the owner's callback on a half-destroyed owner. Cutting the
+    // sockets' connections first makes that impossible, whatever the socket does as it goes.
+    for (QTcpSocket* socket : findChildren<QTcpSocket*>(Qt::FindDirectChildrenOnly))
+        socket->disconnect();
 }
 
 // ── Authentication helpers ──────────────────────────────────────────────────
@@ -76,8 +89,8 @@ QString StreamTweakBridge::buildAuthLine(const QString& command)
 // "apply the target you have configured", and StreamTweak 8.1.0 no longer configures one:
 // the client names the speed it wants in SETSPEED.
 //
-// sendRestore() went too — it had no callers at all, in any version. The host has always
-// ended sessions from its own streaming-server log, so the client never needed to say so.
+// (sendRestore() is further down and in use: it is how the client puts the host's link back
+//  when the user answers the prompt. This note used to say it had been removed.)
 
 void StreamTweakBridge::sendShutdown(const QString& hostAddress, bool installUpdates)
 {
@@ -173,6 +186,8 @@ void StreamTweakBridge::sendRawRequest(const QString& hostAddress,
         int nl = buffer->indexOf('\n');
         if (nl >= 0)
             finish(QString::fromUtf8(buffer->left(nl)).trimmed());
+        else if (buffer->size() > MaxReplyBytes)
+            finish(QString());
     });
 
     // If the peer closes without ever sending a newline, fall back to whatever
@@ -301,9 +316,15 @@ QString StreamTweakBridge::requestSync(const QString& hostAddress, const QString
 {
     // Same reason as sendSessionDataSync(): the stream's event loop has returned and the Qt
     // loop is not running yet, so an async socket would never complete.
+    //
+    // One deadline for the whole exchange (6.3.1). Each wait used to get the full timeout of
+    // its own, so a host that trickled its reply a few bytes at a time held the end of the
+    // stream for as long as it kept doing so — with the window already gone and the user
+    // looking at nothing.
+    const QDeadlineTimer deadline(timeoutMs);
     QTcpSocket socket;
     socket.connectToHost(hostAddress, BridgePort);
-    if (!socket.waitForConnected(timeoutMs))
+    if (!socket.waitForConnected(static_cast<int>(deadline.remainingTime())))
         return QString();
 
     QTextStream stream(&socket);
@@ -314,8 +335,11 @@ QString StreamTweakBridge::requestSync(const QString& hostAddress, const QString
     stream.flush();
 
     QByteArray reply;
-    while (!reply.contains('\n') && socket.waitForReadyRead(timeoutMs))
+    while (!reply.contains('\n') && reply.size() <= MaxReplyBytes && !deadline.hasExpired()
+           && socket.waitForReadyRead(static_cast<int>(deadline.remainingTime())))
         reply += socket.readAll();
+    if (!reply.contains('\n') && reply.size() > MaxReplyBytes)
+        return QString();
     socket.disconnectFromHost();
     int nl = reply.indexOf('\n');
     return QString::fromUtf8(nl >= 0 ? reply.left(nl) : reply).trimmed();

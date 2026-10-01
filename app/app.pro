@@ -50,7 +50,7 @@ win32 {
     }
 
     INCLUDEPATH += $$PWD/../libs/windows/include
-    LIBS += dcomp.lib advapi32.lib ws2_32.lib winmm.lib dxva2.lib ole32.lib gdi32.lib user32.lib d3d9.lib dwmapi.lib dbghelp.lib iphlpapi.lib
+    LIBS += dcomp.lib advapi32.lib ws2_32.lib winmm.lib dxva2.lib ole32.lib gdi32.lib user32.lib d3d9.lib dwmapi.lib dbghelp.lib iphlpapi.lib shell32.lib
 }
 macx:!disable-prebuilts {
     INCLUDEPATH += $$PWD/../libs/mac/include $$PWD/../libs/mac/include/SDL2
@@ -226,6 +226,8 @@ SOURCES += \
     streaming/vrrratepolicy.cpp \
     backend/systemproperties.cpp \
     backend/appupdate.cpp \
+    backend/networkbuffers.cpp \
+    diagnostics/gputrace.cpp \
     wm.cpp
 
 HEADERS += \
@@ -290,6 +292,10 @@ HEADERS += \
     streaming/video/streamsettingsoverlay.h \
     backend/systemproperties.h \
     windowsvblankvirtualization.h \
+    backend/networkbuffers.h \
+    diagnostics/gputrace.h \
+    streaming/video/pyrowave/pyrowavebitrate.h \
+    streaming/video/pyrowave/pyrowaveprotocol.h \
     backend/appupdate.h
 
 # Platform-specific renderers and decoders
@@ -329,14 +335,16 @@ ffmpeg {
         streaming/video/ffmpeg-renderers/pacer/vrr/vrrtimingcontroller.h \
         streaming/video/ffmpeg-renderers/pacer/vrr/vrrframedroppolicy.h \
         streaming/video/ffmpeg-renderers/pacer/vrr/vrrtargetwaiter.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/vrrcatchup.h \
+        streaming/video/ffmpeg-renderers/pacer/vrr/receivedeadline.h \
+        streaming/video/ffmpeg-renderers/vrrpreparedframe.h \
         streaming/video/ffmpeg-renderers/pacer/vrr/profile.h \
         streaming/video/ffmpeg-renderers/pacer/vrr/profilecodec.h \
         streaming/video/ffmpeg-renderers/pacer/vrr/intervalbuffer.h \
         streaming/video/ffmpeg-renderers/pacer/vrr/meanmissbuffer.h \
         streaming/video/ffmpeg-renderers/pacer/vrr/reserve.h \
         streaming/video/ffmpeg-renderers/pacer/vrr/tracequeue.h \
-        streaming/video/ffmpeg-renderers/pacer/vrr/workload.h \
-        streaming/video/ffmpeg-renderers/overlaycompletion.h
+        streaming/video/ffmpeg-renderers/pacer/vrr/workload.h
 }
 libva {
     message(VAAPI renderer selected)
@@ -469,12 +477,15 @@ win32:!winrt {
         streaming/video/ffmpeg-renderers/dxva2.cpp \
         streaming/video/ffmpeg-renderers/d3d11va.cpp \
         streaming/video/ffmpeg-renderers/d3d11composition.cpp \
+        streaming/video/ffmpeg-renderers/d3d11pyrowave.cpp \
         streaming/video/ffmpeg-renderers/pacer/dxvsyncsource.cpp
 
     HEADERS += \
         streaming/video/ffmpeg-renderers/dxva2.h \
         streaming/video/ffmpeg-renderers/d3d11va.h \
         streaming/video/ffmpeg-renderers/d3d11composition.h \
+        streaming/video/ffmpeg-renderers/d3d11pyrowave.h \
+        streaming/video/pyrowave/pyrowavesurfaces.h \
         streaming/video/ffmpeg-renderers/presentationclock.h \
         streaming/video/ffmpeg-renderers/dxgipresent.h \
         streaming/video/ffmpeg-renderers/d3d11fencewait.h \
@@ -524,6 +535,32 @@ wayland {
     DEFINES += HAS_WAYLAND
     SOURCES += streaming/video/ffmpeg-renderers/pacer/waylandvsyncsource.cpp
     HEADERS += streaming/video/ffmpeg-renderers/pacer/waylandvsyncsource.h
+}
+
+# PyroWave (6.4.0, from Nonary's vrr18): the codec decodes in Vulkan into D3D11 surfaces it
+# shares with the renderer. The library is the pyrowave/ subproject (see moonlight-qt.pro,
+# whose condition must match this one). Nonary's Linux branch (libplacebo) is not taken.
+win32:!winrt:contains(QT_ARCH, x86_64):!disable-pyrowave {
+    message(PyroWave decoder enabled)
+    CONFIG += pyrowave
+}
+pyrowave {
+    DEFINES += HAVE_PYROWAVE
+
+    SOURCES += \
+        streaming/video/pyrowave/pyrowavedecoder.cpp \
+        streaming/video/pyrowave/pyrowaveframing.cpp
+    HEADERS += \
+        streaming/video/pyrowave/pyrowavedecoder.h \
+        streaming/video/pyrowave/pyrowaveframing.h \
+        streaming/video/pyrowave/pyrowavesurfaces.h
+
+    # Only pyrowave.h is included from the vendored tree
+    INCLUDEPATH += $$PWD/../pyrowave/pyrowave
+
+    win32:CONFIG(release, debug|release): LIBS += -L$$OUT_PWD/../pyrowave/release/ -lpyrowave
+    else:win32:CONFIG(debug, debug|release): LIBS += -L$$OUT_PWD/../pyrowave/debug/ -lpyrowave
+    win32: LIBS += -luser32
 }
 
 RESOURCES += \

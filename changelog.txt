@@ -4,6 +4,47 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+--------------------------------------
+Version 6.4.0 - Fast Lane (01/10/2026)
+--------------------------------------
+
+No StreamTweak update required — 6.4.0 is client-side and works with any host; PyroWave needs a Vibeshine or Vibepollo 2.0 host. StreamTweak 9.1.0, out alongside it, records which codec each stream used and shows PyroWave sessions for what they are. A new video codec for wired networks, the VRR pacing brought up to Nonary's latest, a newer streaming engine, and fixes from a review of the whole app.
+
+✨ NEW FEATURES:
+• PyroWave video codec — a fifth choice in Settings → Video codec and in host and per-game profiles. Every frame is coded on its own, so decoding takes well under a millisecond and a lost packet only blurs part of one picture. It needs hundreds of Mbps, so it is meant for a wired network; hosts that cannot encode it stream H.264
+
+✨ IMPROVEMENTS:
+• PyroWave bitrate up to 3000 Mbps, as in Nonary's build — in Settings, profiles and the in-session panel, in 5 Mbps steps, and a bitrate never moved by hand switches to PyroWave's own default with the codec
+• YUV 4:4:4 in host and per-game profiles —next to the codec it goes with, so a PyroWave profile can stream 4:4:4 while an AV1 one stays 4:2:0
+• VRR pacing updated to Nonary's vrr18 —steadier through slowdowns and frame-rate changes, fewer tearing artefacts on Windows, and decoding no longer holds up presentation
+• Streaming engine updated — FFmpeg 9.0.2, a newer SDL 3.4 and libplacebo, and the protocol at Moonlight's latest
+• Numpad Enter, the arrows, Home, End, Page Up/Down, Insert and Delete reach the host as the keys they are, where the host supports it
+• The controller's state is sent to the host only when it actually changes
+• Performance overlay — the pacing line is named for what it counts (frames this device discarded, not the network), PyroWave adds the frames it skipped before decoding and shows the host encoder as n/a, and the VRR interval error keeps its last value with its age instead of "collecting"
+
+🐛 FIXES:
+• StreamLight can no longer crash on connect on some Windows 11 PCs — the encryption library was built with a protection it does not support
+• Power, Update now, Delete, Rename, profiles and wake now always act on the host you chose — they remembered it by its place in the list, so a host renamed, found on the network or removed while one was under way could send the command to another PC while the dialog still showed the right name
+• Renaming a host no longer moves the selection to a different one
+• Quit and launch starts the game you picked even if the host's library changes while the question is on screen, and leaves the running game alone if the one you picked has gone
+• The host's stats are asked for only while a stream is running — they were requested every second from before the launch until long after the stream ended, and a Stop stream pressed on the host at the wrong moment could close StreamLight instead of the stream
+• The StreamTweak access popup can be closed with the controller, and closing it with B keeps it closed instead of bringing it back a few seconds later
+• Resume and Play again on the Home card ignore a double press, like the host page already did
+• ARM64 devices no longer get a prompt to download a build that does not exist, from Moonlight's download page
+• The "no hardware decoder" warning has its missing space back
+• A small cover on the host page is no longer downloaded again on every visit, and a cover being saved can no longer show up blank
+
+🎨 UI:
+• Settings → Video now holds the Decoder tab too, in three groups — Stream (resolution, frame rate, codec, HDR, 4:4:4 and the bitrate they set the default of), Display and Decoder — and host and per-game profiles follow the same order
+• Unlock bitrate limit is gone — every codec goes up to 500 Mbps, PyroWave to 3000, and the bitrate row says when a wired network is needed
+• The Home header and host tabs, confirmation and error messages, pairing, the shortcut and controller rebinding dialogs and the StreamTweak access popup now scale with the window like the rest of the interface — on a large screen they opened visibly smaller than the page behind them
+• Those dialogs use the same buttons as every other one, confirmation dialogs use a single red, and the cover on the launch screen no longer fades in with Reduce animations on
+• Confirmations, error messages, pairing and the StreamTweak access popup now darken the page behind them like every other dialog — the small editors that open over another dialog or over Settings still don't, so nothing is darkened twice
+
+🙏 THANKS:
+• Thanks to @Guru11063 (https://github.com/FoggyBytes/StreamLight/issues/30) for asking for PyroWave
+• Thanks to Chase Payne (Nonary) for PyroWave support and the VRR pacing, imported from his Moonlight fork
+
 ----------------------------------------------
 Version 6.3.0 - Where You Left It (22/09/2026)
 ----------------------------------------------

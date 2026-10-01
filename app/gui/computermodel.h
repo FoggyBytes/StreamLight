@@ -24,6 +24,16 @@ class ComputerModel : public QAbstractListModel
     Q_PROPERTY(int stageOpacityMin READ stageOpacityMin CONSTANT)
     Q_PROPERTY(int stageOpacityDefault READ stageOpacityDefault CONSTANT)
 
+    /*
+     * Moves every time the rows change places (6.3.1). The list is sorted by name, so a host
+     * renamed, discovered, removed or cloned for Tailscale shifts every row after it — and a
+     * row number held across that names a different host. Anything that has to outlive a
+     * single call (a wake, an update, a dialog left open) keeps the host's uuid instead, and
+     * reads its row back through indexOfUuid() in a binding that also reads this, so the
+     * binding re-runs exactly when the answer can have changed.
+     */
+    Q_PROPERTY(int layoutRevision READ layoutRevision NOTIFY layoutRevisionChanged)
+
     enum Roles
     {
         NameRole = Qt::UserRole,
@@ -62,6 +72,7 @@ public:
     static constexpr int StageOpacityDefault = 90;
     int stageOpacityMin() const     { return StageOpacityMin; }
     int stageOpacityDefault() const { return StageOpacityDefault; }
+    int layoutRevision() const      { return m_LayoutRevision; }
 
     // Must be called before any QAbstractListModel functions
     Q_INVOKABLE void initialize(ComputerManager* computerManager);
@@ -71,6 +82,11 @@ public:
     int rowCount(const QModelIndex &parent) const override;
 
     virtual QHash<int, QByteArray> roleNames() const override;
+
+    /** The host at this row, as something that stays true when the rows move. "" if none. */
+    Q_INVOKABLE QString uuidAt(int computerIndex) const;
+    /** The row this host occupies now, or -1 once it is gone. See layoutRevision. */
+    Q_INVOKABLE int indexOfUuid(const QString& uuid) const;
 
     Q_INVOKABLE void deleteComputer(int computerIndex);
 
@@ -342,6 +358,8 @@ signals:
     void linkMatchProgress(int computerIndex, bool running, QString detail);
     void updateProgressReceived(int computerIndex, QVariantMap state);
 
+    void layoutRevisionChanged();
+
 private slots:
     void handleComputerStateChanged(NvComputer* computer);
 
@@ -349,8 +367,10 @@ private slots:
 
 private:
     static void rememberStreamTweakSeen(const QString& uuid);
+    void bumpLayoutRevision();
 
     QVector<NvComputer*> m_Computers;
+    int m_LayoutRevision = 0;
     ComputerManager* m_ComputerManager;
     StreamTweakBridge m_streamTweakBridge;
     // Keyed by host UUID, not list index: the index shifts whenever the model is

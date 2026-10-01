@@ -17,7 +17,7 @@ Popup {
     signal accepted(string ipAddress)
 
     modal: true
-    Overlay.modal: Rectangle { color: "#cc000000" }
+    Overlay.modal: Rectangle { color: Theme.scrim }
     focus: true
     // Horizontally centred but offset higher up the screen so a virtual
     // keyboard (handheld 1080p) does not cover the dialog while typing.

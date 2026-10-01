@@ -23,7 +23,6 @@
         <file>gui/LinkRestoreDialog.qml</file>
         <file>gui/UpdatePromptDialog.qml</file>
         <file>gui/SettingsResetDialog.qml</file>
-        <file>gui/GamepadMapper.qml</file>
         <file>gui/QuitSegue.qml</file>
         <file>gui/NavigableItemDelegate.qml</file>
         <file>gui/CliQuitStreamSegue.qml</file>
@@ -36,6 +35,7 @@
         <file>gui/SectionTabBar.qml</file>
         <file>gui/OnOffSelector.qml</file>
         <file>gui/PairDialog.qml</file>
+        <file>gui/StreamTweakPinDialog.qml</file>
         <file>gui/AddHostDialog.qml</file>
         <file>gui/PowerDialog.qml</file>
         <file>gui/DialogButton.qml</file>

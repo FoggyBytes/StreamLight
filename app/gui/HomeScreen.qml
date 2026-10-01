@@ -47,9 +47,74 @@ FocusScope {
     // tab must report -1 rather than an index one past the end.
     readonly property int currentHostIndex: addTabSelected ? -1 : tabIndex
 
+    /*
+     * ── Hosts are held by uuid, never by row (6.3.1) ─────────────────────────────────────
+     *
+     * The rows are sorted by name, so a host renamed, discovered, removed or cloned for
+     * Tailscale moves every row after it. A row number is only good for the call it is read
+     * in. Anything that lives longer — a wake, an update, a dialog left open, the end of a
+     * session hours later — keeps the host's uuid and asks for its row when it needs one.
+     *
+     * ⚠️ This used to hold rows, and nothing noticed the list move: a Power, an Update now or
+     * a Delete confirmed after a host appeared went to whichever host had taken the row, while
+     * the dialog still showed the name of the one the user had picked.
+     */
+    function hostIndexOf(uuid) {
+        // layoutRevision is read for the binding, not for its value (it is never negative):
+        // indexOfUuid() is an invokable and QML cannot see what it depends on, so this read is
+        // what makes every binding over this function re-run when the rows move.
+        if (!computerModel || computerModel.layoutRevision < 0 || !uuid) return -1
+        return computerModel.indexOfUuid(uuid)
+    }
+    function hostUuidAt(idx) {
+        return computerModel ? computerModel.uuidAt(idx) : ""
+    }
+
+    // The host the strip has selected, by identity. tabIndex is a row, so on its own a rename
+    // or a host appearing left the selection on the number and moved it to another host.
+    property string _selectedUuid: ""
+
+    Connections {
+        target: computerModel
+        function onLayoutRevisionChanged() {
+            var i = homeScreen.hostIndexOf(homeScreen._selectedUuid)
+            if (i >= 0 && i !== homeScreen.tabIndex) homeScreen.tabIndex = i
+            homeScreen._dropFlowsOnMissingHosts()
+        }
+    }
+
+    // A flow whose host has left the list can never finish, and a wake or a link restore left
+    // running also holds the self-update's Install now (see the Binding on installBlocked).
+    // Asked of the uuid directly, not of the derived rows: those are bindings on the same
+    // signal this runs on, and nothing says which of the two is told first.
+    function _dropFlowsOnMissingHosts() {
+        if (wakeActive && hostIndexOf(wakeUuid) < 0)
+            _endWake()
+        if (updateJobActive && hostIndexOf(updateJobHostUuid) < 0)
+            clearUpdateJob()
+        if (linkRestoreActive && hostIndexOf(linkRestoreHostUuid) < 0)
+            _clearLinkRestoreWatch()
+        if (linkAskHostUuid !== "" && hostIndexOf(linkAskHostUuid) < 0) {
+            linkAskHostUuid = ""
+            linkAskHostName = ""
+        }
+    }
+
     // 0 = tab strip · 1 = action row. The app opens with the focus on the actions and
     // "Open" selected, because that is what a user came to press.
     property int focusZone: 1
+
+    /*
+     * The interface scale: the shell's, the one the clock across this header and every dialog
+     * opened over this screen are drawn at (6.3.1). This header, the tab strip and the stage's
+     * margins were the last chrome still in fixed pixels. Since the clock started scaling
+     * (5.7.0) the brand row's "same 22 and 60 as the clock" held at one window size only, and
+     * on a large screen the strip sat at 1.00 between a clock and a host card at 1.60.
+     * Hairlines stay 1 px, as everywhere else. Always called qualified — `homeScreen._px` —
+     * because HostStage, declared in this file, has a `_px` of its own at a different scale.
+     */
+    readonly property real _u: Theme.uiScale
+    function _px(n) { return Math.round(n * _u) }
 
     // The selected host's full record, pushed up by its probe below. One object rather than
     // a dozen bindings into a delegate: the stage needs all of it at once and nothing else
@@ -117,7 +182,7 @@ FocusScope {
 
     function openPowerClientOnly() {
         powerDialog.clientOnly         = true    // no host row at all
-        powerDialog.pcIndex            = -1
+        powerDialog.pcUuid             = ""
         powerDialog.hostName           = ""
         powerDialog.authState          = "none"
         powerDialog.clientModes        = SystemProperties.clientPowerModes()
@@ -148,7 +213,9 @@ FocusScope {
     // so the flow continues into the PIN pad and only calls the host ready once its link
     // speed has been matched. Every step is asked, never assumed: a host that is already
     // unlocked skips the pad, and a host that does not know LOCKSTATE skips the whole thing.
-    property int    wakeIndex : -1
+    // By uuid, see hostIndexOf(): a wake lasts up to two minutes, plenty for the rows to move.
+    property string wakeUuid : ""
+    readonly property int wakeIndex : hostIndexOf(wakeUuid)
     property string wakeHostName : ""
     property int    wakeStep : 0        // mirrors WakeDialog's step rows
     property bool   wakeActive : false
@@ -218,7 +285,7 @@ FocusScope {
     }
 
     function startWake(idx, hostName) {
-        wakeIndex    = idx
+        wakeUuid     = hostUuidAt(idx)
         wakeHostName = hostName
         wakeStep      = 0
         wakeDetail    = ""
@@ -259,23 +326,24 @@ FocusScope {
     // The host that just came all the way through, so its card can say so. Transient: on a
     // host that is simply online "ready" is not news, it is the normal state, and a chip that
     // never goes away stops being read.
-    property int readyIndex : -1
+    property string readyUuid : ""
+    readonly property int readyIndex : hostIndexOf(readyUuid)
 
     function _endWake(ready) {
         if (ready === true && wakeIndex >= 0) {
-            readyIndex = wakeIndex
+            readyUuid = wakeUuid
             readyTimer.restart()
         }
         // The host no longer reports the unlock session: nothing left to hide. When it still
         // does, the probe clears the mark the moment it stops (onPBusyChanged).
         if (_unlockCarrierIndex >= 0) {
             var carrier = hostProbes.itemAt(_unlockCarrierIndex)
-            if (!carrier || !carrier.pBusy) _unlockCarrierIndex = -1
+            if (!carrier || !carrier.pBusy) _unlockCarrierUuid = ""
         }
         wakeActive     = false
         wakeUnlocking  = false
         _waitingForQuit = false
-        wakeIndex      = -1
+        wakeUuid       = ""
         wakeWaitTimer.stop()
         appListWaitTimer.stop()
         quitWaitTimer.stop()
@@ -285,7 +353,7 @@ FocusScope {
     Timer {
         id: readyTimer
         interval: 12000
-        onTriggered: homeScreen.readyIndex = -1
+        onTriggered: homeScreen.readyUuid = ""
     }
 
     Timer {
@@ -330,8 +398,17 @@ FocusScope {
      * 6.0.0 the card shows the running session with Resume in that case (resumeRunning), so
      * this branch is only reached when the host runs something its app list does not name.
      */
+    // The two guards the host page's own launch goes through (AppsScreen's
+    // launchOrResumeSelectedApp), which the card's buttons had never had (6.3.1): a press left
+    // over from a stream that has just popped, and a second A while the first launch is still
+    // being pushed — which would queue a second session to start the moment the first ended.
+    function _launchBlocked() {
+        return !!Window.window && (Window.window._streamJustEnded === true
+                                   || Window.window._streamLaunching === true)
+    }
+
     function resumeLastPlayed(h) {
-        if (!h || !h.online || !h.paired) return
+        if (!h || !h.online || !h.paired || _launchBlocked()) return
 
         var lp = computerModel.lastPlayedFor(h.index)
         if (!lp || lp.name === undefined || lp.name === "") return
@@ -381,7 +458,7 @@ FocusScope {
      * stays on the host page.
      */
     function resumeRunning(h) {
-        if (!h || !h.online || !h.paired) return
+        if (!h || !h.online || !h.paired || _launchBlocked()) return
 
         var running = computerModel.runningAppFor(h.index)
         if (!running || running.name === undefined || running.name === "") {
@@ -412,6 +489,10 @@ FocusScope {
             return
         }
 
+        // The callback below runs when the session ends, hours from now: it finds the host
+        // again by uuid rather than trusting the row it had at launch (see hostIndexOf()).
+        var hostUuid = hostUuidAt(h.index)
+
         var segue = comp.createObject(stackView, {
             "appName":  name,
             "boxArt":   (cover !== undefined ? cover : ""),
@@ -437,8 +518,10 @@ FocusScope {
              */
             "onSessionEndedFn": function() {
                 if (!homeScreen.appShell) return
-                homeScreen.appShell.noteStreamEnded(h.index, h.name)
-                homeScreen.appShell.showApps(h.index, computerModel, false,
+                var idx = homeScreen.hostIndexOf(hostUuid)
+                if (idx < 0) return                     // the host was removed meanwhile
+                homeScreen.appShell.noteStreamEnded(idx, h.name)
+                homeScreen.appShell.showApps(idx, computerModel, false,
                                              h.name, h.address, h.gpuModel,
                                              h.isTailscaleClone)
             }
@@ -485,19 +568,22 @@ FocusScope {
             return
         }
         session.setUnlockMode(true)
-        _unlockCarrierIndex = wakeIndex
+        _unlockCarrierUuid = wakeUuid
 
         // Declared before the session exists, so the host has the mark in hand by the time
         // its streaming server reports a client.
         computerModel.markUnlockSession(wakeIndex, true)
         wakeUnlocking = true
 
+        // A binding, not the number: the segue polls the lock state for as long as the pad
+        // is up and ends the unlock mark afterwards, and the rows can move meanwhile.
+        var carrierUuid = wakeUuid
         var segue = comp.createObject(stackView, {
             "appName":        "Desktop",
             "session":        session,
             "unlockMode":     true,
             "computerModel":  computerModel,
-            "pcIndex":        wakeIndex,
+            "pcIndex":        Qt.binding(function() { return homeScreen.hostIndexOf(carrierUuid) }),
             "hostName":       wakeHostName,
             "onUnlockResultFn": function (ok) { homeScreen._wakeUnlockDone(ok) }
         })
@@ -541,7 +627,8 @@ FocusScope {
      *    (onPBusyChanged in the probe) — and only while what it reports is the Desktop, so a
      *    game the user launches next is shown as soon as it runs.
      */
-    property int _unlockCarrierIndex : -1
+    property string _unlockCarrierUuid : ""
+    readonly property int _unlockCarrierIndex : hostIndexOf(_unlockCarrierUuid)
 
     /*
      * Any host is streaming right now (6.0.0). AppShell hands it to AmbientBackground, whose
@@ -776,7 +863,8 @@ FocusScope {
     // the link back takes about twenty seconds and used to happen with no sign of it at all.
     property bool   linkRestoreActive: false      // a watch is running
     property bool   linkRestoreVisible: false     // …and there is something worth showing
-    property int    linkRestoreHostIndex: -1
+    property string linkRestoreHostUuid: ""                // by uuid, see hostIndexOf()
+    readonly property int linkRestoreHostIndex: hostIndexOf(linkRestoreHostUuid)
     property string linkRestoreHostName: ""
     property bool   linkRestoreDone: false
     property string linkRestoreSpeed: ""
@@ -801,7 +889,10 @@ FocusScope {
     // So a session ending only *records* that this host may have something to put back, and
     // the question is put on the way back to the host list — once per session, never while
     // one is still running.
-    property int    linkAskHostIndex: -1
+    // By uuid, see hostIndexOf(): the question is recorded when a session ends — possibly
+    // hours after it began — and asked later still.
+    property string linkAskHostUuid: ""
+    readonly property int linkAskHostIndex: hostIndexOf(linkAskHostUuid)
     property string linkAskHostName: ""
     property bool   linkAskProbing: false
 
@@ -829,8 +920,8 @@ FocusScope {
 
     function noteStreamEnded(idx, hostName) {
         if (idx < 0) return
-        linkAskHostIndex = idx
-        linkAskHostName  = hostName
+        linkAskHostUuid = hostUuidAt(idx)
+        linkAskHostName = hostName
     }
 
     // Arriving on the host list from a host page. Ask the host what state it is actually in
@@ -847,18 +938,18 @@ FocusScope {
         linkAskProbing = false
         linkAskProbeTimer.stop()
 
-        var idx  = linkAskHostIndex
+        var uuid = linkAskHostUuid
         var name = linkAskHostName
         // Asked once per session either way: whether they say yes, say no, or the host turns
         // out to have nothing to put back, the question is spent until the next session.
-        linkAskHostIndex = -1
-        linkAskHostName  = ""
+        linkAskHostUuid = ""
+        linkAskHostName = ""
 
         if (info.switched !== true) return          // nothing was ever switched
         if (info.sessionActive === true) return     // still streaming, or paused and resumable
 
         linkRestoreDialog.hostName = name
-        linkRestoreDialog.pcIndex  = idx
+        linkRestoreDialog.pcUuid   = uuid
         linkRestoreDialog.open()
     }
 
@@ -877,7 +968,7 @@ FocusScope {
         // ⚠️ Stop the previous confirmation before starting: it clears the whole watch when it
         // fires, so left running it would tear down the one being armed here a few seconds in.
         linkRestoreDoneTimer.stop()
-        linkRestoreHostIndex = idx
+        linkRestoreHostUuid  = hostUuidAt(idx)
         linkRestoreHostName  = hostName
         linkRestoreDone      = false
         linkRestoreVisible   = false
@@ -900,7 +991,7 @@ FocusScope {
         linkRestoreActive   = false
         linkRestoreVisible  = false
         linkRestoreDone     = false
-        linkRestoreHostIndex = -1
+        linkRestoreHostUuid = ""
     }
 
     Timer {
@@ -968,7 +1059,10 @@ FocusScope {
 
     // ── Remote "Update host" job state (one at a time, survives popup close) ───
     property bool   updateJobActive: false
-    property int    updateJobHostIndex: -1
+    // By uuid, see hostIndexOf(): the scan runs for minutes before Install is pressed, and
+    // Install is the one command here that reboots a machine.
+    property string updateJobHostUuid: ""
+    readonly property int updateJobHostIndex: hostIndexOf(updateJobHostUuid)
     property string updateJobHostName: ""
     property string updateJobPhase: "IDLE"
     property string updateJobMessage: ""
@@ -980,7 +1074,7 @@ FocusScope {
 
     function startUpdateCheckFor(index, name) {
         if (updateJobActive) { openUpdateDialog(); return }   // one job at a time
-        updateJobHostIndex = index
+        updateJobHostUuid = hostUuidAt(index)
         updateJobHostName = name
         updateJobActive = true
         _updateInstallStarted = false
@@ -1014,29 +1108,37 @@ FocusScope {
     property string stPinValue: ""
     property string stPinHostName: ""
     property string stPinHostAddr: ""
-    property int    stPinHost: -1
-    property var    stPinDismissed: ({})   // idx -> true while the user has dismissed it
+    // Both by uuid, see hostIndexOf(): a dismissal filed under a row would silence whichever
+    // host took that row next, and leave the one dismissed free to nag again.
+    property string stPinHostUuid: ""
+    property var    stPinDismissed: ({})   // uuid -> true while the user has dismissed it
     function stShowPin(idx, name, addr, pin) {
-        if (stPinDismissed[idx]) return     // don't re-nag after a manual dismiss
+        var uuid = hostUuidAt(idx)
+        if (stPinDismissed[uuid]) return    // don't re-nag after a manual dismiss
         stPinValue = pin
         stPinHostName = name
         stPinHostAddr = addr
-        stPinHost = idx
+        stPinHostUuid = uuid
         stPinDialog.open()
     }
     function stHidePin(idx) {
-        if (stPinHost === idx) {
-            stPinHost = -1
+        var uuid = hostUuidAt(idx)
+        if (stPinHostUuid === uuid) {
+            stPinHostUuid = ""
             stPinDialog.close()
         }
-        delete stPinDismissed[idx]          // state changed → allow showing again later
+        delete stPinDismissed[uuid]         // state changed → allow showing again later
     }
     function stForcePin(idx) {              // user explicitly re-requested access
-        delete stPinDismissed[idx]
+        delete stPinDismissed[hostUuidAt(idx)]
     }
 
     Component.onCompleted: {
         ComputerManager.computerAddCompleted.connect(addComplete)
+
+        // The host the app opens on is selected without tabIndex moving: name it (see
+        // _selectedUuid).
+        if (!addTabSelected) _selectedUuid = hostUuidAt(tabIndex)
 
         // ⚠️ Deferred by a tick rather than opened here: on the first launch after the
         // 5.4.0 store change the host list is empty, and opening a modal Popup while
@@ -1141,7 +1243,7 @@ FocusScope {
 
             // The unlock's Desktop session has really gone once the host stops reporting it.
             onPBusyChanged: if (!pBusy && homeScreen._unlockCarrierIndex === index)
-                                homeScreen._unlockCarrierIndex = -1
+                                homeScreen._unlockCarrierUuid = ""
 
             // This host's StreamTweak switch. Every probe below is bound to it, so turning it
             // off in Settings silences them in the same frame.
@@ -1468,9 +1570,14 @@ FocusScope {
     onHostCountChanged: {
         if (tabIndex > hostCount) tabIndex = hostCount
         if (addTabSelected) currentHost = null
+        // The first host to show up is selected without tabIndex moving, so it is named here.
+        if (_selectedUuid === "" && !addTabSelected) _selectedUuid = hostUuidAt(tabIndex)
     }
 
-    onTabIndexChanged: if (addTabSelected) currentHost = null
+    onTabIndexChanged: {
+        if (addTabSelected) currentHost = null
+        _selectedUuid = addTabSelected ? "" : hostUuidAt(tabIndex)
+    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // Navigation
@@ -1565,10 +1672,12 @@ FocusScope {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.leftMargin: 44
-        anchors.rightMargin: 44
+        anchors.leftMargin: homeScreen._px(44)
+        anchors.rightMargin: homeScreen._px(44)
         /*
-         * 22 and 60 are the clock's own top and height, not free numbers.
+         * 22 and 60 are the clock's own top and height, not free numbers — at the clock's own
+         * scale too (see homeScreen._u), or they stop matching the moment the window is not
+         * 1330 wide.
          *
          * The right corner is one strong figure with a quiet line under it; this is the same
          * object mirrored, built from the same two sizes — 30 over 13, four pixels apart, which
@@ -1585,19 +1694,19 @@ FocusScope {
          * `topMargin: 22` for all three screens, so a brand block that matches its height is one
          * number nobody has to re-tune here later.
          */
-        anchors.topMargin: 22
-        height: 60
+        anchors.topMargin: homeScreen._px(22)
+        height: homeScreen._px(60)
 
         Image {
             id: brandIcon
             source: "qrc:/streamlight.ico"
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            width: 46; height: 46
+            width: homeScreen._px(46); height: homeScreen._px(46)
             // Rasterise at device-pixel resolution so HiDPI displays get a sharp image
             // regardless of Windows scaling (100% / 150% / 200%).
-            sourceSize.width:  46 * Screen.devicePixelRatio
-            sourceSize.height: 46 * Screen.devicePixelRatio
+            sourceSize.width:  homeScreen._px(46) * Screen.devicePixelRatio
+            sourceSize.height: homeScreen._px(46) * Screen.devicePixelRatio
             fillMode: Image.PreserveAspectFit
             smooth: true
             mipmap: true
@@ -1605,28 +1714,28 @@ FocusScope {
 
         Column {
             anchors.left: brandIcon.right
-            anchors.leftMargin: 14
+            anchors.leftMargin: homeScreen._px(14)
             anchors.verticalCenter: brandIcon.verticalCenter
             // The cluster's own spacing, so the gap under the wordmark matches the gap under
             // the clock opposite it.
-            spacing: 4
+            spacing: homeScreen._px(4)
 
             // Uniform wordmark: "STREAMLIGHT" all caps, single size, Black weight, wide
             // letter-spacing. Avoids the optical-weight mismatch of synthesised small-caps.
             Label {
                 text: "STREAMLIGHT"
                 font.family: Theme.family
-                font.pixelSize: Theme.fontH1
+                font.pixelSize: homeScreen._px(Theme.fontH1)
                 font.weight: Font.Black
                 font.bold: true
-                font.letterSpacing: 3.6
+                font.letterSpacing: 3.6 * homeScreen._u
                 color: Theme.text
             }
 
             Label {
                 text: qsTr("a Moonlight fork")
                 font.family: Theme.family
-                font.pixelSize: Theme.fontSmall
+                font.pixelSize: homeScreen._px(Theme.fontSmall)
                 color: Theme.text3
             }
         }
@@ -1644,10 +1753,10 @@ FocusScope {
         anchors.top: brandRow.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.topMargin: 18
-        anchors.leftMargin: 44
-        anchors.rightMargin: 44
-        height: 44
+        anchors.topMargin: homeScreen._px(18)
+        anchors.leftMargin: homeScreen._px(44)
+        anchors.rightMargin: homeScreen._px(44)
+        height: homeScreen._px(44)
 
         /*
          * The strip, with its triggers as its two ends.
@@ -1661,7 +1770,7 @@ FocusScope {
             id: stripRow
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 14
+            spacing: homeScreen._px(14)
 
             // One host is enough: the strip always carries "Add a host" as its last tab, so
             // there are still two stops and the triggers do move. Requiring two would hide
@@ -1671,12 +1780,12 @@ FocusScope {
                        ? [{ btn: "LT", key: "PgUp", dir: -1 }] : []
                 delegate: Item {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 44; height: 30
+                    width: homeScreen._px(44); height: homeScreen._px(30)
                     ActionHint {
                         anchors.centerIn: parent
                         buttonKey: modelData.btn
                         keyLabel:  modelData.key
-                        size: 28
+                        size: homeScreen._px(28)
                         opacity: ltMouse.containsMouse ? 1.0 : 0.85
                     }
                     // Clickable, because a mouse has no triggers and the strip must not become
@@ -1693,7 +1802,7 @@ FocusScope {
 
         Row {
             id: tabRow
-            spacing: 8
+            spacing: homeScreen._px(8)
 
             Repeater {
                 model: hostProbes.count + 1     // hosts, then "Add a host"
@@ -1708,9 +1817,9 @@ FocusScope {
                         _selected && homeScreen.focusZone === 0 && !homeScreen._pointerMode
                     readonly property bool _hovered:  tabMouse.containsMouse && homeScreen._pointerMode
 
-                    height: 40
-                    width: tabContent.implicitWidth + 40
-                    radius: 9
+                    height: homeScreen._px(40)
+                    width: tabContent.implicitWidth + homeScreen._px(40)
+                    radius: homeScreen._px(9)
                     color: _selected || _hovered ? Theme.cardHigh : "transparent"
                     border.width: _focused ? 2 : 1
                     border.color: _focused  ? Theme.accent
@@ -1720,15 +1829,15 @@ FocusScope {
                     Row {
                         id: tabContent
                         anchors.centerIn: parent
-                        spacing: 10
+                        spacing: homeScreen._px(10)
 
                         // Connectivity at a glance, so a strip of five hosts says which ones
                         // are up without selecting each in turn.
                         Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
                             visible: !tabItem._isAdd
-                            width: 8; height: 8
-                            radius: 4
+                            width: homeScreen._px(8); height: width
+                            radius: width / 2
                             color: !tabItem._probe          ? Theme.offline
                                  : tabItem._probe.pUnknown  ? Theme.text3
                                  : tabItem._probe.pOnline && tabItem._probe.pPaired ? Theme.online
@@ -1742,7 +1851,7 @@ FocusScope {
                                                  : (tabItem._probe ? tabItem._probe.pName.toUpperCase() : "")
                             color: tabItem._selected ? Theme.text : Theme.text3
                             font.family: Theme.family
-                            font.pixelSize: Theme.fontTitle
+                            font.pixelSize: homeScreen._px(Theme.fontTitle)
                             font.weight: Font.DemiBold
                         }
                     }
@@ -1767,12 +1876,12 @@ FocusScope {
                        ? [{ btn: "RT", key: "PgDn", dir: 1 }] : []
                 delegate: Item {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 44; height: 30
+                    width: homeScreen._px(44); height: homeScreen._px(30)
                     ActionHint {
                         anchors.centerIn: parent
                         buttonKey: modelData.btn
                         keyLabel:  modelData.key
-                        size: 28
+                        size: homeScreen._px(28)
                         opacity: rtMouse.containsMouse ? 1.0 : 0.85
                     }
                     MouseArea {
@@ -1796,10 +1905,10 @@ FocusScope {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        anchors.topMargin: 14
-        anchors.leftMargin: 44
-        anchors.rightMargin: 44
-        anchors.bottomMargin: 18
+        anchors.topMargin: homeScreen._px(14)
+        anchors.leftMargin: homeScreen._px(44)
+        anchors.rightMargin: homeScreen._px(44)
+        anchors.bottomMargin: homeScreen._px(18)
 
         readonly property var _h: homeScreen.currentHost
 
@@ -1938,8 +2047,10 @@ FocusScope {
             startWake(h.index, h.name)
             break
 
+        // The dialogs below are handed the host by uuid and read its row back through a
+        // binding: any of them can stay open while the list moves (see hostIndexOf()).
         case "profiles":
-            hostProfilesDialog.pcIndex  = h.index
+            hostProfilesDialog.pcUuid   = hostUuidAt(h.index)
             hostProfilesDialog.hostName = h.name
             hostProfilesDialog.reload()
             hostProfilesDialog.open()
@@ -1971,13 +2082,13 @@ FocusScope {
             break
 
         case "rename":
-            renamePcDialog.pcIndex = h.index
+            renamePcDialog.pcUuid = hostUuidAt(h.index)
             renamePcDialog.originalName = h.name
             renamePcDialog.open()
             break
 
         case "delete":
-            deletePcDialog.pcIndex = h.index
+            deletePcDialog.pcUuid = hostUuidAt(h.index)
             deletePcDialog.pcName = h.name
             deletePcDialog.open()
             break
@@ -1994,7 +2105,7 @@ FocusScope {
             stageBackgroundDialog.opacityMin     = homeScreen.computerModel.stageOpacityMin
             stageBackgroundDialog.currentOpacity = h.stageOpacity
                                                    || homeScreen.computerModel.stageOpacityDefault
-            stageBackgroundDialog.pcIndex      = h.index
+            stageBackgroundDialog.pcUuid       = hostUuidAt(h.index)
             stageBackgroundDialog.open()
             break
 
@@ -2014,7 +2125,7 @@ FocusScope {
         case "power":
             if (!h.online || !h.paired) { openPowerClientOnly(); return }
             powerDialog.clientOnly        = false
-            powerDialog.pcIndex           = h.index
+            powerDialog.pcUuid            = hostUuidAt(h.index)
             powerDialog.hostName          = h.name
             powerDialog.authState         = h.auth
             // This device's modes are read here, on every open; the host's arrive over the
@@ -2121,6 +2232,8 @@ FocusScope {
     HostProfilesDialog {
         id: hostProfilesDialog
         computerModel: homeScreen.computerModel
+        property string pcUuid: ""
+        pcIndex: homeScreen.hostIndexOf(pcUuid)
         // Restore gamepad focus so navigation keeps working after the modal closes
         // (otherwise nothing is focused on a handheld).
         onClosed: navRoot.forceActiveFocus()
@@ -2130,7 +2243,8 @@ FocusScope {
     // judged against the actual stage instead of a swatch.
     StageBackgroundDialog {
         id: stageBackgroundDialog
-        property int pcIndex: -1
+        property string pcUuid: ""
+        readonly property int pcIndex: homeScreen.hostIndexOf(pcUuid)
         onChosen: function(imagePath, seedColor) {
             if (pcIndex < 0) return
             homeScreen.computerModel.setHostStageBackground(pcIndex, imagePath, seedColor)
@@ -2154,13 +2268,14 @@ FocusScope {
 
     NavigableMessageDialog {
         id: deletePcDialog
-        property int pcIndex: -1
+        property string pcUuid: ""
+        readonly property int pcIndex: homeScreen.hostIndexOf(pcUuid)
         property string pcName: ""
         headerText: qsTr("DELETE HOST")
         affirmativeIsDanger: true
         text: qsTr("Are you sure you want to remove '%1'?").arg(pcName)
         standardButtons: Dialog.Yes | Dialog.No
-        onAccepted: computerModel.deleteComputer(pcIndex)
+        onAccepted: if (pcIndex >= 0) computerModel.deleteComputer(pcIndex)
         onClosed: navRoot.forceActiveFocus()
     }
 
@@ -2180,16 +2295,13 @@ FocusScope {
         function connectionTestComplete(result, blockedPorts) {
             if (result === -1) {
                 text = qsTr("The test could not run — none of StreamLight's test servers were reachable. Check this device's Internet connection and try again.")
-                imageSrc = "qrc:/res/baseline-warning-24px.svg"
             } else if (result === 0) {
                 text = qsTr("This network does not appear to be blocking StreamLight. If connecting still fails, check the host's firewall.") + "\n\n" +
                        qsTr("To stream over the Internet, run the Moonlight Internet Hosting Tool on the host and use its Internet Streaming Tester.")
-                imageSrc = "qrc:/res/baseline-check_circle_outline-24px.svg"
             } else {
                 text = qsTr("This network is blocking StreamLight. Streaming over the Internet may not work while you are on it.") + "\n\n" +
                        qsTr("The following network ports were blocked:") + "\n"
                 text += blockedPorts
-                imageSrc = "qrc:/res/baseline-error_outline-24px.svg"
             }
             showSpinner = false
         }
@@ -2199,7 +2311,8 @@ FocusScope {
         id: renamePcDialog
         property string label: qsTr("Enter the new name for this host")
         property string originalName
-        property int pcIndex: -1
+        property string pcUuid: ""
+        readonly property int pcIndex: homeScreen.hostIndexOf(pcUuid)
         standardButtons: Dialog.Ok | Dialog.Cancel
         onOpened: {
             editText.text = renamePcDialog.originalName
@@ -2208,20 +2321,21 @@ FocusScope {
         }
         onClosed: { editText.clear(); navRoot.forceActiveFocus() }
         onAccepted: {
-            if (editText.text) {
+            if (editText.text && pcIndex >= 0) {
                 computerModel.renameComputer(pcIndex, editText.text)
             }
         }
 
+        // At the dialog's scale, like the message dialogs it shares its frame with.
         ColumnLayout {
-            spacing: 22
+            spacing: renamePcDialog._px(22)
 
             Label {
                 text: qsTr("RENAME HOST")
                 font.family: Theme.family
-                font.pixelSize: Theme.fontSmall
+                font.pixelSize: renamePcDialog._px(Theme.fontSmall)
                 font.bold: true
-                font.letterSpacing: 1.6
+                font.letterSpacing: 1.6 * renamePcDialog._u
                 color: Theme.text3
                 Layout.alignment: Qt.AlignHCenter
             }
@@ -2229,19 +2343,19 @@ FocusScope {
             Label {
                 text: renamePcDialog.label
                 font.family: Theme.family
-                font.pixelSize: Theme.fontTitle
+                font.pixelSize: renamePcDialog._px(Theme.fontTitle)
                 color: Theme.text
                 wrapMode: Text.Wrap
                 horizontalAlignment: Text.AlignHCenter
                 Layout.alignment: Qt.AlignHCenter
-                Layout.maximumWidth: 520
+                Layout.maximumWidth: renamePcDialog._px(520)
             }
 
             TextField {
                 id: editText
                 Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: 360
-                implicitHeight: 48
+                Layout.preferredWidth: renamePcDialog._px(360)
+                implicitHeight: renamePcDialog._px(48)
                 /*
                  * The same 15 characters Windows itself allows for a computer name — the
                  * NetBIOS limit, and what the OS rename dialog enforces.
@@ -2261,14 +2375,14 @@ FocusScope {
                 selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
                 selectedTextColor: Theme.onAccent
                 font.family: Theme.family
-                font.pixelSize: Theme.fontTitle
+                font.pixelSize: renamePcDialog._px(Theme.fontTitle)
                 font.bold: true
                 horizontalAlignment: TextInput.AlignHCenter
                 focus: true
 
                 background: Rectangle {
                     color: Theme.ground
-                    radius: 8
+                    radius: renamePcDialog._px(8)
                     border.color: editText.activeFocus ? Theme.accent : Theme.line
                     border.width: editText.activeFocus ? 2 : 1
                 }
@@ -2308,6 +2422,8 @@ FocusScope {
 
     LinkRestoreDialog {
         id: linkRestoreDialog
+        property string pcUuid: ""
+        pcIndex: homeScreen.hostIndexOf(pcUuid)
         onClosed: navRoot.forceActiveFocus()
         onRestoreChosen: function(index) {
             homeScreen.startLinkRestoreWatch(index, linkRestoreDialog.hostName)
@@ -2319,6 +2435,8 @@ FocusScope {
     // command: once this device is asleep or off, nothing is left to send it.
     PowerDialog {
         id: powerDialog
+        property string pcUuid: ""
+        pcIndex: homeScreen.hostIndexOf(pcUuid)
         onClosed: navRoot.forceActiveFocus()
         onConfirmed: function(hostMode, hostUpdates, clientMode, clientUpdates) {
             if (hostMode === "keep") {
@@ -2330,6 +2448,11 @@ FocusScope {
             clientPowerTimer.mode = clientMode
             clientPowerTimer.installUpdates = clientUpdates
 
+            // The host this dialog was opened on, or nobody: gone from the list means nothing
+            // is sent — and this device, which only ever follows the host, stays on as well.
+            if (powerDialog.pcIndex < 0)
+                return
+
             if (powerDialog.hostCaps === "legacy") {
                 // StreamTweak older than 8.6.0: the old SHUTDOWN, fire-and-forget, so this
                 // device waits a moment for the bridge socket to finish writing it.
@@ -2340,7 +2463,7 @@ FocusScope {
             }
 
             // POWER is answered: this device acts on the host's OK (onPowerHostResult).
-            clientPowerTimer.pendingHost = powerDialog.pcIndex
+            clientPowerTimer.pendingUuid = powerDialog.pcUuid
             homeScreen.computerModel.powerHost(powerDialog.pcIndex, hostMode, hostUpdates)
         }
     }
@@ -2364,9 +2487,10 @@ FocusScope {
             }
         }
         function onPowerHostResult(idx, mode, ok) {
-            if (idx !== clientPowerTimer.pendingHost)
+            if (clientPowerTimer.pendingUuid === ""
+                    || idx !== homeScreen.hostIndexOf(clientPowerTimer.pendingUuid))
                 return
-            clientPowerTimer.pendingHost = -1
+            clientPowerTimer.pendingUuid = ""
             // A refusal (or no answer) leaves this device on too: switching off the machine in
             // your hands while the host stayed up would hide that anything went wrong.
             if (ok && clientPowerTimer.mode !== "keep")
@@ -2378,7 +2502,7 @@ FocusScope {
         id: clientPowerTimer
         property string mode: "keep"
         property bool installUpdates: false
-        property int pendingHost: -1
+        property string pendingUuid: ""          // the host whose OK this device waits for
         // After an answered POWER the host already has the command; the pause only matters
         // for the old fire-and-forget SHUTDOWN, whose socket must finish writing.
         interval: powerDialog.hostCaps === "legacy" ? 1800 : 300
@@ -2446,82 +2570,29 @@ FocusScope {
     }
 
     // ── StreamTweak access PIN popup ──────────────────────────────────────────
-    Popup {
+    // Its own file since 6.3.1, so it can lay Theme.scrim over the page like every other
+    // dialog opened on one — see the note at the top of StreamTweakPinDialog.qml.
+    StreamTweakPinDialog {
         id: stPinDialog
-        modal: true
-        closePolicy: Popup.CloseOnEscape
-        width: 440
-        height: 300
-        x: (homeScreen.width - width) / 2
-        y: (homeScreen.height - height) / 2
-        onClosed: navRoot.forceActiveFocus()
+        pin: homeScreen.stPinValue
+        hostName: homeScreen.stPinHostName
+        hostAddress: homeScreen.stPinHostAddr
 
-        background: Rectangle {
-            color: Theme.card
-            border.color: Theme.line
-            border.width: 1
-            radius: 12
-        }
-
-        contentItem: Column {
-            spacing: 18
-
-            Label {
-                text: qsTr("STREAMTWEAK ACCESS")
-                font.family: Theme.family
-                font.pixelSize: Theme.fontSmall
-                font.bold: true
-                font.letterSpacing: 1.6
-                color: Theme.text3
-            }
-            Label {
-                width: stPinDialog.availableWidth
-                wrapMode: Text.Wrap
-                // Two lines: what to do, then what it is for. The longer version said the same
-                // twice and explained the trust model on screen — that belongs in the changelog.
-                text: qsTr("Check this PIN matches the one on %1 (%2), then approve there.\n\nOptional: it enables host metrics, link speed, store badges and session reports.").arg(homeScreen.stPinHostName).arg(homeScreen.stPinHostAddr)
-                font.family: Theme.family
-                font.pixelSize: Theme.fontSmall
-                color: Theme.text
-            }
-            // The one place the monospaced face survives: these four digits exist to be read
-            // off one screen and compared against another, and a 1 that looks like an l is
-            // precisely the failure a monospaced face exists to prevent.
-            Label {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: homeScreen.stPinValue
-                font.family: Theme.monoFamily
-                font.pixelSize: 52
-                font.bold: true
-                font.letterSpacing: 10
-                color: Theme.accent
-            }
-            Rectangle {
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: 130; height: 42; radius: 8
-                color: stPinClose.containsMouse ? Theme.cardHigh : Theme.card
-                border.color: Theme.line
-                border.width: 1
-                Label {
-                    anchors.centerIn: parent
-                    text: qsTr("Dismiss")
-                    color: Theme.text
-                    font.family: Theme.family
-                    font.pixelSize: Theme.fontSmall
-                    font.bold: true
-                }
-                MouseArea {
-                    id: stPinClose
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (homeScreen.stPinHost >= 0)
-                            homeScreen.stPinDismissed[homeScreen.stPinHost] = true
-                        stPinDialog.close()
-                    }
-                }
-            }
+        /*
+         * Every way out is a dismissal: the button (A or a click) and B alike (6.3.1).
+         *
+         * ⚠️ Only the mouse used to count. B closed the popup through closePolicy without
+         * recording anything, so the next access reply — a few seconds later, for as long as
+         * the host sat on pending — opened it again: with a pad there was no way to make it
+         * stay shut. And the button was a MouseArea the pad could not reach at all.
+         *
+         * The close stHidePin() makes when the host answers is not one: it clears the uuid
+         * first, so nothing is recorded here.
+         */
+        onClosed: {
+            if (homeScreen.stPinHostUuid !== "")
+                homeScreen.stPinDismissed[homeScreen.stPinHostUuid] = true
+            navRoot.forceActiveFocus()
         }
     }
 

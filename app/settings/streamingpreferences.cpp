@@ -1,4 +1,5 @@
 #include "streamingpreferences.h"
+#include "streaming/video/pyrowave/pyrowavebitrate.h"
 #include "utils.h"
 
 #include <QSettings>
@@ -12,7 +13,8 @@
 #define SER_HEIGHT "height"
 #define SER_FPS "fps"
 #define SER_BITRATE "bitrate"
-#define SER_UNLOCK_BITRATE "unlockbitrate"
+// "unlockbitrate" (Unlock bitrate limit) was removed in 6.4.0: the ceiling is always the unlocked
+// one now. The key stays in old registries, unread.
 #define SER_AUTOADJUSTBITRATE "autoadjustbitrate"
 #define SER_FULLSCREEN "fullscreen"
 #define SER_VSYNC "vsync"
@@ -129,7 +131,6 @@ StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
     p->height = height;
     p->fps = fps;
     p->bitrateKbps = bitrateKbps;
-    p->unlockBitrate = unlockBitrate;
     p->autoAdjustBitrate = autoAdjustBitrate;
     p->enableVsync = enableVsync;
     p->fractionalVsync = fractionalVsync;
@@ -209,7 +210,6 @@ void StreamingPreferences::reload()
     fps = settings.value(SER_FPS, 60).toInt();
     enableYUV444 = settings.value(SER_YUV444, false).toBool();
     bitrateKbps = settings.value(SER_BITRATE, getDefaultBitrate(width, height, fps, enableYUV444)).toInt();
-    unlockBitrate = settings.value(SER_UNLOCK_BITRATE, false).toBool();
     autoAdjustBitrate = settings.value(SER_AUTOADJUSTBITRATE, true).toBool();
     enableVsync = settings.value(SER_VSYNC, true).toBool();
     // ⚠️ Defaults OFF and must stay that way while this is an experiment: it changes how
@@ -391,7 +391,6 @@ void StreamingPreferences::save()
     settings.setValue(SER_HEIGHT, height);
     settings.setValue(SER_FPS, fps);
     settings.setValue(SER_BITRATE, bitrateKbps);
-    settings.setValue(SER_UNLOCK_BITRATE, unlockBitrate);
     settings.setValue(SER_AUTOADJUSTBITRATE, autoAdjustBitrate);
     settings.setValue(SER_VSYNC, enableVsync);
     settings.setValue(SER_FRACTIONALVSYNC, fractionalVsync);
@@ -483,6 +482,14 @@ QColor StreamingPreferences::overlayBoxColorValue() const
     return QColor(0x18, 0x18, 0x1A, alpha);
 }
 
+int StreamingPreferences::getMaxBitrate(int videoCodecConfig)
+{
+    if (videoCodecConfig == VCC_FORCE_PYROWAVE) {
+        return 3000000;
+    }
+    return 500000;
+}
+
 int StreamingPreferences::getDefaultBitrate(int width, int height, int fps, bool yuv444)
 {
     // Don't scale bitrate linearly beyond 60 FPS. It's definitely not a linear
@@ -537,4 +544,10 @@ int StreamingPreferences::getDefaultBitrate(int width, int height, int fps, bool
     }
 
     return qRound(resolutionFactor * frameRateFactor) * 1000;
+}
+
+int StreamingPreferences::getDefaultPyroWaveBitrate(int width, int height, int fps, bool yuv444, bool hdr)
+{
+    // Match the author recommendation shown by calibration without running it.
+    return pyroWaveRecommendedKbps(width, height, fps, yuv444, hdr);
 }

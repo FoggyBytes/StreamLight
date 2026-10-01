@@ -4,15 +4,39 @@
 #include <cmath>
 #include <limits>
 
+bool vrrPreparedReadinessOrderValid(uint64_t outputUs, uint64_t arrivalUs,
+    uint64_t dequeueUs, uint64_t decisionUs, uint64_t decodeCompleteUs,
+    uint64_t startUs, uint64_t decodeReadyUs, uint64_t decodeWaitUs,
+    uint64_t renderStartUs, uint64_t renderEndUs, uint64_t readyUs)
+{
+    return outputUs && outputUs <= arrivalUs && arrivalUs <= dequeueUs &&
+        dequeueUs <= decisionUs && arrivalUs <= startUs &&
+        startUs <= renderStartUs && decodeReadyUs <= renderStartUs &&
+        renderStartUs <= renderEndUs && renderEndUs <= readyUs &&
+        readyUs <= decisionUs && decodeCompleteUs == decodeReadyUs &&
+        (decodeWaitUs > 200 ?
+            decodeReadyUs >= startUs && decodeWaitUs <= decodeReadyUs - startUs :
+            decodeReadyUs == outputUs);
+}
+
 bool vrrDecodeReadinessOrderValid(uint64_t decoderOutputUs, uint64_t readyUs,
                                   uint64_t arrivalUs, uint64_t dequeueUs,
                                   uint64_t decisionUs, uint64_t decodeWaitUs,
                                   bool decisionValid,
-                                  bool readinessExcludesQueue)
+                                  bool readinessExcludesQueue,
+                                  bool readinessUsesPostWaitClock)
 {
     if (!decoderOutputUs || decoderOutputUs > arrivalUs || readyUs < decoderOutputUs)
         return false;
     if (decisionValid && readyUs > decisionUs) return false;
+    if (readinessUsesPostWaitClock) {
+        return decisionValid ?
+            (decodeWaitUs > 200 ?
+                 dequeueUs >= arrivalUs && readyUs >= dequeueUs &&
+                     decodeWaitUs <= readyUs - dequeueUs :
+                 readyUs == decoderOutputUs) :
+            readyUs == decoderOutputUs && decodeWaitUs == 0;
+    }
     if (readinessExcludesQueue) {
         const uint64_t maximum = std::numeric_limits<uint64_t>::max();
         const uint64_t expectedReadyUs = decodeWaitUs > 200 ?
@@ -953,31 +977,131 @@ VrrDisplaySignalConsistency evaluateVrrDisplaySignalConsistency(
     return result;
 }
 
+bool isVrrGpuReadyWaitDeferred(
+    bool deferredWaitPolicy,
+    bool asynchronousFenceSubmitted,
+    bool waitResultValid,
+    uint64_t preparationEndUs,
+    uint64_t waitStartUs)
+{
+    // Placement is independent of whether the wait completed successfully.
+    // A timeout or device-loss result still belongs to the final present
+    // operation when its observation started after preparation returned.
+    // The policy flag is shared with Linux, whose synchronous texture poll
+    // can end on the same microsecond that preparation returns. Require the
+    // D3D fence/event stages so timestamp equality cannot turn that poll into
+    // a deferred present-boundary wait during replay.
+    return deferredWaitPolicy && asynchronousFenceSubmitted && waitResultValid &&
+        preparationEndUs != 0 && waitStartUs >= preparationEndUs;
+}
+
+uint64_t mapVrrGpuReadyUpperBound(
+    uint64_t recordedPreparationStartUs,
+    uint64_t recordedPreparationEndUs,
+    uint64_t simulatedPreparationStartUs,
+    uint64_t simulatedPreparationEndUs,
+    uint64_t recordedUpperBoundUs,
+    bool completionObservedDuringPreparation)
+{
+    // completedBeforeWait can also describe the final poll after the cadence
+    // hold. Use the poll's placement, rather than its fence result, to select
+    // the preparation or presentation-side mapping anchor.
+    const uint64_t recordedBase = completionObservedDuringPreparation ?
+        recordedPreparationStartUs : recordedPreparationEndUs;
+    const uint64_t simulatedBase = completionObservedDuringPreparation ?
+        simulatedPreparationStartUs : simulatedPreparationEndUs;
+    if (recordedUpperBoundUs < recordedBase) {
+        return 0;
+    }
+    const uint64_t offset = recordedUpperBoundUs - recordedBase;
+    return offset > std::numeric_limits<uint64_t>::max() - simulatedBase ?
+        std::numeric_limits<uint64_t>::max() : simulatedBase + offset;
+}
+
+bool isVrrGpuReadyPollDuringPreparation(
+    uint64_t pollStartUs, uint64_t pollEndUs,
+    uint64_t preparationEndUs, uint64_t presentStartUs,
+    uint64_t waitStartUs)
+{
+    // Microsecond timestamps can make the final poll and preparation end
+    // equal. The final poll begins inside Present and hands off directly to
+    // the residual wait; that operation order resolves the boundary tie.
+    return pollEndUs <= preparationEndUs &&
+        !(presentStartUs != 0 && pollStartUs >= presentStartUs &&
+          waitStartUs == pollEndUs);
+}
+
+bool isVrrDeferredGpuReadyOrderValid(
+    uint64_t pollStartUs, uint64_t pollEndUs,
+    uint64_t waitStartUs, uint64_t waitReturnUs,
+    uint64_t preparationEndUs,
+    uint64_t presentStartUs, uint64_t presentEndUs,
+    bool nativePresentTimingValid,
+    uint64_t nativePresentStartUs)
+{
+    // The current D3D11 final poll runs inside Present/cancellation and its
+    // end is the start of the residual wait. Older preparation polls retain
+    // their earlier placement and may precede the Present operation.
+    const bool finalPollOrderValid = pollEndUs <= preparationEndUs ||
+        (pollStartUs >= presentStartUs &&
+         pollStartUs >= preparationEndUs &&
+         waitStartUs == pollEndUs);
+    return finalPollOrderValid && waitStartUs != 0 &&
+        waitReturnUs >= waitStartUs &&
+        waitStartUs >= preparationEndUs &&
+        presentStartUs != 0 &&
+        waitStartUs >= presentStartUs &&
+        waitReturnUs <= presentEndUs &&
+        (!nativePresentTimingValid ||
+         (nativePresentStartUs != 0 &&
+         waitReturnUs <= nativePresentStartUs));
+}
+
+bool isVrrGpuFencePollRelationshipValid(
+    uint64_t fenceValue,
+    uint64_t pollCompletedValue,
+    bool completedBeforeWait,
+    bool deviceRemovalSentinelAllowed)
+{
+    if (fenceValue == 0) {
+        return false;
+    }
+    if (pollCompletedValue == std::numeric_limits<uint64_t>::max()) {
+        return deviceRemovalSentinelAllowed && !completedBeforeWait;
+    }
+    return pollCompletedValue <= fenceValue &&
+        fenceValue - pollCompletedValue <= 1 &&
+        completedBeforeWait == (pollCompletedValue >= fenceValue);
+}
+
 VrrGpuCompletionBounds evaluateVrrGpuCompletionBounds(
     uint64_t preparationStartUs, uint64_t preparationEndUs,
     uint64_t signalStartUs,
     uint64_t pollStartUs, uint64_t pollEndUs,
     uint64_t fenceValue, uint64_t pollCompletedValue,
     bool completedBeforeWait,
-    uint64_t waitStartUs, uint64_t waitReturnUs)
+    uint64_t waitStartUs, uint64_t waitReturnUs,
+    bool completionMayFollowPreparation)
 {
     VrrGpuCompletionBounds result;
     result.fenceRelationshipValid =
-        fenceValue != 0 &&
-        pollCompletedValue !=
-            std::numeric_limits<uint64_t>::max() &&
-        pollCompletedValue <= fenceValue &&
-        fenceValue - pollCompletedValue <= 1 &&
-        completedBeforeWait ==
-            (pollCompletedValue >= fenceValue);
+        isVrrGpuFencePollRelationshipValid(
+            fenceValue, pollCompletedValue, completedBeforeWait);
     if (preparationStartUs == 0 ||
             preparationEndUs < preparationStartUs ||
             signalStartUs < preparationStartUs ||
             pollStartUs < signalStartUs ||
             pollEndUs < pollStartUs ||
+            !(pollEndUs <= preparationEndUs ||
+              (completionMayFollowPreparation &&
+               pollStartUs >= preparationEndUs &&
+               waitStartUs == pollEndUs)) ||
             waitStartUs < pollEndUs ||
             waitReturnUs < waitStartUs ||
-            waitReturnUs > preparationEndUs ||
+            (!completionMayFollowPreparation &&
+             waitReturnUs > preparationEndUs) ||
+            (completionMayFollowPreparation &&
+             waitStartUs < preparationEndUs) ||
             !result.fenceRelationshipValid) {
         return result;
     }
@@ -1000,7 +1124,8 @@ VrrGpuReadyOperationAudit evaluateVrrGpuReadyOperation(
     bool signalResultValid, int64_t signalResult,
     bool setEventResultValid, int64_t setEventResult,
     bool waitResultValid, uint64_t waitResult,
-    bool timingValid, uint64_t signalStartUs, uint64_t fenceValue)
+    bool timingValid, uint64_t signalStartUs, uint64_t fenceValue,
+    bool deferredWaitMayBePending)
 {
     VrrGpuReadyOperationAudit result;
     // Signal() and SetEventOnCompletion() follow HRESULT semantics in the
@@ -1016,10 +1141,14 @@ VrrGpuReadyOperationAudit evaluateVrrGpuReadyOperation(
         result.setEventSucceeded &&
         waitResultValid &&
         waitResult == 0;
+    const bool deferredWaitPending =
+        deferredWaitMayBePending && result.setEventSucceeded &&
+        !waitResultValid && !timingValid;
     result.relationshipValid =
         signalResultValid == attempted &&
         setEventResultValid == result.signalSucceeded &&
-        waitResultValid == result.setEventSucceeded &&
+        (waitResultValid == result.setEventSucceeded ||
+         deferredWaitPending) &&
         timingValid == result.waitSucceeded &&
         (!attempted || (signalStartUs != 0 && fenceValue != 0));
     result.exactSuccess =
@@ -1039,7 +1168,8 @@ VrrGpuReadyStageTimingAudit evaluateVrrGpuReadyStageTiming(
     uint64_t flushStartUs, uint64_t flushEndUs,
     uint64_t setEventStartUs, uint64_t setEventEndUs,
     uint64_t pollStartUs, uint64_t pollEndUs,
-    uint64_t waitStartUs, uint64_t waitReturnUs)
+    uint64_t waitStartUs, uint64_t waitReturnUs,
+    bool completionMayFollowPreparation)
 {
     VrrGpuReadyStageTimingAudit result;
     const bool signalTimingPresent =
@@ -1098,13 +1228,26 @@ VrrGpuReadyStageTimingAudit evaluateVrrGpuReadyStageTiming(
         return result;
     }
 
+    // Older traces retain the preparation poll. The current D3D11 path
+    // replaces its trace fields with the first poll at the Present boundary.
+    // A cancelled frame without a final wait can only carry the former.
+    const bool pollPlacementValid =
+        pollEndUs <= preparationEndUs ||
+        (completionMayFollowPreparation && waitStartUs != 0 &&
+         pollStartUs >= preparationEndUs &&
+         waitStartUs == pollEndUs);
     const bool pollWaitTimingValid =
         pollStartUs != 0 &&
         pollEndUs >= pollStartUs &&
         pollStartUs >= setEventEndUs &&
-        waitStartUs >= pollEndUs &&
-        waitReturnUs >= waitStartUs &&
-        waitReturnUs <= preparationEndUs;
+        pollPlacementValid &&
+        ((completionMayFollowPreparation &&
+          waitStartUs == 0 && waitReturnUs == 0) ||
+         (waitStartUs >= pollEndUs &&
+          waitReturnUs >= waitStartUs &&
+          (completionMayFollowPreparation ?
+               waitStartUs >= preparationEndUs :
+               waitReturnUs <= preparationEndUs)));
     result.relationshipValid =
         preparationValid &&
         signalTimingValid &&

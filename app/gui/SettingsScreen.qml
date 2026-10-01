@@ -12,7 +12,7 @@ import ShortcutManager 1.0
 import AppUpdate 1.0
 
 // SettingsScreen — Xbox-style flat settings panel.
-// 6 tabs: Video, Audio, Input, Decoder, Network, Session.
+// Tabs: see _tabs below (nine since 6.4.0, when Decoder joined Video).
 // Each tab body is a Column of "sections"; each section is a header label
 // (uppercase, dim) followed by a panel of rows. Each row has a label on the
 // left and a control on the right.
@@ -82,7 +82,6 @@ FocusScope {
      */
     readonly property color _bg2:       Theme.card
     readonly property color _border:    Theme.line
-    readonly property color _borderS:   Theme.lineHigh
     readonly property color _text:      Theme.text
     readonly property color _textDim:   Theme.text2
     /*
@@ -143,7 +142,6 @@ FocusScope {
             ? info.reason.charAt(0).toUpperCase() + info.reason.slice(1) + "."
             : qsTr("This device's wired connection could not be identified.")
     }
-    readonly property int   _gapY:      _px(24)
 
     // Read by AppShell to show the "X · Default" status-bar prompt.
     property bool bitrateNonDefault: false
@@ -169,6 +167,7 @@ FocusScope {
     readonly property bool _lockFps:         activeProfileOverride && activeProfileOverride.fps !== undefined
     readonly property bool _lockBitrate:     activeProfileOverride && activeProfileOverride.bitrate !== undefined
     readonly property bool _lockHdr:         activeProfileOverride && activeProfileOverride.hdr !== undefined
+    readonly property bool _lockYuv444:      activeProfileOverride && activeProfileOverride.yuv444 !== undefined
     readonly property bool _lockCodec:       activeProfileOverride && activeProfileOverride.codec !== undefined
     readonly property bool _lockFramePacing: activeProfileOverride && activeProfileOverride.framepacing !== undefined
     readonly property bool _lockAudio:       activeProfileOverride && activeProfileOverride.audio !== undefined
@@ -193,11 +192,21 @@ FocusScope {
     readonly property string streamLightLatest: AppUpdate.latestStreamLight
     readonly property string streamTweakLatest: AppUpdate.latestStreamTweak
 
+    // PyroWave moves the whole bitrate scale (6.4.0, as in Nonary's vrr18): its own default
+    // (the codec author's "good quality" figure), 5 Mbps steps, and the ceiling from
+    // StreamingPreferences.getMaxBitrate(). Every default below goes through _defaultBitrate.
+    readonly property bool _pyroWave: StreamingPreferences.videoCodecConfig === StreamingPreferences.VCC_FORCE_PYROWAVE
+    function _defaultBitrate(w, h, fps) {
+        return _pyroWave
+            ? StreamingPreferences.getDefaultPyroWaveBitrate(w, h, fps, StreamingPreferences.enableYUV444,
+                                                             StreamingPreferences.enableHdr)
+            : StreamingPreferences.getDefaultBitrate(w, h, fps, StreamingPreferences.enableYUV444)
+    }
+
     function resetBitrateToDefault() {
         if (!bitrateSlider) return
-        var def = StreamingPreferences.getDefaultBitrate(
-                      StreamingPreferences.width, StreamingPreferences.height,
-                      StreamingPreferences.fps, StreamingPreferences.enableYUV444)
+        var def = _defaultBitrate(StreamingPreferences.width, StreamingPreferences.height,
+                                  StreamingPreferences.fps)
         StreamingPreferences.bitrateKbps       = def
         StreamingPreferences.autoAdjustBitrate = true
         bitrateSlider.value                    = def
@@ -213,7 +222,7 @@ FocusScope {
         // sdlgamepadkeynavigation.cpp), while PgUp/PgDn stay for the keyboard and for the
         // status-bar tab arrows, which drive this through simulateKey.
         //
-        // ⚠️ The ring WRAPS, and it did not. There are ten tabs reachable only by LB/RB, and
+        // ⚠️ The ring WRAPS, and it did not. There were ten tabs (nine since 6.4.0) reachable only by LB/RB, and
         // the cycle stopped dead at each end — so from About back to Video was nine presses
         // of LB, and from Video to About nine of RB, for two tabs that are adjacent in the
         // ring. A mouse could always jump straight to any tab by clicking it; the pad, which
@@ -236,22 +245,21 @@ FocusScope {
 
     // Focus the first control of the given tab (so D-pad starts inside the body).
     function focusFirstControl(idx) {
-        switch (idx) {
-            case 0: if (resolutionSelector)    resolutionSelector.forceActiveFocus();    break
-            case 1: if (audioConfigSelector)   audioConfigSelector.forceActiveFocus();   break
-            case 2: if (swapFaceSwitch)        swapFaceSwitch.forceActiveFocus();        break
-            case 3: if (decoderSelector)       decoderSelector.forceActiveFocus();       break
-            case 4: if (mdnsSwitch)            mdnsSwitch.forceActiveFocus();            break
-            case 5: if (gameOptSwitch)         gameOptSwitch.forceActiveFocus();         break
-            case 6: if (perfOverlaySwitch)     perfOverlaySwitch.forceActiveFocus();     break
-            case 7:
+        switch (_tabs[idx] ? _tabs[idx].key : "") {
+            case "video":       if (resolutionSelector)    resolutionSelector.forceActiveFocus();    break
+            case "audio":       if (audioConfigSelector)   audioConfigSelector.forceActiveFocus();   break
+            case "input":       if (swapFaceSwitch)        swapFaceSwitch.forceActiveFocus();        break
+            case "network":     if (mdnsSwitch)            mdnsSwitch.forceActiveFocus();            break
+            case "session":     if (gameOptSwitch)         gameOptSwitch.forceActiveFocus();         break
+            case "overlay":     if (perfOverlaySwitch)     perfOverlaySwitch.forceActiveFocus();     break
+            case "shortcuts":
                 if (padComboRepeater.count > 0) padComboRepeater.itemAt(0).firstControl.forceActiveFocus()
                 break
-            case 8: if (stGithubBtn)           stGithubBtn.forceActiveFocus();           break
+            case "streamtweak": if (stGithubBtn)           stGithubBtn.forceActiveFocus();           break
             // Update now first when there is one: it is the only thing on this tab that changes,
             // and the startup prompt's Yes lands here to press it. A stray press only downloads
             // — installing is a second, separate press.
-            case 9:
+            case "about":
                 if (aboutSlUpdateBtn && aboutSlUpdateBtn.visible) aboutSlUpdateBtn.forceActiveFocus()
                 else if (aboutSlGithubBtn)                        aboutSlGithubBtn.forceActiveFocus()
                 break
@@ -261,8 +269,8 @@ FocusScope {
     // Opened from the startup update prompt (AppShell). Focus follows through focusFirstControl,
     // which the screen's own activation calls with the current tab — so setting the tab is all.
     function showAbout() {
-        tabBar.currentIndex = 9
-        Qt.callLater(function() { focusFirstControl(9) })
+        tabBar.currentIndex = _ti("about")
+        Qt.callLater(function() { focusFirstControl(_ti("about")) })
     }
 
     // Re-focus on every activation (the Loader transfers focus AFTER ctor).
@@ -344,8 +352,7 @@ FocusScope {
                 StreamingPreferences.width  = w
                 StreamingPreferences.height = h
                 if (StreamingPreferences.autoAdjustBitrate) {
-                    StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
-                        w, h, StreamingPreferences.fps, StreamingPreferences.enableYUV444)
+                    StreamingPreferences.bitrateKbps = settingsScreen._defaultBitrate(w, h, StreamingPreferences.fps)
                     bitrateSlider.value = StreamingPreferences.bitrateKbps
                 }
                 StreamingPreferences.save()
@@ -362,9 +369,8 @@ FocusScope {
             if (StreamingPreferences.fps !== fps) {
                 StreamingPreferences.fps = fps
                 if (StreamingPreferences.autoAdjustBitrate) {
-                    StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
-                        StreamingPreferences.width, StreamingPreferences.height,
-                        fps, StreamingPreferences.enableYUV444)
+                    StreamingPreferences.bitrateKbps = settingsScreen._defaultBitrate(
+                        StreamingPreferences.width, StreamingPreferences.height, fps)
                     bitrateSlider.value = StreamingPreferences.bitrateKbps
                 }
                 StreamingPreferences.save()
@@ -408,7 +414,7 @@ FocusScope {
     }
 
     /*
-     * The ten tabs, declared once.
+     * The tabs, declared once.
      *
      * ⚠️ This used to be ten TabButtons written out in full — 302 lines of the same 25, with
      * the tab's own position hardcoded into it thirty times as `tabBar.currentIndex === N`.
@@ -417,33 +423,41 @@ FocusScope {
      * their own copy of "which tab am I". Inside a Repeater the delegate is handed `index`,
      * so the question answers itself and inserting a tab is a line in this list.
      *
+     * `key` is how the rest of this file names a tab (6.4.0): the bodies, focusFirstControl and
+     * the content height all ask _ti("network") instead of carrying a number. Removing Decoder
+     * shifted every index after it, and with numbers that is six silent edits to get right.
+     *
      * `icon` instead of `label` gives the StreamTweak tab: it is the companion product's own
      * mark, not ours, and it is a mark rather than a word because "STREAMTWEAK" is eleven
      * characters — the longest label in the app — and TabBar gives every tab an equal slot,
      * so it sat flush against SHORTCUTS while the others had air around them.
      *
-     * ⚠️ TEN TABS IS THE DESIGN. Do not merge them — decided 09/09/2026, and it is the kind of
-     * thing an audit proposes every time, because ten stops is over the "about seven" that
-     * usability rules of thumb like to quote. Measure the alternative before re-proposing it:
-     * Video+Decoder and Network+Session are the two joins anyone reaches for, and either one
-     * produces a tab of roughly 1700 lines. Seven long tabs are worse than ten short ones —
-     * scrolling to find a row is a worse search than stepping to the tab that names it.
+     * ⚠️ Nine tabs since 6.4.0: Decoder joined Video, by Marcello's choice on 01/10/2026 (option B
+     * of the mockup). The reason was the bitrate: with PyroWave, HDR and 4:4:4 decide its default,
+     * and they sat in another tab. Video is now three cards — Stream (what is sent, ending in the
+     * bitrate those rows set), Display (how it is shown) and Decoder. The 09/09/2026 objection —
+     * a merged tab is long to scroll — still holds for other joins: Network+Session would be a
+     * tab of roughly 1700 lines, and seven long tabs are worse than ten short ones.
      *
      * The real cost was never the count, it was that the LB/RB ring did not wrap: About back
      * to Video was nine presses. That is fixed where it belonged, in Keys.onPressed above.
      */
     readonly property var _tabs: [
-        { label: qsTr("Video")     },
-        { label: qsTr("Audio")     },
-        { label: qsTr("Input")     },
-        { label: qsTr("Decoder")   },
-        { label: qsTr("Network")   },
-        { label: qsTr("Session")   },
-        { label: qsTr("Overlay")   },
-        { label: qsTr("Shortcuts") },
-        { icon:  "qrc:/res/streamtweak_logo.png" },
-        { label: qsTr("About")     }
+        { key: "video",       label: qsTr("Video")     },
+        { key: "audio",       label: qsTr("Audio")     },
+        { key: "input",       label: qsTr("Input")     },
+        { key: "network",     label: qsTr("Network")   },
+        { key: "session",     label: qsTr("Session")   },
+        { key: "overlay",     label: qsTr("Overlay")   },
+        { key: "shortcuts",   label: qsTr("Shortcuts") },
+        { key: "streamtweak", icon:  "qrc:/res/streamtweak_logo.png" },
+        { key: "about",       label: qsTr("About")     }
     ]
+    function _ti(key) {
+        for (var i = 0; i < _tabs.length; i++)
+            if (_tabs[i].key === key) return i
+        return -1
+    }
 
     // The strip itself is SectionTabBar (6.0.0), shared with the host profile and per-game
     // dialogs so the three are one design. Settings leaves its LB/RB prompts off: the status
@@ -608,17 +622,17 @@ FocusScope {
             // Use only the active tab's column height; childrenRect would
             // include invisible sibling tabs and oversize the scrollbar.
             implicitHeight: {
-                switch (tabBar.currentIndex) {
-                    case 0: return videoTab.implicitHeight
-                    case 1: return audioTab.implicitHeight
-                    case 2: return inputTab.implicitHeight
-                    case 3: return decoderTab.implicitHeight
-                    case 4: return networkTab.implicitHeight
-                    case 5: return sessionTab.implicitHeight
-                    case 6: return overlayTab.implicitHeight
-                    case 7: return shortcutsTab.implicitHeight
-                    case 8: return streamTweakTab.implicitHeight
-                    case 9: return aboutTab.implicitHeight
+                var t = settingsScreen._tabs[tabBar.currentIndex]
+                switch (t ? t.key : "") {
+                    case "video":       return videoTab.implicitHeight
+                    case "audio":       return audioTab.implicitHeight
+                    case "input":       return inputTab.implicitHeight
+                    case "network":     return networkTab.implicitHeight
+                    case "session":     return sessionTab.implicitHeight
+                    case "overlay":     return overlayTab.implicitHeight
+                    case "shortcuts":   return shortcutsTab.implicitHeight
+                    case "streamtweak": return streamTweakTab.implicitHeight
+                    case "about":       return aboutTab.implicitHeight
                 }
                 return 0
             }
@@ -630,12 +644,12 @@ FocusScope {
                 id: videoTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === 0
+                visible: tabBar.currentIndex === settingsScreen._ti("video")
                 spacing: settingsScreen._px(16)
 
-                // ── Section: VIDEO ────────────────────────────────────────────
+                // ── Section: STREAM ──────────────────────────────────────
                 Label {
-                    text: qsTr("Video")
+                    text: qsTr("Stream")
                     font.family: Theme.family
                     font.pixelSize: settingsScreen._px(Theme.fontSmall)
                     font.bold: true
@@ -651,28 +665,25 @@ FocusScope {
                     radius: settingsScreen._px(8)
                     border.color: settingsScreen._border
                     border.width: 1
-                    implicitHeight: videoCol.implicitHeight + settingsScreen._px(8)
+                    implicitHeight: streamCol.implicitHeight + settingsScreen._px(8)
 
                     Column {
-                        id: videoCol
+                        id: streamCol
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: parent.top
                         anchors.topMargin: settingsScreen._px(4)
                         spacing: 0
 
-                        // Active-profile notice — shown only when this VIDEO block
-                        // actually has a setting locked by the active profile.
-                        // ⚠️ One notice per card, not per row: the Video tab is a single card,
-                        // so every lockable row in it reports here. A second notice further
-                        // down would read as a second warning about something else.
+                        // One notice per card, not per row: every lockable row in this card
+                        // reports here, and the Display card below has its own.
                         ProfileLockNotice {
                             active: settingsScreen._lockRes
                                     || settingsScreen._lockFps
+                                    || settingsScreen._lockCodec
+                                    || settingsScreen._lockHdr
+                                    || settingsScreen._lockYuv444
                                     || settingsScreen._lockBitrate
-                                    || settingsScreen._lockDisplayMode
-                                    || settingsScreen._lockVsync
-                                    || settingsScreen._lockFramePacing
                         }
 
                         /*
@@ -766,8 +777,8 @@ FocusScope {
                                             StreamingPreferences.width  = w
                                             StreamingPreferences.height = h
                                             if (StreamingPreferences.autoAdjustBitrate) {
-                                                StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
-                                                    w, h, StreamingPreferences.fps, StreamingPreferences.enableYUV444)
+                                                StreamingPreferences.bitrateKbps = settingsScreen._defaultBitrate(
+                                                    w, h, StreamingPreferences.fps)
                                                 bitrateSlider.value = StreamingPreferences.bitrateKbps
                                             }
                                             StreamingPreferences.save()
@@ -892,9 +903,8 @@ FocusScope {
                                         if (StreamingPreferences.fps !== f) {
                                             StreamingPreferences.fps = f
                                             if (StreamingPreferences.autoAdjustBitrate) {
-                                                StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
-                                                    StreamingPreferences.width, StreamingPreferences.height,
-                                                    f, StreamingPreferences.enableYUV444)
+                                                StreamingPreferences.bitrateKbps = settingsScreen._defaultBitrate(
+                                                    StreamingPreferences.width, StreamingPreferences.height, f)
                                                 bitrateSlider.value = StreamingPreferences.bitrateKbps
                                             }
                                             StreamingPreferences.save()
@@ -922,6 +932,181 @@ FocusScope {
                         }
                         RowSeparator { }
 
+                        // ── Video codec ───────────────────────────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeight
+                            enabled: !settingsScreen._lockCodec
+                            opacity: enabled ? 1.0 : 0.4
+
+                            Label {
+                                text: qsTr("Video codec")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                font.bold: true
+                                color: settingsScreen._text
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+
+                            SegmentedSelector {
+                                id: codecSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                // PyroWave (6.4.0) only where this build can decode it.
+                                labels: SystemProperties.hasPyroWave
+                                        ? [qsTr("Auto"), qsTr("H.264"), qsTr("HEVC"), qsTr("AV1"), qsTr("PyroWave")]
+                                        : [qsTr("Auto"), qsTr("H.264"), qsTr("HEVC"), qsTr("AV1")]
+                                property var _values: SystemProperties.hasPyroWave
+                                        ? [StreamingPreferences.VCC_AUTO,
+                                           StreamingPreferences.VCC_FORCE_H264,
+                                           StreamingPreferences.VCC_FORCE_HEVC,
+                                           StreamingPreferences.VCC_FORCE_AV1,
+                                           StreamingPreferences.VCC_FORCE_PYROWAVE]
+                                        : [StreamingPreferences.VCC_AUTO,
+                                           StreamingPreferences.VCC_FORCE_H264,
+                                           StreamingPreferences.VCC_FORCE_HEVC,
+                                           StreamingPreferences.VCC_FORCE_AV1]
+
+                                Binding on currentIndex {
+                                    value: {
+                                        var v = StreamingPreferences.videoCodecConfig
+                                        for (var i = 0; i < codecSelector._values.length; i++) {
+                                            if (codecSelector._values[i] === v) return i
+                                        }
+                                        return -1
+                                    }
+                                }
+                                onActivated: function(idx) {
+                                    var wasPyroWave = StreamingPreferences.videoCodecConfig === StreamingPreferences.VCC_FORCE_PYROWAVE
+                                    StreamingPreferences.videoCodecConfig = _values[idx]
+                                    // As in Nonary's vrr18: crossing in or out of PyroWave swaps
+                                    // the default when the bitrate was never touched, and a
+                                    // bitrate above the new ceiling comes down to it.
+                                    var isPyroWave = _values[idx] === StreamingPreferences.VCC_FORCE_PYROWAVE
+                                    var maxKbps = StreamingPreferences.getMaxBitrate(_values[idx])
+                                    if (isPyroWave !== wasPyroWave && StreamingPreferences.autoAdjustBitrate) {
+                                        StreamingPreferences.bitrateKbps = settingsScreen._defaultBitrate(
+                                            StreamingPreferences.width, StreamingPreferences.height,
+                                            StreamingPreferences.fps)
+                                        bitrateSlider.value = StreamingPreferences.bitrateKbps
+                                    }
+                                    else if (StreamingPreferences.bitrateKbps > maxKbps) {
+                                        StreamingPreferences.bitrateKbps = maxKbps
+                                        bitrateSlider.value = maxKbps
+                                    }
+                                    StreamingPreferences.save()
+                                    // Said once, when it is picked: PyroWave only pays off on a
+                                    // wired link with bandwidth to spare, and a bitrate left at
+                                    // the other codecs' level makes it look worse than they do.
+                                    if (!wasPyroWave && _values[idx] === StreamingPreferences.VCC_FORCE_PYROWAVE) {
+                                        pyroWaveNoticeDialog.open()
+                                    }
+                                }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Enable HDR ────────────────────────────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+                            enabled: !settingsScreen._lockHdr
+                            opacity: enabled ? 1.0 : 0.4
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Enable HDR")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Some games require an HDR monitor on the host to enable HDR")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: hdrSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.enableHdr
+                                onToggled: function(v) {
+                                    StreamingPreferences.enableHdr = v
+                                    // PyroWave's default allows for HDR; the other codecs' does not.
+                                    if (settingsScreen._pyroWave && StreamingPreferences.autoAdjustBitrate) {
+                                        StreamingPreferences.bitrateKbps = settingsScreen._defaultBitrate(
+                                            StreamingPreferences.width, StreamingPreferences.height,
+                                            StreamingPreferences.fps)
+                                        bitrateSlider.value = StreamingPreferences.bitrateKbps
+                                    }
+                                    StreamingPreferences.save()
+                                }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Enable YUV 4:4:4 ──────────────────────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+                            enabled: !settingsScreen._lockYuv444
+                            opacity: enabled ? 1.0 : 0.4
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Enable YUV 4:4:4 (experimental)")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Better for desktop and text-heavy games. Not recommended for fast-paced action.")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: yuv444Switch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.enableYUV444
+                                onToggled: function(v) {
+                                    StreamingPreferences.enableYUV444 = v
+                                    if (StreamingPreferences.autoAdjustBitrate) {
+                                        StreamingPreferences.bitrateKbps = settingsScreen._defaultBitrate(
+                                            StreamingPreferences.width, StreamingPreferences.height,
+                                            StreamingPreferences.fps)
+                                        bitrateSlider.value = StreamingPreferences.bitrateKbps
+                                    }
+                                    StreamingPreferences.save()
+                                }
+                            }
+                        }
+                        RowSeparator { }
+
                         // ── Video bitrate ─────────────────────────────────────
                         Item {
                             width: parent.width
@@ -943,7 +1128,10 @@ FocusScope {
                                     color: settingsScreen._text
                                 }
                                 Label {
-                                    text: qsTr("Raise for higher quality on fast connections")
+                                    // The warning that lived on Unlock bitrate limit until 6.4.0.
+                                    text: settingsScreen._pyroWave
+                                          ? qsTr("PyroWave: wired network, hundreds of Mbps")
+                                          : qsTr("Above 150 Mbps: wired network only")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
@@ -956,9 +1144,9 @@ FocusScope {
                             Binding {
                                 target: settingsScreen
                                 property: "bitrateNonDefault"
-                                value: StreamingPreferences.bitrateKbps !== StreamingPreferences.getDefaultBitrate(
+                                value: StreamingPreferences.bitrateKbps !== settingsScreen._defaultBitrate(
                                             StreamingPreferences.width, StreamingPreferences.height,
-                                            StreamingPreferences.fps, StreamingPreferences.enableYUV444)
+                                            StreamingPreferences.fps)
                             }
 
                             Slider {
@@ -968,9 +1156,11 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: settingsScreen._px(240)
 
-                                from: 500
-                                to: StreamingPreferences.unlockBitrate ? 500000 : 150000
-                                stepSize: 500
+                                // A lower ceiling (leaving PyroWave) clamps `value`, and
+                                // onValueChanged writes the clamped figure back.
+                                from: settingsScreen._pyroWave ? 5000 : 500
+                                to: StreamingPreferences.getMaxBitrate(StreamingPreferences.videoCodecConfig)
+                                stepSize: settingsScreen._pyroWave ? 5000 : 500
                                 snapMode: Slider.SnapAlways
                                 value: StreamingPreferences.bitrateKbps
 
@@ -1081,7 +1271,42 @@ FocusScope {
                                 width: settingsScreen._px(80)
                             }
                         }
-                        RowSeparator { }
+                    }
+                }
+
+                // ── Section: DISPLAY ─────────────────────────────────────
+                Label {
+                    text: qsTr("Display")
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                    font.bold: true
+                    font.letterSpacing: 1.4
+                    font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut
+                    leftPadding: settingsScreen._px(14)
+                }
+
+                Rectangle {
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: settingsScreen._px(8)
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: displayCol.implicitHeight + settingsScreen._px(8)
+
+                    Column {
+                        id: displayCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: settingsScreen._px(4)
+                        spacing: 0
+
+                        ProfileLockNotice {
+                            active: settingsScreen._lockDisplayMode
+                                    || settingsScreen._lockVsync
+                                    || settingsScreen._lockFramePacing
+                        }
 
                         // ── Display mode ──────────────────────────────────────
                         Item {
@@ -1509,6 +1734,78 @@ FocusScope {
                         }
                     }
                 }
+
+                // ── Section: DECODER ─────────────────────────────────────
+                Label {
+                    text: qsTr("Decoder")
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                    font.bold: true
+                    font.letterSpacing: 1.4
+                    font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut
+                    leftPadding: settingsScreen._px(14)
+                }
+
+                Rectangle {
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: settingsScreen._px(8)
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: decoderCol.implicitHeight + settingsScreen._px(8)
+
+                    Column {
+                        id: decoderCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: settingsScreen._px(4)
+                        spacing: 0
+
+                        // ── Video decoder ─────────────────────────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeight
+
+                            Label {
+                                text: qsTr("Video decoder")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                font.bold: true
+                                color: settingsScreen._text
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+
+                            SegmentedSelector {
+                                id: decoderSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                labels: [qsTr("Auto"), qsTr("Software"), qsTr("Hardware")]
+                                property var _values: [
+                                    StreamingPreferences.VDS_AUTO,
+                                    StreamingPreferences.VDS_FORCE_SOFTWARE,
+                                    StreamingPreferences.VDS_FORCE_HARDWARE
+                                ]
+
+                                Binding on currentIndex {
+                                    value: {
+                                        var v = StreamingPreferences.videoDecoderSelection
+                                        for (var i = 0; i < decoderSelector._values.length; i++) {
+                                            if (decoderSelector._values[i] === v) return i
+                                        }
+                                        return -1
+                                    }
+                                }
+                                onActivated: function(idx) { StreamingPreferences.videoDecoderSelection = _values[idx]; StreamingPreferences.save() }
+                            }
+                        }
+                    }
+                }
             }
 
             // ──────────────────────────────────────────────────────────────────
@@ -1518,7 +1815,7 @@ FocusScope {
                 id: audioTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === 1
+                visible: tabBar.currentIndex === settingsScreen._ti("audio")
                 spacing: settingsScreen._px(16)
 
                 Label {
@@ -1680,7 +1977,7 @@ FocusScope {
                 id: inputTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === 2
+                visible: tabBar.currentIndex === settingsScreen._ti("input")
                 spacing: settingsScreen._px(16)
 
                 // ── GAMEPAD section ───────────────────────────────────────────
@@ -2058,286 +2355,13 @@ FocusScope {
             }
 
             // ──────────────────────────────────────────────────────────────────
-            //                            DECODER TAB
-            // ──────────────────────────────────────────────────────────────────
-            Column {
-                id: decoderTab
-                anchors.left: parent.left
-                anchors.right: parent.right
-                visible: tabBar.currentIndex === 3
-                spacing: settingsScreen._px(16)
-
-                Label {
-                    text: qsTr("Video decoder & codec")
-                    font.family: Theme.family
-                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                    font.bold: true
-                    font.letterSpacing: 1.4
-                    font.capitalization: Font.AllUppercase
-                    color: settingsScreen._textMut
-                    leftPadding: settingsScreen._px(14)
-                }
-
-                Rectangle {
-                    width: parent.width
-                    color: settingsScreen._bg2
-                    radius: settingsScreen._px(8)
-                    border.color: settingsScreen._border
-                    border.width: 1
-                    implicitHeight: decCol.implicitHeight + settingsScreen._px(8)
-
-                    Column {
-                        id: decCol
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.topMargin: settingsScreen._px(4)
-                        spacing: 0
-
-                        ProfileLockNotice {
-                            active: settingsScreen._lockCodec || settingsScreen._lockHdr
-                        }
-
-                        // ── Video decoder ─────────────────────────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeight
-
-                            Label {
-                                text: qsTr("Video decoder")
-                                font.family: Theme.family
-                                font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                font.bold: true
-                                color: settingsScreen._text
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            SegmentedSelector {
-                                id: decoderSelector
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-
-                                labels: [qsTr("Auto"), qsTr("Software"), qsTr("Hardware")]
-                                property var _values: [
-                                    StreamingPreferences.VDS_AUTO,
-                                    StreamingPreferences.VDS_FORCE_SOFTWARE,
-                                    StreamingPreferences.VDS_FORCE_HARDWARE
-                                ]
-
-                                Binding on currentIndex {
-                                    value: {
-                                        var v = StreamingPreferences.videoDecoderSelection
-                                        for (var i = 0; i < decoderSelector._values.length; i++) {
-                                            if (decoderSelector._values[i] === v) return i
-                                        }
-                                        return -1
-                                    }
-                                }
-                                onActivated: function(idx) { StreamingPreferences.videoDecoderSelection = _values[idx]; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Video codec ───────────────────────────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeight
-                            enabled: !settingsScreen._lockCodec
-                            opacity: enabled ? 1.0 : 0.4
-
-                            Label {
-                                text: qsTr("Video codec")
-                                font.family: Theme.family
-                                font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                font.bold: true
-                                color: settingsScreen._text
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            SegmentedSelector {
-                                id: codecSelector
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-
-                                labels: [qsTr("Auto"), qsTr("H.264"), qsTr("HEVC"), qsTr("AV1")]
-                                property var _values: [
-                                    StreamingPreferences.VCC_AUTO,
-                                    StreamingPreferences.VCC_FORCE_H264,
-                                    StreamingPreferences.VCC_FORCE_HEVC,
-                                    StreamingPreferences.VCC_FORCE_AV1
-                                ]
-
-                                Binding on currentIndex {
-                                    value: {
-                                        var v = StreamingPreferences.videoCodecConfig
-                                        for (var i = 0; i < codecSelector._values.length; i++) {
-                                            if (codecSelector._values[i] === v) return i
-                                        }
-                                        return -1
-                                    }
-                                }
-                                onActivated: function(idx) { StreamingPreferences.videoCodecConfig = _values[idx]; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Enable HDR ────────────────────────────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-                            enabled: !settingsScreen._lockHdr
-                            opacity: enabled ? 1.0 : 0.4
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Enable HDR")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Some games require an HDR monitor on the host to enable HDR")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: hdrSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.enableHdr
-                                onToggled: function(v) { StreamingPreferences.enableHdr = v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Enable YUV 4:4:4 ──────────────────────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Enable YUV 4:4:4 (experimental)")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Better for desktop and text-heavy games. Not recommended for fast-paced action.")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: yuv444Switch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.enableYUV444
-                                onToggled: function(v) {
-                                    StreamingPreferences.enableYUV444 = v
-                                    if (StreamingPreferences.autoAdjustBitrate) {
-                                        StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(
-                                            StreamingPreferences.width, StreamingPreferences.height,
-                                            StreamingPreferences.fps, StreamingPreferences.enableYUV444)
-                                        bitrateSlider.value = StreamingPreferences.bitrateKbps
-                                    }
-                                    StreamingPreferences.save()
-                                }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Unlock bitrate limit ──────────────────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Unlock bitrate limit (experimental)")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Allows very high bitrates with Sunshine hosts. Use only over wired LAN.")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: vbrSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.unlockBitrate
-
-                                // ⚠️ The one row on this screen that keeps a `checked` handler as
-                                // well, and it is deliberate. The clamp has to run whenever the
-                                // ceiling moves — including when this binding evaluates rather
-                                // than only when a person clicks — or a bitrate stored above the
-                                // locked ceiling would stay there. `onToggled` alone would never
-                                // see that. The write and the save stay in `onToggled`, where
-                                // they belong; this one only re-clamps and never persists.
-                                onCheckedChanged: clampToCeiling()
-
-                                function clampToCeiling() {
-                                    StreamingPreferences.bitrateKbps = Math.min(StreamingPreferences.bitrateKbps, bitrateSlider.to)
-                                    bitrateSlider.value = StreamingPreferences.bitrateKbps
-                                }
-
-                                onToggled: function(v) {
-                                    StreamingPreferences.unlockBitrate = v
-                                    clampToCeiling()
-                                    StreamingPreferences.save()
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ──────────────────────────────────────────────────────────────────
             //                            NETWORK TAB
             // ──────────────────────────────────────────────────────────────────
             Column {
                 id: networkTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === 4
+                visible: tabBar.currentIndex === settingsScreen._ti("network")
                 spacing: settingsScreen._px(16)
 
                 Label {
@@ -2681,7 +2705,7 @@ FocusScope {
                 id: sessionTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === 5
+                visible: tabBar.currentIndex === settingsScreen._ti("session")
                 spacing: settingsScreen._px(16)
 
                 // ── HOST section ──────────────────────────────────────────────
@@ -3561,7 +3585,7 @@ FocusScope {
                 id: overlayTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === 6
+                visible: tabBar.currentIndex === settingsScreen._ti("overlay")
                 spacing: settingsScreen._px(16)
 
                 // The real overlay face, so the preview is not merely "something like it".
@@ -3639,10 +3663,10 @@ FocusScope {
                       host: false, sub: false,
                       lines: ["Frames dropped by your network connection: 0.10%"] },
                     { bit: StreamingPreferences.OI_JITTER_DROPS,
-                      name: qsTr("Jitter frame drops"),
-                      desc: qsTr("Frames thrown away because they arrived too late to be useful"),
+                      name: qsTr("Pacing frame drops"),
+                      desc: qsTr("Frames this device discarded to keep the picture on time; with PyroWave, also those skipped before decoding"),
                       host: false, sub: false,
-                      lines: ["Frames dropped due to network jitter: 0.02%"] },
+                      lines: ["Frames dropped by client pacing: 0.02%"] },
                     { bit: StreamingPreferences.OI_LATENCY,
                       name: qsTr("Network latency"),
                       desc: qsTr("Round trip to the host, and how much it wanders"),
@@ -4769,7 +4793,7 @@ FocusScope {
                 id: streamTweakTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === 8
+                visible: tabBar.currentIndex === settingsScreen._ti("streamtweak")
                 spacing: settingsScreen._px(16)
 
                 // ⚠️ The only place in the app that asks whether a host runs StreamTweak.
@@ -5309,7 +5333,7 @@ FocusScope {
                 id: aboutTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === 9
+                visible: tabBar.currentIndex === settingsScreen._ti("about")
                 spacing: settingsScreen._px(16)
 
                 // StreamLight card — title + version + author on the left,
@@ -5444,7 +5468,7 @@ FocusScope {
                 id: shortcutsTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === 7
+                visible: tabBar.currentIndex === settingsScreen._ti("shortcuts")
                 spacing: settingsScreen._px(16)
 
                 property var kbModel: ShortcutManager.keyboardModel()
@@ -5729,6 +5753,17 @@ FocusScope {
     // running Tailscale instance is intentionally NOT killed — if the user
     // started it manually or in a previous StreamLight session, killing it
     // would be surprising. The toggle only affects future StreamLight launches.
+    // Shown when PyroWave is picked as the video codec (6.4.0). Every frame is coded on its
+    // own, which is where its low latency comes from, and also why it needs several times
+    // the bandwidth of the other codecs: a clean picture takes hundreds of Mbps, so it only
+    // makes sense on a wired network. Hosts that cannot encode it fall back to H.264.
+    NavigableMessageDialog {
+        id: pyroWaveNoticeDialog
+        headerText: qsTr("PYROWAVE")
+        text: qsTr("PyroWave is for a wired network with bandwidth to spare: it needs hundreds of Mbps for a clean picture, so raise the bitrate. It needs a Vibeshine or Vibepollo host that supports it; other hosts stream H.264.")
+        standardButtons: Dialog.Ok
+    }
+
     NavigableMessageDialog {
         id: tailscaleStopNoticeDialog
         headerText: qsTr("TAILSCALE")

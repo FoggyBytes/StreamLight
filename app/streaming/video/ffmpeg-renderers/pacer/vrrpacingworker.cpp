@@ -1,4 +1,4 @@
-// Imported from Nonary/moonlight-qt, branch vrr17.1 at tag v6.1.0-vrr17.1 (1ccefb6e), by Chase
+// Imported from Nonary/moonlight-qt, branch release/6.1.0-vrr18 at tag v6.1.0-vrr18 (1ad5848b), by Chase
 // Payne. GPLv3, the same licence as StreamLight. The body is verbatim: only this note was
 // added, so a later sync against Nonary is a plain diff. Say so here if you change anything.
 
@@ -26,11 +26,6 @@ extern "C" {
 
 namespace {
 
-// Keep enough decoded successors to absorb the short gap-then-burst delivery
-// pattern seen near the panel ceiling. Capacity remains bounded and evicts the
-// oldest queued successor under sustained pressure, so it cannot accumulate
-// an unbounded latency backlog.
-constexpr size_t kMaximumQueuedFrames = VrrMaximumQueuedFrames;
 // ~64 seconds of rows at 120 FPS. When the writer thread cannot keep up the
 // pacing thread drops rows rather than ever waiting on diagnostics.
 // Each compressed chunk covers only a few seconds, limiting crash loss while
@@ -40,6 +35,9 @@ constexpr int kTraceChunkBytes = 256 * 1024;
 // A decode sync shorter than this did not wait on the GPU; the frame keeps
 // the decoder's completion time as its readiness.
 constexpr uint64_t kDecodeSyncNoticeUs = 200;
+// Slack between the published PyroWave reassembly deadline and the latest
+// on-time reassembly, covering receive-thread wake-up and depacketizing.
+constexpr uint64_t kReceiveDeadlineMarginUs = 250;
 // Always preserve at least an hour, including the maximum supported 480 FPS
 // stream cadence. The physical cap takes effect only after that duration, so
 // an unusually incompressible trace remains complete rather than silently
@@ -88,6 +86,15 @@ constexpr char kTraceHeader[] =
     VRR_TIMING_PARAMETER_FIELDS(VRR_TRACE_PARAMETER_HEADER)
     ",decoder_output_us,session_latency_mode,session_readiness_hitch_feedback,calibration_loaded,initial_cached_samples,history_version,history_state_valid,history_samples,history_misses,history_duration_us,history_can_release"
     ",session_latency_oscillation,latency_test_phase,session_allow_tearing"
+    ",buffer_cap_us,buffer_queue_limit_us,buffer_preset_cap_us,playout_offset_us,presentation_floor_push_us"
+    ",buffer_update_valid,buffer_update_at_us,buffer_update_frame,buffer_action,buffer_attributed_frame"
+    ",buffer_request_before_us,buffer_request_after_us,buffer_interval_error_us,buffer_lateness_us"
+    ",buffer_attempted_increase_us,buffer_clipped_increase_us,buffer_hold_remaining_us,buffer_cooldown_remaining_us"
+    ",buffer_calibration_complete,buffer_calibration_samples,buffer_calibration_coverage_us"
+    ",prepared_ahead,stage_start_us,stage_decode_ready_us,stage_decode_wait_us,stage_render_start_us,stage_render_end_us,stage_ready_us"
+    ",flip_protection_checked,flip_protection_query_result,flip_protection_query_start_us,flip_protection_query_end_us"
+    ",flip_protection_pending,flip_protection_reference_us,flip_protection_latched"
+    ",decode_hold_us"
     "\n";
 #undef VRR_TRACE_PARAMETER_HEADER
 constexpr uint32_t kVrrWindowStateMask =
@@ -123,12 +130,6 @@ uint64_t positiveDifference(uint64_t actualUs, uint64_t targetUs)
     return actualUs > targetUs ? actualUs - targetUs : 0;
 }
 
-uint64_t saturatingAdd(uint64_t left, uint64_t right)
-{
-    return left > std::numeric_limits<uint64_t>::max() - right ?
-        std::numeric_limits<uint64_t>::max() : left + right;
-}
-
 uint64_t submissionBoundaryUs(const VrrPresentFeedback& feedback,
                               uint64_t operationStartUs,
                               uint64_t operationEndUs,
@@ -157,11 +158,9 @@ uint64_t submissionBoundaryUs(const VrrPresentFeedback& feedback,
 }
 
 #ifdef _WIN32
-bool isUncPath(const char* path)
+bool isUncPath(const QString& path)
 {
-    return path != nullptr &&
-        ((path[0] == '\\' && path[1] == '\\') ||
-         (path[0] == '/' && path[1] == '/'));
+    return path.startsWith(QStringLiteral("\\\\")) || path.startsWith(QStringLiteral("//"));
 }
 #endif
 
@@ -179,8 +178,10 @@ VrrPacingWorker::VrrPacingWorker(IVrrFramePresenter* presenter,
         config, m_CanLatchPresentation,
         vrrTimingParametersForSession(config)))
 {
-    const char* deepTraceEnv = SDL_getenv("MOONLIGHT_VRR_DEEP_TRACE");
-    m_DeepTraceEnabled = deepTraceEnv != nullptr && deepTraceEnv[0] == '1';
+    // Settings enables tracing after SDL initialization. SDL2-compat may cache
+    // its environment, so read the current process value just like the path.
+    m_DeepTraceEnabled = qEnvironmentVariable("MOONLIGHT_VRR_DEEP_TRACE").startsWith(QLatin1Char('1'));
+    m_QueueCapacity = m_TimingController->queuedFrameCapacity();
 
     VrrTargetWaiterHooks hooks;
     hooks.nowUs = []() {
@@ -205,6 +206,10 @@ VrrPacingWorker::~VrrPacingWorker()
         m_WorkerThread = nullptr;
     }
 
+    if (m_Presenter) m_Presenter->stopFramePreparation();
+
+    VrrReceiveDeadline::clear();
+    VrrReceiveDeadline::clearPresentWindow();
     discardQueuedFrames(false, TraceDisposition::ShutdownDiscard);
     closeTrace();
     if (m_WorkerStarted && !m_Config.calibrationKey.empty() && !m_CalibrationInvalidated.load()) {
@@ -214,6 +219,15 @@ VrrPacingWorker::~VrrPacingWorker()
         Vrr13::saveProfile(QString::fromStdString(m_Config.calibrationPath),
                           QString::fromStdString(m_Config.calibrationKey),
                           m_TimingController->playoutHistory());
+        // A median over the settled part of the session, not the final value,
+        // which may still carry a transient.
+        if (m_SettledDelaySamples.size() >= kMinimumSettledDelaySamples) {
+            auto samples = m_SettledDelaySamples;
+            std::nth_element(samples.begin(), samples.begin() + samples.size() / 2, samples.end());
+            Vrr13::saveStartDelay(startDelayPath(),
+                                  QString::fromStdString(m_Config.calibrationKey),
+                                  samples[samples.size() / 2]);
+        }
     }
 }
 
@@ -230,15 +244,19 @@ bool VrrPacingWorker::start()
                               QString::fromStdString(m_Config.calibrationKey), prior)) {
             m_CalibrationLoaded = m_TimingController->loadPlayoutHistory(prior.profile());
         }
+        m_StartDelaySeedUs = Vrr13::loadStartDelay(startDelayPath(),
+            QString::fromStdString(m_Config.calibrationKey));
+        m_TimingController->seedPlayoutDelayStart(m_StartDelaySeedUs);
     }
     m_InitialPlayoutProfile = encodeVrrPlayoutProfile(m_TimingController->playoutHistory());
     m_InitialCachedSamples = m_TimingController->playoutHistory().cachedEvidence();
     m_HistoryVersion = m_TimingController->playoutHistory().version();
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                "VRR capture policy: latency_mode=%d readiness_hitch_feedback=%d history_version=%d calibration_loaded=%d cached_samples=%llu",
+                "VRR capture policy: latency_mode=%d readiness_hitch_feedback=%d history_version=%d calibration_loaded=%d cached_samples=%llu start_delay_seed_us=%llu",
                 m_Config.latencyMode, int(m_Config.readinessHitchFeedback),
                 m_HistoryVersion, int(m_CalibrationLoaded),
-                static_cast<unsigned long long>(m_InitialCachedSamples));
+                static_cast<unsigned long long>(m_InitialCachedSamples),
+                static_cast<unsigned long long>(m_StartDelaySeedUs));
 
     // Enable capture before the producer can submit its first frame. Opening
     // from run() left a small startup race that made session replay incomplete.
@@ -294,7 +312,7 @@ void VrrPacingWorker::submit(PacedFrame&& frame)
             droppedFrame = std::move(incoming);
         }
         else {
-            if (m_FrameQueue.size() >= kMaximumQueuedFrames) {
+            if (m_FrameQueue.size() >= m_QueueCapacity) {
                 droppedFrame = std::move(m_FrameQueue.front());
                 m_FrameQueue.pop_front();
                 droppedDisposition = TraceDisposition::QueueCapacity;
@@ -303,6 +321,8 @@ void VrrPacingWorker::submit(PacedFrame&& frame)
                 m_QueueDiscontinuity.store(true);
             }
             incoming.trace.queueAccepted = true;
+            incoming.preparation = m_Presenter->queueFramePreparation(
+                incoming.frame.frame(), incoming.frame.decodeBoundary());
             m_FrameQueue.emplace_back(std::move(incoming));
             m_FrameQueue.back().trace.queueDepthAfter = m_FrameQueue.size();
             queuedFrame = true;
@@ -408,6 +428,44 @@ int VrrPacingWorker::run()
 
         bool externalRebaseApplied = false;
         uint32_t externalRebaseFlags = 0;
+        // A local latest-frame queue replacement is not a source epoch
+        // change. Frame-number and cumulative RTP movement let the timing
+        // controller advance across the omitted frame without throwing away
+        // its learned cadence.
+        (void) queueDiscontinuity;
+
+        // Establish this frame's exact decoder dependency before preparing
+        // it. Some backends wait here; others queue a GPU dependency and
+        // return immediately. Preserve only CPU time actually spent waiting
+        // as service telemetry.
+        const bool preparedAhead = queuedFrame.preparation &&
+            queuedFrame.preparation->wait([this]() {
+                return isStopping() || m_Suspended.load() ||
+                    m_PendingWindowStateFlags.load() != 0;
+            });
+        if (isStopping() || m_Suspended.load() ||
+                m_PendingWindowStateFlags.load() != 0) {
+            recordFrameCompletion(queuedFrame, VrrTimingDecision{},
+                VrrPresentFeedback{}, FrameTelemetry{},
+                isStopping() ? TraceDisposition::ShutdownDiscard :
+                               TraceDisposition::SuspensionDiscard, false);
+            noteDrop();
+            continue;
+        }
+        const uint64_t decodeSyncWaitUs = preparedAhead ? 0 :
+            m_Presenter->waitForDecode(frame.frame(), frame.decodeBoundary());
+        frame.noteDecodeSyncWaitUs(decodeSyncWaitUs);
+        if (preparedAhead) {
+            frame.noteGpuReadyUs(queuedFrame.preparation->timing.decodeReadyUs);
+        }
+        if (decodeSyncWaitUs > kDecodeSyncNoticeUs) {
+            // This is an upper bound on completion, sampled after the native
+            // wait. Adding the wait duration to decoder output is wrong when
+            // the frame already spent time in the pacing queue: it can place
+            // completion before the worker even began waiting.
+            frame.noteGpuReadyUs(LiGetMicroseconds());
+        }
+
         if (m_RebaseOnNextFrame) {
             m_TimingController->rebase();
             m_RebaseOnNextFrame = false;
@@ -415,32 +473,14 @@ int VrrPacingWorker::run()
             m_RebaseOnNextFrameFlags = 0;
             externalRebaseApplied = true;
         }
-        // A local latest-frame queue replacement is not a source epoch
-        // change. Frame-number and cumulative RTP movement let the timing
-        // controller advance across the omitted frame without throwing away
-        // its learned cadence.
-        (void) queueDiscontinuity;
-
-        // The CPU reports decode completion before the GPU has finished the
-        // frame. Wait for it here, where the worker would otherwise idle, so
-        // readiness and the lateness the calibrator learns from are real and
-        // the preparation never blocks on the decoder.
-        const uint64_t decodeSyncWaitUs = m_Presenter->waitForDecode(
-            frame.frame(), frame.decodeBoundary());
-        if (decodeSyncWaitUs > kDecodeSyncNoticeUs) {
-            // The wait can overlap time already spent in the pacing queue.
-            // Keep that queue residence out of the readiness model by adding
-            // only the blocking fence cost to immutable decoder output.
-            frame.noteGpuReadyUs(decodeSyncWaitUs >
-                    std::numeric_limits<uint64_t>::max() - frame.decoderOutputUs() ?
-                std::numeric_limits<uint64_t>::max() :
-                frame.decoderOutputUs() + decodeSyncWaitUs);
-        }
-
         const uint64_t decisionTimeUs = LiGetMicroseconds();
         VrrTimingDecision decision = m_TimingController->schedule(
             frame, decisionTimeUs);
+        publishReceiveDeadline(frame, decision);
+        noteSettledDelay(decisionTimeUs, decision.playoutDelayUs);
         FrameTelemetry telemetry;
+        telemetry.preparedAhead = preparedAhead;
+        if (preparedAhead) telemetry.preparationStage = queuedFrame.preparation->timing;
         telemetry.decodeSyncWaitUs = decodeSyncWaitUs;
         telemetry.decisionTimeUs = decisionTimeUs;
         telemetry.decisionEndUs = LiGetMicroseconds();
@@ -458,22 +498,36 @@ int VrrPacingWorker::run()
         // render-bound client it only deepened the standing backlog.
         const uint64_t scheduleNowUs = LiGetMicroseconds();
         telemetry.staleCheckUs = scheduleNowUs;
-        const uint64_t scheduleAgeUs = scheduleNowUs >=
-                frame.decodeCompleteUs() ?
-            scheduleNowUs - frame.decodeCompleteUs() : 0;
+        const uint64_t ageBoundaryUs =
+            m_TimingController->parameters().playoutSourceMappingDecoderOutput != 0 ?
+                frame.decoderOutputUs() : frame.decodeCompleteUs();
+        const uint64_t scheduleAgeUs = scheduleNowUs >= ageBoundaryUs ?
+            scheduleNowUs - ageBoundaryUs : 0;
         telemetry.staleAgeUs = scheduleAgeUs;
         const bool metronome =
             m_TimingController->parameters().playoutMetronomeEnabled != 0;
         const bool latencyFix = m_TimingController->latencyFixActive();
-        // The optional near-ceiling policy measures transport occupancy from
-        // admission. Other modes retain their existing GPU-readiness origin
-        // for stale-work policy; reporting always uses immutable decoder
-        // output below.
+        // The playout delay is intentional queue residence, not staleness.
+        const uint64_t protectedDelayUs = decision.playoutDelayUs;
+        // Clock mapping and latency reporting retain the full elapsed age.
+        // Discard policy excludes only this image's explicit decode wait:
+        // replacing a now-ready image with an unverified successor can repeat
+        // forever under GPU contention. Actual pre-wait queue residence still
+        // counts, and already-expired queue fronts are rejected before decode.
         const uint64_t ageOriginUs = latencyFix ?
-            queuedFrame.trace.arrivalUs : frame.decodeCompleteUs();
-        const uint64_t ageUs = positiveDifference(scheduleNowUs, ageOriginUs);
-        if (hasQueuedFrame() && VrrFrameDropPolicy::beforeRender(
-                decision, m_TimingController->displayPeriodUs(), ageUs, metronome, latencyFix)) {
+            queuedFrame.trace.arrivalUs :
+            (m_TimingController->parameters().playoutSourceMappingDecoderOutput != 0 ?
+                frame.decoderOutputUs() : frame.decodeCompleteUs());
+        const uint64_t ageUs = VrrFrameDropPolicy::ageExcludingDecodeWaitUs(
+            scheduleNowUs, ageOriginUs, decodeSyncWaitUs);
+        // These checks shed work before expensive rendering. Offscreen
+        // preparation has already finished that work: a newer queued source
+        // is not a ready replacement. Repeatedly dropping completed outputs
+        // here can freeze video indefinitely under sustained GPU load. Keep
+        // queue admission/expiry bounded, but present the active ready image.
+        if (!preparedAhead && hasQueuedFrame() && VrrFrameDropPolicy::beforeRender(
+                decision, m_TimingController->displayPeriodUs(), ageUs, metronome,
+                latencyFix, protectedDelayUs)) {
             recordFrameCompletion(queuedFrame, decision, VrrPresentFeedback {}, telemetry,
                        TraceDisposition::Stale);
             noteDrop();
@@ -529,8 +583,9 @@ int VrrPacingWorker::run()
         // start. Leave the surface unprepared and let the next iteration start
         // fresh rather than rendering an avoidably old image.
         uint64_t nowUs = LiGetMicroseconds();
-        if (hasQueuedFrame() && VrrFrameDropPolicy::afterRenderWait(
-                decision, ageOriginUs, nowUs, metronome, latencyFix)) {
+        if (!preparedAhead && hasQueuedFrame() && VrrFrameDropPolicy::afterRenderWait(
+                decision, ageOriginUs, nowUs, metronome, latencyFix,
+                decodeSyncWaitUs, protectedDelayUs)) {
             recordFrameCompletion(queuedFrame, decision, VrrPresentFeedback {}, telemetry,
                        TraceDisposition::Stale);
             noteDrop();
@@ -550,9 +605,10 @@ int VrrPacingWorker::run()
         presentRequest.collectDiagnostics = m_DeepTraceEnabled;
 
         telemetry.preparationStartUs = LiGetMicroseconds();
-        const VrrPrepareResult preparation =
-            m_Presenter->prepareFrame(frame.frame(), frame.decodeBoundary(),
-                                     presentRequest);
+        const VrrPrepareResult preparation = preparedAhead ?
+            m_Presenter->activatePreparedFrame(queuedFrame.preparation,
+                frame.frame(), frame.decodeBoundary(), presentRequest) :
+            m_Presenter->prepareFrame(frame.frame(), frame.decodeBoundary(), presentRequest);
         telemetry.preparationEndUs = LiGetMicroseconds();
         telemetry.preparationDurationUs =
             telemetry.preparationEndUs >= telemetry.preparationStartUs ?
@@ -562,15 +618,16 @@ int VrrPacingWorker::run()
         telemetry.prepareAcquireUs = preparation.acquireUs;
         telemetry.prepareRenderUs = preparation.renderUs;
         telemetry.prepareFlushUs = preparation.flushUs;
-        const bool gpuReadyCompleted =
+        bool gpuReadyCompleted =
             preparation.feedback.gpuReadyTimingValid &&
             preparation.feedback.gpuReadyWaitResultValid &&
             preparation.feedback.gpuReadyWaitResult == 0 &&
             preparation.feedback.gpuReadyTimeUs >=
                 preparation.feedback.gpuReadyWaitStartUs;
-        const uint64_t gpuReadyWaitUs = gpuReadyCompleted ?
+        uint64_t gpuReadyWaitUs = gpuReadyCompleted ?
             preparation.feedback.gpuReadyTimeUs -
                 preparation.feedback.gpuReadyWaitStartUs : 0;
+        m_PreparationCost.observe(telemetry.preparationStartUs, telemetry.preparationEndUs);
         m_TimingController->notePreparationDuration(
             telemetry.preparationDurationUs,
             preparation.timingValid ? preparation.acquireUs : 0,
@@ -725,7 +782,10 @@ int VrrPacingWorker::run()
             telemetry.presentSpacingUs =
                 telemetry.presentStartUs >= priorSubmissionUs ?
                     telemetry.presentStartUs - priorSubmissionUs : 0;
-            const uint64_t minimumUntornUs = priorSubmissionUs +
+            // A tearing present must clear the previous frame's flip, which
+            // for a latched predecessor can be later than its Present call.
+            const uint64_t minimumUntornUs =
+                m_TimingController->untornReferenceUs() +
                 m_TimingController->displayPeriodUs();
             telemetry.spacingMarginUs = signedDifference(
                 telemetry.presentStartUs, minimumUntornUs);
@@ -799,13 +859,44 @@ int VrrPacingWorker::run()
             targetWait.schedulerDelayUs,
             targetWait.schedulerDelayValid);
 
+        // Let the backend confirm from native statistics that a planned
+        // tearing present will not land inside its predecessor's scanout.
+        presentRequest.flipProtectionWindowUs =
+            m_TimingController->parameters().nativeFlipProtection != 0 &&
+                m_CanLatchPresentation && hadPriorSubmission &&
+                !decision.latchedPresentation ?
+            m_TimingController->displayPeriodUs() : 0;
         telemetry.presentStartUs = LiGetMicroseconds();
         VrrPresentFeedback feedback =
             m_Presenter->presentAdaptive(presentRequest);
         telemetry.presentEndUs = LiGetMicroseconds();
+        // Our Present is queued ahead of any decode submitted from now on.
+        VrrReceiveDeadline::clearPresentWindow();
+        m_PresentCallCost.observe(telemetry.presentStartUs, telemetry.presentEndUs);
         telemetry.presentDurationUs =
             telemetry.presentEndUs >= telemetry.presentStartUs ?
                 telemetry.presentEndUs - telemetry.presentStartUs : 0;
+        if (!gpuReadyCompleted) {
+            const bool deferredGpuReadyCompleted =
+                feedback.gpuReadyTimingValid &&
+                feedback.gpuReadyWaitResultValid &&
+                feedback.gpuReadyWaitResult == 0 &&
+                feedback.gpuReadyTimeUs >= feedback.gpuReadyWaitStartUs;
+            if (deferredGpuReadyCompleted) {
+                gpuReadyCompleted = true;
+                gpuReadyWaitUs = feedback.gpuReadyTimeUs -
+                    feedback.gpuReadyWaitStartUs;
+                const uint64_t completionUpperBoundUs =
+                    feedback.gpuReadyCompletedBeforeWait ?
+                        feedback.gpuReadyPollEndUs :
+                        feedback.gpuReadyTimeUs;
+                m_TimingController->noteDeferredGpuReady(
+                    gpuReadyWaitUs, true, completionUpperBoundUs,
+                    completionUpperBoundUs >= telemetry.preparationStartUs ?
+                        completionUpperBoundUs - telemetry.preparationStartUs : 0,
+                    !feedback.gpuReadyCompletedBeforeWait);
+            }
+        }
         recordSubmission(decision, feedback, telemetry.presentStartUs,
                          telemetry.presentEndUs,
                          telemetry);
@@ -814,6 +905,13 @@ int VrrPacingWorker::run()
             sample.queueResidenceUs = positiveDifference(queuedFrame.trace.dequeueUs,
                                                          queuedFrame.trace.arrivalUs);
             sample.decodeWaitUs = telemetry.decodeSyncWaitUs;
+            if (preparedAhead) {
+                const auto& stage = telemetry.preparationStage;
+                sample.decodeWaitUs = stage.decodeWaitUs;
+                sample.queueResidenceUs =
+                    positiveDifference(stage.startUs, queuedFrame.trace.arrivalUs) +
+                    positiveDifference(queuedFrame.trace.dequeueUs, stage.readyUs);
+            }
             sample.bufferUs = decision.playoutDelayUs;
             sample.submissionUs = telemetry.submissionBoundaryUs;
             sample.motionDiscontinuity = decision.rebased || externalRebaseApplied;
@@ -823,6 +921,25 @@ int VrrPacingWorker::run()
                     telemetry.presentEndUs - frame.decoderOutputUs() : 0;
             sample.renderingTimeUs = telemetry.preparationDurationUs +
                 telemetry.presentDurationUs;
+            if (preparedAhead) {
+                sample.renderingTimeUs += positiveDifference(
+                    telemetry.preparationStage.readyUs,
+                    telemetry.preparationStage.renderStartUs);
+            }
+            sample.preparationUs = telemetry.preparationDurationUs;
+            sample.presentCallUs = telemetry.presentDurationUs;
+            sample.gpuReadyWaitUs = gpuReadyWaitUs;
+            sample.gpuReadyWaitValid = gpuReadyCompleted;
+            if (preparedAhead) {
+                const auto& stage = telemetry.preparationStage;
+                sample.preparationUs += positiveDifference(stage.readyUs, stage.renderStartUs);
+                sample.gpuReadyWaitUs += positiveDifference(stage.readyUs, stage.renderEndUs);
+                sample.gpuReadyWaitValid = true;
+            }
+            sample.latched = decision.latchedPresentation ||
+                feedback.flipProtectionLatched;
+            sample.bufferCapUs = decision.playoutDelayMaximumUs;
+            sample.gpuReadinessLeadUs = decision.gpuReadinessLeadUs;
             const uint64_t readinessDeadlineUs =
                 m_TimingController->parameters().playoutResponsiveBuffer >= 3 ?
                 decision.originalTargetUs : decision.targetUs;
@@ -869,6 +986,7 @@ int VrrPacingWorker::run()
 bool VrrPacingWorker::dequeueFrame(QueuedFrame& frame,
                                    bool& queueDiscontinuity)
 {
+    std::deque<QueuedFrame> expiredFrames;
     QMutexLocker lock(&m_FrameQueueLock);
     while (!isStopping() && !m_Suspended.load() && m_FrameQueue.empty()) {
         m_FrameQueueNotEmpty.wait(&m_FrameQueueLock);
@@ -881,10 +999,31 @@ bool VrrPacingWorker::dequeueFrame(QueuedFrame& frame,
         return true;
     }
 
+    const uint64_t nowUs = LiGetMicroseconds();
+    const uint64_t protectedDelayUs = m_TimingController->playoutDelayUs();
+    while (m_FrameQueue.size() > 1 && !m_RebaseOnNextFrame &&
+            VrrFrameDropPolicy::beforeDecodeWait(
+                m_FrameQueue[0].frame, m_FrameQueue[1].frame,
+                m_FrameQueue[0].trace.arrivalUs, nowUs,
+                m_TimingController->sourcePeriodUs(),
+                m_TimingController->parameters().playoutMetronomeEnabled != 0,
+                protectedDelayUs)) {
+        expiredFrames.push_back(std::move(m_FrameQueue.front()));
+        m_FrameQueue.pop_front();
+    }
+
     queueDiscontinuity = m_QueueDiscontinuity.exchange(false);
     frame = std::move(m_FrameQueue.front());
     m_FrameQueue.pop_front();
     m_FrameQueueDepth.store(m_FrameQueue.size(), std::memory_order_relaxed);
+    lock.unlock();
+    // No backend has read these images. Release them outside the queue lock
+    // without waiting for decode or perturbing the controller's source clock.
+    for (const auto& expired : expiredFrames) {
+        recordFrameCompletion(expired, VrrTimingDecision{}, VrrPresentFeedback{},
+                              FrameTelemetry{}, TraceDisposition::QueueStale, false);
+        noteDrop();
+    }
     return true;
 }
 
@@ -1048,6 +1187,10 @@ void VrrPacingWorker::recordSubmission(
         }
     }
 
+    if (feedback.flipProtectionLatched) {
+        m_TimingController->noteNativeFlipProtection(
+            feedback.flipProtectionReferenceUs);
+    }
     m_TimingController->noteSubmission(
         feedback.presented, feedback.cancelled,
         telemetry.submissionBoundaryUs);
@@ -1063,7 +1206,7 @@ void VrrPacingWorker::recordSubmission(
     // latch transition must not reset their feedback matching history.
     observation.latched = (feedback.nativeBackend == VrrNativePresentationBackend::Vulkan ||
                            feedback.nativeBackend == VrrNativePresentationBackend::Composition) ?
-        false : decision.latchedPresentation;
+        false : decision.latchedPresentation || feedback.flipProtectionLatched;
     observation.dxgi = feedback.nativeBackend == VrrNativePresentationBackend::Dxgi;
     observation.sampleValid = feedback.latchSampleValid &&
         (!observation.dxgi || (feedback.latchQpcCorrelationValid && feedback.latchRawSyncQpcFrequency));
@@ -1094,6 +1237,80 @@ void VrrPacingWorker::noteDrop()
     }
 }
 
+QString VrrPacingWorker::startDelayPath() const
+{
+    return QFileInfo(QString::fromStdString(m_Config.calibrationPath)).absolutePath() +
+        QStringLiteral("/vrr-start-delay.json");
+}
+
+void VrrPacingWorker::noteSettledDelay(uint64_t nowUs, uint64_t delayUs)
+{
+    // Sample once per second after the first half minute: early delay still
+    // reflects the starting value rather than what this setup needs.
+    if (!m_FirstDecisionUs) m_FirstDecisionUs = nowUs;
+    if (nowUs - m_FirstDecisionUs < kSettledDelayWarmupUs ||
+            (m_LastSettledDelaySampleUs && nowUs - m_LastSettledDelaySampleUs < 1000000) ||
+            m_SettledDelaySamples.size() >= 36000) {
+        return;
+    }
+    m_LastSettledDelaySampleUs = nowUs;
+    m_SettledDelaySamples.push_back(delayUs);
+}
+
+void VrrPacingWorker::publishReceiveDeadline(const PacedFrame& frame,
+                                             const VrrTimingDecision& decision)
+{
+    // A frame is on time when its decode-complete boundary reaches the mapped
+    // source slot plus the playout delay (the lateness the delay calibrator
+    // sees, before cadence retiming). Later frames follow at the RTP rate from
+    // this anchor. Without a timestamp slot there is nothing to protect.
+    if (!m_TimingController->timestampPlayoutActive() || !frame.timestampValid()) {
+        VrrReceiveDeadline::clear();
+        VrrReceiveDeadline::clearPresentWindow();
+        return;
+    }
+    // A deliberate decode hold is spare time, not cost: counting it would
+    // move every deadline earlier and cut more detail for nothing. A frame
+    // whose own decode took longer than a source period is left out too:
+    // releasing later frames earlier cannot relieve an overloaded decoder, and
+    // counting it moved every deadline before the frames finished arriving.
+    const uint64_t decodeStartUs = frame.reassembledUs() + frame.decodeHoldUs();
+    if (frame.reassembledUs() && frame.decodeCompleteUs() >= decodeStartUs &&
+            frame.decodeCompleteUs() - decodeStartUs <= decision.sourcePeriodUs) {
+        m_RecentDuration.observeGpuCompletion(
+            decodeStartUs, frame.decoderOutputUs(), frame.decodeCompleteUs(),
+            frame.decoderOutputComplete());
+    }
+    m_DecodeGpuCost.observeGpuCompletion(
+        frame.decodeSubmitUs(), frame.decoderOutputUs(), frame.decodeCompleteUs(),
+        frame.decoderOutputComplete());
+    if (m_DecodeGpuCost.ready() && m_PresentCallCost.ready()) {
+        // A decode submitted from here on would still be running when this
+        // frame is presented. The window closes when the Present call returns;
+        // the expected close only decides whether a hold is affordable.
+        const uint64_t startUs = decision.targetUs -
+            std::min(decision.targetUs, m_DecodeGpuCost.percentileUs());
+        VrrReceiveDeadline::publishPresentWindow(
+            startUs, decision.targetUs + m_PresentCallCost.percentileUs());
+    }
+    if (!m_RecentDuration.ready()) {
+        return;
+    }
+    if (m_PreparationCost.ready()) {
+        const uint64_t holdLeadUs = m_RecentDuration.percentileUs() +
+            m_PreparationCost.percentileUs() + kReceiveDeadlineMarginUs;
+        if (decision.targetUs > holdLeadUs) {
+            VrrReceiveDeadline::publishHold(frame.rtpTimestamp(), decision.targetUs - holdLeadUs);
+        }
+    }
+    const uint64_t onTimeUs = decision.sourceTimeUs + decision.playoutDelayUs;
+    const uint64_t leadUs = m_RecentDuration.percentileUs() + kReceiveDeadlineMarginUs;
+    if (onTimeUs <= leadUs) {
+        return;
+    }
+    VrrReceiveDeadline::publish(frame.rtpTimestamp(), onTimeUs - leadUs);
+}
+
 void VrrPacingWorker::recordFrameCompletion(const QueuedFrame& queuedFrame,
                                  const VrrTimingDecision& decision,
                                  const VrrPresentFeedback& feedback,
@@ -1106,6 +1323,7 @@ void VrrPacingWorker::recordFrameCompletion(const QueuedFrame& queuedFrame,
     const bool playbackOutcome = disposition == TraceDisposition::Presented ||
         disposition == TraceDisposition::OutputDropped ||
         disposition == TraceDisposition::QueueCapacity ||
+        disposition == TraceDisposition::QueueStale ||
         disposition == TraceDisposition::Stale ||
         disposition == TraceDisposition::PreparationFailed;
     if (m_Telemetry && playbackOutcome) {
@@ -1149,6 +1367,7 @@ void VrrPacingWorker::recordFrameCompletion(const QueuedFrame& queuedFrame,
     row.receiveUs = frame.receiveUs();
     row.reassembledUs = frame.reassembledUs();
     row.decodeSubmitUs = frame.decodeSubmitUs();
+    row.decodeHoldUs = frame.decodeHoldUs();
     row.input = queuedFrame.trace;
     row.decision = decision;
     // submit() and window notifications may emit terminal rows from threads
@@ -1166,6 +1385,7 @@ void VrrPacingWorker::recordFrameCompletion(const QueuedFrame& queuedFrame,
         row.historyMisses = history.misses();
         row.historyDurationUs = static_cast<uint64_t>(history.duration() / 1000);
         row.historyCanRelease = history.canRelease();
+        row.bufferStats = m_TimingController->intervalStats();
     }
     row.feedback = feedback;
     row.telemetry = telemetry;
@@ -1374,6 +1594,7 @@ void VrrPacingWorker::writeTraceRow(const TraceRow& row)
     addBool(telemetry.hadPriorSubmission);
     addText(tearClassification(row));
     addBool(feedback.presented && !decision.latchedPresentation &&
+            !feedback.flipProtectionLatched &&
             telemetry.hadPriorSubmission && telemetry.spacingMarginUs < 0);
     addUnsigned(row.completionQueueDepth);
     addText(traceDispositionName(row.disposition));
@@ -1605,6 +1826,46 @@ void VrrPacingWorker::writeTraceRow(const TraceRow& row)
     addUnsigned(0); // Retired oscillation diagnostic column.
     addUnsigned(0);
     addUnsigned(m_Config.allowTearing);
+    addUnsigned(decision.playoutDelayMaximumUs);
+    addUnsigned(decision.playoutQueueLimitUs);
+    addUnsigned(decision.playoutPresetCapUs);
+    addSigned(decision.playoutOffsetUs);
+    addUnsigned(decision.presentationFloorPushUs);
+    const auto& update = row.bufferStats.update;
+    // Stale/failed rows may precede the observer call. Never attribute the
+    // preceding frame's update to them, nor inspect worker state on producers.
+    addUnsigned(row.decisionValid && parameters.playoutResponsiveBuffer >= 6 &&
+                update.frame == static_cast<uint64_t>(row.frameNumber) && update.atUs != 0);
+    addUnsigned(update.atUs);
+    addUnsigned(update.frame);
+    addUnsigned(static_cast<uint64_t>(update.action));
+    addUnsigned(update.attributedFrame);
+    addUnsigned(update.beforeUs);
+    addUnsigned(update.requestedUs);
+    addUnsigned(update.intervalErrorUs);
+    addUnsigned(update.latenessUs);
+    addUnsigned(update.attemptedIncreaseUs);
+    addUnsigned(update.clippedIncreaseUs);
+    addUnsigned(update.holdRemainingUs);
+    addUnsigned(update.cooldownRemainingUs);
+    addBool(row.bufferStats.initialCalibrationComplete);
+    addUnsigned(row.bufferStats.calibrationSamples);
+    addUnsigned(row.bufferStats.calibrationCoverageUs);
+    addUnsigned(row.telemetry.preparedAhead);
+    addUnsigned(row.telemetry.preparationStage.startUs);
+    addUnsigned(row.telemetry.preparationStage.decodeReadyUs);
+    addUnsigned(row.telemetry.preparationStage.decodeWaitUs);
+    addUnsigned(row.telemetry.preparationStage.renderStartUs);
+    addUnsigned(row.telemetry.preparationStage.renderEndUs);
+    addUnsigned(row.telemetry.preparationStage.readyUs);
+    addBool(feedback.flipProtectionChecked);
+    addSigned(feedback.flipProtectionQueryResult);
+    addUnsigned(feedback.flipProtectionQueryStartUs);
+    addUnsigned(feedback.flipProtectionQueryEndUs);
+    addBool(feedback.flipProtectionPending);
+    addUnsigned(feedback.flipProtectionReferenceUs);
+    addBool(feedback.flipProtectionLatched);
+    addUnsigned(row.decodeHoldUs);
     line.append('\n');
 
     if (m_TraceFormat == TraceFormat::ChunkedCompressed) {
@@ -1693,6 +1954,8 @@ const char* VrrPacingWorker::traceDispositionName(
         return "output_dropped";
     case TraceDisposition::QueueCapacity:
         return "queue_capacity";
+    case TraceDisposition::QueueStale:
+        return "queue_stale";
     case TraceDisposition::ArrivalRejected:
         return "arrival_rejected";
     case TraceDisposition::SuspensionDiscard:
@@ -1714,7 +1977,8 @@ const char* VrrPacingWorker::tearClassification(const TraceRow& row) const
     if (!row.feedback.presented) {
         return "not_presented";
     }
-    if (row.decision.latchedPresentation && m_CanLatchPresentation) {
+    if ((row.decision.latchedPresentation ||
+         row.feedback.flipProtectionLatched) && m_CanLatchPresentation) {
         return "confirmed_safe_latched";
     }
     if (!row.telemetry.hadPriorSubmission) {
@@ -1731,8 +1995,8 @@ const char* VrrPacingWorker::tearClassification(const TraceRow& row) const
 
 void VrrPacingWorker::openTraceIfRequested()
 {
-    const char* tracePath = SDL_getenv("MOONLIGHT_VRR_TRACE");
-    if (tracePath == nullptr || tracePath[0] == '\0') {
+    const QString tracePath = qEnvironmentVariable("MOONLIGHT_VRR_TRACE");
+    if (tracePath.isEmpty()) {
         return;
     }
 
@@ -1742,7 +2006,7 @@ void VrrPacingWorker::openTraceIfRequested()
     if (isUncPath(tracePath)) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "MOONLIGHT_VRR_TRACE must use a local path; refusing network trace: %s",
-                    tracePath);
+                    qPrintable(tracePath));
         return;
     }
 
@@ -1752,7 +2016,7 @@ void VrrPacingWorker::openTraceIfRequested()
     // reconnect creates a new worker. Preserve the completed connection before
     // reusing that path so launchers and their latest-trace links still name
     // the current capture. A failed archive must never fall through to truncate.
-    QFile previousTrace(QString::fromLocal8Bit(tracePath));
+    QFile previousTrace(tracePath);
     if (previousTrace.exists()) {
         const QFileInfo traceInfo(previousTrace);
         const QString extension = traceInfo.suffix().isEmpty() ? QString() :
@@ -1767,7 +2031,7 @@ void VrrPacingWorker::openTraceIfRequested()
         if (!previousTrace.rename(archivePath)) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                         "Unable to preserve previous VRR trace; tracing disabled: %s",
-                        tracePath);
+                        qPrintable(tracePath));
             return;
         }
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -1778,22 +2042,22 @@ void VrrPacingWorker::openTraceIfRequested()
 #ifdef _WIN32
     // Use the checked CRT variant on Windows so enabling diagnostics does not
     // introduce a deprecation warning in the normal application build.
-    if (fopen_s(&m_TraceFile, tracePath, "wb") != 0) {
+    if (_wfopen_s(&m_TraceFile, reinterpret_cast<const wchar_t*>(tracePath.utf16()), L"wb") != 0) {
         m_TraceFile = nullptr;
     }
 #else
-    m_TraceFile = std::fopen(tracePath, "wb");
+    m_TraceFile = std::fopen(QFile::encodeName(tracePath).constData(), "wb");
 #endif
     if (m_TraceFile == nullptr) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "Unable to open MOONLIGHT_VRR_TRACE file: %s", tracePath);
+                    "Unable to open MOONLIGHT_VRR_TRACE file: %s", qPrintable(tracePath));
         return;
     }
 
     // A .csv suffix explicitly requests the directly readable compatibility
     // format. The recommended .vrrtrace format compresses independent chunks
     // and typically reduces a full session by an order of magnitude.
-    m_TraceFormat = QByteArray(tracePath).toLower().endsWith(".csv") ?
+    m_TraceFormat = tracePath.endsWith(QStringLiteral(".csv"), Qt::CaseInsensitive) ?
         TraceFormat::Csv : TraceFormat::ChunkedCompressed;
 
     // Amortize local diagnostic writes instead of flushing on every frame.

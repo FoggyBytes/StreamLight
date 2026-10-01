@@ -84,6 +84,10 @@ public:
             {SCM_AV1_MAIN10, VIDEO_FORMAT_AV1_MAIN10},
             {SCM_AV1_HIGH8_444, VIDEO_FORMAT_AV1_HIGH8_444},
             {SCM_AV1_HIGH10_444, VIDEO_FORMAT_AV1_HIGH10_444},
+            {SCM_PYROWAVE, VIDEO_FORMAT_PYROWAVE},
+            {SCM_PYROWAVE_444, VIDEO_FORMAT_PYROWAVE_444},
+            {SCM_PYROWAVE_HDR10, VIDEO_FORMAT_PYROWAVE_HDR10},
+            {SCM_PYROWAVE_HDR10_444, VIDEO_FORMAT_PYROWAVE_HDR10_444},
         };
 
         for (QMap<int, int>::const_iterator it = mapping.cbegin(); it != mapping.cend(); ++it) {
@@ -161,7 +165,6 @@ public:
     // asked for and shows no error over it. Safe at any point: LiInterruptConnection() aborts
     // a handshake in progress, and a session that never started simply never runs.
     Q_INVOKABLE void cancelLaunch();
-    Q_INVOKABLE bool launchWasCancelled() const { return m_LaunchCancelled; }
 
     // Request a clean shutdown of an established session. Unlike interrupt(),
     // this does NOT call LiInterruptConnection() — it only pushes SDL_QUIT and
@@ -193,6 +196,10 @@ public:
     // Host and app of this session — used by the live Stream Settings overlay to
     // resolve which profile layer (per-game / host profile / global) to save to.
     NvComputer* getComputer() const { return m_Computer; }
+
+    // The colour range this stream negotiated. PyroWave (6.4.0) carries none in its
+    // bitstream, so its decoder stamps each frame with this one.
+    int streamColorRange() const { return m_StreamConfig.colorRange; }
 
     // Whether THIS session runs VRR pacing — the snapshot, which the renderer can still
     // turn false by refusing it. The live Stream Settings overlay locks Frame pacing on it.
@@ -320,7 +327,6 @@ public:
     // (which exists to reveal the window, the one thing we must not do) and telemetry
     // (nothing here is worth recording).
     Q_INVOKABLE void setUnlockMode(bool on) { m_UnlockMode = on; }
-    Q_INVOKABLE bool isUnlockMode() const   { return m_UnlockMode; }
 
     /**
      * A left click, to dismiss the lock-screen shade. Deliberately not a keystroke: if the

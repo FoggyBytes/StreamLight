@@ -23,6 +23,8 @@ typedef struct _ENC_VIDEO_HEADER {
 #define FLAG_SOF 0x4
 
 #define NV_VIDEO_PACKET_EXTRA_FLAG_LTR_FRAME 0x1
+// PyroWave record framing (vibeshine): this packet's frame data starts with a record
+#define NV_VIDEO_PACKET_EXTRA_FLAG_PYROWAVE_RECORD_START 0x80
 
 typedef struct _NV_VIDEO_PACKET {
     uint32_t streamPacketIndex;

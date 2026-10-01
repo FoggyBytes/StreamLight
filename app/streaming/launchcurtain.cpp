@@ -40,14 +40,15 @@ qint64 LaunchCurtain::nowMs() const
 
 void LaunchCurtain::setCover(const QUrl& coverUrl)
 {
-    m_CoverUrl = coverUrl;
-
+    // Only a diagnostic now: the cover is drawn from StreamSegue's own boxArt (see the note
+    // there), and the copy this used to keep — the coverUrl property — had no reader left, so
+    // it was removed in 6.3.1.
+    //
     // Says whether the artwork arrived at all, and whether it was a real file or the
     // placeholder the model hands back while a cover is still downloading. Without this,
     // "the launch screen has no picture" has two different causes that look identical.
     qInfo().nospace() << "Launch curtain: cover " << coverUrl.toString()
                       << (coverUrl.isLocalFile() ? " [local]" : " [not a local file]");
-    emit changed();
 }
 
 void LaunchCurtain::begin(const QString& gameName)

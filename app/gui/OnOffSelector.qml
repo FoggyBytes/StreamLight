@@ -32,9 +32,9 @@ SegmentedSelector {
     // switch. Nothing here fires at load, so `onToggled` can write and save unconditionally.
     //
     // ⚠️ One row depended on that first evaluation rather than merely tolerating it — the
-    // bitrate unlock, which re-clamped a stored bitrate above the locked ceiling. It now
-    // does that from its own Component.onCompleted, where it is visible as the load-time
-    // step it always was.
+    // bitrate unlock, which re-clamped a stored bitrate above the locked ceiling. It did that
+    // from its own handler afterwards, and the row itself went in 6.4.0 with the 150 Mbps
+    // ceiling it guarded.
     signal toggled(bool value)
 
     labels: [qsTr("Off"), qsTr("On")]

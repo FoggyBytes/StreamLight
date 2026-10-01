@@ -53,7 +53,7 @@ Popup {
     modal: true
     dim: true
     focus: true
-    Overlay.modal: Rectangle { color: "#cc000000" }
+    Overlay.modal: Rectangle { color: Theme.scrim }
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     padding: dlg._px(28)

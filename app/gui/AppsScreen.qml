@@ -33,9 +33,17 @@ FocusScope {
 
     // ── Properties pushed in by AppShell ─────────────────────────────────────
     property var    appShell: null
-    property int    computerIndex
     property bool   showHiddenGames
     property var    hostComputerModel: null
+    // The host by uuid, and its row read back from it (6.3.1). The row is what every call into
+    // ComputerModel takes, and it moves whenever the host list does — a rename, a host found
+    // or removed — which can happen at any point of an evening spent on this page. A row
+    // pushed in once would go on naming whichever host took its place: profiles cycled on,
+    // link state and store badges read from, a different machine.
+    property string hostUuid: ""
+    readonly property int computerIndex: (hostComputerModel && hostComputerModel.layoutRevision >= 0
+                                          && hostUuid !== "")
+                                         ? hostComputerModel.indexOfUuid(hostUuid) : -1
     property string hostName:    ""
     property string hostAddress: ""
     property string hostGpu:     ""
@@ -65,7 +73,7 @@ FocusScope {
     // pacing but not V-Sync — so it has to be told the effective value to grey against.
     readonly property bool _effVsync:   (hostOverride && hostOverride.vsync   !== undefined) ? hostOverride.vsync === true : StreamingPreferences.enableVsync
 
-    function _codecLabel(c) { return c === 1 ? "H.264" : c === 2 ? "HEVC" : c === 4 ? "AV1" : qsTr("Auto codec") }
+    function _codecLabel(c) { return c === 1 ? "H.264" : c === 2 ? "HEVC" : c === 4 ? "AV1" : c === 5 ? "PyroWave" : qsTr("Auto codec") }
     function _audioLabel(a) { return a === 1 ? "5.1" : a === 2 ? "7.1" : qsTr("Stereo") }
 
     function _resLabel() {
@@ -186,6 +194,10 @@ FocusScope {
     property string _resumeCursorTo: ""
 
     function launchSegue(name, art, session, resume, appId) {
+        if (!session) {
+            console.warn("[launch] no session for " + name)
+            return
+        }
         appsRoot._resumeCursorTo = name
         var component = Qt.createComponent("StreamSegue.qml")
         if (component.status !== Component.Ready) {
@@ -318,9 +330,9 @@ FocusScope {
     // The tab the page opens on. An empty list is one not fetched yet, so the saved tab is
     // taken on trust and onCountsChanged corrects it if it turns out empty.
     //
-    // ⚠️ Sets _tabChosenByUser both ways. The page is built with computerIndex 0 and only then
-    // told its real host (AppShell's onLoaded), so this runs once for host 0 first: setting the
-    // flag only to true would carry host 0's saved choice onto a host that has none.
+    // ⚠️ Sets _tabChosenByUser both ways. The page is built for row 0 and only then told its
+    // real host (hostUuid, from AppShell's onLoaded), so this runs once for host 0 first: setting
+    // the flag only to true would carry host 0's saved choice onto a host that has none.
     function _openingTabFor(m) {
         var saved = m.savedTab()
         _tabChosenByUser = _tabs.indexOf(saved) >= 0
@@ -562,6 +574,7 @@ FocusScope {
         // So the per-game "inherit" option shows the active profile's name.
         appSettingsDialog.activeProfileName = appsRoot.hostProfileName
         appSettingsDialog.effectiveVsync = appsRoot._effVsync
+        appSettingsDialog.inheritedCodec = appsRoot._effCodec
         appSettingsDialog.open()
     }
     function openCustomizeForFocused() {
@@ -1456,7 +1469,14 @@ FocusScope {
 
         function createModel() {
             var model = Qt.createQmlObject('import AppModel 1.0; AppModel {}', parent, '')
-            model.initialize(ComputerManager, appsRoot.computerIndex, appsRoot.showHiddenGames)
+            // Built for the host, not for its row: reading computerIndex here would make this
+            // binding rebuild the library — list, tab and cursor — every time the host list
+            // moved. indexOfUuid() is an invokable, so the binding does not follow it; the
+            // model keeps the host itself once initialised and never needs the row again.
+            // Row 0 until the host is known, as the page always did (see _openingTabFor).
+            var row = appsRoot.hostUuid !== "" && appsRoot.hostComputerModel
+                      ? appsRoot.hostComputerModel.indexOfUuid(appsRoot.hostUuid) : 0
+            model.initialize(ComputerManager, Math.max(0, row), appsRoot.showHiddenGames)
             // The tab is decided here, before the list sees a single row, rather than by
             // resetting a model that has already filled it: that reset left the spotlight with no
             // focused item for an instant, and everything bound to it — the blurred backdrop
@@ -1683,10 +1703,10 @@ FocusScope {
                         quitAppDialog.segueToStream = true
                         quitAppDialog.nextAppName = model.name
                         // Captured here and not in quitApp(): this is the delegate, the only
-                        // scope where `model` exists. The dialog is a sibling of the list and
-                        // has nothing but the index to go on.
+                        // scope where `model` exists. The dialog is a sibling of the list, so it
+                        // is handed the app's id — the row is found again when Yes is pressed.
                         quitAppDialog.nextBoxArt = model.boxart
-                        quitAppDialog.nextAppIndex = index
+                        quitAppDialog.nextAppId = model.appid
                         quitAppDialog.open()
                     }
                     return
@@ -1784,11 +1804,26 @@ FocusScope {
         property bool segueToStream: false
         property string nextAppName: ""
         property string nextBoxArt: ""
-        property int nextAppIndex: 0
+        property int nextAppId: 0
         text: qsTr("Are you sure you want to quit %1? Any unsaved progress will be lost.").arg(appName)
         standardButtons: Dialog.Yes | Dialog.No
 
         function quitApp() {
+            // The game to launch next, found by id now rather than by the row it had when the
+            // dialog opened (6.3.1). The list can change under an open dialog — a game synced
+            // in or out by StreamTweak inserts or removes a row — and the old row then named a
+            // different game, or none: createSessionForApp() read past the end of the list.
+            // Gone altogether means nothing happens, the running game included: quitting it
+            // for a launch that cannot follow would lose its progress for nothing.
+            var nextIndex = -1
+            if (segueToStream) {
+                nextIndex = appGrid.appModel.indexOfAppId(nextAppId)
+                if (nextIndex < 0) {
+                    console.warn("[quit] " + nextAppName + " is no longer on this host — nothing quit")
+                    return
+                }
+            }
+
             var component = Qt.createComponent("QuitSegue.qml")
             var params = {
                 "appName": appName,
@@ -1804,7 +1839,7 @@ FocusScope {
             if (segueToStream) {
                 params.nextAppName = nextAppName
                 params.nextBoxArt  = nextBoxArt
-                params.nextSession = appGrid.appModel.createSessionForApp(nextAppIndex)
+                params.nextSession = appGrid.appModel.createSessionForApp(nextIndex)
                 // The same record the direct-launch path keeps. onQuitSucceededFn above is
                 // deliberately not fired when a game follows — that is a swap, not the end of
                 // the evening — so without this the session we are about to start would end

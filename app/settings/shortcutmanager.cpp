@@ -396,18 +396,6 @@ void ShortcutManager::setKeyboardBinding(int action, int modifiers, int sdlKey, 
     emit shortcutsChanged();
 }
 
-void ShortcutManager::setKeyboardEnabled(int action, bool enabled)
-{
-    if (action < 0 || action >= KB_COUNT) {
-        return;
-    }
-    QSettings settings;
-    settings.beginGroup(SHORTCUTS_GROUP);
-    settings.setValue(QStringLiteral("kb%1_enabled").arg(action), enabled);
-    settings.endGroup();
-    emit shortcutsChanged();
-}
-
 void ShortcutManager::resetKeyboard(int action)
 {
     if (action < 0 || action >= KB_COUNT) {

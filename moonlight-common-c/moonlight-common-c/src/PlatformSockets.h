@@ -129,6 +129,9 @@ SOCKET bindUdpSocket(int addressFamily, struct sockaddr_storage* localAddr, SOCK
 int enableNoDelay(SOCKET s);
 int setSocketNonBlocking(SOCKET s, bool enabled);
 int recvUdpSocket(SOCKET s, char* buffer, int size, bool useSelect);
+// Requires a nonblocking socket. Read queued data before waiting; zero means
+// the socket stayed empty through the requested wait, not a zero-byte packet.
+int recvUdpSocketWithTimeout(SOCKET s, char* buffer, int size, int timeoutMs);
 void shutdownTcpSocket(SOCKET s);
 int setNonFatalRecvTimeoutMs(SOCKET s, int timeoutMs);
 void closeSocket(SOCKET s);

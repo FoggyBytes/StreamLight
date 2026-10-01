@@ -46,7 +46,7 @@ Popup {
     onPhaseChanged: Qt.callLater(_focusForPhase)
 
     modal: true
-    Overlay.modal: Rectangle { color: "#cc000000" }
+    Overlay.modal: Rectangle { color: Theme.scrim }
     focus: true
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape

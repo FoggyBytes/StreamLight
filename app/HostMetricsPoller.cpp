@@ -49,6 +49,12 @@ void HostMetricsPoller::onStatsReceived(const QString& statsJson)
 {
     m_pendingRequest = false;
 
+    // Stopped while this was in flight: the stream it belonged to is over. Its "stop":1 in
+    // particular must go nowhere — it becomes SDL_QUIT, and with no stream loop running the
+    // one reading SDL's queue is the GUI's gamepad navigation, which quits the whole app on it.
+    if (!m_timer.isActive())
+        return;
+
     // Empty string means the connection failed — keep the last known values
     // rather than resetting to -1, so the overlay doesn't flicker on transient
     // network hiccups.

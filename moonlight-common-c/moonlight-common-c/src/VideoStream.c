@@ -34,6 +34,10 @@ static bool receivedFullFrame;
 // and subsequent packet/frame bursts that follow.
 #define RTP_RECV_PACKETS_BUFFERED 2048
 
+// PyroWave frames are intra-coded at hundreds of Mbps; a 1080p120 or 4K60 frame
+// alone can approach 2048 packets. Keep several frames of headroom.
+#define RTP_RECV_PACKETS_BUFFERED_PYROWAVE 8192
+
 // Initialize the video stream
 void initializeVideoStream(void) {
     initializeVideoDepacketizer(StreamConfig.packetSize);
@@ -91,6 +95,7 @@ static void VideoReceiveThreadProc(void* context) {
     bool useSelect;
     int waitingForVideoMs;
     bool encrypted;
+    bool usePartialFrameTimeout;
 
     encrypted = !!(EncryptionFeaturesEnabled & SS_ENC_VIDEO);
     decryptedSize = StreamConfig.packetSize + MAX_RTP_HEADER_SIZE;
@@ -99,7 +104,12 @@ static void VideoReceiveThreadProc(void* context) {
     bufferSize = decryptedSize + sizeof(RTPV_QUEUE_ENTRY);
     buffer = NULL;
 
-    if (setNonFatalRecvTimeoutMs(rtpSocket, UDP_RECV_POLL_TIMEOUT_MS) < 0) {
+    usePartialFrameTimeout = (NegotiatedVideoFormat & VIDEO_FORMAT_MASK_PYROWAVE) != 0 &&
+                            setSocketNonBlocking(rtpSocket, true) == 0;
+    if (usePartialFrameTimeout) {
+        useSelect = false; // The nonblocking helper polls only after draining a burst.
+    }
+    else if (setNonFatalRecvTimeoutMs(rtpSocket, UDP_RECV_POLL_TIMEOUT_MS) < 0) {
         // SO_RCVTIMEO failed, so use select() to wait
         useSelect = true;
     }
@@ -134,16 +144,44 @@ static void VideoReceiveThreadProc(void* context) {
             }
         }
 
-        err = recvUdpSocket(rtpSocket,
-                            encrypted ? encryptedBuffer : buffer,
-                            receiveSize,
-                            useSelect);
+        if (usePartialFrameTimeout) {
+            int timeoutMs = UDP_RECV_POLL_TIMEOUT_MS;
+            uint64_t deadlineUs = RtpvGetPendingFrameDeadlineUs(&rtpQueue);
+            if (deadlineUs != 0) {
+                uint64_t nowUs = PltGetMicroseconds();
+                uint64_t remainingUs = nowUs >= deadlineUs ? 0 : deadlineUs - nowUs;
+                if (RtpvPendingFrameDeadlineIsPrecise(&rtpQueue)) {
+                    // A poll can overshoot its millisecond timeout. Wake at
+                    // least a millisecond early and poll without blocking for
+                    // the remainder, so the frame still makes its slot.
+                    timeoutMs = remainingUs >= 2000 ? (int)((remainingUs - 1000) / 1000) : 0;
+                }
+                else {
+                    timeoutMs = (int)((remainingUs + 999) / 1000);
+                }
+                if (timeoutMs > UDP_RECV_POLL_TIMEOUT_MS) {
+                    timeoutMs = UDP_RECV_POLL_TIMEOUT_MS;
+                }
+            }
+            err = recvUdpSocketWithTimeout(rtpSocket,
+                                          encrypted ? encryptedBuffer : buffer,
+                                          receiveSize, timeoutMs);
+        }
+        else {
+            err = recvUdpSocket(rtpSocket,
+                                encrypted ? encryptedBuffer : buffer,
+                                receiveSize,
+                                useSelect);
+        }
         if (err < 0) {
             Limelog("Video Receive: recvUdpSocket() failed: %d\n", (int)LastSocketError());
             ListenerCallbacks.connectionTerminated(LastSocketFail());
             break;
         }
         else if  (err == 0) {
+            if (usePartialFrameTimeout) {
+                RtpvExpirePendingFrame(&rtpQueue, PltGetMicroseconds());
+            }
             if (!receivedDataFromPeer) {
                 // If we wait many seconds without ever receiving a video packet,
                 // assume something is broken and terminate the connection.
@@ -328,12 +366,33 @@ int startVideoStream(void* rendererContext, int drFlags) {
         return err;
     }
 
+    int requestedBufferSize = ((NegotiatedVideoFormat & VIDEO_FORMAT_MASK_PYROWAVE) ?
+                                   RTP_RECV_PACKETS_BUFFERED_PYROWAVE : RTP_RECV_PACKETS_BUFFERED) *
+                              (StreamConfig.packetSize + MAX_RTP_HEADER_SIZE);
     rtpSocket = bindUdpSocket(RemoteAddr.ss_family, &LocalAddr, AddrLen,
-                              RTP_RECV_PACKETS_BUFFERED * (StreamConfig.packetSize + MAX_RTP_HEADER_SIZE),
-                              SOCK_QOS_TYPE_VIDEO);
+                              requestedBufferSize, SOCK_QOS_TYPE_VIDEO);
     if (rtpSocket == INVALID_SOCKET) {
         VideoCallbacks.cleanup();
         return LastSocketError();
+    }
+
+    if (NegotiatedVideoFormat & VIDEO_FORMAT_MASK_PYROWAVE) {
+        // A PyroWave frame can be hundreds of packets arriving at line rate.
+        // Linux silently clamps SO_RCVBUF to net.core.rmem_max, and packets
+        // beyond the clamped buffer are dropped by the kernel.
+        int actualBufferSize = 0;
+        SOCKADDR_LEN len = sizeof(actualBufferSize);
+        if (getsockopt(rtpSocket, SOL_SOCKET, SO_RCVBUF, (char*)&actualBufferSize, &len) == 0) {
+#ifdef __linux__
+            // Linux reports double the usable size to account for its overhead
+            actualBufferSize /= 2;
+#endif
+            if (actualBufferSize < requestedBufferSize) {
+                Limelog("WARNING: video receive buffer is %d KB of %d KB requested; "
+                        "PyroWave frames may lose packets (on Linux, raise net.core.rmem_max)\n",
+                        actualBufferSize / 1024, requestedBufferSize / 1024);
+            }
+        }
     }
 
     VideoCallbacks.start();

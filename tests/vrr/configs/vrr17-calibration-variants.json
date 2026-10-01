@@ -1,0 +1,17 @@
+{
+  "review_schema": 1,
+  "scenarios": [
+    {"name": "session-policy", "mode": "fixed"},
+    {
+      "name": "one-second-initial-calibration", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_interval_initial_warmup_us": 1000000,
+        "playout_interval_initial_minimum_samples": 2
+      }}
+    },
+    {
+      "name": "vrr17-latch-headroom", "mode": "fixed",
+      "parameters": {"controller": {"playout_per_frame_latch": 2}}
+    }
+  ]
+}

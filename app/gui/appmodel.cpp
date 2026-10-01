@@ -222,7 +222,15 @@ void AppModel::updateCounts()
 
 Session* AppModel::createSessionForApp(int appIndex)
 {
-    Q_ASSERT(appIndex < m_VisibleApps.count());
+    // A real check, not only the Q_ASSERT that used to stand here: that is compiled out of a
+    // release build, and at() past the end is then undefined behaviour — the crash lands in
+    // whatever the stale row pointed at. Every sibling taking an appIndex guards like this;
+    // callers already treat null as "no session".
+    if (appIndex < 0 || appIndex >= m_VisibleApps.count()) {
+        qWarning() << "createSessionForApp: no app at row" << appIndex
+                   << "of" << m_VisibleApps.count();
+        return nullptr;
+    }
     NvApp app = m_VisibleApps.at(appIndex);
 
     // Apply this game's per-app overrides on top of a clone of the global
@@ -276,14 +284,6 @@ void AppModel::setAppOverride(int appIndex, const QVariantMap& src)
                                            appOverrideFromMap(src));
     QModelIndex idx = index(appIndex, 0);
     emit dataChanged(idx, idx, { OverriddenRole });
-}
-
-bool AppModel::appHasOverride(int appIndex)
-{
-    if (appIndex < 0 || appIndex >= m_VisibleApps.count()) {
-        return false;
-    }
-    return AppSettingsManager::get()->hasOverride(m_Computer->uuid, m_VisibleApps.at(appIndex).id);
 }
 
 void AppModel::clearAppOverride(int appIndex)

@@ -1,7 +1,7 @@
 # Where this directory comes from
 
-Imported verbatim from **Nonary/moonlight-qt**, branch `vrr17.1` at tag **`v6.1.0-vrr17.1`**
-(`1ccefb6e`), by Chase Payne. GPLv3, the same licence as StreamLight.
+Imported verbatim from **Nonary/moonlight-qt**, branch `release/6.1.0-vrr18` at tag **`v6.1.0-vrr18`**
+(`1ad5848b`), by Chase Payne. GPLv3, the same licence as StreamLight.
 
 **Nothing here carries a per-file note, on purpose**: these files are kept byte-identical to
 Nonary's so that a later sync is a plain `diff` (ours are CRLF in the working tree because

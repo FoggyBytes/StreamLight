@@ -16,6 +16,8 @@ typedef struct _VIDEO_STATS {
     uint32_t totalFrames;
     uint32_t networkDroppedFrames;
     uint32_t pacerDroppedFrames;
+    // Received frames discarded before decoding because they were stale.
+    uint32_t decoderSkippedFrames;
     // Latest 30-frame-time source snapshot, independent of client delivery time.
     uint64_t incomingTimingSequence;
     double incomingTimingVarianceTicksSquared;
@@ -32,6 +34,10 @@ typedef struct _VIDEO_STATS {
     uint64_t vrrQueueResidenceUs;
     uint64_t vrrDecodeWaitUs;
     uint64_t vrrBufferUs;
+    uint64_t vrrPreparationUs, vrrPresentCallUs, vrrGpuReadyWaitUs;
+    uint64_t vrrGpuReadyWaitFrames;
+    uint64_t vrrPresentedFrames, vrrQueuePacingUs;
+    uint64_t vrrLatchedFrames;
     uint64_t vrrMotionPairs;
     uint64_t vrrMotionHitches;
     uint64_t vrrCadenceIntervals;
@@ -58,12 +64,14 @@ typedef struct _VIDEO_STATS {
     uint64_t vrrTargetWakeLeadUs;
     uint64_t vrrGuardUs;
     uint64_t vrrSourcePeriodUs;
+    uint64_t vrrAppliedBufferUs, vrrBufferCapUs, vrrGpuReadinessLeadUs;
     uint16_t minHostProcessingLatency;         // low-res from RTP
     uint16_t maxHostProcessingLatency;         // low-res from RTP
     uint32_t totalHostProcessingLatency;       // low-res from RTP
     uint32_t framesWithHostProcessingLatency;  // low-res from RTP
     uint64_t totalReassemblyTimeUs;            // high-res (1us)
     uint64_t totalDecodeTimeUs;                // high-res (1us)
+    uint64_t totalDecodeQueueTimeUs;           // high-res (1us), part of totalDecodeTimeUs
     uint64_t totalClientProcessingTimeUs;      // high-res (1us)
     uint64_t totalQueuePacingTimeUs;           // high-res (1us)
     uint64_t totalRenderingTimeUs;             // high-res (1us)

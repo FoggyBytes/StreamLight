@@ -88,7 +88,6 @@ public:
     Q_INVOKABLE bool gamepadMaskIsSafe(int mask);
 
     Q_INVOKABLE void setKeyboardBinding(int action, int modifiers, int sdlKey, int sdlScan, const QString& label);
-    Q_INVOKABLE void setKeyboardEnabled(int action, bool enabled);
     Q_INVOKABLE void resetKeyboard(int action);
     // Returns the action id this binding would collide with, or -1 if free.
     Q_INVOKABLE int  keyboardConflict(int action, int modifiers, int sdlKey, int sdlScan);

@@ -1,13 +1,15 @@
-// Imported from Nonary/moonlight-qt, branch vrr17.1 at tag v6.1.0-vrr17.1 (1ccefb6e), by Chase
+// Imported from Nonary/moonlight-qt, branch release/6.1.0-vrr18 at tag v6.1.0-vrr18 (1ad5848b), by Chase
 // Payne. GPLv3, the same licence as StreamLight. The body is verbatim: only this note was
 // added, so a later sync against Nonary is a plain diff. Say so here if you change anything.
 
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include "pacer/vrr/presentationtiming.h"
 
 struct AVFrame;
+class VrrPreparedFrame;
 
 // Renderer-facing VRR contract. Pacing timestamps and sender metadata never
 // cross this boundary: the presenter only prepares, adaptively presents, or
@@ -268,6 +270,19 @@ struct VrrPresentFeedback {
     bool gpuReadyCompletedBeforeWait = false;
     uint64_t gpuReadyWaitStartUs = 0;
     uint64_t gpuReadyTimeUs = 0;
+
+    // Native flip protection (VrrPresentRequest::flipProtectionWindowUs).
+    // Unlike the observation fields above, this pre-Present frame-statistics
+    // query does gate the native mode: a planned tearing present is sent
+    // latched when the predecessor has not reached the screen (pending) or
+    // its refresh began less than the window before the query (reference).
+    bool flipProtectionChecked = false;
+    int64_t flipProtectionQueryResult = 0;
+    uint64_t flipProtectionQueryStartUs = 0;
+    uint64_t flipProtectionQueryEndUs = 0;
+    bool flipProtectionPending = false;
+    uint64_t flipProtectionReferenceUs = 0;
+    bool flipProtectionLatched = false;
 };
 
 // Per-present request from the platform-neutral controller. When the learned
@@ -280,6 +295,10 @@ struct VrrPresentFeedback {
 struct VrrPresentRequest {
     bool latchedPresentation = false;
     bool collectDiagnostics = false;
+    // Nonzero on an unlatched request asks a latch-capable backend to latch
+    // anyway if the predecessor is not yet displayed or its refresh started
+    // less than this long ago. Only presentAdaptive() consults it.
+    uint64_t flipProtectionWindowUs = 0;
 };
 
 struct VrrPrepareResult {
@@ -307,6 +326,25 @@ class IVrrFramePresenter {
 public:
     virtual ~IVrrFramePresenter() = default;
 
+    // Optional bounded offscreen preparation. Called by the decoder producer;
+    // must only enqueue work, never wait for rendering or acquire a swapchain.
+    virtual std::shared_ptr<VrrPreparedFrame> queueFramePreparation(AVFrame*, uint64_t)
+    {
+        return {};
+    }
+
+    // Called on the pacing thread after a successful ticket wait. Backends
+    // must revalidate the current output format/epoch before using the image.
+    virtual VrrPrepareResult activatePreparedFrame(
+        const std::shared_ptr<VrrPreparedFrame>&, AVFrame* frame,
+        uint64_t decodeBoundary, const VrrPresentRequest& request)
+    {
+        return prepareFrame(frame, decodeBoundary, request);
+    }
+
+    // Join preparation before renderer teardown. Must also cancel queued work.
+    virtual void stopFramePreparation() {}
+
     // Some backends select native protection per present; persistent Vulkan
     // Mailbox already provides it. Vulkan Immediate/FIFO return false and keep
     // the controller's software floor. A latch request must never recreate the
@@ -320,10 +358,11 @@ public:
     // thread split prepare/present path using its adaptive presentation mode.
     virtual VrrFallbackReason checkSupport() const = 0;
 
-    // Block until the decoder's GPU work for this frame has completed, so
-    // the pacer sees the frame's true readiness and preparation never waits
-    // on the decoder. Returns the microseconds spent waiting; zero when the
-    // backend cannot tell or the frame was already complete.
+    // Establish the decoder dependency for this frame before preparation.
+    // A backend may block until the dependency completes or observe/queue it
+    // without blocking when its rendering API can wait on the GPU. Returns
+    // only CPU time actually spent waiting; zero for an asynchronous
+    // dependency, an unavailable observation, or an already-complete frame.
     virtual uint64_t waitForDecode(AVFrame*)
     {
         return 0;
@@ -362,7 +401,8 @@ public:
     }
 
     // Presents the prepared image using the backend's adaptive presentation
-    // path without intentionally waiting.
+    // path. A backend may finish a completion dependency here after the
+    // worker's cadence hold, so only its residual wait delays submission.
     virtual VrrPresentFeedback presentAdaptive(
         const VrrPresentRequest& request) = 0;
 

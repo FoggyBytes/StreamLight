@@ -231,6 +231,68 @@ int recvUdpSocket(SOCKET s, char* buffer, int size, bool useSelect) {
     return err;
 }
 
+int recvUdpSocketWithTimeout(SOCKET s, char* buffer, int size, int timeoutMs) {
+    uint64_t waitStartedUs = 0;
+    bool waiting = false;
+    bool timedOut = false;
+
+    LC_ASSERT(timeoutMs >= 0);
+    for (;;) {
+        // Avoid a poll syscall for every packet in a high-bitrate burst. More
+        // importantly, drain packets queued during a receiver scheduling pause
+        // before reporting silence to the partial-frame completion policy.
+        int err = (int)recvfrom(s, buffer, size, 0, NULL, NULL);
+        if (err > 0) {
+            return err;
+        }
+        if (err == 0) {
+            // An empty UDP datagram is not proof that the socket is drained.
+            continue;
+        }
+
+        int socketError = LastSocketError();
+        if (socketError == EINTR ||
+#if defined(LC_WINDOWS) && !defined(NXDK)
+                socketError == WSAECONNRESET) {
+#else
+                socketError == ECONNREFUSED) {
+#endif
+            continue;
+        }
+        if (socketError != EWOULDBLOCK && socketError != EAGAIN) {
+            return err;
+        }
+        if (timedOut) {
+            return 0;
+        }
+
+        uint64_t nowUs = PltGetMicroseconds();
+        if (!waiting) {
+            waitStartedUs = nowUs;
+            waiting = true;
+        }
+        uint64_t elapsedUs = nowUs >= waitStartedUs ? nowUs - waitStartedUs : 0;
+        uint64_t timeoutUs = (uint64_t)timeoutMs * 1000;
+        int remainingMs = elapsedUs >= timeoutUs ? 0 : (int)((timeoutUs - elapsedUs + 999) / 1000);
+        struct pollfd pfd;
+        pfd.fd = s;
+        pfd.events = POLLIN;
+        err = pollSockets(&pfd, 1, remainingMs);
+        if (err == 0) {
+            // A packet can arrive as the poll timeout resolves or while this
+            // thread is descheduled afterward. Check the socket once more
+            // before allowing the caller to synthesize missing packets.
+            timedOut = true;
+            continue;
+        }
+        if (err < 0 && LastSocketError() != EINTR) {
+            return err;
+        }
+        // Retry recv even after an interrupted wait. Only an empty socket and
+        // an expired poll may authorize partial-frame completion.
+    }
+}
+
 void closeSocket(SOCKET s) {
 #if defined(LC_WINDOWS) && !defined(NXDK)
     closesocket(s);

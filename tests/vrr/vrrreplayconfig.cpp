@@ -475,9 +475,24 @@ bool validateVrrTimingParameters(const VrrTimingParameters& value,
         error = QStringLiteral("Mean-miss hold must be 1-60 seconds and release at most 1000 us per second");
         return false;
     }
+    if (value.playoutIntervalInitialWarmupUs < 250000 ||
+            value.playoutIntervalInitialWarmupUs > 1000000 ||
+            value.playoutIntervalInitialMinimumSamples < 2 ||
+            value.playoutIntervalInitialMinimumSamples > 512) {
+        return fail("initial interval calibration requires 250000..1000000 us and 2..512 samples");
+    }
     if (value.playoutResponsiveBuffer > 8 || (value.playoutResponsiveBuffer &&
             (!value.playoutPredictionOnly || value.playoutReadinessHitchThresholdUs))) {
         return fail("playout_responsive_buffer requires prediction-only playout without historical hitch feedback");
+    }
+    if (value.playoutSourceMappingDecoderOutput > 1 ||
+            value.playoutSerialServiceGate > 2 ||
+            value.playoutRecentPressureRelease > 3) {
+        return fail("source mapping flag must be 0 or 1; serial service revision must be 0..2 and recent pressure revision 0..3");
+    }
+    if ((value.playoutSerialServiceGate || value.playoutRecentPressureRelease) &&
+            value.playoutResponsiveBuffer < 6) {
+        return fail("serial service and recent pressure policies require the interval buffer");
     }
     if (value.playoutOnTimeTargetPerMillion < 900000 || value.playoutOnTimeTargetPerMillion > 1000000)
         return fail("playout_on_time_target_per_million must be in 900000..1000000");
@@ -504,6 +519,32 @@ bool validateVrrTimingParameters(const VrrTimingParameters& value,
     if (value.playoutSmoothingGainPerMille > 1000 ||
             value.playoutSmoothingPeriodAlphaPerMille > 1000) {
         return fail("playout_smoothing gain and period alpha must be in 0..1000");
+    }
+    if (value.playoutCatchupPerMille > 100) {
+        return fail("playout_catchup_per_mille must be in 0..100");
+    }
+    if (value.playoutSmoothingWindowedCadence > 2) {
+        return fail("playout_smoothing_windowed_cadence must be in 0..2");
+    }
+    if (value.playoutSmoothingRecoveryUs > 1000000) {
+        return fail("playout_smoothing_recovery_us must be in 0..1000000");
+    }
+    if (value.playoutSmoothingReserveMaxUs > value.playoutSmoothingMaxLagUs ||
+            value.playoutSmoothingReserveToleranceUs > 10000 ||
+            value.playoutSmoothingReservePercentilePerMille > 1000 ||
+            (value.playoutSmoothingReserveMaxUs != 0 &&
+             value.playoutSmoothingReservePercentilePerMille < 500) ||
+            value.playoutSmoothingReserveReleaseUsPerSecond > 100000) {
+        return fail("playout_smoothing_reserve must not exceed the smoothing lag cap; tolerance 0..10000, percentile 500..1000 per mille when enabled, release 0..100000 us/s");
+    }
+    if (value.playoutSmoothingPeriodFeedbackPerMillion > 100000) {
+        return fail("playout_smoothing_period_feedback_per_million must be in 0..100000");
+    }
+    if (value.playoutSmoothingResetSlewUs > 100000) {
+        return fail("playout_smoothing_reset_slew_us must be in 0..100000");
+    }
+    if (value.playoutQueueFrames > VrrLargestQueuedFrames) {
+        return fail("playout_queue_frames must be 0 (historical three) or at most the decoder-backed limit");
     }
     if (value.playoutDelayMinimumSamples == 0 ||
             value.playoutDelayReservoirSamples == 0 ||
@@ -704,6 +745,8 @@ bool loadVrrReplayConfiguration(const QByteArray& json,
         configuration.commonControllerCustomized =
             parameterObject.value("controller").isObject() &&
             !parameterObject.value("controller").toObject().isEmpty();
+        configuration.commonControllerOverrides =
+            parameterObject.value("controller").toObject();
     }
     const QJsonValue scenariosValue = root.value("scenarios");
     if (!scenariosValue.isArray() || scenariosValue.toArray().isEmpty()) {
@@ -715,7 +758,7 @@ bool loadVrrReplayConfiguration(const QByteArray& json,
         if (!item.isObject()) { error = "each scenario must be an object"; return false; }
         const QJsonObject object = item.toObject();
         for (auto it = object.constBegin(); it != object.constEnd(); ++it) {
-            if (it.key() != "name" && it.key() != "mode" &&
+            if (it.key() != "name" && it.key() != "mode" && it.key() != "base" &&
                     it.key() != "parameters" && it.key() != "assertions") {
                 error = "unknown scenario key: " + it.key(); return false;
             }
@@ -727,8 +770,14 @@ bool loadVrrReplayConfiguration(const QByteArray& json,
         scenario.worker = configuration.commonWorker;
         scenario.display = configuration.commonDisplay;
         scenario.execution = configuration.commonExecution;
+        scenario.controllerOverrides = configuration.commonControllerOverrides;
         scenario.name = object.value("name").toString();
         scenario.mode = object.value("mode").toString("fixed");
+        const QString base = object.value("base").toString("generic");
+        if (base != "generic" && base != "session") {
+            error = "scenario base must be generic or session"; return false;
+        }
+        scenario.controllerFromSession = base == "session";
         if (scenario.name.isEmpty() || names.contains(scenario.name)) {
             error = "scenario names must be non-empty and unique"; return false;
         }
@@ -748,6 +797,12 @@ bool loadVrrReplayConfiguration(const QByteArray& json,
                 scenario.controllerCustomized ||
                 (parameterObject.value("controller").isObject() &&
                  !parameterObject.value("controller").toObject().isEmpty());
+            const QJsonObject controllerObject =
+                parameterObject.value("controller").toObject();
+            for (auto it = controllerObject.constBegin();
+                    it != controllerObject.constEnd(); ++it) {
+                scenario.controllerOverrides.insert(it.key(), it.value());
+            }
         }
         if (object.contains("assertions")) {
             if (!object.value("assertions").isArray()) {
@@ -807,6 +862,13 @@ bool applyVrrReplayOverride(const QString& expression,
     QJsonObject section;
     section[path.section('.', 1, 1)] = static_cast<double>(number);
     if (path.startsWith("controller.")) {
+        if (scenario.controllerFromSession) {
+            // Validated as one snapshot on top of the session policy later.
+            scenario.controllerOverrides.insert(section.constBegin().key(),
+                                                section.constBegin().value());
+            scenario.controllerCustomized = true;
+            return true;
+        }
         if (!applyControllerObject(section, scenario.controller, error)) {
             return false;
         }

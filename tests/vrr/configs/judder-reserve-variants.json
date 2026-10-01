@@ -1,0 +1,64 @@
+{
+  "review_schema": 1,
+  "scenarios": [
+    {"name": "session-policy", "mode": "fixed"},
+    {
+      "name": "previous-reduce-judder", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_smoothing_max_lag_us": 2000,
+        "playout_smoothing_period_feedback_per_million": 0,
+        "playout_smoothing_reserve_max_us": 0,
+        "playout_smoothing_reserve_tolerance_us": 0,
+        "playout_smoothing_reserve_percentile_per_mille": 0,
+        "playout_smoothing_reserve_release_us_per_second": 0
+      }}
+    },
+    {
+      "name": "no-reserve", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_smoothing_reserve_max_us": 0
+      }}
+    },
+    {
+      "name": "no-period-feedback", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_smoothing_period_feedback_per_million": 0
+      }}
+    },
+    {
+      "name": "cap-4ms", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_smoothing_max_lag_us": 4000
+      }}
+    },
+    {
+      "name": "reserve-2ms", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_smoothing_reserve_max_us": 2000
+      }}
+    },
+    {
+      "name": "tolerance-250", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_smoothing_reserve_tolerance_us": 250
+      }}
+    },
+    {
+      "name": "tolerance-750", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_smoothing_reserve_tolerance_us": 750
+      }}
+    },
+    {
+      "name": "reduce-judder-off", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_smoothing_gain_per_mille": 0,
+        "playout_smoothing_period_feedback_per_million": 0,
+        "playout_smoothing_reserve_max_us": 0,
+        "playout_smoothing_reserve_tolerance_us": 0,
+        "playout_smoothing_reserve_percentile_per_mille": 0,
+        "playout_smoothing_reserve_release_us_per_second": 0
+      }}
+    }
+  ]
+}

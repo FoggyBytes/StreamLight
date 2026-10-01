@@ -1,0 +1,102 @@
+Reuse borrowed GPU output image views for fixed client surface pools.
+Opt-in, bounded to 16 surface sets, with all view metadata in the key.
+The caller retains image ownership and the original synchronization contract.
+This changes no bitstream or shader arithmetic.
+
+diff --git a/pyrowave-shared.def b/pyrowave-shared.def
+index ad544dbf..091885d8 100644
+--- a/pyrowave-shared.def
++++ b/pyrowave-shared.def
+@@ -38,2 +38,3 @@ EXPORTS
+ 	pyrowave_decoder_create
++	pyrowave_decoder_set_output_view_cache
+ 	pyrowave_decoder_clear
+diff --git a/pyrowave.h b/pyrowave.h
+index 15b2c41c..a7b2c1a5 100644
+--- a/pyrowave.h
++++ b/pyrowave.h
+@@ -587,2 +587,10 @@ pyrowave_decoder_create(const pyrowave_decoder_create_info *info, pyrowave_decod
+ 
++// Opt in when output images remain alive until the decoder is destroyed (or
++// this cache is disabled). Reuses Vulkan image views for up to 16 output sets.
++// All view metadata participates in the key. Disabled by default because an
++// application may otherwise destroy an image and later reuse its VkImage value.
++// This does not retain the caller's images or alter GPU synchronization.
++PYROWAVE_PUBLIC_API void
++pyrowave_decoder_set_output_view_cache(pyrowave_decoder decoder, bool enable);
++
+ // Throws away all queued packets.
+diff --git a/pyrowave_c.cpp b/pyrowave_c.cpp
+index 232d20dd..6fbd64d3 100644
+--- a/pyrowave_c.cpp
++++ b/pyrowave_c.cpp
+@@ -1536,4 +1536,35 @@ struct pyrowave_decoder_opaque
+ 	int height = 0;
++	struct CachedOutput
++	{
++		pyrowave_gpu_buffers buffers;
++		WrappedViewBuffers views;
++	};
++	bool cache_output_views = false;
++	std::vector<CachedOutput> output_views;
+ };
+ 
++void pyrowave_decoder_set_output_view_cache(pyrowave_decoder decoder, bool enable)
++{
++	Util::set_thread_logging_interface(&null_logger);
++	decoder->cache_output_views = enable;
++	decoder->output_views.clear();
++	if (enable)
++		decoder->output_views.reserve(16);
++}
++
++static bool same_output_views(const pyrowave_gpu_buffers &a, const pyrowave_gpu_buffers &b)
++{
++	for (unsigned i = 0; i < 3; i++)
++	{
++		const auto &x = a.planes[i];
++		const auto &y = b.planes[i];
++		if (x.image != y.image || x.width != y.width || x.height != y.height ||
++		    x.image_format != y.image_format || x.view_format != y.view_format ||
++		    x.mip_level != y.mip_level || x.layer != y.layer || x.aspect != y.aspect ||
++		    x.swizzle != y.swizzle || x.layout != y.layout)
++			return false;
++	}
++	return true;
++}
++
+ bool pyrowave_decoder_device_prefers_fragment_path(pyrowave_device device)
+@@ -1626,5 +1657,25 @@ pyrowave_decoder_decode_gpu_buffer_with_context_timing(pyrowave_decoder decoder,
+ 
+-	WrappedViewBuffers views = {};
+-	if (!views.wrap(device, buffers, decoder->fragment_path ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_STORAGE_BIT))
+-		return PYROWAVE_ERROR_OUT_OF_HOST_MEMORY;
++	WrappedViewBuffers transient_views = {};
++	const WrappedViewBuffers *views = nullptr;
++	if (decoder->cache_output_views)
++	{
++		for (const auto &cached : decoder->output_views)
++			if (same_output_views(cached.buffers, *buffers))
++			{
++				views = &cached.views;
++				break;
++			}
++	}
++	if (!views)
++	{
++		if (!transient_views.wrap(device, buffers, decoder->fragment_path ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_STORAGE_BIT))
++			return PYROWAVE_ERROR_OUT_OF_HOST_MEMORY;
++		if (decoder->cache_output_views && decoder->output_views.size() < 16)
++		{
++			decoder->output_views.push_back({*buffers, std::move(transient_views)});
++			views = &decoder->output_views.back().views;
++		}
++		else
++			views = &transient_views;
++	}
+ 
+@@ -1662,3 +1713,3 @@ pyrowave_decoder_decode_gpu_buffer_with_context_timing(pyrowave_decoder decoder,
+ 
+-	auto ret = decoder->decoder.decode(*cmd, views);
++	auto ret = decoder->decoder.decode(*cmd, *views);
+ 	if (!ret)

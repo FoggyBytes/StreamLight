@@ -37,9 +37,6 @@ public:
 
     Q_INVOKABLE int getConnectedGamepads();
 
-    // Debug-only: write a line to the streamlight_pad.log file from QML.
-    Q_INVOKABLE void dbgLog(const QString& msg);
-
     // Simulate a key press+release pair on the focused window. Used by the
     // clickable status-bar prompts so a mouse click on (e.g.) "Settings" or
     // "Back" produces the same effect as the matching gamepad button.

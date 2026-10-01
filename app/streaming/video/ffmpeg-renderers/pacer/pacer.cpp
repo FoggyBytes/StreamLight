@@ -309,6 +309,9 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps,
         // The production queue policy is shared across native backends.
         config.readinessHitchFeedback = false;
         config.latencyMode = vrrLatencyMode >= 0 && vrrLatencyMode <= 2 ? vrrLatencyMode : 1;
+        config.streamRateHz = maxVideoFps;
+        config.displayRefreshHz = vrrDisplayRefreshHz;
+        config.smoothFrameTiming = smoothVrrFrameTiming;
         VrrFallbackReason fallbackReason = VrrFallbackReason::NoFallback;
         if (!calibrationKey.isEmpty()) {
             const QString display = QString::fromUtf8(SDL_GetDisplayName(SDL_GetWindowDisplayIndex(window)));
@@ -328,14 +331,27 @@ bool Pacer::initialize(SDL_Window* window, int maxVideoFps,
             if (smoothVrrFrameTiming) {
                 // The saved flag previously selected timestamp-following
                 // playout too. Do not cross-seed its readiness calibration.
-                context += QStringLiteral("|frame-smoothing=500-100-2000");
+                const auto policy = vrrTimingParametersForSession(config);
+                context += QStringLiteral("|frame-smoothing=%1-%2-%3|cadence=%4-%5")
+                    .arg(policy.playoutSmoothingGainPerMille)
+                    .arg(policy.playoutSmoothingPeriodAlphaPerMille)
+                    .arg(policy.playoutSmoothingMaxLagUs)
+                    .arg(policy.playoutSmoothingWindowedCadence)
+                    .arg(policy.playoutSmoothingRecoveryUs);
+                context += QStringLiteral("|catchup=%1").arg(policy.playoutCatchupPerMille);
+                if (policy.playoutSmoothingReserveMaxUs != 0 ||
+                        policy.playoutSmoothingPeriodFeedbackPerMillion != 0) {
+                    context += QStringLiteral("|smoothing-reserve=%1-%2-%3-%4|period-feedback=%5")
+                        .arg(policy.playoutSmoothingReserveMaxUs)
+                        .arg(policy.playoutSmoothingReserveToleranceUs)
+                        .arg(policy.playoutSmoothingReservePercentilePerMille)
+                        .arg(policy.playoutSmoothingReserveReleaseUsPerSecond)
+                        .arg(policy.playoutSmoothingPeriodFeedbackPerMillion);
+                }
             }
             config.calibrationKey = QCryptographicHash::hash(context.toUtf8(), QCryptographicHash::Sha256).toHex().toStdString();
             config.calibrationPath = Path::getCacheFileInfo("vrr13-calibration.json").absoluteFilePath().toStdString();
         }
-        config.streamRateHz = maxVideoFps;
-        config.displayRefreshHz = vrrDisplayRefreshHz;
-        config.smoothFrameTiming = smoothVrrFrameTiming;
         // The retired extra-queue flag remains only for historical replay;
         // the timing profile controls delay and stale-frame replacement.
         config.allowAdditionalQueuedFrame = false;

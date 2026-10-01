@@ -91,6 +91,31 @@ int main()
               result.elapsedUs == 100 && result.waitCalls == 1,
               "native wait failure diagnostics must count the failing call and its elapsed time");
     }
+    {
+        // Preparation submitted the fence at t=0, but the pacing worker did
+        // useful cadence waiting until t=8 ms before entering the residual
+        // completion wait. Work that finished during that hold must add no
+        // extra CPU wait at Present.
+        uint64_t now = 8000;
+        const auto result = D3D11FenceWait::wait(7, [&] { return now; },
+            [] { return 7ULL; },
+            [&](unsigned timeoutMs) { now += timeoutMs * 1000; return true; });
+        check(result.status == D3D11FenceWait::Status::Complete &&
+              result.elapsedUs == 0 && result.waitCalls == 0 && now == 8000,
+              "GPU completion during the cadence hold must leave no residual Present wait");
+    }
+    {
+        // If rendering is genuinely late, only the portion beyond the cadence
+        // target remains blocking. This is the behavior relied on by the
+        // split begin/finish present-ready fence path.
+        uint64_t now = 8000;
+        const auto result = D3D11FenceWait::wait(7, [&] { return now; },
+            [&] { return now >= 10000 ? 7ULL : 6ULL; },
+            [&](unsigned timeoutMs) { now += timeoutMs * 1000; return true; });
+        check(result.status == D3D11FenceWait::Status::Complete &&
+              result.elapsedUs == 2000 && result.waitCalls == 2 && now == 10000,
+              "the target-boundary wait must charge only genuinely late GPU work");
+    }
     const auto submit = [&](DxgiPresentParameters parameters,
                             unsigned int interval, unsigned int flags) {
         const auto previousCalls = swapChain.calls;

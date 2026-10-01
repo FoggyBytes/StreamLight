@@ -12,6 +12,13 @@ win32:!winrt {
     app.depends += AntiHooking
 }
 
+# PyroWave codec library (6.4.0, from Nonary's vrr18; see pyrowave/VENDOR.txt). Must match
+# the condition in app/app.pro. Windows only here: the Linux branch of Nonary's .pro is not taken.
+win32:!winrt:contains(QT_ARCH, x86_64):!disable-pyrowave {
+    SUBDIRS += pyrowave
+    app.depends += pyrowave
+}
+
 # Support debug and release builds from command line for CI
 CONFIG += debug_and_release
 

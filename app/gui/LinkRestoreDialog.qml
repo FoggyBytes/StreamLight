@@ -30,7 +30,7 @@ Popup {
     width: _px(520)
     padding: _px(28)
 
-    Overlay.modal: Rectangle { color: "#cc000000" }
+    Overlay.modal: Rectangle { color: Theme.scrim }
 
     background: Rectangle {
         color: Theme.card

@@ -37,7 +37,100 @@ def row(i, **overrides):
     return result
 
 
+def detailed_row(i, **overrides):
+    base = 100000 + i * 10000
+    result = row(i, decision_valid=1, decode_sync_wait_us=400,
+        decision_us=base + 1000, decision_end_us=base + 1100,
+        render_wait_entry_us=base + 1200, render_wait_final_us=base + 3000,
+        prepare_start_us=base + 3000, prepare_end_us=base + 4000,
+        target_wait_entry_us=base + 4100, target_wait_final_us=base + 6000,
+        correction_wait_start_us=base + 6500, correction_wait_end_us=base + 6700,
+        present_start_us=base + 7000,
+        buffer_update_valid=0, buffer_update_frame=i, buffer_update_at_us=base + 7000,
+        buffer_action=0, buffer_attributed_frame=i, buffer_request_before_us=1000,
+        buffer_request_after_us=1000, buffer_clipped_increase_us=0,
+        buffer_interval_error_us=3000, buffer_lateness_us=3000)
+    result.update(overrides)
+    return result
+
+
 class ReportTest(unittest.TestCase):
+    def test_client_costs_partition_without_double_counting(self):
+        r = self.analyze([detailed_row(1)])
+        costs = r["client_costs_us"]
+        self.assertEqual(sum(v["mean"] for v in costs.values()), 8000)
+        self.assertEqual(costs["decode_sync"]["mean"], 400)
+        self.assertEqual(costs["render_wait"]["mean"], 1800)
+        self.assertEqual(costs["spacing_wait"]["mean"], 200)
+        self.assertEqual(costs["other_worker"]["mean"], 1400)
+        self.assertEqual(r["metrics"]["queue_pacing_us"]["mean"], 5600)
+
+    def test_missing_or_overlapping_costs_are_unavailable(self):
+        r = self.analyze([detailed_row(1, correction_wait_start_us=110001)])
+        self.assertEqual(r["client_costs_us"], {})
+        self.assertEqual(r["unavailable_or_invalid"]["client_cost_partition"], 1)
+        legacy = self.analyze([row(1)])
+        self.assertEqual(legacy["client_costs_us"], {})
+        self.assertEqual(legacy["buffer_updates"]["rows"], 0)
+
+    def test_partition_total_uses_only_valid_stage_rows(self):
+        r = self.analyze([detailed_row(1), detailed_row(2,
+            present_end_us=130000, correction_wait_start_us=120001)])
+        total = r["metrics"]["partitioned_client_processing_us"]
+        self.assertEqual(total["count"], 1)
+        self.assertEqual(total["mean"], 8000)
+        self.assertEqual(r["metrics"]["client_processing_us"]["mean"], 9000)
+        self.assertTrue(all(cost["count"] == 1 for cost in r["client_costs_us"].values()))
+        self.assertIn("| Partitioned total | 1 | 8.000", report.markdown([r]))
+
+    def test_gpu_ready_detail_requires_successful_measured_wait(self):
+        r = self.analyze([detailed_row(1, gpu_ready_timing_valid=1,
+            gpu_ready_wait_result_valid=0, gpu_ready_wait_result=0,
+            gpu_ready_wait_start_us=113000, gpu_ready_time_us=113500)])
+        self.assertNotIn("gpu_render_ready_wait_us", r["metrics"])
+        r = self.analyze([detailed_row(1, gpu_ready_timing_valid=1,
+            gpu_ready_wait_result_valid=1, gpu_ready_wait_result=0,
+            gpu_ready_wait_start_us=113000, gpu_ready_time_us=113500)])
+        self.assertEqual(r["metrics"]["gpu_render_ready_wait_us"]["mean"], 500)
+
+    def test_buffer_growth_charges_the_delayed_frame(self):
+        r = self.analyze([detailed_row(1), detailed_row(2, buffer_update_valid=1,
+            buffer_action=2, buffer_attributed_frame=1, buffer_request_after_us=1250,
+            decode_sync_wait_us=600)])
+        event = r["buffer_updates"]["events"][0]
+        self.assertEqual(event["change_us"], 250)
+        self.assertEqual(event["attributed_frame"], 1)
+        self.assertEqual(event["observed_client_costs_us"]["decode_sync"], 400)
+
+    def test_capped_attempt_is_not_added_latency(self):
+        r = self.analyze([detailed_row(1, buffer_update_valid=1, buffer_action=3,
+            buffer_request_before_us=4000, buffer_request_after_us=4000,
+            buffer_clipped_increase_us=250)])
+        event = r["buffer_updates"]["events"][0]
+        self.assertEqual(event["change_us"], 0)
+        self.assertEqual(event["clipped_step_us"], 250)
+        self.assertEqual(r["buffer_updates"]["actions"], {"growth capped": 1})
+
+    def test_calibration_evidence_stays_separate_from_measured_costs(self):
+        r = self.analyze([detailed_row(1, buffer_update_valid=1, buffer_action=2,
+            buffer_request_after_us=1250, buffer_calibration_complete=1,
+            buffer_calibration_samples=63, buffer_calibration_coverage_us=520000)])
+        event = r["buffer_updates"]["events"][0]
+        self.assertEqual(event["initial_calibration_complete"], 1)
+        self.assertEqual(event["calibration_intervals"], 63)
+        self.assertEqual(event["calibration_coverage_us"], 520000)
+        self.assertEqual(sum(v["mean"] for v in r["client_costs_us"].values()), 8000)
+        legacy = self.analyze([detailed_row(1, buffer_update_valid=1, buffer_action=2,
+            buffer_request_after_us=1250)])["buffer_updates"]["events"][0]
+        self.assertIsNone(legacy["initial_calibration_complete"])
+        self.assertIsNone(legacy["calibration_intervals"])
+        self.assertIsNone(legacy["calibration_coverage_us"])
+
+    def test_stale_buffer_update_identity_is_rejected(self):
+        r = self.analyze([detailed_row(1, buffer_update_valid=1, buffer_update_frame=2)])
+        self.assertEqual(r["buffer_updates"]["rows"], 0)
+        self.assertEqual(r["unavailable_or_invalid"]["buffer_update"], 1)
+
     def test_decode_wait_is_not_visible_queue_delay(self):
         r = self.analyze([row(1, decode_sync_wait_us=4000)])
         self.assertEqual(r["metrics"]["queue_pacing_us"]["mean"], 2000)

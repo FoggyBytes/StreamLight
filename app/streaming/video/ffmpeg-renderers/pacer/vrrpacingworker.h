@@ -1,4 +1,4 @@
-// Imported from Nonary/moonlight-qt, branch vrr17.1 at tag v6.1.0-vrr17.1 (1ccefb6e), by Chase
+// Imported from Nonary/moonlight-qt, branch release/6.1.0-vrr18 at tag v6.1.0-vrr18 (1ad5848b), by Chase
 // Payne. GPLv3, the same licence as StreamLight. The body is verbatim: only this note was
 // added, so a later sync against Nonary is a plain diff. Say so here if you change anything.
 
@@ -6,7 +6,9 @@
 
 #include "../../decoder.h"
 #include "../ivrrframepresenter.h"
+#include "../vrrpreparedframe.h"
 #include "pacertelemetry.h"
+#include "vrr/receivedeadline.h"
 #include "vrr/vrrtargetwaiter.h"
 #include "vrr/vrrtypes.h"
 #include "vrr/vrrtimingcontroller.h"
@@ -25,9 +27,10 @@
 
 class VrrTimingController;
 
-// The complete greenfield VRR execution path lives in this one worker.  It
-// owns a bounded queue and the renderer context from preparation through
-// presentation; fixed-VSync and unpaced Pacer behavior never enter it.
+// Owns bounded admission, controller state and native presentation. A backend
+// may prepare independent offscreen images through cancellable tickets, but
+// swapchain activation/presentation remains on this worker. Fixed-VSync and
+// unpaced Pacer behavior never enter it.
 class VrrPacingWorker {
 public:
     VrrPacingWorker(IVrrFramePresenter* presenter,
@@ -51,6 +54,7 @@ private:
         Presented,
         OutputDropped,
         QueueCapacity,
+        QueueStale,
         ArrivalRejected,
         SuspensionDiscard,
         ShutdownDiscard,
@@ -72,6 +76,12 @@ private:
     struct QueuedFrame {
         PacedFrame frame;
         FrameTraceContext trace;
+        std::shared_ptr<VrrPreparedFrame> preparation;
+
+        QueuedFrame() = default;
+        QueuedFrame(QueuedFrame&&) = default;
+        QueuedFrame& operator=(QueuedFrame&&) = default;
+        ~QueuedFrame() { if (preparation) preparation->cancel(); }
 
         explicit operator bool() const
         {
@@ -80,6 +90,8 @@ private:
     };
 
     struct FrameTelemetry {
+        bool preparedAhead = false;
+        VrrPreparedFrame::Timing preparationStage;
         uint64_t decisionTimeUs = 0;
         uint64_t decisionEndUs = 0;
         bool externalRebaseApplied = false;
@@ -147,9 +159,11 @@ private:
         uint64_t receiveUs = 0;
         uint64_t reassembledUs = 0;
         uint64_t decodeSubmitUs = 0;
+        uint64_t decodeHoldUs = 0;
         FrameTraceContext input;
         VrrTimingDecision decision;
         VrrTimingDiagnostics diagnostics;
+        Vrr13::IntervalBuffer::Stats bufferStats;
         VrrPresentFeedback feedback;
         FrameTelemetry telemetry;
         size_t completionQueueDepth = 0;
@@ -183,6 +197,8 @@ private:
                           FrameTelemetry& telemetry);
     void deferFrame(PacedFrame&& frame);
     void noteDrop();
+    void publishReceiveDeadline(const PacedFrame& frame,
+                                const VrrTimingDecision& decision);
     void recordFrameCompletion(const QueuedFrame& frame,
                     const VrrTimingDecision& decision,
                     const VrrPresentFeedback& feedback,
@@ -206,14 +222,32 @@ private:
     std::atomic_bool m_CalibrationInvalidated { false };
     QByteArray m_InitialPlayoutProfile;
     bool m_CalibrationLoaded = false;
+    QString startDelayPath() const;
+    void noteSettledDelay(uint64_t nowUs, uint64_t delayUs);
+    static constexpr uint64_t kSettledDelayWarmupUs = 30000000;
+    static constexpr size_t kMinimumSettledDelaySamples = 60;
+    uint64_t m_StartDelaySeedUs = 0;
+    uint64_t m_FirstDecisionUs = 0;
+    uint64_t m_LastSettledDelaySampleUs = 0;
+    std::vector<uint64_t> m_SettledDelaySamples;
     uint64_t m_InitialCachedSamples = 0;
     int m_HistoryVersion = 0;
 
     std::unique_ptr<VrrTimingController> m_TimingController;
+    VrrReceiveDeadline::RecentDuration m_RecentDuration;
+    VrrReceiveDeadline::RecentDuration m_DecodeGpuCost;
+    VrrReceiveDeadline::RecentDuration m_PresentCallCost;
+    VrrReceiveDeadline::RecentDuration m_PreparationCost;
     std::unique_ptr<VrrTargetWaiter> m_TargetWaiter;
 
     QMutex m_FrameQueueLock;
     QWaitCondition m_FrameQueueNotEmpty;
+    // Keep enough decoded successors to absorb the short gap-then-burst
+    // delivery pattern seen near the panel ceiling. Capacity stays bounded and
+    // evicts the oldest queued successor under sustained pressure, so it cannot
+    // accumulate an unbounded latency backlog. Fixed per session (the timing
+    // profile's playoutQueueFrames) before any producer runs.
+    size_t m_QueueCapacity = VrrMaximumQueuedFrames;
     std::deque<QueuedFrame> m_FrameQueue;
     std::atomic_size_t m_FrameQueueDepth { 0 };
     PacedFrame m_DeferredFrame;

@@ -1,15 +1,10 @@
 <RCC>
     <qresource prefix="/">
-        <file>res/desktop_windows-48px.svg</file>
-        <file>res/baseline-warning-24px.svg</file>
         <file>res/no_app_image.png</file>
         <file>res/tailscale.svg</file>
         <file>res/tune.svg</file>
         <file>streamlight.ico</file>
         <file>streamlightxbox.png</file>
-        <file>res/baseline-help_outline-24px.svg</file>
-        <file>res/baseline-error_outline-24px.svg</file>
-        <file>res/baseline-check_circle_outline-24px.svg</file>
         <file>res/streamtweak_logo.png</file>
         <file>res/store_steam.svg</file>
         <file>res/store_epic.svg</file>
@@ -60,7 +55,6 @@
     </qresource>
     <qresource prefix="/data">
         <file alias="gamecontrollerdb.txt">SDL_GameControllerDB/gamecontrollerdb.txt</file>
-        <file alias="ModeSeven.ttf">ModeSeven.ttf</file>
         <file alias="RobotoMono.ttf">RobotoMono.ttf</file>
         <file alias="egl_nv12.frag">shaders/egl_nv12.frag</file>
         <file alias="egl_opaque.frag">shaders/egl_opaque.frag</file>
@@ -71,6 +65,7 @@
         <file alias="d3d11_yuv420_pixel.fxc">shaders/d3d11_yuv420_pixel.fxc</file>
         <file alias="d3d11_ayuv_pixel.fxc">shaders/d3d11_ayuv_pixel.fxc</file>
         <file alias="d3d11_y410_pixel.fxc">shaders/d3d11_y410_pixel.fxc</file>
+        <file alias="d3d11_yuv_planar_pixel.fxc">shaders/d3d11_yuv_planar_pixel.fxc</file>
         <file alias="vt_renderer.metal">shaders/vt_renderer.metal</file>
     </qresource>
 </RCC>

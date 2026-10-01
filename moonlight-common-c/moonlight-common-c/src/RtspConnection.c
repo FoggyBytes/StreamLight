@@ -20,6 +20,9 @@ static PPLT_CRYPTO_CONTEXT encryptionCtx;
 static PPLT_CRYPTO_CONTEXT decryptionCtx;
 static uint32_t encryptionSequenceNumber;
 
+// PyroWave bitstream identity from the DESCRIBE response ("" when absent)
+static char hostPyroWaveBitstreamId[32];
+
 static SOCKET sock = INVALID_SOCKET;
 static ENetHost* client;
 static ENetPeer* peer;
@@ -902,6 +905,33 @@ static bool parseUrlAddrFromRtspUrlString(const char* rtspUrlString, char* desti
 
 // SDP attributes are in the form:
 // a=x-nv-bwe.bwuSafeZoneLowLimit:70\r\n
+// Copies a token-valued SDP attribute (up to whitespace) into val
+static bool parseSdpAttributeToToken(const char* payload, const char* name, char* val, size_t valSize) {
+    const char* attribute = strstr(payload, name);
+    if (!attribute || valSize == 0) {
+        return false;
+    }
+
+    const char* valst = strstr(attribute, ":");
+    if (!valst) {
+        return false;
+    }
+    valst++;
+
+    size_t len = 0;
+    while (valst[len] != '\0' && valst[len] != '\r' && valst[len] != '\n' &&
+           valst[len] != ' ' && len + 1 < valSize) {
+        val[len] = valst[len];
+        len++;
+    }
+    val[len] = '\0';
+    return len != 0;
+}
+
+const char* LiGetHostPyroWaveBitstreamId(void) {
+    return hostPyroWaveBitstreamId;
+}
+
 bool parseSdpAttributeToUInt(const char* payload, const char* name, uint32_t* val) {
     // Find the entry for the specified attribute name
     char* attribute = strstr(payload, name);
@@ -1087,7 +1117,37 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
             goto Exit;
         }
 
-        if ((StreamConfig.supportedVideoFormats & VIDEO_FORMAT_MASK_AV1) && strstr(response.payload, "AV1/90000")) {
+        hostPyroWaveBitstreamId[0] = '\0';
+        parseSdpAttributeToToken(response.payload, "x-ss-pyrowave.bitstream",
+                                 hostPyroWaveBitstreamId, sizeof(hostPyroWaveBitstreamId));
+
+        // PyroWave is only ever requested explicitly by the client, so it takes
+        // precedence whenever the host advertises it. Some PyroWave hosts omit the
+        // "PYROWAVE/90000" DESCRIBE marker, so the capability bits decide.
+        if ((StreamConfig.supportedVideoFormats & VIDEO_FORMAT_MASK_PYROWAVE) &&
+                (serverInfo->serverCodecModeSupport & SCM_PYROWAVE)) {
+            if ((serverInfo->serverCodecModeSupport & SCM_PYROWAVE_HDR10_444) && (StreamConfig.supportedVideoFormats & VIDEO_FORMAT_PYROWAVE_HDR10_444)) {
+                NegotiatedVideoFormat = VIDEO_FORMAT_PYROWAVE_HDR10_444;
+            }
+            else if ((serverInfo->serverCodecModeSupport & SCM_PYROWAVE_HDR10) && (StreamConfig.supportedVideoFormats & VIDEO_FORMAT_PYROWAVE_HDR10)) {
+                NegotiatedVideoFormat = VIDEO_FORMAT_PYROWAVE_HDR10;
+            }
+            else if ((serverInfo->serverCodecModeSupport & SCM_PYROWAVE_444) && (StreamConfig.supportedVideoFormats & VIDEO_FORMAT_PYROWAVE_444)) {
+                NegotiatedVideoFormat = VIDEO_FORMAT_PYROWAVE_444;
+            }
+            else {
+                NegotiatedVideoFormat = VIDEO_FORMAT_PYROWAVE;
+            }
+
+            if (hostPyroWaveBitstreamId[0] == '\0') {
+                Limelog("PyroWave host did not advertise its bitstream revision (expected %s)\n", PYROWAVE_BITSTREAM_ID);
+            }
+            else if (strcmp(hostPyroWaveBitstreamId, PYROWAVE_BITSTREAM_ID) != 0) {
+                Limelog("WARNING: PyroWave bitstream revision mismatch (host %s, client %s)\n",
+                        hostPyroWaveBitstreamId, PYROWAVE_BITSTREAM_ID);
+            }
+        }
+        else if ((StreamConfig.supportedVideoFormats & VIDEO_FORMAT_MASK_AV1) && strstr(response.payload, "AV1/90000")) {
             if ((serverInfo->serverCodecModeSupport & SCM_AV1_HIGH10_444) && (StreamConfig.supportedVideoFormats & VIDEO_FORMAT_AV1_HIGH10_444)) {
                 NegotiatedVideoFormat = VIDEO_FORMAT_AV1_HIGH10_444;
             }

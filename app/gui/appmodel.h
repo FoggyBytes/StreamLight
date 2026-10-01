@@ -95,7 +95,6 @@ public:
     // A missing key means "inherit the global setting".
     Q_INVOKABLE QVariantMap getAppOverride(int appIndex);
     Q_INVOKABLE void setAppOverride(int appIndex, const QVariantMap& ov);
-    Q_INVOKABLE bool appHasOverride(int appIndex);
     Q_INVOKABLE void clearAppOverride(int appIndex);
 
     // What a per-game row set to "inherit" will actually run at: the global settings with

@@ -796,7 +796,8 @@ Item {
     readonly property var    _c: streamSegue.session ? streamSegue.session.curtain : null
     readonly property real   _h: height > 0 ? height : 1080
 
-    // ⚠️ Read from this screen's own boxArt, not from the curtain's coverUrl. The curtain
+    // ⚠️ Read from this screen's own boxArt, never from the curtain (which kept a copy, as
+    // coverUrl, until 6.3.1 removed it for having no reader). The curtain
     // belongs to the Session, and the Session is released while this screen is still up: a
     // no-video retry holds it here for another second and a half showing "reconnecting", and
     // readyForDeletion lands in the middle of that. Bound to the curtain, the cover vanished
@@ -877,7 +878,11 @@ Item {
             shadowOffset: _h * 0.008
             anchors.horizontalCenter: parent.horizontalCenter
             opacity: 0.4 + 0.6 * streamSegue._bgProgress
-            Behavior on opacity { NumberAnimation { duration: 600; easing.type: Easing.OutCubic } }
+            // Off with Reduce animations, like every other Behavior in the app (6.3.1).
+            Behavior on opacity {
+                enabled: !Theme.reduceAnimations
+                NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
+            }
         }
 
         Label {

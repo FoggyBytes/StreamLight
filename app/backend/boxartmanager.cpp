@@ -3,6 +3,10 @@
 
 #include <QImageReader>
 #include <QImageWriter>
+#include <QSaveFile>
+
+QSet<QString> BoxArtManager::s_Checked;
+QMutex BoxArtManager::s_CheckLock;
 
 BoxArtManager::BoxArtManager(QObject *parent) :
     QObject(parent),
@@ -103,12 +107,12 @@ private:
  */
 bool BoxArtManager::needsRefresh(const QString& path)
 {
-    QMutexLocker lock(&m_CheckLock);
+    QMutexLocker lock(&s_CheckLock);
 
-    if (m_Checked.contains(path)) {
+    if (s_Checked.contains(path)) {
         return false;
     }
-    m_Checked.insert(path);
+    s_Checked.insert(path);
 
     QImageReader reader(path);
     QSize size = reader.size();
@@ -124,7 +128,7 @@ QUrl BoxArtManager::loadBoxArt(NvComputer* computer, NvApp& app)
     QFile cacheFile(getFilePathForBoxArt(computer, app.id));
     if (cacheFile.exists() && cacheFile.size() > 0) {
         if (needsRefresh(cacheFile.fileName())) {
-            m_ThreadPool.start(new NetworkBoxArtLoadTask(this, computer, app));
+            startFetch(computer, app);
 
             // Keep showing what we have while the better one downloads — a small cover
             // beats the placeholder — but hand back a URL that differs from the one the
@@ -150,8 +154,7 @@ QUrl BoxArtManager::loadBoxArt(NvComputer* computer, NvApp& app)
 
     // If we get here, we need to fetch asynchronously.
     // Kick off a worker on our thread pool to do just that.
-    NetworkBoxArtLoadTask* netLoadTask = new NetworkBoxArtLoadTask(this, computer, app);
-    m_ThreadPool.start(netLoadTask);
+    startFetch(computer, app);
 
     // Return the placeholder then we can notify the caller
     // later when the real image is ready.
@@ -168,8 +171,22 @@ void BoxArtManager::deleteBoxArt(NvComputer* computer)
     }
 }
 
+void BoxArtManager::startFetch(NvComputer* computer, NvApp& app)
+{
+    // One download per cover at a time (6.4.0): a second request while the first is running
+    // is answered by the first one's boxArtLoadComplete, which refreshes every view of it.
+    const QString path = boxArtFilePath(computer, app.id);
+    if (m_InFlight.contains(path)) {
+        return;
+    }
+    m_InFlight.insert(path);
+    m_ThreadPool.start(new NetworkBoxArtLoadTask(this, computer, app));
+}
+
 void BoxArtManager::handleBoxArtLoadComplete(NvComputer* computer, NvApp app, QUrl image)
 {
+    m_InFlight.remove(boxArtFilePath(computer, app.id));
+
     if (!image.isEmpty()) {
         emit boxArtLoadComplete(computer, app, image);
     }
@@ -185,14 +202,17 @@ QUrl BoxArtManager::loadBoxArtFromNetwork(NvComputer* computer, int appId)
         image = http.getBoxArt(appId);
     } catch (...) {}
 
-    // Cache the box art on disk if it loaded
+    // Cache the box art on disk if it loaded.
+    //
+    // ⚠️ Through QSaveFile (6.4.0): written beside the cover and renamed over it only when
+    // complete. QImage::save() truncated the file the view might be reading at that moment
+    // — the "Unable to read image data" on the host page — and a failed write could leave a
+    // zero-byte file. Now a reader sees the old cover or the new one, never half of either,
+    // and a failed commit leaves the old cover where it was.
     if (!image.isNull()) {
-        if (image.save(cachePath)) {
+        QSaveFile file(cachePath);
+        if (file.open(QIODevice::WriteOnly) && image.save(&file, "PNG") && file.commit()) {
             return QUrl::fromLocalFile(cachePath);
-        }
-        else {
-            // A failed save() may leave a zero byte file. Make sure that's removed.
-            QFile(cachePath).remove();
         }
     }
 

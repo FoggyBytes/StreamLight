@@ -62,8 +62,11 @@ FocusScope {
     // 0 = Home, 1 = Apps, 2 = Settings
     property int currentPage: 0
 
-    // Passed from HomeScreen when navigating to Apps
-    property int    _appsIdx:     0
+    // Passed from HomeScreen when navigating to Apps. The host by uuid, its row read back when
+    // needed: the page can stay up for a whole evening, and the host list moves under it
+    // whenever a host is renamed, found or removed (6.3.1, see HomeScreen.hostIndexOf()).
+    property string _appsUuid:    ""
+    readonly property int _appsIdx: _rowOf(_appsModel, _appsUuid)
     property var    _appsModel:   null
     property bool   _appsShowAll: false
     property string _appsHostName:    ""
@@ -181,8 +184,15 @@ FocusScope {
         if (homeLoader.item && homeLoader.item.openAddPc) homeLoader.item.openAddPc()
     }
 
+    // The same rule as HomeScreen.hostIndexOf(): layoutRevision is read so that a binding over
+    // this re-runs when the rows move, which indexOfUuid() alone would never cause.
+    function _rowOf(model, uuid) {
+        if (!model || model.layoutRevision < 0 || !uuid) return -1
+        return model.indexOfUuid(uuid)
+    }
+
     function showApps(computerIndex, computerModel, showAll, hostName, hostAddress, hostGpu, isTailscaleClone) {
-        _appsIdx              = computerIndex
+        _appsUuid             = computerModel ? computerModel.uuidAt(computerIndex) : ""
         _appsModel            = computerModel
         _appsShowAll          = showAll || false
         _appsHostName         = hostName    || ""
@@ -209,7 +219,8 @@ FocusScope {
     // must never read as "the integration is off".
     property var    _settingsHostModel: null
     property string _settingsHostName: ""
-    property int    _settingsHostIndex: -1
+    property string _settingsHostUuid: ""        // by uuid, see _appsUuid
+    readonly property int _settingsHostIndex: _rowOf(_settingsHostModel, _settingsHostUuid)
     property bool   _settingsHostStEnabled: true
 
     // Also called by main.qml Keys.onMenuPressed.
@@ -231,7 +242,7 @@ FocusScope {
                 _settingsProfileOverride = mdl.hostActiveOverride(idx)
                 _settingsProfileName     = mdl.hostActiveProfileName(idx)
                 _settingsHostStEnabled   = mdl.streamTweakEnabled(idx)
-                _settingsHostIndex       = idx
+                _settingsHostUuid        = mdl.uuidAt(idx)
                 _settingsHostName        = currentPage === 1
                     ? _appsHostName
                     : (homeLoader.item.currentHost ? homeLoader.item.currentHost.name : "")
@@ -239,7 +250,7 @@ FocusScope {
                 _settingsProfileOverride = ({})
                 _settingsProfileName     = ""
                 _settingsHostStEnabled   = true
-                _settingsHostIndex       = -1
+                _settingsHostUuid        = ""
                 _settingsHostName        = ""
             }
 
@@ -380,8 +391,10 @@ FocusScope {
             focus: currentPage === 1
             source: "qrc:/gui/AppsScreen.qml"
             onLoaded: {
-                item.computerIndex     = appShell._appsIdx
+                // The model before the host: the page builds its library when it learns the
+                // host, and must have the model to find its row by then.
                 item.hostComputerModel = appShell._appsModel
+                item.hostUuid          = appShell._appsUuid
                 item.showHiddenGames   = appShell._appsShowAll
                 item.appShell          = appShell
                 item.hostName          = appShell._appsHostName
@@ -404,7 +417,7 @@ FocusScope {
                 item.activeProfileName     = appShell._settingsProfileName
                 item.hostModel             = appShell._settingsHostModel
                 item.hostName              = appShell._settingsHostName
-                item.hostIndex             = appShell._settingsHostIndex
+                item.hostIndex             = Qt.binding(function() { return appShell._settingsHostIndex })
                 item.hostStreamTweakEnabled = appShell._settingsHostStEnabled
                 item.forceActiveFocus()
             }

@@ -26,6 +26,35 @@ void ComputerModel::initialize(ComputerManager* computerManager)
             this, &ComputerModel::handlePairingCompleted);
 
     m_Computers = m_ComputerManager->getComputers();
+    bumpLayoutRevision();
+}
+
+void ComputerModel::bumpLayoutRevision()
+{
+    m_LayoutRevision++;
+    emit layoutRevisionChanged();
+}
+
+QString ComputerModel::uuidAt(int computerIndex) const
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count())
+        return QString();
+
+    QReadLocker lock(&m_Computers[computerIndex]->lock);
+    return m_Computers[computerIndex]->uuid;
+}
+
+int ComputerModel::indexOfUuid(const QString& uuid) const
+{
+    if (uuid.isEmpty())
+        return -1;
+
+    for (int i = 0; i < m_Computers.count(); i++) {
+        QReadLocker lock(&m_Computers[i]->lock);
+        if (m_Computers[i]->uuid == uuid)
+            return i;
+    }
+    return -1;
 }
 
 QVariant ComputerModel::data(const QModelIndex& index, int role) const
@@ -237,6 +266,7 @@ void ComputerModel::deleteComputer(int computerIndex)
     m_Computers.removeAt(computerIndex);
 
     endRemoveRows();
+    bumpLayoutRevision();
 }
 
 /*
@@ -255,20 +285,20 @@ class DeferredWakeHostTask : public QObject, public QRunnable
 {
     Q_OBJECT
 public:
-    DeferredWakeHostTask(NvComputer* computer, int computerIndex)
-        : m_Computer(computer), m_ComputerIndex(computerIndex) {}
+    DeferredWakeHostTask(NvComputer* computer, const QString& uuid)
+        : m_Computer(computer), m_Uuid(uuid) {}
 
     void run()
     {
-        emit wakeCompleted(m_ComputerIndex, m_Computer->wake());
+        emit wakeCompleted(m_Uuid, m_Computer->wake());
     }
 
 signals:
-    void wakeCompleted(int computerIndex, bool sent);
+    void wakeCompleted(const QString& uuid, bool sent);
 
 private:
     NvComputer* m_Computer;
-    int m_ComputerIndex;
+    QString m_Uuid;
 };
 
 void ComputerModel::wakeComputer(int computerIndex)
@@ -278,18 +308,18 @@ void ComputerModel::wakeComputer(int computerIndex)
     // Wake is the one way back from heldAsleep: polling and the bridge resume with it, so the
     // wake flow sees the host come online. If someone else already woke it, the magic packet
     // lands on an awake NIC and does nothing, and the next poll finds it online.
-    {
-        QString uuid;
-        {
-            QReadLocker lock(&m_Computers[computerIndex]->lock);
-            uuid = m_Computers[computerIndex]->uuid;
-        }
-        m_ComputerManager->setHeldAsleep(uuid, false);
-    }
+    const QString uuid = uuidAt(computerIndex);
+    m_ComputerManager->setHeldAsleep(uuid, false);
 
-    DeferredWakeHostTask* wakeTask = new DeferredWakeHostTask(m_Computers[computerIndex], computerIndex);
-    QObject::connect(wakeTask, &DeferredWakeHostTask::wakeCompleted,
-                     this, &ComputerModel::wakeCompleted);
+    // Answered with the row the host has when the packet is away, not the one it had when it
+    // was asked for: see layoutRevision.
+    DeferredWakeHostTask* wakeTask = new DeferredWakeHostTask(m_Computers[computerIndex], uuid);
+    QObject::connect(wakeTask, &DeferredWakeHostTask::wakeCompleted, this,
+                     [this](const QString& uuid, bool sent) {
+                         const int idx = indexOfUuid(uuid);
+                         if (idx >= 0)
+                             emit wakeCompleted(idx, sent);
+                     });
     QThreadPool::globalInstance()->start(wakeTask);
 }
 
@@ -412,14 +442,21 @@ void ComputerModel::requestHostNetInfo(int computerIndex)
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
 
     NvComputer* computer = m_Computers[computerIndex];
-    QString address;
+    QString address, uuid;
     {
         QReadLocker lock(&computer->lock);
         address = computer->activeAddress.address();
+        uuid = computer->uuid;
     }
     if (address.isEmpty()) return;
 
-    m_streamTweakBridge.requestNetInfo(address, [this, computerIndex](const QString& reply) {
+    // ⚠️ Every reply in this file names its host by uuid and looks the row up again when it
+    // lands (6.3.1). The request went out with a row number, and the rows can move in the
+    // seconds before the answer: a reply delivered on the old number is a reply about the
+    // wrong host. See layoutRevision.
+    m_streamTweakBridge.requestNetInfo(address, [this, uuid](const QString& reply) {
+        const int computerIndex = indexOfUuid(uuid);
+        if (computerIndex < 0) return;
         QVariantMap out;
         if (!reply.isEmpty() && !reply.startsWith(QStringLiteral("ERR"))) {
             QJsonDocument doc = QJsonDocument::fromJson(reply.toUtf8());
@@ -558,10 +595,11 @@ void ComputerModel::probeStreamTweakPresence(int computerIndex)
     }
 
     NvComputer* computer = m_Computers[computerIndex];
-    QString address;
+    QString address, uuid;
     {
         QReadLocker lock(&computer->lock);
         address = computer->activeAddress.address();
+        uuid = computer->uuid;
     }
     if (address.isEmpty()) {
         // Offline, or no address resolved yet — nothing to ask. The tab distinguishes this
@@ -575,7 +613,9 @@ void ComputerModel::probeStreamTweakPresence(int computerIndex)
     // in the tab to ask about. Anything that isn't a CAPS1 line (empty on timeout, "ERR"
     // from a pre-7.1 host, a plain Sunshine box refusing the port) means not found.
     m_streamTweakBridge.requestCaps(address,
-        [this, computerIndex](const QString& caps) {
+        [this, uuid](const QString& caps) {
+            const int computerIndex = indexOfUuid(uuid);   // see requestHostNetInfo()
+            if (computerIndex < 0) return;
             const bool found = caps.startsWith(QLatin1String("CAPS1"));
             // "clip=on|off" rides on the same line from StreamTweak 8.7.0; absent before.
             QString clip;
@@ -672,6 +712,7 @@ void ComputerModel::handleComputerStateChanged(NvComputer* computer)
         beginResetModel();
         m_Computers = newComputerList;
         endResetModel();
+        bumpLayoutRevision();
     }
     else {
         // Let the view know that this specific computer changed
@@ -713,13 +754,16 @@ void ComputerModel::requestPowerCaps(int computerIndex)
     QReadLocker lock(&computer->lock);
 
     QString address = computer->activeAddress.address();
+    const QString uuid = computer->uuid;
     if (address.isEmpty()) {
         emit powerCapsReceived(computerIndex, false, QStringList(), false);
         return;
     }
 
     m_streamTweakBridge.requestPowerCaps(address,
-        [this, computerIndex](const QString& response) {
+        [this, uuid](const QString& response) {
+            const int computerIndex = indexOfUuid(uuid);   // see requestHostNetInfo()
+            if (computerIndex < 0) return;
             // An older host answers "ERR" (unknown verb) or nothing: not an empty list of
             // modes, but "ask me the old way".
             QJsonObject obj = QJsonDocument::fromJson(response.toUtf8()).object();
@@ -749,28 +793,27 @@ void ComputerModel::powerHost(int computerIndex, const QString& mode, bool insta
     QReadLocker lock(&computer->lock);
 
     QString address = computer->activeAddress.address();
+    const QString uuid = computer->uuid;
     if (address.isEmpty()) {
         emit powerHostResult(computerIndex, mode, false);
         return;
     }
 
     m_streamTweakBridge.sendPower(address, mode, installUpdates,
-        [this, computerIndex, mode](const QString& response) {
+        [this, uuid, mode](const QString& response) {
             bool ok = response.trimmed() == QLatin1String("OK");
             if (!ok)
                 qWarning() << "POWER" << mode << "refused by host:" << response;
             // Asleep or hibernating: from here on, not one connection until Wake — the next
             // poll would otherwise be the packet that wakes it (NvComputer::heldAsleep).
-            if (ok && (mode == QLatin1String("sleep") || mode == QLatin1String("hibernate"))
-                    && computerIndex >= 0 && computerIndex < m_Computers.count()) {
-                QString uuid;
-                {
-                    QReadLocker lock(&m_Computers[computerIndex]->lock);
-                    uuid = m_Computers[computerIndex]->uuid;
-                }
+            // ⚠️ By the uuid the command went to. This used to read the row the request was
+            // made with, so a list that moved while the host answered held a DIFFERENT host
+            // asleep — and left the one that had just gone to sleep being polled awake.
+            if (ok && (mode == QLatin1String("sleep") || mode == QLatin1String("hibernate")))
                 m_ComputerManager->setHeldAsleep(uuid, true);
-            }
-            emit powerHostResult(computerIndex, mode, ok);
+            const int computerIndex = indexOfUuid(uuid);   // see requestHostNetInfo()
+            if (computerIndex >= 0)
+                emit powerHostResult(computerIndex, mode, ok);
         });
 }
 
@@ -788,13 +831,16 @@ void ComputerModel::requestUpdateState(int computerIndex)
     QReadLocker lock(&computer->lock);
 
     QString address = computer->activeAddress.address();
+    const QString uuid = computer->uuid;
     if (address.isEmpty()) {
         emit updateStateReceived(computerIndex, false);
         return;
     }
 
     m_streamTweakBridge.requestUpdateState(address,
-        [this, computerIndex](const QString& response) {
+        [this, uuid](const QString& response) {
+            const int computerIndex = indexOfUuid(uuid);   // see requestHostNetInfo()
+            if (computerIndex < 0) return;
             // {"pending":true} → true; anything else (incl. "ERR" from a legacy host,
             // "" on timeout, or {"pending":false}) → false.
             bool pending = response.contains(QLatin1String("\"pending\":true"));
@@ -820,13 +866,16 @@ void ComputerModel::requestLockState(int computerIndex)
     QReadLocker lock(&computer->lock);
 
     QString address = computer->activeAddress.address();
+    const QString uuid = computer->uuid;
     if (address.isEmpty()) {
         emit lockStateReceived(computerIndex, false, false);
         return;
     }
 
     m_streamTweakBridge.requestLockState(address,
-        [this, computerIndex](const QString& response) {
+        [this, uuid](const QString& response) {
+            const int computerIndex = indexOfUuid(uuid);   // see requestHostNetInfo()
+            if (computerIndex < 0) return;
             // An empty reply or "ERR" is a host that does not know the command. That is a
             // different answer from "not locked", and collapsing the two would march us
             // past the PIN pad and into a session with a logon screen behind it.
@@ -856,14 +905,20 @@ void ComputerModel::matchHostLinkSpeed(int computerIndex)
     StreamingPreferences* prefs = AppSettingsManager::get()->buildPrefs(
         StreamingPreferences::get(), computer->uuid, -1, this);
 
+    // Twenty-odd seconds of renegotiation: long enough for the rows to move under it.
+    const QString uuid = computer->uuid;
     LinkMatcher* matcher = new LinkMatcher(this);
     connect(matcher, &LinkMatcher::stage, this,
-            [this, computerIndex](const QString& detail) {
-                emit linkMatchProgress(computerIndex, true, detail);
+            [this, uuid](const QString& detail) {
+                const int computerIndex = indexOfUuid(uuid);   // see requestHostNetInfo()
+                if (computerIndex >= 0)
+                    emit linkMatchProgress(computerIndex, true, detail);
             });
     connect(matcher, &LinkMatcher::finished, this,
-            [this, computerIndex, matcher, prefs](bool, const QString&) {
-                emit linkMatchProgress(computerIndex, false, QString());
+            [this, uuid, matcher, prefs](bool, const QString&) {
+                const int computerIndex = indexOfUuid(uuid);
+                if (computerIndex >= 0)
+                    emit linkMatchProgress(computerIndex, false, QString());
                 matcher->deleteLater();
                 prefs->deleteLater();
             });
@@ -928,13 +983,16 @@ void ComputerModel::requestUpdateProgress(int computerIndex)
     NvComputer* computer = m_Computers[computerIndex];
     QReadLocker lock(&computer->lock);
     QString address = computer->activeAddress.address();
+    const QString uuid = computer->uuid;
     if (address.isEmpty()) {
         emit updateProgressReceived(computerIndex, QVariantMap{{ "phase", "IDLE" }});
         return;
     }
 
     m_streamTweakBridge.requestUpdateProgress(address,
-        [this, computerIndex](const QString& response) {
+        [this, uuid](const QString& response) {
+            const int computerIndex = indexOfUuid(uuid);   // see requestHostNetInfo()
+            if (computerIndex < 0) return;
             // Empty/"ERR" (host unreachable, e.g. rebooting, or legacy) → IDLE so the UI
             // can resolve the job. Otherwise parse the JSON snapshot into a QVariantMap.
             if (response.isEmpty() || response.startsWith(QLatin1String("ERR"))) {
@@ -964,6 +1022,7 @@ void ComputerModel::requestStreamTweakStatus(int computerIndex)
     QReadLocker lock(&computer->lock);
 
     QString address = computer->activeAddress.address();
+    const QString uuid = computer->uuid;
     if (address.isEmpty()) {
         emit streamTweakStatusReceived(computerIndex, QString());
         return;
@@ -971,7 +1030,11 @@ void ComputerModel::requestStreamTweakStatus(int computerIndex)
 
     // Per-request callback: the response is delivered only to this caller.
     m_streamTweakBridge.requestStatus(address,
-        [this, computerIndex](const QString& status) {
+        [this, uuid](const QString& status) {
+            // The re-request of the access state below goes by this row too: on the stale
+            // one it enrolled — and showed a PIN for — a different host.
+            const int computerIndex = indexOfUuid(uuid);   // see requestHostNetInfo()
+            if (computerIndex < 0) return;
             if (status == QLatin1String("ERR_UNAUTHORIZED")) {
                 // Authorization was lost (e.g. revoked on the host while we were
                 // authorized). Hide the NIC line and refresh the access state so the
@@ -1013,7 +1076,9 @@ void ComputerModel::requestStreamTweakAuth(int computerIndex)
     // approval — report "open" and never enroll or prompt for a PIN. Legacy or
     // non-StreamTweak hosts don't understand CAPS → "none" (badge hidden).
     m_streamTweakBridge.requestCaps(address,
-        [this, computerIndex, uuid, address](const QString& caps) {
+        [this, uuid, address](const QString& caps) {
+            const int computerIndex = indexOfUuid(uuid);   // see requestHostNetInfo()
+            if (computerIndex < 0) return;
             if (!caps.startsWith(QLatin1String("CAPS1"))) {
                 m_streamTweakPins.remove(uuid);
                 emit streamTweakAuthReceived(computerIndex, QStringLiteral("none"), QString());
@@ -1042,7 +1107,11 @@ void ComputerModel::requestStreamTweakAuth(int computerIndex)
                 m_streamTweakPins.insert(uuid, pin);
             }
             m_streamTweakBridge.enroll(address, pin,
-                [this, computerIndex, uuid, pin](const QString& reply) {
+                [this, uuid, pin](const QString& reply) {
+                    // A second round trip, so a second chance for the rows to have moved: the
+                    // PIN popup names the host at this row.
+                    const int computerIndex = indexOfUuid(uuid);
+                    if (computerIndex < 0) return;
                     QString state;
                     if (reply == QLatin1String("ENROLLED"))     state = QStringLiteral("authorized");
                     else if (reply == QLatin1String("PENDING")) state = QStringLiteral("pending");
@@ -1103,7 +1172,7 @@ void ComputerModel::requestAppStores(int computerIndex)
     // the response to this caller so concurrent requests never cross-talk.
     QString uuid = computer->uuid;
     m_streamTweakBridge.requestAppStores(address,
-        [this, computerIndex, uuid](const QString& json) {
+        [this, uuid](const QString& json) {
             QVariantMap stores;
             if (!json.isEmpty()) {
                 QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
@@ -1118,7 +1187,9 @@ void ComputerModel::requestAppStores(int computerIndex)
             if (!uuid.isEmpty()) {
                 m_appStoresCache[uuid] = stores;
             }
-            emit appStoresReceived(computerIndex, stores);
+            const int computerIndex = indexOfUuid(uuid);   // see requestHostNetInfo()
+            if (computerIndex >= 0)
+                emit appStoresReceived(computerIndex, stores);
         });
 }
 

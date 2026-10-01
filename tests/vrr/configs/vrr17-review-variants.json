@@ -1,0 +1,44 @@
+{
+  "review_schema": 1,
+  "scenarios": [
+    {"name": "session-policy", "mode": "fixed"},
+    {
+      "name": "rtp-cadence", "mode": "fixed",
+      "parameters": {"controller": {"playout_smoothing_gain_per_mille": 0}}
+    },
+    {
+      "name": "vrr14-latch-margin", "mode": "fixed",
+      "parameters": {"controller": {"playout_per_frame_latch": 1}}
+    },
+    {
+      "name": "hitch-driven-reserve", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_responsive_buffer": 0,
+        "playout_prediction_only": 0,
+        "timestamp_playout_enabled": 1,
+        "playout_delay_adaptive": 1,
+        "playout_history_enabled": 1,
+        "playout_prediction_enabled": 1,
+        "playout_smoothness_feedback_enabled": 1,
+        "playout_readiness_driven_adaptation": 1,
+        "playout_native_hitch_adaptation": 1
+      }}
+    },
+    {
+      "name": "hybrid-candidate", "mode": "fixed",
+      "parameters": {"controller": {
+        "playout_responsive_buffer": 0,
+        "playout_prediction_only": 0,
+        "timestamp_playout_enabled": 1,
+        "playout_delay_adaptive": 1,
+        "playout_history_enabled": 1,
+        "playout_prediction_enabled": 1,
+        "playout_smoothness_feedback_enabled": 1,
+        "playout_readiness_driven_adaptation": 1,
+        "playout_native_hitch_adaptation": 1,
+        "playout_smoothing_gain_per_mille": 0,
+        "playout_per_frame_latch": 1
+      }}
+    }
+  ]
+}

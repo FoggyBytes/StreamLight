@@ -29,9 +29,6 @@ class Theme : public QObject
     /** Black or white, whichever the accent can actually carry as a foreground. */
     Q_PROPERTY(QColor onAccent READ onAccent NOTIFY changed)
 
-    /** The accent at low alpha, for tinted fills and washes. */
-    Q_PROPERTY(QColor accentSoft READ accentSoft NOTIFY changed)
-
     /** Page background: near-black carrying a trace of the accent, never pure black. */
     Q_PROPERTY(QColor ground READ ground NOTIFY changed)
 
@@ -44,6 +41,9 @@ class Theme : public QObject
     Q_PROPERTY(QColor text     READ text     CONSTANT)
     Q_PROPERTY(QColor text2    READ text2    CONSTANT)
     Q_PROPERTY(QColor text3    READ text3    CONSTANT)
+    // What a modal dialog lays over the page behind it (Overlay.modal). It was the same literal
+    // written into eleven dialogs (6.3.1).
+    Q_PROPERTY(QColor scrim    READ scrim    CONSTANT)
 
     // Semantics. Fixed on purpose — see the class note.
     Q_PROPERTY(QColor online  READ online  CONSTANT)
@@ -70,9 +70,11 @@ class Theme : public QObject
      * state they were in.</p>
      *
      * <p>⚠️ Design sizes, NOT final pixels. Every caller still multiplies by the interface
-     * scale — <tt>_px(Theme.fontBody)</tt>, not <tt>Theme.fontBody</tt> — except the window
-     * chrome, which is sized in fixed pixels on purpose. Handing out pre-scaled values here
-     * would take that choice away from the call site.</p>
+     * scale — <tt>_px(Theme.fontBody)</tt>, not <tt>Theme.fontBody</tt> — the window chrome
+     * included: it used to be the exception, in fixed pixels, until the status bar and the
+     * clock (5.7.0) and the Home header (6.3.1) were found drawn at two thirds the size of what
+     * they sat beside on a handheld. Handing out pre-scaled values here would still take the
+     * choice of scale away from the call site.</p>
      *
      * <p>The four sizes above the scale (40, 52, 64, 68, 100) are deliberately not steps: they
      * are one-off display figures — the PIN digits, the segue title, the big numbers on the
@@ -135,7 +137,6 @@ public:
 
     QColor accent()     const { return m_Accent; }
     QColor onAccent()   const;
-    QColor accentSoft() const;
     QColor ground()     const;
 
     QColor card()     const { return QColor(0x0f, 0x15, 0x19); }
@@ -144,6 +145,7 @@ public:
     QColor lineHigh() const { return QColor(0xff, 0xff, 0xff, 0x30); }
     QColor text()     const { return QColor(0xf3, 0xf7, 0xf8); }
     QColor text2()    const { return QColor(0xa2, 0xb2, 0xba); }
+    QColor scrim()    const { return QColor(0x00, 0x00, 0x00, 0xcc); }
 
     /**
      * Tertiary text — captions, section headers, the muted half of a two-tone line.
@@ -210,9 +212,6 @@ public:
      * the result of the two that the text has to be read against.
      */
     Q_INVOKABLE QColor blend(const QColor& under, const QColor& over) const;
-
-    /** Back to the default accent — see DefaultAccent in theme.cpp for which, and why. */
-    Q_INVOKABLE void resetAccent();
 
 signals:
     void changed();

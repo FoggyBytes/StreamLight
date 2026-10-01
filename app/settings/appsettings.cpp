@@ -32,6 +32,7 @@ static AppOverride readOverrideGroup(const QSettings& s)
     if (s.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = s.value("vsync").toBool(); }
     if (s.contains("fractionalvsync")) { ov.hasFractionalVsync = true; ov.fractionalVsync = s.value("fractionalvsync").toBool(); }
     if (s.contains("vrr"))          { ov.hasVrr = true;         ov.enableVrr = s.value("vrr").toBool(); }
+    if (s.contains("yuv444"))       { ov.hasYuv444 = true;      ov.enableYuv444 = s.value("yuv444").toBool(); }
     return ov;
 }
 
@@ -51,6 +52,7 @@ static void writeOverrideGroup(QSettings& s, const AppOverride& ov)
     if (ov.hasVsync)       s.setValue("vsync", ov.enableVsync);
     if (ov.hasFractionalVsync) s.setValue("fractionalvsync", ov.fractionalVsync);
     if (ov.hasVrr)         s.setValue("vrr", ov.enableVrr);
+    if (ov.hasYuv444)      s.setValue("yuv444", ov.enableYuv444);
 }
 
 QVariantMap appOverrideToMap(const AppOverride& ov)
@@ -70,6 +72,7 @@ QVariantMap appOverrideToMap(const AppOverride& ov)
     if (ov.hasVsync)       m["vsync"] = ov.enableVsync;
     if (ov.hasFractionalVsync) m["fractionalvsync"] = ov.fractionalVsync;
     if (ov.hasVrr)         m["vrr"] = ov.enableVrr;
+    if (ov.hasYuv444)      m["yuv444"] = ov.enableYuv444;
     return m;
 }
 
@@ -94,6 +97,7 @@ AppOverride appOverrideFromMap(const QVariantMap& m)
     if (m.contains("vsync"))         { ov.hasVsync = true;       ov.enableVsync = m.value("vsync").toBool(); }
     if (m.contains("fractionalvsync")) { ov.hasFractionalVsync = true; ov.fractionalVsync = m.value("fractionalvsync").toBool(); }
     if (m.contains("vrr"))          { ov.hasVrr = true;         ov.enableVrr = m.value("vrr").toBool(); }
+    if (m.contains("yuv444"))       { ov.hasYuv444 = true;      ov.enableYuv444 = m.value("yuv444").toBool(); }
     return ov;
 }
 
@@ -124,6 +128,7 @@ QVariantMap inheritedValueLabels(const StreamingPreferences* p)
     const QString off = QCoreApplication::translate("AppSettings", "Off");
 
     m.insert(QStringLiteral("hdr"),          p->enableHdr ? on : off);
+    m.insert(QStringLiteral("yuv444"),       p->enableYUV444 ? on : off);
     m.insert(QStringLiteral("hue"),          p->hueSyncIntegration ? on : off);
     m.insert(QStringLiteral("matchlink"),    p->matchHostLinkSpeed ? on : off);
     m.insert(QStringLiteral("waitgame"),     p->waitForGameOnScreen ? on : off);
@@ -142,6 +147,7 @@ QVariantMap inheritedValueLabels(const StreamingPreferences* p)
     case StreamingPreferences::VCC_FORCE_H264: codec = QStringLiteral("H.264"); break;
     case StreamingPreferences::VCC_FORCE_HEVC: codec = QStringLiteral("HEVC");  break;
     case StreamingPreferences::VCC_FORCE_AV1:  codec = QStringLiteral("AV1");   break;
+    case StreamingPreferences::VCC_FORCE_PYROWAVE: codec = QStringLiteral("PyroWave"); break;
     // VCC_AUTO, and the deprecated forced-HEVC-HDR value that old settings can still hold.
     default: codec = QCoreApplication::translate("AppSettings", "Auto"); break;
     }
@@ -175,6 +181,11 @@ void applyAppOverride(StreamingPreferences* p, const AppOverride& ov)
     if (ov.hasFps)         p->fps = ov.fps;
     if (ov.hasBitrate)     p->bitrateKbps = ov.bitrateKbps;
     if (ov.hasHdr)         p->enableHdr = ov.enableHdr;
+    // ⚠️ The bitrate is left alone on purpose. Settings re-derives it when the global
+    // switch flips (and only under autoAdjustBitrate); a profile has its own Bitrate row
+    // for that, and Session already falls back to the 4:2:0 default when 4:4:4 cannot be
+    // negotiated and the bitrate was never touched.
+    if (ov.hasYuv444)      p->enableYUV444 = ov.enableYuv444;
     if (ov.hasCodec)       p->videoCodecConfig = (StreamingPreferences::VideoCodecConfig)ov.videoCodecConfig;
     // ⚠️ Overrides live in their own store and never pass through reload(), so the
     // frame-pacing values 3.4.0 - 5.1.3 could write have to be collapsed here too.

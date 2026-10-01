@@ -7,6 +7,7 @@
 #include "backend/nvhttp.h"
 #include "streaming/vrrratepolicy.h"
 #include "backend/richpresencemanager.h"
+#include "backend/networkbuffers.h"
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -14,6 +15,7 @@
 
 #ifdef HAVE_FFMPEG
 #include "video/ffmpeg.h"
+#include "video/ffmpeg-renderers/pacer/vrr/receivedeadline.h"
 #endif
 
 #ifdef HAVE_SLVIDEO
@@ -73,7 +75,10 @@ CONNECTION_LISTENER_CALLBACKS Session::k_ConnCallbacks = {
     Session::clRumbleTriggers,
     Session::clSetMotionEventState,
     Session::clSetControllerLED,
-    Session::clSetAdaptiveTriggers
+    Session::clSetAdaptiveTriggers,
+    // controllerHaptics (6.4.0, with the protocol of Nonary's fork): the DualSense
+    // waveform extension is not taken — nullptr keeps the stream to ordinary rumble.
+    nullptr
 };
 
 Session* Session::s_ActiveSession;
@@ -705,10 +710,21 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
         m_RejoinsRunningApp = computer->currentGameId != 0 && computer->currentGameId == app.id;
     }
 
-    // Start polling StreamTweak for host metrics immediately.
-    // The poller is owned by this Session (parent = this) so it is automatically
-    // destroyed when the Session is destroyed. Polling fails gracefully if
-    // StreamTweak is not reachable — all metrics stay at -1.
+    // The StreamTweak host-metrics poller. Owned by this Session (parent = this). Polling fails
+    // gracefully if StreamTweak is not reachable — all metrics stay at -1.
+    //
+    // ⚠️ Created here, started once the connection is up (next to the telemetry sampler) and
+    // stopped when exec() is done (6.3.1). It used to start here and never stop, and this
+    // object outlives its stream by as long as the QML engine takes to collect it — see
+    // ~Session. So it polled STATS once a second, a new connection and an RSA signature each
+    // time, for sessions that never started (the one a quit-and-launch builds in advance),
+    // through the launch and long after the stream had ended, alongside the next session's own
+    // poller. Worse, the host's Stop stream is a one-shot handed to whoever asks STATS first,
+    // and it arrives here as SDL_QUIT: outside the stream loop the one reading SDL's queue is
+    // the GUI's gamepad navigation, which answers SDL_QUIT by quitting the whole app. That is
+    // also why the start waits for the connection: GUI navigation steps aside only then
+    // (StreamSegue.connectionStarted), and a Stop pressed during the launch stays on the host
+    // until the first poll of the stream, which ends the stream rather than StreamLight.
     //
     // Not created at all when the integration is off for this host: it would otherwise poll
     // a port nobody is listening on once a second for the whole session. The overlay's host
@@ -716,7 +732,6 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
     // know the poller is absent.
     if (m_StreamTweakEnabled) {
         m_HostMetricsPoller = new HostMetricsPoller(computer->activeAddress.address(), this);
-        m_HostMetricsPoller->start();
 
         // If StreamTweak sends a stop signal via the STATS response, terminate the session
         // gracefully. We must NOT call interrupt() here because it forcibly aborts ENet via
@@ -729,7 +744,7 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
                 this,                &Session::requestGracefulStop);
     }
 
-    // Session telemetry sampler: sends per-second client stats to StreamTweak every 10s.
+    // Session telemetry sampler: sends one sample of client stats to StreamTweak every second.
     // start() is called later in exec() once the stream is running (after LiStartConnection).
     m_TelemetrySampler = new SessionTelemetrySampler(this);
 
@@ -1197,6 +1212,16 @@ bool Session::initialize(QQuickWindow* qtWindow)
         // straight to H.264 if the user asked for AV1 and the host doesn't support it.
         m_SupportedVideoFormats.removeByMask(~(VIDEO_FORMAT_MASK_AV1 | VIDEO_FORMAT_MASK_H265));
         break;
+    case StreamingPreferences::VCC_FORCE_PYROWAVE:
+        // PyroWave is only ever used on request, since it needs a wired link with
+        // hundreds of Mbps to spare. H.264 remains the fallback for other hosts.
+        // The 4:4:4 and 10-bit profiles are masked below like the other codecs'.
+        m_SupportedVideoFormats.removeByMask(~VIDEO_FORMAT_MASK_H264);
+        m_SupportedVideoFormats.prepend(VIDEO_FORMAT_PYROWAVE);
+        m_SupportedVideoFormats.prepend(VIDEO_FORMAT_PYROWAVE_444);
+        m_SupportedVideoFormats.prepend(VIDEO_FORMAT_PYROWAVE_HDR10);
+        m_SupportedVideoFormats.prepend(VIDEO_FORMAT_PYROWAVE_HDR10_444);
+        break;
     }
 
     // NB: Since deprioritization puts codecs in reverse order (at the bottom of the list),
@@ -1378,6 +1403,49 @@ bool Session::validateLaunch(SDL_Window* testWindow)
 
     if (m_Preferences->videoDecoderSelection == StreamingPreferences::VDS_FORCE_SOFTWARE) {
         emitLaunchWarning(tr("Your settings selection to force software decoding may cause poor streaming performance."));
+    }
+
+    if (m_SupportedVideoFormats & VIDEO_FORMAT_MASK_PYROWAVE) {
+        if (!(m_Computer->serverCodecModeSupport & SCM_PYROWAVE)) {
+            emitLaunchWarning(tr("Your host PC doesn't support PyroWave. Using H.264 instead."));
+            m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_PYROWAVE);
+        }
+        else if (getDecoderAvailability(testWindow,
+                                        StreamingPreferences::VDS_FORCE_HARDWARE,
+                                        m_SupportedVideoFormats.front(),
+                                        m_StreamConfig.width,
+                                        m_StreamConfig.height,
+                                        m_StreamConfig.fps) == DecoderAvailability::None) {
+            emitLaunchWarning(tr("This PC's GPU driver can't decode PyroWave. Using H.264 instead."));
+            m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_PYROWAVE);
+        }
+        else {
+            // One warning, about the narrower end (6.4.0). Nonary's two checks each spoke for
+            // themselves, so a host and a client both on 2.5 Gbps showed the same sentence
+            // twice; the stream is held back by the slower link, so that is the one to name.
+            const int hostLinkMbps = int(m_Computer->pyrowaveHostLinkMbps);
+            const int clientLinkMbps = NetworkBuffers::routedWiredLinkMbps(
+                QHostAddress(m_Computer->activeAddress.address()));
+            const bool hostShort = hostLinkMbps > 0 && m_StreamConfig.bitrate > hostLinkMbps * 800;
+            const bool clientShort = clientLinkMbps > 0 && m_StreamConfig.bitrate > clientLinkMbps * 800;
+            if (hostShort && clientShort && hostLinkMbps == clientLinkMbps) {
+                emitLaunchWarning(tr("PyroWave is set to %1 Mbps, but the %2 Mbps wired links of the host and this PC leave room for only about %3 Mbps of video. Lower the bitrate.")
+                                  .arg(m_StreamConfig.bitrate / 1000).arg(hostLinkMbps).arg(hostLinkMbps * 8 / 10));
+            }
+            else if (hostShort && (!clientShort || hostLinkMbps < clientLinkMbps)) {
+                emitLaunchWarning(tr("PyroWave is set to %1 Mbps, but the host's %2 Mbps wired link leaves room for only about %3 Mbps of video. Lower the bitrate.")
+                                  .arg(m_StreamConfig.bitrate / 1000).arg(hostLinkMbps).arg(hostLinkMbps * 8 / 10));
+            }
+            else if (clientShort) {
+                emitLaunchWarning(tr("PyroWave is set to %1 Mbps, but this PC's %2 Mbps wired link leaves room for only about %3 Mbps of video. Lower the bitrate.")
+                                  .arg(m_StreamConfig.bitrate / 1000).arg(clientLinkMbps).arg(clientLinkMbps * 8 / 10));
+            }
+            // Nonary's launchWarning() points to a fix button in his Settings that StreamLight
+            // does not have (6.4.0), so the same check gets a message that says where to look.
+            if (NetworkBuffers::receiveBufferTooSmall()) {
+                emitLaunchWarning(tr("This PC's network adapter has a small receive buffer, so PyroWave frames may lose detail. Raise its receive buffers in the adapter's advanced properties in Device Manager."));
+            }
+        }
     }
 
     if (m_SupportedVideoFormats & VIDEO_FORMAT_MASK_AV1) {
@@ -2168,6 +2236,7 @@ bool Session::startConnectionAsync()
                       m_Preferences->playAudioOnHost,
                       m_InputHandler->getAttachedGamepadMask(),
                       !m_Preferences->multiController,
+                      m_PresentationSettings.enableVrr,
                       rtspSessionUrl,
                       m_HostVirtualDisplay);
     } catch (const GfeHttpResponseException& e) {
@@ -2265,6 +2334,29 @@ bool Session::startConnectionAsync()
                                                                          false);
     }
 
+    // Likewise, a PyroWave default bitrate is far too high for the H.264
+    // fallback used when the host or this PC can't do PyroWave.
+    if (m_Preferences->videoCodecConfig == StreamingPreferences::VCC_FORCE_PYROWAVE &&
+        !(m_StreamConfig.supportedVideoFormats & VIDEO_FORMAT_MASK_PYROWAVE) &&
+        m_StreamConfig.bitrate == StreamingPreferences::getDefaultPyroWaveBitrate(m_StreamConfig.width,
+                                                                                  m_StreamConfig.height,
+                                                                                  m_StreamConfig.fps,
+                                                                                  m_Preferences->enableYUV444,
+                                                                                  m_Preferences->enableHdr)) {
+        m_StreamConfig.bitrate = StreamingPreferences::getDefaultBitrate(m_StreamConfig.width,
+                                                                         m_StreamConfig.height,
+                                                                         m_StreamConfig.fps,
+                                                                         false);
+    }
+
+    // PyroWave partial frames: let the receive thread release a frame that
+    // lost optional detail by its VRR slot instead of after a fixed silence.
+    // Nothing is published unless the VRR pacer runs timestamp playout.
+    VrrReceiveDeadline::clear();
+    LiSetVideoReassemblyDeadlineCallback([](uint32_t rtpTimestamp) {
+        return VrrReceiveDeadline::deadlineUs(rtpTimestamp, LiGetMicroseconds());
+    });
+
     int err = LiStartConnection(&hostInfo, &m_StreamConfig, &k_ConnCallbacks,
                                 &m_VideoCallbacks, &m_AudioCallbacks,
                                 NULL, 0, NULL, 0);
@@ -2321,6 +2413,17 @@ bool Session::startConnectionAsync()
         }, Qt::QueuedConnection);
     }
 
+    // The host-metrics poller starts here, and only now — see the note where it is created.
+    // Queued for the thread rule above, and after connectionStarted, which is queued to the
+    // same thread first: GUI navigation has stepped aside by the time the first STATS goes out.
+    // A stream already over when this runs gets no poller at all (exec() has stopped it).
+    if (m_HostMetricsPoller) {
+        QMetaObject::invokeMethod(this, [this]() {
+            if (!m_EventLoopDone)
+                m_HostMetricsPoller->start();
+        }, Qt::QueuedConnection);
+    }
+
     // Queue start() on the main Qt thread (where the sampler and its QTimers
     // were created). Direct call here would be on AsyncConnectionStartThread,
     // violating QTimer thread affinity and causing timers to never fire.
@@ -2339,6 +2442,11 @@ bool Session::startConnectionAsync()
         int fps = m_StreamConfig.fps;
         int bitrateKbps = m_StreamConfig.bitrate;
         QMetaObject::invokeMethod(m_TelemetrySampler, [this, hostAddr, fps, bitrateKbps]() {
+            // The clipboard's guard, below, which this one lacked (6.3.1): a stream over before
+            // this ran has already had flushAndStop(), and a timer started now would sample
+            // whatever session is current — the next one — and file it under this host.
+            if (m_EventLoopDone)
+                return;
             m_TelemetrySampler->start(hostAddr, fps, bitrateKbps);
         }, Qt::QueuedConnection);
     }
@@ -2627,6 +2735,8 @@ void Session::exec()
 {
     // If the connection failed, clean up and abort the connection.
     if (!m_AsyncConnectionSuccess) {
+        if (m_HostMetricsPoller)
+            m_HostMetricsPoller->stop();   // see the note where it is created
         delete m_InputHandler;
         m_InputHandler = nullptr;
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
@@ -2771,6 +2881,8 @@ void Session::exec()
                          "SDL_CreateWindow() failed: %s",
                          SDL_GetError());
 
+            if (m_HostMetricsPoller)
+                m_HostMetricsPoller->stop();   // see the note where it is created
             delete m_InputHandler;
             m_InputHandler = nullptr;
             SDL_QuitSubSystem(SDL_INIT_VIDEO);
@@ -3391,6 +3503,11 @@ void Session::exec()
 
 DispatchDeferredCleanup:
     m_EventLoopDone = true;
+
+    // No stream left to measure or to stop: see the note where the poller is created. Before
+    // ClipboardSync::finish() below, which it no longer has anything to tell.
+    if (m_HostMetricsPoller)
+        m_HostMetricsPoller->stop();
 
     // Switch back to synchronous logging mode
     StreamUtils::exitAsyncLoggingMode();

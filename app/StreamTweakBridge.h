@@ -48,6 +48,7 @@ public:
     using ResponseCallback = std::function<void(const QString&)>;
 
     explicit StreamTweakBridge(QObject* parent = nullptr);
+    ~StreamTweakBridge() override;
 
     // installUpdates: send SHUTDOWN_UPDATE ("Update and shut down") instead of SHUTDOWN.
     // Kept for hosts older than StreamTweak 8.6.0, which do not know POWER.
@@ -226,6 +227,12 @@ public:
     // before giving up and invoking the callback with an empty string. Generous
     // for a loopback/LAN request that normally completes in a few milliseconds.
     static constexpr int ResponseTimeoutMs = 3000;
+
+    // The longest reply line accepted (6.3.1). The largest real one is a sealed 32 KB clipboard
+    // text, about 45 KB of base64; anything past this is not StreamTweak, and is dropped as no
+    // answer rather than buffered for the whole of the timeout — a peer on the LAN answering
+    // on this port with an endless line used to be able to fill memory at link speed.
+    static constexpr int MaxReplyBytes = 1024 * 1024;
 
 private:
     void sendCommand(const QString& hostAddress, const QString& command);

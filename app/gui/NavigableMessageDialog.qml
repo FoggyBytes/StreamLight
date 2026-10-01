@@ -9,7 +9,6 @@ NavigableDialog {
     // ── Public API (preserved from legacy version) ────────────────────────────
     property string text: ""
     property alias  showSpinner: spinner.visible
-    property string imageSrc: ""              // kept for backwards-compat — no longer rendered
     property string helpText
     property string helpTextSeparator: " "
 
@@ -31,15 +30,15 @@ NavigableDialog {
     }
 
     contentItem: ColumnLayout {
-        spacing: 22
+        spacing: dialog._px(22)
 
         Label {
             visible: dialog.headerText.length > 0
             text: dialog.headerText
             font.family: Theme.family
-            font.pixelSize: Theme.fontSmall
+            font.pixelSize: dialog._px(Theme.fontSmall)
             font.bold: true
-            font.letterSpacing: 1.6
+            font.letterSpacing: 1.6 * dialog._u
             color: Theme.text3
             Layout.alignment: Qt.AlignHCenter
         }
@@ -48,8 +47,8 @@ NavigableDialog {
             id: spinner
             visible: false
             running: visible
-            implicitWidth: 56
-            implicitHeight: 56
+            implicitWidth: dialog._px(56)
+            implicitHeight: dialog._px(56)
             Layout.alignment: Qt.AlignHCenter
         }
 
@@ -59,12 +58,12 @@ NavigableDialog {
                                   ? (dialog.helpTextSeparator + dialog.helpText)
                                   : "")
             font.family: Theme.family
-            font.pixelSize: Theme.fontTitle
+            font.pixelSize: dialog._px(Theme.fontTitle)
             color: Theme.text
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
             Layout.alignment: Qt.AlignHCenter
-            Layout.maximumWidth: 520
+            Layout.maximumWidth: dialog._px(520)
         }
     }
 }

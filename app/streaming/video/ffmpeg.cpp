@@ -2,10 +2,15 @@
 #include "ffmpeg.h"
 #include "utils.h"
 #include "streaming/session.h"
+#include "diagnostics/gputrace.h"
 
 #include <h264_stream.h>
 
+#include <algorithm>
+#include <thread>
 #include <utility>
+
+#include "ffmpeg-renderers/pacer/vrr/receivedeadline.h"
 
 extern "C" {
 #include <libavutil/mastering_display_metadata.h>
@@ -52,6 +57,10 @@ extern "C" {
 #include "ffmpeg-renderers/plvk.h"
 #endif
 
+#ifdef HAVE_PYROWAVE
+#include "pyrowave/pyrowavedecoder.h"
+#endif
+
 // This is gross but it allows us to use sizeof()
 #include "ffmpeg_videosamples.cpp"
 
@@ -63,7 +72,8 @@ extern "C" {
 
 bool FFmpegVideoDecoder::isHardwareAccelerated()
 {
-    return m_HwDecodeCfg != nullptr ||
+    // PyroWave decodes on the GPU in Vulkan compute
+    return m_PyroWaveActive || m_HwDecodeCfg != nullptr ||
             (getAVCodecCapabilities(m_VideoDecoderCtx->codec) & AV_CODEC_CAP_HARDWARE) != 0;
 }
 
@@ -125,6 +135,11 @@ int FFmpegVideoDecoder::getDecoderCapabilities()
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "Using decoder capability override: 0x%x",
                     capabilities);
+    }
+    else if (m_PyroWaveActive) {
+        // Every PyroWave frame is intra-coded: there are no references to
+        // invalidate and the codec has no slices.
+        capabilities = 0;
     }
     else {
         // Start with the backend renderer's capabilities
@@ -325,6 +340,12 @@ void FFmpegVideoDecoder::reset()
     m_FramesIn = m_FramesOut = 0;
     m_FrameInfoQueue.clear();
     m_FrameSubmitTimeQueue.clear();
+    m_FrameDecodeHoldQueue.clear();
+
+    while (!m_PyroWaveOutput.isEmpty()) {
+        AVFrame* frame = m_PyroWaveOutput.dequeue();
+        av_frame_free(&frame);
+    }
 
     if (m_Pacer != nullptr) {
         // Pacer owns all producer threads. Stop them first so this final
@@ -349,6 +370,46 @@ void FFmpegVideoDecoder::reset()
     // since the codec context may be referencing objects that we
     // need to delete in the renderer destructor.
     avcodec_free_context(&m_VideoDecoderCtx);
+
+#ifdef HAVE_PYROWAVE
+    // After the pacer released its frames and before the renderer that owns
+    // the shared surfaces goes away. Destroying the decoder waits for its GPU
+    // work; frames still referencing surfaces only touch the shared free list.
+    if (m_PyroWave) {
+        if (m_PyroWaveRejectedFrames != 0) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "PyroWave rejected %u frames this session",
+                        m_PyroWaveRejectedFrames);
+        }
+        if (m_PyroWavePartialFrames != 0) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "PyroWave decoded %u frames with lost packets this session",
+                        m_PyroWavePartialFrames);
+        }
+        if (m_PyroWaveStaleSkips != 0) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "PyroWave skipped %u stale frames this session",
+                        m_PyroWaveStaleSkips);
+        }
+        if (m_PyroWaveHeldDecodes != 0) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "PyroWave held %u decodes clear of a VRR flip this session (average %.2f ms)",
+                        m_PyroWaveHeldDecodes,
+                        m_PyroWaveHeldUs / 1000.0 / m_PyroWaveHeldDecodes);
+        }
+        m_PyroWave.reset();
+    }
+#endif
+    m_PyroWaveActive = false;
+    m_PyroWaveRejectedFrames = 0;
+    m_PyroWavePartialFrames = 0;
+    m_PyroWaveHeldDecodes = 0;
+    m_PyroWaveHeldUs = 0;
+    m_PyroWaveStaleSkips = 0;
+    m_PyroWaveSkipRun = 0;
+    m_PyroWaveSkipRunWaitUs = 0;
+    m_VrrLastIntervalErrorNs = 0;
+    m_VrrLastIntervalErrorAtUs = 0;
 
     if (m_CurrentTestMode != TestMode::TestFrameOnly) {
         Session::get()->getOverlayManager().setOverlayRenderer(nullptr);
@@ -584,12 +645,28 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
                                  m_FrontendRenderer->getCalibrationIdentity().isEmpty() ? QString() :
                                  Session::get()->vrrCalibrationContext() + QString("|%1|%2|%3|%4|%5")
                                      .arg(params->width).arg(params->height).arg(params->videoFormat)
-                                     .arg(m_FrontendRenderer->getCalibrationIdentity()).arg(decoder->name),
+                                     .arg(m_FrontendRenderer->getCalibrationIdentity())
+                                     .arg(decoder != nullptr ? decoder->name : "pyrowave"),
                                  params->vrrLatencyMode)) {
             return false;
         }
     }
 
+    // PyroWave decodes without FFmpeg; its decoder is already initialized
+    if (decoder != nullptr && !initializeAVCodecContext(decoder, requiredFormat, params, testMode)) {
+        return false;
+    }
+
+    if (testMode != TestMode::TestFrameOnly && !finishRenderInitialization(params)) {
+        return false;
+    }
+
+    return true;
+}
+
+bool FFmpegVideoDecoder::initializeAVCodecContext(const AVCodec* decoder, enum AVPixelFormat requiredFormat,
+                                                  PDECODER_PARAMETERS params, TestMode testMode)
+{
     m_VideoDecoderCtx = avcodec_alloc_context3(decoder);
     if (!m_VideoDecoderCtx) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -630,8 +707,11 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
     m_VideoDecoderCtx->pkt_timebase.num = 1;
     m_VideoDecoderCtx->pkt_timebase.den = 90000;
 
-    // Allocate enough extra frames for Pacer to avoid stalling the decoder
-    m_VideoDecoderCtx->extra_hw_frames = PACER_MAX_OUTSTANDING_FRAMES;
+    // Allocate enough extra frames for Pacer to avoid stalling the decoder.
+    // The VRR worker's Smooth profile may hold one more waiting frame than the
+    // classic pacer.
+    m_VideoDecoderCtx->extra_hw_frames = PACER_MAX_OUTSTANDING_FRAMES +
+        static_cast<int>(VrrLargestQueuedFrames - VrrMaximumQueuedFrames);
 
     // For non-hwaccel decoders, set the pix_fmt to hint to the decoder which
     // format should be used. This is necessary for certain decoders like the
@@ -816,43 +896,46 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
         }
     }
 
-    if (testMode != TestMode::TestFrameOnly) {
-        if ((params->videoFormat & VIDEO_FORMAT_MASK_H264) &&
-                !(m_BackendRenderer->getDecoderCapabilities() & CAPABILITY_REFERENCE_FRAME_INVALIDATION_AVC)) {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "Using H.264 SPS fixup");
-            m_NeedsSpsFixup = true;
-        }
-        else {
-            m_NeedsSpsFixup = false;
-        }
+    return true;
+}
 
-        // Tell overlay manager to use this frontend renderer
-        Session::get()->getOverlayManager().setOverlayRenderer(m_FrontendRenderer);
+bool FFmpegVideoDecoder::finishRenderInitialization(PDECODER_PARAMETERS params)
+{
+    if ((params->videoFormat & VIDEO_FORMAT_MASK_H264) &&
+            !(m_BackendRenderer->getDecoderCapabilities() & CAPABILITY_REFERENCE_FRAME_INVALIDATION_AVC)) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Using H.264 SPS fixup");
+        m_NeedsSpsFixup = true;
+    }
+    else {
+        m_NeedsSpsFixup = false;
+    }
 
-        // Allow the renderer to perform final preparations for rendering
-        m_FrontendRenderer->prepareToRender();
+    // Tell overlay manager to use this frontend renderer
+    Session::get()->getOverlayManager().setOverlayRenderer(m_FrontendRenderer);
 
-        // Only create the decoder thread when instantiating the decoder for real. It will use APIs from
-        // moonlight-common-c that can only be legally called with an established connection.
-        m_DecoderThread = SDL_CreateThread(FFmpegVideoDecoder::decoderThreadProcThunk, "FFDecoder", (void*)this);
-        if (m_DecoderThread == nullptr) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "Failed to create decoder thread: %s", SDL_GetError());
-            return false;
-        }
+    // Allow the renderer to perform final preparations for rendering
+    m_FrontendRenderer->prepareToRender();
 
-        if (m_FrontendRenderer->getRendererType() != m_BackendRenderer->getRendererType()) {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "Renderer '%s' with '%s' backend chosen",
-                        m_FrontendRenderer->getRendererName(),
-                        m_BackendRenderer->getRendererName());
-        }
-        else {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "Renderer '%s' chosen",
-                        m_FrontendRenderer->getRendererName());
-        }
+    // Only create the decoder thread when instantiating the decoder for real. It will use APIs from
+    // moonlight-common-c that can only be legally called with an established connection.
+    m_DecoderThread = SDL_CreateThread(FFmpegVideoDecoder::decoderThreadProcThunk, "FFDecoder", (void*)this);
+    if (m_DecoderThread == nullptr) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Failed to create decoder thread: %s", SDL_GetError());
+        return false;
+    }
+
+    if (m_FrontendRenderer->getRendererType() != m_BackendRenderer->getRendererType()) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Renderer '%s' with '%s' backend chosen",
+                    m_FrontendRenderer->getRendererName(),
+                    m_BackendRenderer->getRendererName());
+    }
+    else {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Renderer '%s' chosen",
+                    m_FrontendRenderer->getRendererName());
     }
 
     return true;
@@ -866,6 +949,7 @@ void FFmpegVideoDecoder::addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst)
     dst.totalFrames += src.totalFrames;
     dst.networkDroppedFrames += src.networkDroppedFrames;
     dst.pacerDroppedFrames += src.pacerDroppedFrames;
+    dst.decoderSkippedFrames += src.decoderSkippedFrames;
     // Keep the latest 30-interval snapshot instead of widening its window when
     // merging the one-second overlay windows or whole-session log statistics.
     // A newer unavailable snapshot must also replace older valid evidence.
@@ -885,6 +969,13 @@ void FFmpegVideoDecoder::addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst)
     dst.vrrQueueResidenceUs += src.vrrQueueResidenceUs;
     dst.vrrDecodeWaitUs += src.vrrDecodeWaitUs;
     dst.vrrBufferUs += src.vrrBufferUs;
+    dst.vrrPreparationUs += src.vrrPreparationUs;
+    dst.vrrPresentCallUs += src.vrrPresentCallUs;
+    dst.vrrGpuReadyWaitUs += src.vrrGpuReadyWaitUs;
+    dst.vrrGpuReadyWaitFrames += src.vrrGpuReadyWaitFrames;
+    dst.vrrPresentedFrames += src.vrrPresentedFrames;
+    dst.vrrQueuePacingUs += src.vrrQueuePacingUs;
+    dst.vrrLatchedFrames += src.vrrLatchedFrames;
     dst.vrrMotionPairs += src.vrrMotionPairs;
     dst.vrrMotionHitches += src.vrrMotionHitches;
     dst.vrrCadenceIntervals += src.vrrCadenceIntervals;
@@ -914,6 +1005,9 @@ void FFmpegVideoDecoder::addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst)
         dst.vrrTargetWakeLeadUs = src.vrrTargetWakeLeadUs;
         dst.vrrGuardUs = src.vrrGuardUs;
         dst.vrrSourcePeriodUs = src.vrrSourcePeriodUs;
+        dst.vrrAppliedBufferUs = src.vrrAppliedBufferUs;
+        dst.vrrBufferCapUs = src.vrrBufferCapUs;
+        dst.vrrGpuReadinessLeadUs = src.vrrGpuReadinessLeadUs;
         dst.vrrPrepareLatenessP50Us = src.vrrPrepareLatenessP50Us;
         dst.vrrPrepareLatenessP95Us = src.vrrPrepareLatenessP95Us;
         dst.vrrPrepareLatenessP99Us = src.vrrPrepareLatenessP99Us;
@@ -924,6 +1018,7 @@ void FFmpegVideoDecoder::addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst)
     }
     dst.totalReassemblyTimeUs += src.totalReassemblyTimeUs;
     dst.totalDecodeTimeUs += src.totalDecodeTimeUs;
+    dst.totalDecodeQueueTimeUs += src.totalDecodeQueueTimeUs;
     dst.totalClientProcessingTimeUs += src.totalClientProcessingTimeUs;
     dst.totalQueuePacingTimeUs += src.totalQueuePacingTimeUs;
     dst.totalRenderingTimeUs += src.totalRenderingTimeUs;
@@ -1016,6 +1111,20 @@ void FFmpegVideoDecoder::syncPacerTelemetry()
         delta(snapshot.vrrDecodeWaitUs, m_LastPacerTelemetry.vrrDecodeWaitUs);
     m_ActiveWndVideoStats.vrrBufferUs +=
         delta(snapshot.vrrBufferUs, m_LastPacerTelemetry.vrrBufferUs);
+    m_ActiveWndVideoStats.vrrPreparationUs +=
+        delta(snapshot.vrrPreparationUs, m_LastPacerTelemetry.vrrPreparationUs);
+    m_ActiveWndVideoStats.vrrPresentCallUs +=
+        delta(snapshot.vrrPresentCallUs, m_LastPacerTelemetry.vrrPresentCallUs);
+    m_ActiveWndVideoStats.vrrGpuReadyWaitUs +=
+        delta(snapshot.vrrGpuReadyWaitUs, m_LastPacerTelemetry.vrrGpuReadyWaitUs);
+    m_ActiveWndVideoStats.vrrGpuReadyWaitFrames +=
+        delta(snapshot.vrrGpuReadyWaitFrames, m_LastPacerTelemetry.vrrGpuReadyWaitFrames);
+    m_ActiveWndVideoStats.vrrPresentedFrames +=
+        delta(snapshot.vrrPresentedFrames, m_LastPacerTelemetry.vrrPresentedFrames);
+    m_ActiveWndVideoStats.vrrQueuePacingUs +=
+        delta(snapshot.vrrQueuePacingUs, m_LastPacerTelemetry.vrrQueuePacingUs);
+    m_ActiveWndVideoStats.vrrLatchedFrames +=
+        delta(snapshot.vrrLatchedFrames, m_LastPacerTelemetry.vrrLatchedFrames);
     m_ActiveWndVideoStats.vrrMotionPairs +=
         delta(snapshot.vrrMotionPairs, m_LastPacerTelemetry.vrrMotionPairs);
     m_ActiveWndVideoStats.vrrMotionHitches +=
@@ -1055,6 +1164,9 @@ void FFmpegVideoDecoder::syncPacerTelemetry()
             snapshot.vrrTargetWakeLeadUs;
         m_ActiveWndVideoStats.vrrGuardUs = snapshot.vrrGuardUs;
         m_ActiveWndVideoStats.vrrSourcePeriodUs = snapshot.vrrSourcePeriodUs;
+        m_ActiveWndVideoStats.vrrAppliedBufferUs = snapshot.vrrAppliedBufferUs;
+        m_ActiveWndVideoStats.vrrBufferCapUs = snapshot.vrrBufferCapUs;
+        m_ActiveWndVideoStats.vrrGpuReadinessLeadUs = snapshot.vrrGpuReadinessLeadUs;
         m_ActiveWndVideoStats.vrrPrepareLatenessP50Us =
             snapshot.vrrPrepareLatenessP50Us;
         m_ActiveWndVideoStats.vrrPrepareLatenessP95Us =
@@ -1089,6 +1201,10 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
     int offset = 0;
     const char* codecString;
     int ret;
+    // Match the worker's deep-trace switch, including Settings-enabled tracing.
+    // SDL2-compat may cache an older environment from before the connection.
+    const bool advancedStats = qEnvironmentVariable("MOONLIGHT_VRR_DEEP_TRACE")
+        .startsWith(QLatin1Char('1'));
 
     // Start with an empty string
     output[offset] = 0;
@@ -1171,6 +1287,22 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
         }
         break;
 
+    case VIDEO_FORMAT_PYROWAVE:
+        codecString = "PyroWave";
+        break;
+
+    case VIDEO_FORMAT_PYROWAVE_444:
+        codecString = "PyroWave 4:4:4";
+        break;
+
+    case VIDEO_FORMAT_PYROWAVE_HDR10:
+        codecString = LiGetCurrentHostDisplayHdrMode() ? "PyroWave 10-bit HDR" : "PyroWave 10-bit SDR";
+        break;
+
+    case VIDEO_FORMAT_PYROWAVE_HDR10_444:
+        codecString = LiGetCurrentHostDisplayHdrMode() ? "PyroWave 10-bit HDR 4:4:4" : "PyroWave 10-bit SDR 4:4:4";
+        break;
+
     default:
         SDL_assert(false);
         codecString = "UNKNOWN";
@@ -1206,13 +1338,15 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
     }
 
     if (stats.receivedFps > 0) {
-        if (m_VideoDecoderCtx != nullptr) {
+        // PyroWave (6.4.0) decodes without an FFmpeg context, so its size comes from the
+        // stream parameters instead.
+        if (m_VideoDecoderCtx != nullptr || m_PyroWaveActive) {
             if (WANT(OI_VIDEO)) {
                 ret = snprintf(&output[offset],
                                length - offset,
                                "Video stream: %dx%d %.2f FPS (Codec: %s)\n",
-                               m_VideoDecoderCtx->width,
-                               m_VideoDecoderCtx->height,
+                               m_VideoDecoderCtx != nullptr ? m_VideoDecoderCtx->width : m_OriginalVideoWidth,
+                               m_VideoDecoderCtx != nullptr ? m_VideoDecoderCtx->height : m_OriginalVideoHeight,
                                stats.totalFps,
                                codecString);
                 if (ret < 0 || ret >= length - offset) {
@@ -1305,10 +1439,20 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
         }
         if (WANT(OI_JITTER_DROPS)) {
             ret = snprintf(&output[offset], length - offset,
-                           "Frames dropped due to network jitter: %.2f%%\n",
+                           "Frames dropped by client pacing: %.2f%%\n",
                            (float)stats.pacerDroppedFrames / stats.decodedFrames * 100);
             if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
             offset += ret;
+            // PyroWave (6.4.0) skips a frame before decoding it when a newer one is already
+            // waiting: every frame decodes on its own, so an old one is only GPU time lost.
+            // Those never reach the pacer, hence a line of their own. Other codecs never skip.
+            if (m_PyroWaveActive) {
+                ret = snprintf(&output[offset], length - offset,
+                               "Frames skipped before decoding: %.2f%%\n",
+                               stats.totalFrames ? (float)stats.decoderSkippedFrames / stats.totalFrames * 100 : 0.0f);
+                if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
+                offset += ret;
+            }
         }
         if (WANT(OI_LATENCY)) {
             ret = snprintf(&output[offset], length - offset,
@@ -1441,8 +1585,21 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
                     if (interval.evaluatedUs)
                         snprintf(score, sizeof(score), "%.2f%%", interval.qualityPercent());
                     else snprintf(score, sizeof(score), "collecting");
-                    if (interval.averageValid)
+                    // Nonary's average needs a full second of consecutive frames, and any dropped
+                    // frame or cadence break starts that second over, so with interruptions more
+                    // often than once a second the live figure is almost never there (6.4.0, §81.11).
+                    // The last one measured is kept and shown with its age instead of "collecting".
+                    const uint64_t nowUs = LiGetMicroseconds();
+                    const uint64_t lastAtUs = m_VrrLastIntervalErrorAtUs.load();
+                    if (interval.averageValid) {
+                        m_VrrLastIntervalErrorNs.store(uint64_t(interval.averageErrorUs * 1000.0));
+                        m_VrrLastIntervalErrorAtUs.store(nowUs);
                         snprintf(average, sizeof(average), "%.3f ms", interval.averageErrorUs / 1000.0);
+                    }
+                    else if (lastAtUs != 0 && nowUs >= lastAtUs) {
+                        snprintf(average, sizeof(average), "%.3f ms, %.0f s ago",
+                                 m_VrrLastIntervalErrorNs.load() / 1000000.0, (nowUs - lastAtUs) / 1000000.0);
+                    }
                     else snprintf(average, sizeof(average), "collecting");
                     ret = snprintf(&output[offset], length - offset,
                         "VRR pacing: %s | Smoothness (%s): %s / %.2f%% target%s\n"
@@ -1504,6 +1661,32 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
         }
         if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
         offset += ret;
+
+        if (advancedStats && stats.vrrPresentedFrames) {
+            const double divisor = stats.vrrPresentedFrames * 1000.0;
+            const uint64_t residence = (std::min)(stats.vrrQueueResidenceUs, stats.vrrQueuePacingUs);
+            char gpuReady[80];
+            if (stats.vrrGpuReadyWaitFrames) {
+                snprintf(gpuReady, sizeof(gpuReady), "%.2f ms (%.0f%% sampled)",
+                    stats.vrrGpuReadyWaitUs / (stats.vrrGpuReadyWaitFrames * 1000.0),
+                    stats.vrrGpuReadyWaitFrames * 100.0 / stats.vrrPresentedFrames);
+            }
+            else snprintf(gpuReady, sizeof(gpuReady), "N/A");
+            ret = snprintf(&output[offset], length - offset,
+                "\nAfter decoding (average time per frame):\n"
+                "  GPU decode wait: %.2f ms\n"
+                "  Frame queue: %.2f ms (queued %.2f + pacing/other %.2f)\n"
+                "  Rendering: %.2f ms (prepare %.2f + submit %.2f)\n"
+                "  GPU wait within rendering: %s\n",
+                stats.vrrDecodeWaitUs / divisor,
+                stats.vrrQueuePacingUs / divisor,
+                residence / divisor, (stats.vrrQueuePacingUs - residence) / divisor,
+                stats.vrrPreparationUs / divisor + stats.vrrPresentCallUs / divisor,
+                stats.vrrPreparationUs / divisor, stats.vrrPresentCallUs / divisor,
+                gpuReady);
+            if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
+            offset += ret;
+        }
     }
 
     // Real-time host metrics from StreamTweak (via the STATS TCP command). Resolved
@@ -1524,6 +1707,12 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
         FMT(netStr,  hostMetrics.netTx);
 #undef FMT
 
+        // With PyroWave (6.4.0) the host encodes on the GPU's shaders and NVENC sits idle:
+        // its 0% is true but reads like a fault, and the encoding is already inside GPU.
+        char encField[24];
+        if (m_PyroWaveActive) snprintf(encField, sizeof(encField), "n/a (PyroWave)");
+        else                  snprintf(encField, sizeof(encField), "%s%%", encStr);
+
         char vramStr[24];
         if (hostMetrics.vramUsed >= 0 && hostMetrics.vramTotal >= 0)
             snprintf(vramStr, sizeof(vramStr), "%d / %d MB", hostMetrics.vramUsed, hostMetrics.vramTotal);
@@ -1535,10 +1724,10 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
         // The heading is drawn only when there is a client section above it to be
         // told apart from — on its own it is a title over the only thing there is.
         ret = snprintf(&output[offset], length - offset,
-                       "%sGPU: %s%% | Enc: %s%% | Temp: %sC | VRAM: %s\n"
+                       "%sGPU: %s%% | Enc: %s | Temp: %sC | VRAM: %s\n"
                        "CPU: %s%% | Net TX: %s Mbps\n",
                        anyClientItem ? "--- Host Metrics (StreamTweak) ---\n" : "",
-                       gpuStr, encStr, tempStr, vramStr, cpuStr, netStr);
+                       gpuStr, encField, tempStr, vramStr, cpuStr, netStr);
 
         if (ret > 0 && ret < length - offset)
             offset += ret;
@@ -2250,8 +2439,164 @@ bool FFmpegVideoDecoder::tryInitializeNonHwAccelDecoder(PDECODER_PARAMETERS para
     return false;
 }
 
+bool FFmpegVideoDecoder::initializePyroWave(PDECODER_PARAMETERS params)
+{
+#ifdef HAVE_PYROWAVE
+    // PyroWave is a GPU codec with no software fallback
+    if (params->vds == StreamingPreferences::VDS_FORCE_SOFTWARE) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "PyroWave requires GPU decoding; ignoring the software decoding preference");
+    }
+
+#ifdef Q_OS_WIN32
+    m_BackendRenderer = new D3D11VARenderer(0);
+#elif defined(Q_OS_LINUX) && defined(HAVE_LIBPLACEBO_VULKAN)
+    m_BackendRenderer = new PlVkRenderer();
+#else
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                 "PyroWave has no video renderer on this platform");
+    return false;
+#endif
+    if (!initializeRendererInternal(m_BackendRenderer, params)) {
+        delete m_BackendRenderer;
+        m_BackendRenderer = nullptr;
+        return false;
+    }
+
+    IPyroWaveSurfacePool* pool = m_BackendRenderer->getPyroWaveSurfacePool();
+#ifdef Q_OS_WIN32
+    if (pool == nullptr) {
+        reset();
+        return false;
+    }
+#endif
+
+    PyroWaveDecoder::Config config;
+    config.width = params->width;
+    config.height = params->height;
+    config.chroma444 = (params->videoFormat & VIDEO_FORMAT_MASK_YUV444) != 0;
+    config.tenBit = (params->videoFormat & VIDEO_FORMAT_MASK_10BIT) != 0;
+#ifndef Q_OS_WIN32
+    config.vulkanPool = m_BackendRenderer->getPyroWaveVulkanPool();
+#endif
+
+    m_PyroWave = std::make_unique<PyroWaveDecoder>();
+    if (!m_PyroWave->initialize(config, pool)) {
+        reset();
+        return false;
+    }
+    m_PyroWaveActive = true;
+
+    if (!completeInitialization(nullptr, AV_PIX_FMT_NONE, params,
+                                m_TestOnly ? TestMode::TestFrameOnly : TestMode::NoTesting,
+                                false)) {
+        reset();
+        return false;
+    }
+
+    if (!m_TestOnly) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "PyroWave decoding %dx%d %s %s",
+                    params->width, params->height,
+                    config.chroma444 ? "4:4:4" : "4:2:0",
+                    config.tenBit ? "10-bit" : "8-bit");
+    }
+    return true;
+#else
+    Q_UNUSED(params);
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                 "PyroWave decoding is not available in this build");
+    return false;
+#endif
+}
+
+int FFmpegVideoDecoder::sendPyroWaveFrame(int length, uint32_t rtpTimestamp)
+{
+#ifdef HAVE_PYROWAVE
+    AVFrame* frame = av_frame_alloc();
+    if (frame == nullptr) {
+        return DR_OK;
+    }
+
+    auto* trace = m_FrontendRenderer->gpuDiagnosticTrace();
+    PyroWaveDecoder::DecodeDiagnostics diagnostics;
+    const auto beginUs = trace ? LiGetMicroseconds() : 0;
+    const bool decoded = m_PyroWave->decode(reinterpret_cast<const uint8_t*>(m_DecodeBuffer.constData()), length,
+                            m_PyroWavePackets, m_PyroWaveCriticalPackets, frame,
+                            trace ? &diagnostics : nullptr);
+    if (trace) {
+        const auto endUs = LiGetMicroseconds();
+        trace->record({"pyrowave_phases", rtpTimestamp, 0, beginUs, endUs, uint64_t(decoded),
+            int64_t(diagnostics.phaseUs[0]), int64_t(diagnostics.phaseUs[1]),
+            int64_t(diagnostics.phaseUs[2]), int64_t(diagnostics.phaseUs[3]),
+            int64_t(diagnostics.phaseUs[4])});
+        trace->record({"pyrowave_payload", rtpTimestamp, 0, beginUs, endUs, uint64_t(length),
+            int64_t(diagnostics.payloadBytes), diagnostics.receivedBlocks,
+            diagnostics.announcedBlocks, diagnostics.paddingBytes, diagnostics.partial});
+        trace->record({"pyrowave_context_wait", rtpTimestamp, 0, beginUs, endUs, uint64_t(decoded),
+            int64_t(diagnostics.contextWaitUs)});
+    }
+    if (!decoded) {
+        av_frame_free(&frame);
+        m_PyroWaveRejectedFrames++;
+
+        // Every frame is independent, so there is nothing to request from the
+        // host: the next frame replaces this one. Log at most once a second.
+        const uint64_t nowUs = LiGetMicroseconds();
+        if (nowUs - m_PyroWaveLastErrorLogUs >= 1000000) {
+            m_PyroWaveLastErrorLogUs = nowUs;
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "PyroWave dropped a frame: %s (%u dropped so far)",
+                        m_PyroWave->lastError().c_str(),
+                        m_PyroWaveRejectedFrames);
+        }
+        return DR_OK;
+    }
+
+    if (m_PyroWave->lastFramePartial()) {
+        m_PyroWavePartialFrames++;
+    }
+
+    // Colour follows the negotiation; PyroWave carries none in its bitstream
+    frame->color_range = Session::get() && Session::get()->streamColorRange() == COLOR_RANGE_FULL ?
+        AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
+    if ((m_VideoFormat & VIDEO_FORMAT_MASK_10BIT) && LiGetCurrentHostDisplayHdrMode()) {
+        frame->color_primaries = AVCOL_PRI_BT2020;
+        frame->color_trc = AVCOL_TRC_SMPTE2084;
+        frame->colorspace = AVCOL_SPC_BT2020_NCL;
+    }
+
+    m_PyroWaveOutput.enqueue(frame);
+    return DR_OK;
+#else
+    Q_UNUSED(length);
+    Q_UNUSED(rtpTimestamp);
+    return DR_OK;
+#endif
+}
+
+int FFmpegVideoDecoder::receiveFrame(AVFrame* frame)
+{
+    if (!m_PyroWaveActive) {
+        return avcodec_receive_frame(m_VideoDecoderCtx, frame);
+    }
+
+    if (m_PyroWaveOutput.isEmpty()) {
+        return AVERROR(EAGAIN);
+    }
+
+    AVFrame* ready = m_PyroWaveOutput.dequeue();
+    av_frame_move_ref(frame, ready);
+    av_frame_free(&ready);
+    return 0;
+}
+
 bool FFmpegVideoDecoder::initialize(PDECODER_PARAMETERS params)
 {
+    if (params->videoFormat & VIDEO_FORMAT_MASK_PYROWAVE) {
+        return initializePyroWave(params);
+    }
+
     // Increase log level until the first frame is decoded
     av_log_set_level(AV_LOG_DEBUG);
 
@@ -2455,7 +2800,14 @@ void FFmpegVideoDecoder::decoderThreadProc()
 
             // Waiting for input. All output frames have been received.
             // Block until we receive a new frame from the host.
-            if (!LiWaitForNextVideoFrame(&handle, &du)) {
+            auto* inputTrace = m_FrontendRenderer->gpuDiagnosticTrace();
+            const auto inputBeginUs = inputTrace ? LiGetMicroseconds() : 0;
+            const bool haveInput = LiWaitForNextVideoFrame(&handle, &du);
+            if (inputTrace) inputTrace->record({"decoder_input_wait",
+                haveInput ? int64_t(du->rtpTimestamp) : -1, 0,
+                inputBeginUs, LiGetMicroseconds(), 0, haveInput,
+                haveInput ? du->frameNumber : -1});
+            if (!haveInput) {
                 // This might be a signal from the main thread to exit
                 continue;
             }
@@ -2479,12 +2831,34 @@ void FFmpegVideoDecoder::decoderThreadProc()
 
             int err;
             do {
-                err = avcodec_receive_frame(m_VideoDecoderCtx, frame);
+                auto* gpuTrace = m_FrontendRenderer->gpuDiagnosticTrace();
+                const auto receiveCpu = gpuTrace ? GpuTrace::ThreadSample::capture() : GpuTrace::ThreadSample{};
+                const auto receiveBeginUs = gpuTrace ? LiGetMicroseconds() : 0;
+                err = receiveFrame(frame);
+                // Preserve the immutable decoder-output boundary before any
+                // diagnostic publication or metadata work.
+                const auto receiveEndUs = (gpuTrace || err == 0) ? LiGetMicroseconds() : 0;
+                if (gpuTrace) {
+                    const auto pts = m_FrameInfoQueue.isEmpty() ? int64_t(-1) :
+                        int64_t(m_FrameInfoQueue.head().rtpTimestamp);
+                    gpuTrace->recordThreadSpan({"decoder_receive", pts,
+                        err == 0 ? receiveEndUs : 0, receiveBeginUs, receiveEndUs, 0, err}, receiveCpu);
+                    if (err == 0) {
+                        // Reading AVFrame metadata is passive; never query VA
+                        // readiness on this thread (v1 serialized the decoder).
+                        const auto surface = frame->format == AV_PIX_FMT_VAAPI ?
+                            uint64_t(reinterpret_cast<uintptr_t>(frame->data[3])) : 0;
+                        gpuTrace->record({"decoder_surface", pts, receiveEndUs,
+                            receiveEndUs, receiveEndUs, surface,
+                            m_FrameInfoQueue.isEmpty() ? -1 : m_FrameInfoQueue.head().frameNumber,
+                            frame->format, frame->width, frame->height, int64_t(m_FramesIn - m_FramesOut)});
+                    }
+                }
                 if (err == 0) {
                     // This is the immutable origin for client-processing
                     // timing. Capture it immediately when FFmpeg exposes the
                     // decoded frame, before any metadata or handoff work.
-                    const uint64_t decoderOutputUs = LiGetMicroseconds();
+                    const uint64_t decoderOutputUs = receiveEndUs;
                     SDL_assert(m_FrameInfoQueue.size() == m_FramesIn - m_FramesOut);
                     m_FramesOut++;
 
@@ -2658,12 +3032,23 @@ void FFmpegVideoDecoder::decoderThreadProc()
                     // origin in pkt_dts. VRR keeps it in PacedFrame.
                     frame->pkt_dts = static_cast<int64_t>(decoderOutputUs);
 
+                    // A deliberate hold clear of a VRR flip is pacing, not
+                    // decoding or decoder backlog; keep it out of both stats.
+                    const uint64_t decodeHoldUs = m_FrameDecodeHoldQueue.isEmpty() ?
+                        0 : m_FrameDecodeHoldQueue.head();
                     if (!m_FrameInfoQueue.isEmpty()) {
                         // Data buffers in the DU are not valid here!
                         DECODE_UNIT du = m_FrameInfoQueue.dequeue();
 
+                        const uint64_t decodeTimeUs = LiGetMicroseconds() - du.enqueueTimeUs;
                         m_ActiveWndVideoStats.totalDecodeTimeUs +=
-                            (LiGetMicroseconds() - du.enqueueTimeUs);
+                            decodeTimeUs - (std::min)(decodeTimeUs, decodeHoldUs);
+                        if (!m_FrameSubmitTimeQueue.isEmpty() &&
+                                m_FrameSubmitTimeQueue.head() > du.enqueueTimeUs) {
+                            const uint64_t queueUs = m_FrameSubmitTimeQueue.head() - du.enqueueTimeUs;
+                            m_ActiveWndVideoStats.totalDecodeQueueTimeUs +=
+                                queueUs - (std::min)(queueUs, decodeHoldUs);
+                        }
 
                         // Store the presentation time (90 kHz timebase) for
                         // existing renderers. VRR uses PacedFrame instead.
@@ -2671,6 +3056,9 @@ void FFmpegVideoDecoder::decoderThreadProc()
                     }
                     if (!m_FrameSubmitTimeQueue.isEmpty()) {
                         m_FrameSubmitTimeQueue.dequeue();
+                    }
+                    if (!m_FrameDecodeHoldQueue.isEmpty()) {
+                        m_FrameDecodeHoldQueue.dequeue();
                     }
 
                     m_ActiveWndVideoStats.decodedFrames++;
@@ -2685,7 +3073,19 @@ void FFmpegVideoDecoder::decoderThreadProc()
                         pacedFrame.setDeliveryTimeline(receiveUs,
                                                        reassembledUs,
                                                        decodeSubmitUs);
+                        pacedFrame.setDecodeHoldUs(decodeHoldUs);
+#ifdef HAVE_PYROWAVE
+                        // Shared-surface output (Linux Vulkan, Windows D3D11
+                        // interop) returns at submission, not completion.
+                        if (m_PyroWaveActive) {
+                            pacedFrame.setDecoderOutputComplete(
+                                !m_PyroWave->hasAsynchronousOutput());
+                        }
+#endif
+                        const auto handoffBeginUs = gpuTrace ? LiGetMicroseconds() : 0;
                         m_Pacer->submitFrame(std::move(pacedFrame));
+                        if (gpuTrace) gpuTrace->record({"decoder_handoff", rtpTimestamp,
+                            decoderOutputUs, handoffBeginUs, LiGetMicroseconds(), 0, frameNumber});
                     }
                     else {
                         m_Pacer->submitFrame(frame);
@@ -2745,6 +3145,8 @@ void FFmpegVideoDecoder::decoderThreadProc()
 
 int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
 {
+    auto* gpuTrace = m_FrontendRenderer->gpuDiagnosticTrace();
+    const auto submitEntryUs = gpuTrace ? LiGetMicroseconds() : 0;
     PLENTRY entry = du->bufferList;
     int err;
 
@@ -2785,7 +3187,7 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
             addVideoStats(m_LastWndVideoStats, lastTwoWndStats);
             addVideoStats(m_ActiveWndVideoStats, lastTwoWndStats);
 
-            char text[2048];
+            char text[4096];
             stringifyVideoStats(lastTwoWndStats, text, sizeof(text));
             Session::get()->getOverlayManager().updateOverlayText(Overlay::OverlayDebug, text);
         }
@@ -2833,6 +3235,42 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
     m_ActiveWndVideoStats.receivedFrames++;
     m_ActiveWndVideoStats.totalFrames++;
 
+    // Every PyroWave frame decodes on its own, so a frame that has waited
+    // more than two source frame periods while a newer one is queued is
+    // dropped unopened. Decoding it would cost the GPU time the queue needs to
+    // drain, and it would only be shown late or discarded by the pacer. Use
+    // the source's actual cadence: below the negotiated rate, one brief decode
+    // stall must not discard frames the pacer can still present.
+    if (m_PyroWaveActive) {
+        if (du->frameNumber == m_PyroWaveLastFrameNumber + 1) {
+            const uint64_t intervalUs =
+                uint64_t(uint32_t(du->rtpTimestamp - m_PyroWaveLastRtp)) * 100 / 9;
+            if (intervalUs > 0 && intervalUs < 100000) {
+                m_PyroWaveSourcePeriodUs = m_PyroWaveSourcePeriodUs == 0 ? intervalUs :
+                    m_PyroWaveSourcePeriodUs - m_PyroWaveSourcePeriodUs / 16 + intervalUs / 16;
+            }
+        }
+        m_PyroWaveLastFrameNumber = du->frameNumber;
+        m_PyroWaveLastRtp = du->rtpTimestamp;
+    }
+    if (m_PyroWaveActive && m_FramesIn != 0 && m_StreamFps > 0) {
+        const uint64_t waitUs = LiGetMicroseconds() - du->enqueueTimeUs;
+        const uint64_t periodUs = std::max<uint64_t>(1000000ULL / m_StreamFps,
+                                                     m_PyroWaveSourcePeriodUs);
+        if (waitUs > 2 * periodUs && LiGetPendingVideoFrames() > 0) {
+            m_PyroWaveStaleSkips++;
+            m_ActiveWndVideoStats.decoderSkippedFrames++;
+            if (m_PyroWaveSkipRun++ == 0) m_PyroWaveSkipRunWaitUs = waitUs;
+            return DR_OK;
+        }
+        if (m_PyroWaveSkipRun != 0) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "PyroWave skipped %u stale frames (the oldest waited %.1f ms)",
+                        m_PyroWaveSkipRun, m_PyroWaveSkipRunWaitUs / 1000.0);
+            m_PyroWaveSkipRun = 0;
+        }
+    }
+
     int requiredBufferSize = du->fullLength;
     if (du->frameType == FRAME_TYPE_IDR) {
         // Add some extra space in case we need to do an SPS fixup
@@ -2843,8 +3281,17 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
     m_DecodeBuffer.reserve(requiredBufferSize + AV_INPUT_BUFFER_PADDING_SIZE);
 
     int offset = 0;
+    m_PyroWavePackets.clear();
+    m_PyroWaveCriticalPackets = du->pyrowaveCriticalPackets;
     while (entry != nullptr) {
+        const int entryOffset = offset;
         writeBuffer(entry, offset);
+        if (m_PyroWaveActive) {
+            // Each buffer is one RTP packet's payload
+            m_PyroWavePackets.push_back({size_t(entryOffset), size_t(offset - entryOffset),
+                                         entry->bufferType == BUFFER_TYPE_LOST,
+                                         entry->bufferType == BUFFER_TYPE_RECORD_START});
+        }
         entry = entry->next;
     }
 
@@ -2860,8 +3307,38 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
 
     m_ActiveWndVideoStats.totalReassemblyTimeUs += (du->enqueueTimeUs - du->receiveTimeUs);
 
+    if (gpuTrace) {
+        gpuTrace->record({"packet_delivery", du->rtpTimestamp, 0, du->receiveTimeUs,
+            du->enqueueTimeUs, 0, du->frameNumber, du->fullLength, m_Pkt->size,
+            du->frameType, int64_t(m_FramesIn - m_FramesOut)});
+        gpuTrace->record({"packet_build", du->rtpTimestamp, 0, submitEntryUs,
+            LiGetMicroseconds(), 0, du->frameNumber});
+        const auto now = LiGetMicroseconds();
+        gpuTrace->record({"packet_send_enter", du->rtpTimestamp, 0, now, now, 0, du->frameNumber});
+    }
+    const uint64_t decodeHoldUs = m_PyroWaveActive ?
+        holdPyroWaveDecodeForPresent(du->rtpTimestamp) : 0;
+    const auto sendCpu = gpuTrace ? GpuTrace::ThreadSample::capture() : GpuTrace::ThreadSample{};
     const uint64_t decodeSubmitUs = LiGetMicroseconds();
+
+    if (m_PyroWaveActive) {
+        const auto queuedBefore = m_PyroWaveOutput.size();
+        sendPyroWaveFrame(offset, du->rtpTimestamp);
+        if (gpuTrace) gpuTrace->recordThreadSpan({"packet_send", du->rtpTimestamp, 0,
+            decodeSubmitUs, LiGetMicroseconds(), 0, 0}, sendCpu);
+        if (m_PyroWaveOutput.size() != queuedBefore) {
+            m_FrameInfoQueue.enqueue(*du);
+            m_FrameSubmitTimeQueue.enqueue(decodeSubmitUs);
+            m_FrameDecodeHoldQueue.enqueue(decodeHoldUs);
+            m_FramesIn++;
+        }
+        return DR_OK;
+    }
+
     err = avcodec_send_packet(m_VideoDecoderCtx, m_Pkt);
+    const auto sendEndUs = gpuTrace ? LiGetMicroseconds() : 0;
+    if (gpuTrace) gpuTrace->recordThreadSpan({"packet_send", du->rtpTimestamp, 0,
+        decodeSubmitUs, sendEndUs, 0, err}, sendCpu);
     if (err < 0) {
         char errorstring[512];
         av_strerror(err, errorstring, sizeof(errorstring));
@@ -2890,9 +3367,32 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
 
     m_FrameInfoQueue.enqueue(*du);
     m_FrameSubmitTimeQueue.enqueue(decodeSubmitUs);
+    m_FrameDecodeHoldQueue.enqueue(0);
 
     m_FramesIn++;
     return DR_OK;
+}
+
+uint64_t FFmpegVideoDecoder::holdPyroWaveDecodeForPresent(uint32_t rtpTimestamp)
+{
+    // A decode already running on the GPU can delay the flip of the frame the
+    // pacer is about to present (see VrrReceiveDeadline::g_PresentWindow).
+    // Wait for that Present call to return, but only when this frame still
+    // makes its own slot afterwards.
+    const uint64_t startUs = LiGetMicroseconds();
+    const auto hold = VrrReceiveDeadline::decodeHold(rtpTimestamp, startUs);
+    if (hold.window == 0) {
+        return 0;
+    }
+    uint64_t nowUs = startUs;
+    while (!VrrReceiveDeadline::decodeHoldReleased(hold, nowUs) &&
+           !SDL_AtomicGet(&m_DecoderThreadShouldQuit)) {
+        std::this_thread::yield();
+        nowUs = LiGetMicroseconds();
+    }
+    m_PyroWaveHeldDecodes++;
+    m_PyroWaveHeldUs += nowUs - startUs;
+    return nowUs - startUs;
 }
 
 void FFmpegVideoDecoder::renderFrameOnMainThread()

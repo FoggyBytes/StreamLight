@@ -22,7 +22,7 @@ extern "C" {
 #include <thread>
 #include <vector>
 
-class FakeVrrFramePresenter final : public IVrrFramePresenter {
+class FakeVrrFramePresenter : public IVrrFramePresenter {
 public:
     bool canLatchAdaptivePresent() const override
     {
@@ -101,6 +101,7 @@ public:
         result.sourceFrameReusable = m_SourceFrameReusable && result.prepared;
         result.cancellationMaySubmit =
             m_CancellationMaySubmit && frame != nullptr;
+        result.feedback = m_PrepareFeedback;
         if (!result.prepared && !result.cancellationMaySubmit) {
             m_PreparedFrame = nullptr;
         }
@@ -173,6 +174,15 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_Mutex);
         VrrPresentFeedback feedback;
+        if (m_CancelCompletesPreparedFence && m_PreparedFrame != nullptr) {
+            feedback = m_PrepareFeedback;
+            feedback.gpuReadyWaitStartUs = LiGetMicroseconds();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            feedback.gpuReadyTimeUs = LiGetMicroseconds();
+            feedback.gpuReadyWaitResultValid = true;
+            feedback.gpuReadyWaitResult = 0;
+            feedback.gpuReadyTimingValid = true;
+        }
         feedback.cancelled = true;
         const bool nativeSubmitAttempted =
             m_CancellationMaySubmit && m_PreparedFrame != nullptr;
@@ -216,6 +226,18 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_Mutex);
         m_CanLatch = canLatch;
+    }
+
+    void setPrepareFeedback(const VrrPresentFeedback& feedback)
+    {
+        std::lock_guard<std::mutex> lock(m_Mutex);
+        m_PrepareFeedback = feedback;
+    }
+
+    void setCancelCompletesPreparedFence(bool completes)
+    {
+        std::lock_guard<std::mutex> lock(m_Mutex);
+        m_CancelCompletesPreparedFence = completes;
     }
 
     void blockDecodeFrame(int number)
@@ -317,6 +339,12 @@ public:
         return m_Condition.wait_for(lock, std::chrono::milliseconds(2000), [&] {
             return m_DecodeWaitCount >= count;
         });
+    }
+
+    size_t decodeWaitCount() const
+    {
+        std::unique_lock<std::mutex> lock(m_Mutex);
+        return m_DecodeWaitCount;
     }
 
     bool waitForPresentCount(size_t count,
@@ -429,6 +457,8 @@ private:
     bool m_BlockPreparation = false;
     bool m_ReleasePreparation = false;
     bool m_PresentCancelled = false;
+    bool m_CancelCompletesPreparedFence = false;
+    VrrPresentFeedback m_PrepareFeedback;
     uint64_t m_PreSubmissionDelayUs = 0;
     uint64_t m_PresentDelayUs = 0;
     uint64_t m_DecodeBoundary = 0;

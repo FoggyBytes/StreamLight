@@ -279,6 +279,7 @@ bool validateTraceRowSyntax(const QList<QByteArray>& header,
         "submit_error_us",
         "spacing_margin_us",
         "cadence_smoothing_us",
+        "playout_offset_us",
         "readiness_phase_us",
         "native_present_result",
         "native_tearing_feature_query_result",
@@ -292,8 +293,13 @@ bool validateTraceRowSyntax(const QList<QByteArray>& header,
         "frame_stats_query_result",
         "gpu_ready_signal_result",
         "gpu_ready_set_event_result",
+        "flip_protection_query_result",
     };
     static const QSet<QByteArray> booleanColumns {
+        "prepared_ahead",
+        "flip_protection_checked",
+        "flip_protection_pending",
+        "flip_protection_latched",
         "rtp_valid",
         "queue_accepted",
         "queue_discontinuity",
@@ -381,6 +387,7 @@ bool validateTraceRowSyntax(const QList<QByteArray>& header,
         "presented",
         "output_dropped",
         "queue_capacity",
+        "queue_stale",
         "arrival_rejected",
         "suspension_discard",
         "shutdown_discard",
@@ -1664,6 +1671,7 @@ struct Metrics {
     VrrTimingDecision lastFeedbackDecision;
 
     uint64_t delivered = 0;
+    uint64_t preparedAheadFrames = 0;
     uint64_t scheduled = 0;
     uint64_t presentedFrames = 0;
     uint64_t traceSchema = 0;
@@ -3298,6 +3306,9 @@ QJsonObject summaryObject(const Metrics& metrics, qint64 elapsedMs,
         1000000.0;
     capture["delivered_frames"] = static_cast<qint64>(metrics.delivered);
     capture["scheduled_frames"] = static_cast<qint64>(metrics.scheduled);
+    capture["prepared_ahead_frames"] = static_cast<qint64>(metrics.preparedAheadFrames);
+    capture["preparation_stage_scope"] =
+        "offscreen stage timings are recorded execution evidence; counterfactual replay does not resimulate decode/render GPU contention or preparation throughput";
     capture["presented_frames"] = static_cast<qint64>(
         metrics.presentedFrames);
     capture["arrival_sequence_first"] = static_cast<qint64>(
@@ -4997,7 +5008,7 @@ QJsonObject summaryObject(const Metrics& metrics, qint64 elapsedMs,
         metrics.gpuReadyNativeResultTelemetryAvailable &&
         metrics.gpuReadyNativeResultRelationshipMismatchRows == 0;
     gpuReadyNativeOperations["result_semantics"] =
-        "D3D11 Signal and SetEventOnCompletion retain signed HRESULT and its wait retains the exact DWORD; Vulkan texture-poll rows use 0 for idle completion, 1 for the bounded timeout, and 2 for interruption or GPU failure. D3D11 stage validity follows HRESULT success (nonnegative), while successful timing requires WAIT_OBJECT_0 (0); presented rows require the backend's successful completion result for strict coverage";
+        "D3D11 Signal and SetEventOnCompletion retain signed HRESULT; the bounded fence wait records aggregate completion (0), timeout (258), or failure (4294967295), with completion requiring the requested fence value. Vulkan texture-poll rows use 0 for idle completion, 1 for the bounded timeout, and 2 for interruption or GPU failure. D3D11 stage validity follows HRESULT success (nonnegative); presented rows require the backend's successful completion result for strict coverage";
     telemetryCoverage["gpu_ready_native_operations"] =
         gpuReadyNativeOperations;
     QJsonObject gpuReadyStageTiming;
@@ -6849,7 +6860,7 @@ QJsonObject summaryObject(const Metrics& metrics, qint64 elapsedMs,
     readiness["display_calibration_scope"] =
         "calibration_confirmed is an operator assertion covering the SyncQPCTime-to-first-active-line offset, Present-to-display transport, and phase uncertainty; replay cannot measure panel transport or output. Optional microsecond period and active-duration overrides must agree with the captured physical refresh rational and active/total pixel geometry; zero means derive them from that signal. The tear-exposure interval ends at the final active pixel rather than including the last line's trailing horizontal blank. Raster classification and counterfactual propagation use an explicit scanout_period_ps override or the exact captured physical-signal rational, and reject disagreement beyond one picosecond. D3DKMT validation separately uses the complete vertically-active line interval, compares every definite active prediction with the recorded scan-line index, and reports its phase-derived error and tolerance for later calibration sweeps. Raster readiness requires at least 100 such active scan-line comparisons and requires phase_uncertainty_us to cover at least the captured QPC-correlation half-span plus one microsecond of timestamp quantization";
     readiness["gpu_ready_scope"] =
-        "D3D11 records separate Signal, Flush, SetEventOnCompletion, completed-value poll, and event-wait brackets inside preparation. Exact native results and target/completed fence values validate stage progression, the producer's completed-before-wait bit, and reject device removal or impossible lag. The trace proves completion occurred within the derived interval and before Present; it does not fabricate an exact GPU completion timestamp";
+        "D3D11 records Signal, Flush, SetEventOnCompletion and a nonblocking completed-value poll during preparation. A final check inside Present or cancellation replaces the recorded poll fields with its first poll and may perform a bounded residual wait. Native results and target/completed fence values validate stage progression, the producer's completed-before-wait bit, and reject device removal or impossible lag. Successful bounds prove completion within the derived interval and before a recorded Present; they are not exact GPU completion timestamps";
     readiness["post_present_query_scope"] =
         "deep traces bracket GetLastPresentCount and GetFrameStatistics after native Present and any observation-only after-Present raster query. Replay requires their exact order before presenter return; ordinary traces retain result codes but deliberately leave the optional timing brackets zero";
     readiness["spacing_scope"] =
@@ -7969,6 +7980,9 @@ int main(int argc, char* argv[])
         "count", "0");
     QCommandLineOption setOption(
         "set", "Override a resolved parameter as section.name=value", "override");
+    QCommandLineOption sessionBaseOption(
+        "session-base",
+        "Apply controller overrides on top of the session policy resolved for the capture");
     QCommandLineOption modeOption(
         "mode", "Override scenario mode: fixed or worker", "mode");
     QCommandLineOption listParametersOption(
@@ -7990,6 +8004,7 @@ int main(int argc, char* argv[])
     parser.addOption(scenarioOption);
     parser.addOption(jobsOption);
     parser.addOption(setOption);
+    parser.addOption(sessionBaseOption);
     parser.addOption(modeOption);
     parser.addOption(listParametersOption);
     parser.addOption(dumpDefaultsOption);
@@ -8189,6 +8204,7 @@ int main(int argc, char* argv[])
                                     scenarioName };
             for (const QString& overrideValue : parser.values(setOption))
                 arguments << "--set" << overrideValue;
+            if (parser.isSet(sessionBaseOption)) arguments << "--session-base";
             if (parser.isSet(modeOption)) arguments << "--mode" << parser.value(modeOption);
             if (parser.isSet(displayOption)) arguments << "--display-hz" << parser.value(displayOption);
             if (parser.isSet(streamOption)) arguments << "--stream-fps" << parser.value(streamOption);
@@ -8309,6 +8325,7 @@ int main(int argc, char* argv[])
     }
 
     VrrReplayScenario scenario = replayConfiguration.scenarios.front();
+    if (parser.isSet(sessionBaseOption)) scenario.controllerFromSession = true;
     if (parser.isSet(modeOption)) scenario.mode = parser.value(modeOption);
     if (scenario.mode != "fixed" && scenario.mode != "worker") {
         std::fprintf(stderr, "--mode must be fixed or worker\n"); return 2;
@@ -8834,6 +8851,13 @@ int main(int argc, char* argv[])
 
         const QByteArray disposition = fields[columns.disposition];
         const QByteArray recordedTear = fields[columns.tearClassification];
+        // nativeFlipProtection: the presenter latched a planned tearing present
+        // from live frame statistics. That native observation is recorded
+        // execution evidence; replay applies it rather than simulating DXGI.
+        const bool rowFlipProtectionLatched = optionalUnsignedField(
+            fields, traceHeader.indexOf("flip_protection_latched")) != 0;
+        const uint64_t rowFlipProtectionReferenceUs = optionalUnsignedField(
+            fields, traceHeader.indexOf("flip_protection_reference_us"));
         const bool rowAllowTearing = columns.sessionAllowTearing < 0 ||
             unsignedField(fields, columns.sessionAllowTearing) != 0;
         const bool deepTraceRow = optionalUnsignedField(
@@ -9029,21 +9053,28 @@ int main(int argc, char* argv[])
         const uint64_t gpuReadinessAppliedUs =
             optionalUnsignedField(
                 fields, columns.gpuReadinessAppliedUs);
+        const bool deferredGpuPolicy = optionalUnsignedField(
+            fields, columns.capturedParameterColumns.value(
+                QStringLiteral("controller.playout_serial_service_gate"), -1)) != 0;
         const bool nativeBackendDeclared =
             optionalUnsignedField(
                 fields, columns.nativeBackendValid) != 0;
         const uint64_t nativeBackend = optionalUnsignedField(
             fields, columns.nativeBackend);
-        // Vulkan's renderer reports image-local libplacebo completion polling
-        // through the shared readiness timing fields. The D3D11 signal/event
-        // and fence-value fields remain intentionally unavailable on those
-        // rows. Native backend identity is already captured on every Vulkan
-        // submission (including the neutral submit used for cancellation).
+        // Vulkan reports image-local libplacebo completion polling through
+        // the shared readiness fields. Historical asynchronous hardware rows
+        // can leave those fields unavailable. D3D11 signal/event/fence fields stay
+        // absent on every Vulkan row. Native backend identity is captured on
+        // each Vulkan submission, including neutral cancellation submits.
         const bool gpuReadyVulkanPoll =
             nativeBackendDeclared && nativeBackend == kNativeBackendVulkan;
         const bool nativePresentResultDeclared =
             optionalUnsignedField(
                 fields, columns.nativePresentResultValid) != 0;
+        const bool pendingCancelledGpuWaitAllowed =
+            deferredGpuPolicy && cancelled && !presented &&
+            (disposition == "interrupted" || disposition == "preparation_failed") &&
+            !nativeBackendDeclared && !nativePresentResultDeclared;
         const int64_t nativePresentResult = optionalSignedField(
             fields, columns.nativePresentResult);
         const bool nativePresentParametersDeclared =
@@ -9335,7 +9366,7 @@ int main(int argc, char* argv[])
                 nativeDisplaySignalActiveScanoutPs;
         }
         const bool rowLatchedPresent = optionalUnsignedField(
-            fields, columns.latchedPresent) != 0;
+            fields, columns.latchedPresent) != 0 || rowFlipProtectionLatched;
         const bool submissionIdQueryResultDeclared =
             optionalUnsignedField(
                 fields, columns.submissionIdQueryResultValid) != 0;
@@ -9446,8 +9477,14 @@ int main(int argc, char* argv[])
                      gpuReadyWaitStartUs != 0 ||
                      gpuReadyTimeUs != 0 ||
                      gpuReadyWaitUs != 0) ? 1 : 0;
+            const bool deferredGpuCancellationPending =
+                pendingCancelledGpuWaitAllowed &&
+                gpuReadySetEventSucceeded &&
+                !gpuReadyWaitResultDeclared &&
+                !gpuReadyTimingDeclared;
             metrics.validityPayloadMismatches +=
                 !gpuReadyWaitResultDeclared &&
+                    !deferredGpuCancellationPending &&
                     (gpuReadyPollStartUs != 0 ||
                      gpuReadyPollEndUs != 0 ||
                      gpuReadyPollCompletedValue != 0 ||
@@ -9540,7 +9577,8 @@ int main(int argc, char* argv[])
                         gpuReadySetEventResultDeclared, gpuReadySetEventResult,
                         gpuReadyWaitResultDeclared, gpuReadyWaitResult,
                         gpuReadyTimingDeclared,
-                        gpuReadySignalStartUs, gpuReadyFenceValue);
+                        gpuReadySignalStartUs, gpuReadyFenceValue,
+                        pendingCancelledGpuWaitAllowed);
                 metrics.gpuReadyNativeResultRelationshipMismatchRows +=
                     gpuReadyOperation.relationshipValid ? 0 : 1;
                 gpuReadyNativeSuccess = gpuReadyOperation.exactSuccess;
@@ -10579,7 +10617,8 @@ int main(int argc, char* argv[])
                 unsignedField(fields, columns.displayPeriodUs),
                 recordedSubmissionUs,
                 nativePresentStartUs,
-                optionalUnsignedField(fields, columns.latchedPresent) != 0 &&
+                (optionalUnsignedField(fields, columns.latchedPresent) != 0 ||
+                 rowFlipProtectionLatched) &&
                     unsignedField(fields, columns.canLatch) != 0,
             };
             if (haveLatch && submissionBand.id < priorLatchSubmission) {
@@ -10656,7 +10695,8 @@ int main(int argc, char* argv[])
         const bool rowDecisionValid =
             unsignedField(fields, columns.decisionValid) != 0;
         const bool readinessOutcome = disposition == "presented" || disposition == "output_dropped" ||
-            disposition == "queue_capacity" || disposition == "stale" || disposition == "preparation_failed";
+            disposition == "queue_capacity" || disposition == "queue_stale" ||
+            disposition == "stale" || disposition == "preparation_failed";
         if (readinessOutcome) {
             const int intendedColumn = traceHeader.indexOf("original_target_us");
             const uint64_t deadline = intendedColumn >= 0 ? unsignedField(fields, intendedColumn) :
@@ -10694,8 +10734,13 @@ int main(int argc, char* argv[])
         metrics.dispositionDropFlagMismatches +=
             (unsignedField(fields, columns.dropped) != 0) !=
                 (disposition != "presented") ? 1 : 0;
+        const bool abandonedAfterDequeue = !rowDecisionValid && dequeueUs != 0 &&
+            (disposition == "shutdown_discard" || disposition == "suspension_discard") &&
+            optionalUnsignedField(fields, columns.queueAccepted) != 0 &&
+            dequeueUs >= pacerArrivalUs &&
+            optionalUnsignedField(fields, columns.terminalTimeUs) >= dequeueUs;
         metrics.dequeueDecisionPresenceMismatches +=
-            ((dequeueUs != 0) != rowDecisionValid ||
+            (((dequeueUs != 0) != rowDecisionValid && !abandonedAfterDequeue) ||
              (decisionUs != 0) != rowDecisionValid) ? 1 : 0;
         const uint64_t recordedSourcePeriodUs = unsignedField(
             fields, columns.sourcePeriodUs);
@@ -10708,12 +10753,37 @@ int main(int argc, char* argv[])
             fields[columns.sourceRateHz] != expectedSourceRateHz ? 1 : 0;
         metrics.decodeToArrivalOrderViolations +=
             decoderOutputUs == 0 || pacerArrivalUs < decoderOutputUs ? 1 : 0;
-        metrics.decodeReadinessOrderViolations +=
+        const bool directReadinessValid =
             vrrDecodeReadinessOrderValid(decoderOutputUs, decodeCompleteUs,
                 pacerArrivalUs, dequeueUs, decisionUs,
                 optionalUnsignedField(fields, columns.decodeSyncWaitUs),
                 rowDecisionValid,
-                capturedParameters.playoutResponsiveBuffer >= 4) ? 0 : 1;
+                // The controller snapshot is initialized later on the first
+                // decision row. Audit that row with its recorded revision,
+                // too, rather than the default pre-revision-4 clock rule.
+                optionalUnsignedField(fields, columns.capturedParameterColumns.value(
+                    QStringLiteral("controller.playout_responsive_buffer"), -1)) >= 4,
+                optionalUnsignedField(fields, columns.capturedParameterColumns.value(
+                    QStringLiteral("controller.playout_source_mapping_decoder_output"), -1)) != 0 ||
+                // Serial-service revision 2 was introduced after the worker
+                // switched to actual post-wait clock readings. Source-map
+                // selection is independent of that timestamp contract.
+                optionalUnsignedField(fields, columns.capturedParameterColumns.value(
+                    QStringLiteral("controller.playout_serial_service_gate"), -1)) >= 2);
+        const auto stageField = [&](const char* name) {
+            return optionalUnsignedField(fields, traceHeader.indexOf(name));
+        };
+        const bool preparedAhead = stageField("prepared_ahead") != 0;
+        metrics.preparedAheadFrames += preparedAhead ? 1 : 0;
+        const bool stageReadinessValid = rowDecisionValid &&
+            optionalUnsignedField(fields, columns.decodeSyncWaitUs) == 0 &&
+            vrrPreparedReadinessOrderValid(decoderOutputUs, pacerArrivalUs,
+                dequeueUs, decisionUs, decodeCompleteUs,
+                stageField("stage_start_us"), stageField("stage_decode_ready_us"),
+                stageField("stage_decode_wait_us"), stageField("stage_render_start_us"),
+                stageField("stage_render_end_us"), stageField("stage_ready_us"));
+        metrics.decodeReadinessOrderViolations +=
+            (preparedAhead ? stageReadinessValid : directReadinessValid) ? 0 : 1;
         metrics.arrivalToDequeueOrderViolations +=
             dequeueUs != 0 && dequeueUs < pacerArrivalUs ? 1 : 0;
         metrics.dequeueToDecisionOrderViolations +=
@@ -11697,7 +11767,7 @@ int main(int argc, char* argv[])
                 // production defaults, which may differ from older captures.
                 scenario.controller = capturedParameters;
             }
-            else if (!scenario.controllerCustomized) {
+            else if (!scenario.controllerCustomized || scenario.controllerFromSession) {
                 // Current preferences migrate the enabled legacy checkbox to
                 // Balanced Target; exact/reference replay retains the recorded policy.
                 if (simulatedConfig.latencyFix && simulatedConfig.latencyMode == 0) {
@@ -11706,6 +11776,20 @@ int main(int argc, char* argv[])
                 }
                 scenario.controller = vrrTimingParametersForSession(
                     simulatedConfig);
+                // The start seed came from this machine's cache, not policy.
+                scenario.controller.playoutDelayStartSeedUs =
+                    capturedParameters.playoutDelayStartSeedUs;
+                if (scenario.controllerFromSession &&
+                        !scenario.controllerOverrides.isEmpty()) {
+                    QString overrideError;
+                    if (!applyVrrReplayControllerSnapshot(
+                            scenario.controllerOverrides, scenario.controller,
+                            overrideError)) {
+                        std::fprintf(stderr, "Invalid session-based override: %s\n",
+                                     qPrintable(overrideError));
+                        return 2;
+                    }
+                }
             }
             referenceController = std::make_unique<VrrTimingController>(
                 capturedConfig, capturedCanLatch, capturedParameters);
@@ -12085,8 +12169,8 @@ int main(int argc, char* argv[])
             presenterSubmissionTimeUs;
         timelineDetails.recordedPresenterSubmissionTimeUsed =
             presenterSubmissionTimeUsed;
-        timelineDetails.recordedLatched = optionalUnsignedField(
-            fields, columns.latchedPresent) != 0 &&
+        timelineDetails.recordedLatched = (optionalUnsignedField(
+            fields, columns.latchedPresent) != 0 || rowFlipProtectionLatched) &&
             unsignedField(fields, columns.canLatch) != 0;
         timelineDetails.latchValid = unsignedField(
             fields, columns.latchValid) != 0;
@@ -12460,7 +12544,8 @@ int main(int argc, char* argv[])
             const bool nonDecisionPayloadValid = std::all_of(
                 std::begin(zeroPayloadColumns),
                 std::end(zeroPayloadColumns),
-                [&fields](int column) {
+                [&fields, &columns, abandonedAfterDequeue](int column) {
+                    if (abandonedAfterDequeue && column == columns.queueDiscontinuity) return true;
                     return column < 0 || fields[column] == "0";
                 });
             metrics.nonDecisionPayloadMismatchRows +=
@@ -12580,10 +12665,14 @@ int main(int argc, char* argv[])
                          unsignedField(fields, columns.rtpValid) != 0,
                          decoderOutputUs);
         frame.noteGpuReadyUs(decodeCompleteUs);
+        frame.noteDecodeSyncWaitUs(
+            optionalUnsignedField(fields, columns.decodeSyncWaitUs));
         frame.setDeliveryTimeline(
             optionalUnsignedField(fields, traceHeader.indexOf("frame_receive_us")),
             optionalUnsignedField(fields, traceHeader.indexOf("frame_reassembled_us")),
             optionalUnsignedField(fields, traceHeader.indexOf("decode_submit_us")));
+        frame.setDecodeHoldUs(
+            optionalUnsignedField(fields, traceHeader.indexOf("decode_hold_us")));
         const bool hasPreparationTelemetry =
             unsignedField(fields, columns.preparationStartUs) != 0 ||
             unsignedField(fields, columns.preparationEndUs) != 0 ||
@@ -12720,9 +12809,12 @@ int main(int argc, char* argv[])
                 recordedStaleCheckUs >= recordedDecisionEndUs;
             metrics.staleCheckOrderViolations +=
                 staleCheckOrderValid ? 0 : 1;
+            const uint64_t staleAgeBoundaryUs =
+                capturedParameters.playoutSourceMappingDecoderOutput != 0 ?
+                    decoderOutputUs : decodeCompleteUs;
             const uint64_t expectedStaleAgeUs =
-                recordedStaleCheckUs >= decodeCompleteUs ?
-                    recordedStaleCheckUs - decodeCompleteUs : 0;
+                recordedStaleCheckUs >= staleAgeBoundaryUs ?
+                    recordedStaleCheckUs - staleAgeBoundaryUs : 0;
             metrics.staleAgeMismatchRows +=
                 expectedStaleAgeUs != optionalUnsignedField(
                     fields, columns.staleAgeUs) ? 1 : 0;
@@ -13068,6 +13160,48 @@ int main(int argc, char* argv[])
             }
         }
         metrics.lastFeedbackDecision = simulatedDecision;
+        // Optional schema-5 extension. Old captures retain their original gate;
+        // when the extension is present every recorded reason/cost must match.
+        const auto auditBufferField = [&](const char* name, uint64_t expected) {
+            const int column = traceHeader.indexOf(name);
+            if (column < 0 || optionalUnsignedField(fields, column) != expected) {
+                std::fprintf(stderr, "Buffer diagnostic drift: %s on frame %d\n", name, frameNumber);
+                ++metrics.invalidControllerLifecycleRows;
+            }
+        };
+        if (traceHeader.contains("buffer_cap_us")) {
+            auditBufferField("buffer_cap_us", referenceDecision.playoutDelayMaximumUs);
+            auditBufferField("buffer_queue_limit_us", referenceDecision.playoutQueueLimitUs);
+            auditBufferField("buffer_preset_cap_us", referenceDecision.playoutPresetCapUs);
+            auditBufferField("presentation_floor_push_us", referenceDecision.presentationFloorPushUs);
+            const int offsetColumn = traceHeader.indexOf("playout_offset_us");
+            if (offsetColumn < 0 || optionalSignedField(fields, offsetColumn) != referenceDecision.playoutOffsetUs)
+                ++metrics.invalidControllerLifecycleRows;
+        }
+        const auto auditBufferUpdate = [&]() {
+            if (!traceHeader.contains("buffer_update_valid")) return;
+            const auto& update = referenceController->intervalStats().update;
+            auditBufferField("buffer_update_valid", capturedParameters.playoutResponsiveBuffer >= 6 &&
+                update.frame == uint64_t(frameNumber) && update.atUs != 0);
+            auditBufferField("buffer_update_at_us", update.atUs);
+            auditBufferField("buffer_update_frame", update.frame);
+            auditBufferField("buffer_action", static_cast<uint64_t>(update.action));
+            auditBufferField("buffer_attributed_frame", update.attributedFrame);
+            auditBufferField("buffer_request_before_us", update.beforeUs);
+            auditBufferField("buffer_request_after_us", update.requestedUs);
+            auditBufferField("buffer_interval_error_us", update.intervalErrorUs);
+            auditBufferField("buffer_lateness_us", update.latenessUs);
+            auditBufferField("buffer_attempted_increase_us", update.attemptedIncreaseUs);
+            auditBufferField("buffer_clipped_increase_us", update.clippedIncreaseUs);
+            auditBufferField("buffer_hold_remaining_us", update.holdRemainingUs);
+            auditBufferField("buffer_cooldown_remaining_us", update.cooldownRemainingUs);
+            if (traceHeader.contains("buffer_calibration_complete")) {
+                const auto stats = referenceController->intervalStats();
+                auditBufferField("buffer_calibration_complete", stats.initialCalibrationComplete);
+                auditBufferField("buffer_calibration_samples", stats.calibrationSamples);
+                auditBufferField("buffer_calibration_coverage_us", stats.calibrationCoverageUs);
+            }
+        };
         metrics.feedbackCapacityLimitedFrames += simulatedDecision.playoutCapacityLimited;
         metrics.exactReferenceTargets += referenceTargetDrift == 0 ? 1 : 0;
         metrics.referenceSourceIntervalDrift.add(absoluteValue(
@@ -13316,21 +13450,63 @@ int main(int argc, char* argv[])
             const bool gpuReadyCompleted = gpuReadyTimingDeclared &&
                 gpuReadyWaitResultDeclared && gpuReadyWaitResult == 0 &&
                 gpuReadyTimeUs >= gpuReadyWaitStartUs;
+            const bool deferredGpuReady = gpuReadyCompleted &&
+                isVrrGpuReadyWaitDeferred(
+                    capturedParameters.playoutSerialServiceGate != 0,
+                    gpuReadySignalSucceeded && gpuReadySetEventSucceeded,
+                    gpuReadyWaitResultDeclared,
+                    recordedPreparationEndUs,
+                    gpuReadyWaitStartUs);
+            const uint64_t recordedGpuReadyUpperBoundUs =
+                gpuReadyCompletedBeforeWait ?
+                    gpuReadyPollEndUs : gpuReadyTimeUs;
             referenceController->notePreparationDuration(
                 preparationUs, acquire, recordedPreparationEndUs,
-                gpuReadyCompleted ? gpuReadyWaitUs : 0);
+                gpuReadyCompleted && !deferredGpuReady ? gpuReadyWaitUs : 0);
             simulatedController->notePreparationDuration(
                 simulatedPreparationUs, acquire, simulatedPreparationEndUs,
-                gpuReadyCompleted ? gpuReadyWaitUs : 0);
-            referenceController->noteGpuReadyWait(
-                gpuReadyWaitUs, gpuReadyCompleted, gpuReadyTimeUs);
-            simulatedController->noteGpuReadyWait(
-                gpuReadyWaitUs, gpuReadyCompleted, simulatedPreparationEndUs);
+                gpuReadyCompleted && !deferredGpuReady ? gpuReadyWaitUs : 0);
+            // Production consumes deferred completion only after
+            // presentAdaptive(). A cancelFrame() drain protects source
+            // lifetime but never trains the controller for an interrupted
+            // or failed-preparation lifecycle.
+            if (deferredGpuReady && normalPresentationLifecycle) {
+                const uint64_t simulatedGpuReadyUpperBoundUs =
+                    mapVrrGpuReadyUpperBound(
+                        recordedPreparationStartUs,
+                        recordedPreparationEndUs,
+                        simulatedPreparationStartUs,
+                        simulatedPreparationEndUs,
+                        recordedGpuReadyUpperBoundUs,
+                        gpuReadyCompletedBeforeWait &&
+                            isVrrGpuReadyPollDuringPreparation(
+                                gpuReadyPollStartUs,
+                                gpuReadyPollEndUs,
+                                recordedPreparationEndUs,
+                                recordedPresentStartUs,
+                                gpuReadyWaitStartUs));
+                referenceController->noteDeferredGpuReady(
+                    gpuReadyWaitUs, true, recordedGpuReadyUpperBoundUs,
+                    recordedGpuReadyUpperBoundUs >= recordedPreparationStartUs ?
+                        recordedGpuReadyUpperBoundUs - recordedPreparationStartUs : 0,
+                    !gpuReadyCompletedBeforeWait);
+                simulatedController->noteDeferredGpuReady(
+                    gpuReadyWaitUs, true, simulatedGpuReadyUpperBoundUs,
+                    simulatedGpuReadyUpperBoundUs >= simulatedPreparationStartUs ?
+                        simulatedGpuReadyUpperBoundUs - simulatedPreparationStartUs : 0,
+                    !gpuReadyCompletedBeforeWait);
+            }
+            else if (!deferredGpuReady) {
+                referenceController->noteGpuReadyWait(
+                    gpuReadyWaitUs, gpuReadyCompleted, gpuReadyTimeUs);
+                simulatedController->noteGpuReadyWait(
+                    gpuReadyWaitUs, gpuReadyCompleted, simulatedPreparationEndUs);
+            }
         }
         const bool spacingHadPriorSubmission =
             referenceController->hasLastSubmission();
         const uint64_t spacingPriorSubmissionUs =
-            referenceController->lastSubmissionUs();
+            referenceController->untornReferenceUs();
         const uint64_t spacingEarliestBeforeCleanUs =
             referenceController->earliestSubmissionUs();
         uint64_t derivedSpacingGuardFeedbackUs =
@@ -13446,7 +13622,8 @@ int main(int argc, char* argv[])
             signedField(fields, columns.spacingMarginUs) !=
                 expectedSpacingMarginUs ? 1 : 0;
         const bool recordedLatchedRequest =
-            unsignedField(fields, columns.latchedPresent) != 0;
+            unsignedField(fields, columns.latchedPresent) != 0 ||
+            rowFlipProtectionLatched;
         const QByteArray expectedRecordedTear =
             simulatedTearClassification(
                 presented, recordedLatchedRequest, rowCanLatch,
@@ -13566,6 +13743,17 @@ int main(int argc, char* argv[])
                 presentOperationDurationValid ? 0 : 1;
         }
         const bool gpuReadyTimingValid = gpuReadyTimingDeclared;
+        const bool deferredGpuReadyWait = isVrrGpuReadyWaitDeferred(
+            capturedParameters.playoutSerialServiceGate != 0,
+            gpuReadySignalSucceeded && gpuReadySetEventSucceeded,
+            gpuReadyWaitResultDeclared,
+            recordedPreparationEndUs,
+            gpuReadyWaitStartUs);
+        const bool deferredGpuReadyTiming = gpuReadyTimingValid &&
+            deferredGpuReadyWait;
+        const bool deferredGpuReadyPending =
+            pendingCancelledGpuWaitAllowed && gpuReadySetEventSucceeded &&
+            !gpuReadyWaitResultDeclared && !gpuReadyTimingValid;
         bool gpuReadyBoundsValid = false;
         timelineDetails.recordedGpuReadyTimingValid =
             gpuReadyTimingValid;
@@ -13587,7 +13775,8 @@ int main(int argc, char* argv[])
                     gpuReadyPollStartUs,
                     gpuReadyPollEndUs,
                     gpuReadyWaitStartUs,
-                    gpuReadyTimeUs);
+                    gpuReadyTimeUs,
+                    deferredGpuReadyWait || deferredGpuReadyPending);
             metrics.gpuReadyStageTimingRelationshipMismatchRows +=
                 stageTimingAudit.relationshipValid ? 0 : 1;
             if (gpuReadyAttempted &&
@@ -13615,12 +13804,55 @@ int main(int argc, char* argv[])
         const bool gpuReadyWaitOperationObserved =
             metrics.gpuReadyNativeResultTelemetryAvailable ?
                 gpuReadyWaitResultDeclared : gpuReadyTimingValid;
+        if (metrics.gpuReadyBoundsTelemetryAvailable &&
+                !gpuReadyVulkanPoll && gpuReadySetEventSucceeded) {
+            // A final check replaces the preparation poll in current D3D11
+            // traces. Audit either observation independently of a successful
+            // completion, including a failed final poll on device removal.
+            const bool finalPollDeviceRemoval =
+                !presented &&
+                (disposition == "output_dropped" ||
+                 disposition == "interrupted") &&
+                deferredGpuReadyWait &&
+                gpuReadyWaitResultDeclared &&
+                gpuReadyWaitResult ==
+                    std::numeric_limits<uint32_t>::max() &&
+                !gpuReadyTimingValid &&
+                gpuReadyPollStartUs >= recordedPreparationEndUs &&
+                gpuReadyWaitStartUs == gpuReadyPollEndUs;
+            const bool deviceRemovalSentinelAllowed =
+                gpuReadyPollCompletedValue ==
+                    std::numeric_limits<uint64_t>::max() &&
+                !gpuReadyTimingValid &&
+                ((!gpuReadyWaitResultDeclared &&
+                  disposition == "preparation_failed") ||
+                 finalPollDeviceRemoval);
+            metrics.gpuReadyFenceRelationshipMismatchRows +=
+                isVrrGpuFencePollRelationshipValid(
+                    gpuReadyFenceValue,
+                    gpuReadyPollCompletedValue,
+                    gpuReadyCompletedBeforeWait,
+                    deviceRemovalSentinelAllowed) ? 0 : 1;
+        }
         if (gpuReadyWaitOperationObserved) {
             bool gpuReadyOrderValid =
                 gpuReadyWaitStartUs != 0 &&
                 gpuReadyTimeUs >= gpuReadyWaitStartUs &&
                 gpuReadyWaitStartUs >= recordedPreparationStartUs &&
-                gpuReadyTimeUs <= recordedPreparationEndUs;
+                (deferredGpuReadyWait ?
+                     isVrrDeferredGpuReadyOrderValid(
+                         gpuReadyPollStartUs,
+                         gpuReadyPollEndUs,
+                         gpuReadyWaitStartUs,
+                         gpuReadyTimeUs,
+                         recordedPreparationEndUs,
+                         recordedPresentStartUs,
+                         recordedPresentEndUs,
+                         nativePresentTimingDeclared &&
+                             metrics.presentTimingIntegrityTelemetryAvailable &&
+                             nativePresentStartUs != 0,
+                         nativePresentStartUs) :
+                     gpuReadyTimeUs <= recordedPreparationEndUs);
             if (metrics.gpuReadyBoundsTelemetryAvailable &&
                     !gpuReadyVulkanPoll) {
                 gpuReadyOrderValid =
@@ -13661,9 +13893,8 @@ int main(int argc, char* argv[])
                         gpuReadyPollCompletedValue,
                         gpuReadyCompletedBeforeWait,
                         gpuReadyWaitStartUs,
-                        gpuReadyTimeUs);
-                metrics.gpuReadyFenceRelationshipMismatchRows +=
-                    expectedBounds.fenceRelationshipValid ? 0 : 1;
+                        gpuReadyTimeUs,
+                        deferredGpuReadyTiming);
                 gpuReadyBoundsValid =
                     expectedBounds.valid &&
                     gpuReadyCompletionLowerBoundUs ==
@@ -13989,7 +14220,8 @@ int main(int argc, char* argv[])
                 disposition != "presented");
         }
         const QByteArray simulatedTear = simulatedTearClassification(
-            presented, simulatedDecision.latchedPresentation,
+            presented,
+            simulatedDecision.latchedPresentation || rowFlipProtectionLatched,
             simulatedCanLatch, hadPriorSimulatedSubmission,
             simulatedSubmissionUs, priorSimulatedSubmissionUs,
             periodForRate(simulatedConfig.displayRefreshHz));
@@ -14513,6 +14745,7 @@ int main(int argc, char* argv[])
             // point, then reproduce the mutation that affects the next row.
             addReferenceControllerDiagnostics(
                 metrics, referenceController->diagnostics(), fields, columns);
+            auditBufferUpdate();
             if (staleAfterRenderLifecycle) {
                 if (referenceController->latencyFixActive() ||
                     referenceController->parameters().playoutMetronomeEnabled)
@@ -14533,12 +14766,19 @@ int main(int argc, char* argv[])
             }
         }
         else {
+            if (rowFlipProtectionLatched) {
+                referenceController->noteNativeFlipProtection(
+                    rowFlipProtectionReferenceUs);
+                simulatedController->noteNativeFlipProtection(
+                    rowFlipProtectionReferenceUs);
+            }
             referenceController->noteSubmission(presented, cancelled,
                                                  recordedSubmissionUs);
             simulatedController->noteSubmission(presented, cancelled,
                                                  simulatedSubmissionUs);
             addReferenceControllerDiagnostics(
                 metrics, referenceController->diagnostics(), fields, columns);
+            auditBufferUpdate();
         }
 
         if (optionalUnsignedField(fields, columns.presentEndUs) && !staleBeforeRenderLifecycle && !staleAfterRenderLifecycle) {
@@ -14551,7 +14791,8 @@ int main(int argc, char* argv[])
             observation.submission = recordedSubmissionUs;
             observation.ready = field("prepare_end_us");
             observation.deadline = referenceDecision.originalScanoutUs;
-            observation.latched = referenceDecision.latchedPresentation;
+            observation.latched = referenceDecision.latchedPresentation ||
+                rowFlipProtectionLatched;
             observation.dxgi = field("native_backend") == kNativeBackendDxgi;
             const bool fixedPresentationMode = traceHeader.contains("presentation_uncertainty_us") &&
                 (field("native_backend") == kNativeBackendVulkan ||

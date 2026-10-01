@@ -8,7 +8,7 @@
 
 **StreamLight** is the client half of the FoggyBytes streaming duo: a fork of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) with a gamepad-first interface and native integration with its host-side companion, [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak).
 
-The streaming engine is upstream Moonlight's — FFmpeg, D3D11VA, DXVA2, libplacebo, `moonlight-common-c` — with Nonary's VRR pacing added in 6.0.0. What is new sits around it: the interface, and everything the two apps can do together over a local TCP bridge — host link matching, host metrics in the overlay, the store each game comes from, session quality reports, remote power-off and Windows Update, Tailscale, and signing a woken host in with its PIN from the sofa.
+The streaming engine is upstream Moonlight's — FFmpeg, D3D11VA, DXVA2, libplacebo, `moonlight-common-c` — with Nonary's VRR pacing added in 6.0.0 and his PyroWave codec in 6.4.0. What is new sits around it: the interface, and everything the two apps can do together over a local TCP bridge — host link matching, host metrics in the overlay, the store each game comes from, session quality reports, remote power-off and Windows Update, Tailscale, and signing a woken host in with its PIN from the sofa.
 
 <div align="center">
   <img width="960" height="540" alt="Immagine 2026-09-18 222938" src="https://github.com/user-attachments/assets/db14c1d5-e703-472d-a136-f636625252dc" />
@@ -55,10 +55,11 @@ Everything below is in the current release, whichever version first introduced i
 - **Frame pacing** — Off or On, evening frames out with the same software pacer Moonlight uses
 - **Fractional V-Sync** *(5.6.0+)* — shows each frame for a whole number of refreshes instead of once per refresh, so 60 FPS on a 120 Hz screen becomes one frame every two. Needs V-Sync and frame pacing, and a screen running at an exact multiple of the frame rate: at 60 FPS that is 120 / 180 / 240 Hz, and a 144 Hz screen wants 72 FPS. Off by default
 - **VRR** *(6.0.0+, experimental)* — on a variable-refresh display each frame is shown as soon as it is ready, with three timing profiles (*Low latency*, *Balanced*, *Smooth*) and *Reduce judder*. Built on Nonary's VRR work for Moonlight; needs V-Sync, runs borderless, and switches Fractional V-Sync off while it is on
+- **PyroWave** *(6.4.0+)* — a fifth video codec for wired networks: every frame is coded on its own, so decoding takes well under a millisecond and a lost packet blurs part of one picture instead of breaking the next ones. Needs hundreds of Mbps and a Vibeshine or Vibepollo 2.0 host; other hosts stream H.264
 
 **⚙️ Settings and profiles**
 - Ten tabs, pill-style selectors instead of dropdowns, inline subtitles instead of tooltips, and a bitrate slider with hold-to-accelerate and a **Default** prompt
-- **Per-host profiles** — up to three named profiles per host, each overriding resolution, frame rate, bitrate, HDR, codec, display mode, V-Sync, frame pacing, fractional V-Sync, VRR, audio, link matching, launch wait and Hue. Switchable from Home or the host page
+- **Per-host profiles** — up to three named profiles per host, each overriding resolution, frame rate, bitrate, HDR, YUV 4:4:4, codec, display mode, V-Sync, frame pacing, fractional V-Sync, VRR, audio, link matching, launch wait and Hue. Switchable from Home or the host page
 - **Per-game overrides** on top of the active profile, for the settings that vary by title
 - **Profiles in tabs** *(6.0.0+)* — the host profile and per-game dialogs are split into Settings' own tabs, one section at a time, switched with **LB / RB** drawn at the ends of the strip, each tab showing how many of its values are changed
 - **Inherited values look inherited** *(6.0.0+)* — the accent marks only what a profile or a game changes, every row says where its value comes from, **Y** gives a row back, and **LT / RT** switch profile anywhere in the dialog. **X** names a profile from eight ready-made names, or your own with a keyboard
@@ -92,21 +93,23 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in *Settings → StreamTweak*; the host has its own switch
 
-## ✨ What's New in 6.3.0 — Where You Left It
+## ✨ What's New in 6.4.0 — Fast Lane
 
-The shared clipboard needs **StreamTweak 8.7.0** on the host; the rest is client-side, any host.
+Client-side, any host; PyroWave needs a **Vibeshine or Vibepollo 2.0** host. StreamTweak 9.1.0, out alongside it, shows which codec each stream used.
 
-- **Shared clipboard** — copy on one side, paste on the other while you stream: encrypted, text up to 32 KB, passwords cleared within 60 seconds. Turn it on in *Settings → StreamTweak*
-- **Button prompts: Auto, Controller or Keyboard & mouse** — pin the prompts to the controller when Steam Input sends clicks and keys from the same pad
-- **Resume shows the stream at once** — from Home or the host page, even with *Wait for the game to appear* on
-- **The host page reopens on your last tab** — All, Games or Apps, per host, also after closing StreamLight
-- **Controller prompts sooner** — from the first screen with a pad connected, and on the stick and triggers too
+- **PyroWave** — a fifth video codec, in *Settings → Video codec* and in host and per-game profiles, for wired networks with bandwidth to spare, with the bitrate up to 3000 Mbps
+- **YUV 4:4:4 per profile** — set per host profile and per game, so a PyroWave 4:4:4 profile and an AV1 one can sit side by side
+- **Settings → Video regrouped** — codec, HDR and 4:4:4 sit right above the bitrate they set the default of, and the bitrate is unlocked for every codec
+- **VRR pacing from Nonary's vrr18** — steadier through slowdowns and frame-rate changes
+- **Newer engine** — FFmpeg 9.0.2, newer SDL and libplacebo, and a fix for a crash on connect on some Windows 11 PCs
+- **Host commands reach the host you picked** — Power, Update now, Delete, Rename and wake no longer land on another PC when the host list changes under them
+- **Everything scales** — the Home header and the last fixed-size dialogs now grow with the window
 
 *Older releases are in [changelog.txt](changelog.txt).*
 
 ## 🏗️ Architecture
 
-A Qt 6 / QML fork of Moonlight-Qt. The decoder pipeline — FFmpeg, D3D11VA, DXVA2, libplacebo — and the protocol, `moonlight-common-c`, are upstream's, and they track Moonlight's **development branch** rather than its releases: upstream has not tagged one since v6.1.0 in September 2024, while its master branch is still moving. As of 5.9.0 our copy of `moonlight-common-c` is identical to master's again, and upstream's application fixes are carried over as they land. The VRR pacing *(6.0.0+)* is Nonary's, imported unchanged so that it can be kept in step with the original. The UI layer is ours.
+A Qt 6 / QML fork of Moonlight-Qt. The decoder pipeline — FFmpeg, D3D11VA, DXVA2, libplacebo — and the protocol, `moonlight-common-c`, are upstream's, and they track Moonlight's **development branch** rather than its releases: upstream has not tagged one since v6.1.0 in September 2024, while its master branch is still moving. As of 6.4.0 our copy of `moonlight-common-c` is master's plus Nonary's PyroWave commits, and upstream's application fixes are carried over as they land. The VRR pacing *(6.0.0+)* and PyroWave *(6.4.0+)* are Nonary's, imported unchanged so that they can be kept in step with the original. The UI layer is ours.
 
 Integration with StreamTweak runs over a TCP bridge on **port 47998** (LAN, line-delimited ASCII), carrying link speed (`NETINFO`, `SETSPEED`), host metrics (`STATS`), store data (`APPSTORES`), telemetry (`SESSIONDATA`), Tailscale presence, launch state (`GAMESTATE`), lock state, and the power and Windows Update commands. Each command is preceded by an `AUTH1` line signing it with the client's Moonlight certificate (RSA-SHA256); a one-time `ENROLL` registers the client with the host for approval.
 
@@ -137,7 +140,7 @@ Up to 5.3.0 both lived under `Moonlight Game Streaming Project\Moonlight` — up
 
 - [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) — the host-side companion, designed in lockstep with StreamLight
 - [**Moonlight**](https://github.com/moonlight-stream/moonlight-qt) — the open-source client this fork is built on; full credit to its contributors
-- [**Nonary's VRR work for Moonlight**](https://github.com/Nonary/moonlight-qt) — the VRR pacing in 6.0.0 is Chase Payne's code, imported as it is (tag `v6.1.0-vrr17.1`) together with its test harness
+- [**Nonary's VRR work for Moonlight**](https://github.com/Nonary/moonlight-qt) — the VRR pacing in 6.0.0 and PyroWave support in 6.4.0 are Chase Payne's code, imported as it is (tag `v6.1.0-vrr18`) together with its test harness; the PyroWave codec itself is [Hans-Kristian Arntzen's](https://github.com/Themaister/pyrowave)
 - [**Sunshine**](https://github.com/LizardByte/Sunshine) — the streaming host that started it all
 - [**Apollo**](https://github.com/ClassicOldSong/Apollo) — community-driven Sunshine fork
 - [**Vibeshine**](https://github.com/Nonary/vibeshine) and [**Vibepollo**](https://github.com/Nonary/Vibepollo) — fully supported

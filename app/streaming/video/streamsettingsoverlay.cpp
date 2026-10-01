@@ -223,7 +223,7 @@ void StreamSettingsOverlay::changeFocused(int delta)
         m_FpsIndex = (m_FpsIndex + delta + m_FpsValues.count()) % m_FpsValues.count();
         break;
     case ROW_BITRATE: {
-        int maxKbps = m_Prefs->unlockBitrate ? 500000 : 150000;
+        int maxKbps = StreamingPreferences::getMaxBitrate(m_Prefs->videoCodecConfig);
         m_BitrateKbps += delta * kBitrateStepKbps;
         if (m_BitrateKbps < kBitrateMinKbps) m_BitrateKbps = kBitrateMinKbps;
         if (m_BitrateKbps > maxKbps) m_BitrateKbps = maxKbps;
