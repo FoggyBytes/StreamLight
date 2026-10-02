@@ -4,6 +4,18 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-----------------------------------------
+Version 6.4.1 - Steady Focus (02/10/2026)
+-----------------------------------------
+
+No StreamTweak update required — 6.4.1 is client-side and works with any host. Pinning the prompts to the controller now keeps the whole interface on the controller, for a Steam Input trackpad that moves the pointer.
+
+✨ IMPROVEMENTS:
+• Button prompts on Controller also keep controller navigation — with a Steam Input trackpad mapped to the mouse, the pointer still points and clicks, but the focus highlight stays where the controller left it, hovering no longer selects the row or tile under the pointer, and keys sent by Steam Input no longer bring the pointer back. It still hides on a controller button and comes back when it moves
+
+🙏 THANKS:
+• Thanks to @MariolloPL (https://github.com/FoggyBytes/StreamLight/issues/24) for asking for controller navigation alongside the trackpad pointer
+
 --------------------------------------
 Version 6.4.0 - Fast Lane (01/10/2026)
 --------------------------------------

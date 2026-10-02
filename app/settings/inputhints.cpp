@@ -110,7 +110,11 @@ bool InputHints::eventFilter(QObject* watched, QEvent* event)
         if (event->spontaneous() && !static_cast<QKeyEvent*>(event)->isAutoRepeat()) {
             m_SeenRealInput = true;
             setPadActive(false);
-            setPointerHidden(false);
+            // Pinned to Controller, a key is most likely Steam Input speaking for the pad, and
+            // it must not bring the pointer back (#24). Movement and clicks still do, below.
+            if (StreamingPreferences::get()->inputPrompts != StreamingPreferences::IP_CONTROLLER) {
+                setPointerHidden(false);
+            }
         }
         break;
 

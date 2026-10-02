@@ -47,6 +47,21 @@ SdlGamepadKeyNavigation::SdlGamepadKeyNavigation(StreamingPreferences* prefs)
     m_PollingTimer = new QTimer(this);
     connect(m_PollingTimer, &QTimer::timeout, this, &SdlGamepadKeyNavigation::onPollingTimerFired);
 
+    // Issue #24: Button prompts = Controller also pins the navigation to the pad, so a Steam
+    // Input trackpad can point and click without switching the interface to mouse use. The
+    // mode starts as "pointer" above, and that start has to be undone here as well as on a
+    // change — otherwise the focus ring stays off until the first pad press.
+    if (padNavigationPinned()) {
+        m_InputMode = QStringLiteral("key");
+    }
+    connect(m_Prefs, &StreamingPreferences::inputPromptsChanged, this, [this]() {
+        // Applied the moment it is picked. Back on Auto nothing moves: the next mouse
+        // movement or key press decides, as it always has.
+        if (padNavigationPinned()) {
+            setInputMode(QStringLiteral("key"));
+        }
+    });
+
     if (qGuiApp != nullptr) {
         qGuiApp->installEventFilter(this);
     }
@@ -122,6 +137,11 @@ SdlGamepadKeyNavigation::~SdlGamepadKeyNavigation()
     disable();
 }
 
+bool SdlGamepadKeyNavigation::padNavigationPinned() const
+{
+    return m_Prefs->inputPrompts == StreamingPreferences::IP_CONTROLLER;
+}
+
 void SdlGamepadKeyNavigation::setInputMode(const QString& mode)
 {
     if (m_InputMode == mode) {
@@ -145,13 +165,19 @@ bool SdlGamepadKeyNavigation::eventFilter(QObject* watched, QEvent* event)
             const int dy = qAbs(pos.y() - m_LastMousePos.y());
             if (dx + dy >= 4) {
                 m_LastMousePos = pos;
-                setInputMode(QStringLiteral("pointer"));
+                if (!padNavigationPinned()) {
+                    setInputMode(QStringLiteral("pointer"));
+                }
             }
         }
         break;
     }
     case QEvent::MouseButtonPress:
-        setInputMode(QStringLiteral("pointer"));
+        // Pinned to the pad, a click still lands on what it hits — it just does not take the
+        // focus ring away or hand the selection to the hover.
+        if (!padNavigationPinned()) {
+            setInputMode(QStringLiteral("pointer"));
+        }
         break;
     case QEvent::KeyPress:
         setInputMode(QStringLiteral("key"));

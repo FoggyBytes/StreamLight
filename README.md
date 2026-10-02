@@ -28,7 +28,7 @@ Everything below is in the current release, whichever version first introduced i
 
 **🕹️ Gamepad-first, keyboard-equal**
 - Every action is reachable from the pad: D-pad across host tabs, library, settings tabs and dialogs, with a clickable prompt bar along the bottom
-- **Prompts follow the device in your hands** — touch the keyboard and each glyph becomes the key to press; pick the pad back up and they return to that controller's own icons (Xbox / PlayStation / Nintendo, auto-detected or forced). *Settings → Session* can pin them to the controller or to the keyboard *(6.3.0+)*, for Steam Input and the Steam Deck, where one pad also sends clicks and keys
+- **Prompts follow the device in your hands** — touch the keyboard and each glyph becomes the key to press; pick the pad back up and they return to that controller's own icons (Xbox / PlayStation / Nintendo, auto-detected or forced). *Settings → Session* can pin them to the controller or to the keyboard *(6.3.0+)*, for Steam Input and the Steam Deck, where one pad also sends clicks and keys — and on the controller a trackpad mapped to the mouse points without taking the focus away from the pad *(6.4.1+)*
 - **Rebindable shortcuts** — every in-stream keyboard hotkey and all three controller combos, in *Settings → Shortcuts*. Defaults are **LB + RB + A** quit, **+ X** performance overlay, **+ B** stream settings, chosen to stay clear of Steam's overlay
 
 **🏠 Home and the host page**
@@ -92,6 +92,12 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in *Settings → StreamTweak*; the host has its own switch
+
+## ✨ What's New in 6.4.1 — Steady Focus
+
+Client-side, any host.
+
+- **Controller navigation with a Steam Input pointer** — with *Button prompts* on *Controller*, a trackpad mapped to the mouse points and clicks while the focus stays with the pad
 
 ## ✨ What's New in 6.4.0 — Fast Lane
 

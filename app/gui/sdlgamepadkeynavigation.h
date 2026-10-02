@@ -19,7 +19,8 @@ class SdlGamepadKeyNavigation : public QObject
 
     // Tracks the last-used input device so QML can suppress mouse hover when
     // navigating with gamepad/keyboard and vice versa.
-    // Values: "pointer" (mouse), "key" (gamepad or keyboard).
+    // Values: "pointer" (mouse), "key" (gamepad or keyboard). With Button prompts = Controller
+    // it stays "key": the mouse still points and clicks, but never switches the mode (#24).
     Q_PROPERTY(QString inputMode READ inputMode NOTIFY inputModeChanged)
 
 public:
@@ -65,6 +66,9 @@ private:
     void updateControllerType();
 
     void setInputMode(const QString& mode);
+
+    // Button prompts = Controller: mouse movement and clicks leave inputMode on "key" (#24).
+    bool padNavigationPinned() const;
 
 private slots:
     void onPollingTimerFired();

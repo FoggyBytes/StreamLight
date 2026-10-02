@@ -2996,6 +2996,8 @@ FocusScope {
                         // Issue #24: with Steam Input one controller also sends keyboard and mouse
                         // input, and the prompts flipped with every trackpad click. Auto is the
                         // InputHints rule; the other two pin the prompts regardless of input.
+                        // 6.4.1: Controller also pins the navigation to the pad — the mouse points
+                        // and clicks but never switches to mouse use (SdlGamepadKeyNavigation).
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeightTall
@@ -3014,7 +3016,7 @@ FocusScope {
                                     color: settingsScreen._text
                                 }
                                 Label {
-                                    text: qsTr("Auto follows the last device used. Pin one for Steam Input.")
+                                    text: qsTr("Auto follows the last device used. Controller keeps pad navigation.")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
