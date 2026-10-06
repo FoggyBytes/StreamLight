@@ -47,6 +47,18 @@
         <file>res/pad_xbox_rs.svg</file>
         <file>res/pad_ps_r3.svg</file>
         <file>res/pad_switch_rs.svg</file>
+        <file>res/pad_steam_a.svg</file>
+        <file>res/pad_steam_b.svg</file>
+        <file>res/pad_steam_x.svg</file>
+        <file>res/pad_steam_y.svg</file>
+        <file>res/pad_steam_l1.svg</file>
+        <file>res/pad_steam_r1.svg</file>
+        <file>res/pad_steam_l2.svg</file>
+        <file>res/pad_steam_r2.svg</file>
+        <file>res/pad_steam_view.svg</file>
+        <file>res/pad_steam_menu.svg</file>
+        <file>res/pad_steam_r3.svg</file>
+        <file>res/notice_pad.svg</file>
         <file>res/fonts/DMSans-Regular.ttf</file>
         <file>res/fonts/DMSans-Medium.ttf</file>
         <file>res/fonts/DMSans-SemiBold.ttf</file>

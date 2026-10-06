@@ -428,6 +428,10 @@ static QString padIcon(StreamingPreferences::GlyphSet gs, char pos)
         return pos == 's' ? QStringLiteral(":/res/pad_switch_b.svg")
              : pos == 'e' ? QStringLiteral(":/res/pad_switch_a.svg")
              :              QStringLiteral(":/res/pad_switch_x.svg");
+    case StreamingPreferences::GS_STEAM:
+        return pos == 's' ? QStringLiteral(":/res/pad_steam_a.svg")
+             : pos == 'e' ? QStringLiteral(":/res/pad_steam_b.svg")
+             :              QStringLiteral(":/res/pad_steam_y.svg");
     default: // Xbox / Auto
         return pos == 's' ? QStringLiteral(":/res/pad_xbox_a.svg")
              : pos == 'e' ? QStringLiteral(":/res/pad_xbox_b.svg")

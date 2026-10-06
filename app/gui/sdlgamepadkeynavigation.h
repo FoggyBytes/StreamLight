@@ -18,7 +18,7 @@ class SdlGamepadKeyNavigation : public QObject
 
     // Exposes the detected controller family so QML can render the correct
     // button glyphs (Xbox vs PlayStation vs generic).
-    // Values: "xbox", "ps", "switch", "generic", "none".
+    // Values: "xbox", "ps", "switch", "steam", "generic", "none".
     Q_PROPERTY(QString controllerType READ controllerType NOTIFY controllerTypeChanged)
 
     // Tracks the last-used input device so QML can suppress mouse hover when
@@ -61,6 +61,10 @@ protected:
 signals:
     void controllerTypeChanged();
     void inputModeChanged();
+    // 6.5.1 (#24): Steam's Desktop Layout is sending the pad as keyboard too — seen from the
+    // echoes below, once per launch. menuHoldSwitches: the pad is the Steam Controller
+    // (28de:1304), whose Desktop Layout switches to Gamepad on a long press of Menu.
+    void steamDesktopLayoutDetected(bool menuHoldSwitches);
 
 private:
     void sendKey(QEvent::Type type, Qt::Key key, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
@@ -86,6 +90,9 @@ private:
     bool padPressIsEcho(int nav);
     // Keyboard side, from the event filter: true = swallow the event.
     bool keyEventIsEcho(QKeyEvent* ke);
+    // Counts one matched pair; the third one reports the Desktop Layout.
+    void noteInputEcho();
+    bool steamControllerConnected() const;
 
 private slots:
     void onPollingTimerFired();
@@ -122,4 +129,6 @@ private:
         bool echo;
     };
     QHash<int, KeyDecision> m_KeyDecisions;
+    int m_EchoCount;
+    bool m_DesktopLayoutReported;
 };

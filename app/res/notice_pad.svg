@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="32" viewBox="0 0 48 32">
+  <!-- SteamLayoutBanner (6.5.1): a controller outline in Theme.warning -->
+  <path d="M10 6 H38 Q46 6 46 16 Q46 28 38 28 Q33 28 30 23 H18 Q15 28 10 28 Q2 28 2 16 Q2 6 10 6Z" fill="none" stroke="#F5A623" stroke-width="2.4" stroke-linejoin="round"/>
+  <circle cx="13" cy="15" r="3" fill="#F5A623"/>
+  <path d="M33 12 V18 M30 15 H36" stroke="#F5A623" stroke-width="2.4" stroke-linecap="round"/>
+</svg>

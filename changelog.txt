@@ -5,6 +5,19 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 ---------------------------------------
+Version 6.5.1 - Full Steam (07/10/2026)
+---------------------------------------
+
+No StreamTweak update required — 6.5.1 is client-side and works with any host. Button icons for the Steam Controller and the Steam Deck, and a notice when Steam sends the controller as keyboard and mouse too.
+
+✨ IMPROVEMENTS:
+• Steam button icons — a fifth choice in Settings → Button icon set, with L1/R1, L2/R2, R3, View and Menu drawn the way Steam draws them. Auto picks it for the Steam Controller and the Steam Deck
+• A notice when Steam uses its Desktop layout — that layout sends the controller as keyboard and mouse too, so every press reaches StreamLight, and the game on the host, twice. StreamLight now spots it and says how to switch Steam to Gamepad: a long press of Menu on the Steam Controller, or launching StreamLight from Steam
+
+🙏 THANKS:
+• Thanks to @ludipraxa and @MariolloPL (https://github.com/FoggyBytes/StreamLight/issues/24) for testing 6.5.0 with the Steam Controller and for the log and screenshots
+
+---------------------------------------
 Version 6.5.0 - Clear View (06/10/2026)
 ---------------------------------------
 

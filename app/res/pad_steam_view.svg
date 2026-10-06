@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="24" viewBox="0 0 36 24">
+  <!-- Steam set (6.5.1): View = two overlapping windows -->
+  <rect x="1" y="1.5" width="34" height="21" rx="10.5" ry="10.5" fill="#F3F7F8"/>
+  <rect x="9"  y="7"  width="11" height="8" rx="1.5" ry="1.5" fill="none" stroke="#0B1114" stroke-width="1.6"/>
+  <rect x="15" y="10" width="11" height="8" rx="1.5" ry="1.5" fill="#F3F7F8" stroke="#0B1114" stroke-width="1.6"/>
+</svg>

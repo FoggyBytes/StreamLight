@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- Steam set (6.5.1): white with a dark letter, as Steam draws its own glyphs -->
+  <circle cx="16" cy="16" r="14" fill="#F3F7F8"/>
+  <text x="16" y="22" font-family="Arial Black, sans-serif" font-weight="900" font-size="17" fill="#0B1114" text-anchor="middle">A</text>
+</svg>

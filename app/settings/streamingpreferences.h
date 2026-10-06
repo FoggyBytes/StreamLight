@@ -210,12 +210,14 @@ public:
     // Controller glyph set shown across the gamepad-first UI. GS_AUTO uses the
     // family detected from the connected pad (the historical behaviour); the
     // others force a specific vendor's button icons regardless of detection.
+    // ⚠️ Stored as an int: new sets go at the end, never in between.
     enum GlyphSet
     {
         GS_AUTO,
         GS_XBOX,
         GS_PLAYSTATION,
-        GS_NINTENDO
+        GS_NINTENDO,
+        GS_STEAM        // 6.5.1: Steam Controller and Steam Deck (#24)
     };
     Q_ENUM(GlyphSet)
 

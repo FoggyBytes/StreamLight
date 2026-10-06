@@ -52,5 +52,6 @@
         <file>gui/ProfileShoulder.qml</file>
         <file>gui/ShortcutCaptureDialog.qml</file>
         <file>gui/GamepadCaptureDialog.qml</file>
+        <file>gui/SteamLayoutBanner.qml</file>
     </qresource>
 </RCC>

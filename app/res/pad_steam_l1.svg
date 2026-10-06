@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="24" viewBox="0 0 40 24">
+  <!-- Steam set (6.5.1): left bumper, rounded on the outer top corner -->
+  <path d="M2 22 V10 Q2 2 12 2 H36 Q38 2 38 4 V22 Z" fill="#F3F7F8"/>
+  <text x="21" y="17" font-family="Arial Black, sans-serif" font-weight="900" font-size="11" fill="#0B1114" text-anchor="middle">L1</text>
+</svg>

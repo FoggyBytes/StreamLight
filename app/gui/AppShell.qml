@@ -485,12 +485,13 @@ FocusScope {
 
         readonly property bool _padIsPs: SdlGamepadKeyNavigation.controllerType === "ps"
         readonly property bool _padIsSwitch: SdlGamepadKeyNavigation.controllerType === "switch"
+        readonly property bool _padIsSteam: SdlGamepadKeyNavigation.controllerType === "steam"
 
         // (Six more glyphs used to be resolved here — A, B, X, Y and the shoulders — and none of
         //  them was read by anything any more: the prompts draw their own. Removed in 6.0.0.
         //  Only Select is still used, by the prompt below.)
         // Select / Back / View / Create / − button.
-        readonly property string _iconSelect: _padIsPs ? "qrc:/res/pad_ps_create.svg" : _padIsSwitch ? "qrc:/res/pad_switch_minus.svg" : "qrc:/res/pad_xbox_view.svg"
+        readonly property string _iconSelect: _padIsPs ? "qrc:/res/pad_ps_create.svg" : _padIsSwitch ? "qrc:/res/pad_switch_minus.svg" : _padIsSteam ? "qrc:/res/pad_steam_view.svg" : "qrc:/res/pad_xbox_view.svg"
         // (The trigger glyphs used to be resolved here too, for the "Prev/Next host" prompts.
         //  Those moved onto the host strip itself, which resolves its own — see HomeScreen.)
 
@@ -740,7 +741,40 @@ FocusScope {
             if (!blocking && appShell.currentPage === 0 && homeLoader.item)
                 homeLoader.item.forceActiveFocus()
         }
-        onFinished: appShell._maybePromptUpdate()
+        onFinished: {
+            appShell._maybePromptUpdate()
+            appShell._maybeShowSteamBanner()
+        }
+    }
+
+    // ── Steam Desktop Layout notice (6.5.1, #24) ──────────────────────────────────
+    // Reported by SdlGamepadKeyNavigation once per launch. Held over the opening animation;
+    // over a stream or its launch screen it is dropped — the next launch says it again if the
+    // layout is still Desktop.
+    property bool _steamBannerPending: false
+    property bool _steamBannerMenuHold: false
+
+    function _maybeShowSteamBanner() {
+        if (!_steamBannerPending || startupSplash.running) return
+        _steamBannerPending = false
+        if (typeof stackView !== "undefined" && stackView.depth > 1) return
+        steamLayoutBanner.show(_steamBannerMenuHold)
+    }
+
+    Connections {
+        target: SdlGamepadKeyNavigation
+        function onSteamDesktopLayoutDetected(menuHoldSwitches) {
+            appShell._steamBannerMenuHold = menuHoldSwitches
+            appShell._steamBannerPending = true
+            appShell._maybeShowSteamBanner()
+        }
+    }
+
+    SteamLayoutBanner {
+        id: steamLayoutBanner
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: Math.round(72 * Theme.uiScale)
     }
 
     UpdatePromptDialog {

@@ -2983,7 +2983,7 @@ FocusScope {
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
-                                labels: [qsTr("Auto"), qsTr("Xbox"), qsTr("PlayStation"), qsTr("Nintendo")]
+                                labels: [qsTr("Auto"), qsTr("Xbox"), qsTr("PlayStation"), qsTr("Nintendo"), qsTr("Steam")]
                                 Binding on currentIndex { value: StreamingPreferences.glyphSet }
                                 onActivated: function(idx) {
                                     StreamingPreferences.glyphSet = idx
@@ -3018,7 +3018,7 @@ FocusScope {
                                     color: settingsScreen._text
                                 }
                                 Label {
-                                    text: qsTr("Auto follows the last device used. Controller keeps pad navigation.")
+                                    text: qsTr("Controller keeps prompts and navigation on the pad. Best for Steam Controller.")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim

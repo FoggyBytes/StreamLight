@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- Steam set (6.5.1): right stick click -->
+  <circle cx="16" cy="16" r="14" fill="#F3F7F8"/>
+  <circle cx="16" cy="16" r="10.5" fill="none" stroke="#0B1114" stroke-opacity="0.35" stroke-width="1.4"/>
+  <text x="16" y="20.2" font-family="Arial Black, sans-serif" font-weight="900" font-size="11" fill="#0B1114" text-anchor="middle">R3</text>
+</svg>

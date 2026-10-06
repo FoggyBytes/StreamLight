@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="24" viewBox="0 0 36 24">
+  <!-- Steam set (6.5.1): Menu = three lines -->
+  <rect x="1" y="1.5" width="34" height="21" rx="10.5" ry="10.5" fill="#F3F7F8"/>
+  <line x1="11" y1="8.5"  x2="25" y2="8.5"  stroke="#0B1114" stroke-width="2" stroke-linecap="round"/>
+  <line x1="11" y1="12"   x2="25" y2="12"   stroke="#0B1114" stroke-width="2" stroke-linecap="round"/>
+  <line x1="11" y1="15.5" x2="25" y2="15.5" stroke="#0B1114" stroke-width="2" stroke-linecap="round"/>
+</svg>

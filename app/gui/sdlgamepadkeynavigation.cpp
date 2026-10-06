@@ -35,6 +35,17 @@ static void slDbg(const QString& line)
 // press (#24). The pad is polled every 50 ms, so the copy usually comes first by up to that.
 #define INPUT_ECHO_WINDOW_MS 150
 
+// Matched pairs before the Desktop Layout notice (6.5.1). In the log of #24 the third came
+// within 3 s of the first press; one alone could be a key pressed with the pad by chance.
+#define DESKTOP_LAYOUT_ECHOES 3
+
+// Valve. The Steam Controller, the Steam Deck — and Steam's virtual pad, which is an Xbox 360
+// to everyone and is kept on the Xbox glyphs by its SDL type.
+#define USB_VENDOR_VALVE 0x28de
+// The Steam Controller seen in #24, whose Desktop Layout has "Change Action Set (Gamepad)" on
+// a long press of Menu. Other Valve pads are not known to, so the notice names it only here.
+#define USB_PRODUCT_STEAM_CONTROLLER 0x1304
+
 // #24 diagnostics: every controller the interface opens, in the main StreamLight-*.log. A
 // second device here (Steam's virtual pad is VID 28de PID 11ff) is the other way a press can
 // arrive twice, and the echo matching below does not cover it.
@@ -61,7 +72,9 @@ SdlGamepadKeyNavigation::SdlGamepadKeyNavigation(StreamingPreferences* prefs)
       m_RightTriggerDown(false),
       m_ControllerType(QStringLiteral("none")),
       m_InputMode(QStringLiteral("pointer")),
-      m_HasLastMousePos(false)
+      m_HasLastMousePos(false),
+      m_EchoCount(0),
+      m_DesktopLayoutReported(false)
 {
     m_PollingTimer = new QTimer(this);
     connect(m_PollingTimer, &QTimer::timeout, this, &SdlGamepadKeyNavigation::onPollingTimerFired);
@@ -112,6 +125,8 @@ QString SdlGamepadKeyNavigation::controllerType() const
         return QStringLiteral("ps");
     case StreamingPreferences::GS_NINTENDO:
         return QStringLiteral("switch");
+    case StreamingPreferences::GS_STEAM:
+        return QStringLiteral("steam");
     case StreamingPreferences::GS_AUTO:
     default:
         return m_ControllerType;
@@ -142,7 +157,11 @@ void SdlGamepadKeyNavigation::updateControllerType()
             newType = QStringLiteral("switch");
             break;
         default:
-            newType = QStringLiteral("generic");
+            // SDL has no type for Valve's own pads: the Steam Controller of #24 reports 0
+            // (unknown). Read by vendor, after the Xbox cases, so Steam's virtual pad — Valve
+            // too, but typed as an Xbox 360 — keeps the Xbox glyphs.
+            newType = SDL_GameControllerGetVendor(gc) == USB_VENDOR_VALVE
+                    ? QStringLiteral("steam") : QStringLiteral("generic");
             break;
         }
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -261,6 +280,7 @@ bool SdlGamepadKeyNavigation::padPressIsEcho(int nav)
                     "[padnav] pad press %d dropped: the same key came from the keyboard %d ms earlier",
                     nav, (int)(now - m_KeyNavAt[nav]));
         m_KeyNavAt[nav] = -1;
+        noteInputEcho();
         return true;
     }
     m_PadNavAt[nav] = now;
@@ -311,6 +331,7 @@ bool SdlGamepadKeyNavigation::keyEventIsEcho(QKeyEvent* ke)
                         "[padnav] keyboard key 0x%x dropped: the same press came from the pad %d ms earlier",
                         key, (int)(now - m_PadNavAt[nav]));
             m_PadNavAt[nav] = -1;
+            noteInputEcho();
         }
         else {
             m_KeyNavAt[nav] = now;
@@ -329,6 +350,30 @@ bool SdlGamepadKeyNavigation::keyEventIsEcho(QKeyEvent* ke)
         }
     }
     return echo;
+}
+
+void SdlGamepadKeyNavigation::noteInputEcho()
+{
+    if (m_DesktopLayoutReported || ++m_EchoCount < DESKTOP_LAYOUT_ECHOES) {
+        return;
+    }
+    m_DesktopLayoutReported = true;
+    const bool menuHold = steamControllerConnected();
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "[padnav] %d echoes: Steam's Desktop Layout is sending the pad as keyboard too (notice shown%s)",
+                m_EchoCount, menuHold ? ", Steam Controller: hold Menu" : "");
+    emit steamDesktopLayoutDetected(menuHold);
+}
+
+bool SdlGamepadKeyNavigation::steamControllerConnected() const
+{
+    for (SDL_GameController* gc : m_Gamepads) {
+        if (SDL_GameControllerGetVendor(gc) == USB_VENDOR_VALVE &&
+                SDL_GameControllerGetProduct(gc) == USB_PRODUCT_STEAM_CONTROLLER) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void SdlGamepadKeyNavigation::enable()
