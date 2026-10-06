@@ -4,6 +4,31 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+---------------------------------------
+Version 6.5.0 - Clear View (06/10/2026)
+---------------------------------------
+
+No StreamTweak update required — 6.5.0 is client-side and works with any host. Logs, crash dumps and the cover cache in Settings, a security fix shared with Moonlight 6.2.0, PyroWave on Intel Arc graphics, one press on the controller moving the interface by one step again when Steam is running on this device, and the PyroWave frames that arrive incomplete shown in the overlay.
+
+✨ NEW FEATURES:
+• Logs, crash dumps and covers in Settings → About — see where StreamLight keeps them and how much space they take, open each folder, and clear them after a confirmation. Logs and crash dumps can move to Documents, StreamLight's app data or a folder you pick, and the move applies at once: the running log continues there
+
+✨ IMPROVEMENTS:
+• Updated libraries, the same as Moonlight 6.2.0 — OpenSSL 3.6.5, SDL 3.4.18, libopus 1.6.1 and a newer libplacebo
+• PyroWave frames with lost packets in the overlay — PyroWave shows a frame that lost packets, blurred where the data is missing, instead of dropping it, so "Frames dropped by your network connection" stayed at 0% while the picture flickered. A new line under it counts them, together with the frames too damaged to show at all, and the log records each reading
+• Decoding time shows the wait for the decoder — as in Nonary's build, the part of the decoding time a frame spends queued behind the decoder
+
+🐛 FIXES:
+• A malicious host can no longer crash StreamLight through an H.264 stream — CVE-2026-41210, fixed as in Moonlight 6.2.0: the SPS parser used a value from the stream as a table index without checking it
+• PyroWave works on Intel Arc graphics — drivers that share video memory only through NT handles (Core Ultra, N100) were refused, although the decoder needs nothing else; Nonary's fix
+• A controller press no longer moves the focus by two with Steam open — Steam's Desktop Layout sends the D-pad and A/B as keyboard keys too, so each press arrived both from the controller and from the keyboard. A key and the controller button it copies, a moment apart, now count once, including Esc in a dialog that would have closed the one underneath
+• The session summary in the log describes the whole session — it left out the last second of every figure, and its bitrate was the average of the last seconds before quitting; it is now the session average, and the host metrics are marked as the last sample
+
+🙏 THANKS:
+• Thanks to @MariolloPL and @ludipraxa (https://github.com/FoggyBytes/StreamLight/issues/24) for the report, the video and the logs
+• Thanks to @ludipraxa (https://github.com/FoggyBytes/StreamLight/issues/26) for the PyroWave tests and logs
+• Thanks to @yanfuh321-dot and @diegoalexandrooliveira (https://github.com/FoggyBytes/StreamLight/issues/34) for the Intel Arc report, and to @nerdytyphanie for the fix
+
 -----------------------------------------
 Version 6.4.1 - Steady Focus (02/10/2026)
 -----------------------------------------

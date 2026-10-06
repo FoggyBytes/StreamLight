@@ -18,6 +18,16 @@ typedef struct _VIDEO_STATS {
     uint32_t pacerDroppedFrames;
     // Received frames discarded before decoding because they were stale.
     uint32_t decoderSkippedFrames;
+    // PyroWave frames decoded with packets missing: shown, blurred where the data was lost,
+    // so they never count as dropped.
+    uint32_t decoderPartialFrames;
+    // PyroWave frames that arrived but could not be decoded (too much of them was lost):
+    // never shown, yet neither a network nor a pacing drop.
+    uint32_t decoderRejectedFrames;
+    // Video bytes received, for the session-average bitrate in the log summary. The live
+    // overlay keeps the bandwidth tracker's recent average, as upstream.
+    uint64_t receivedBytes;
+    double receivedMbps;                       // over the measurement span, like the *Fps below
     // Latest 30-frame-time source snapshot, independent of client delivery time.
     uint64_t incomingTimingSequence;
     double incomingTimingVarianceTicksSquared;

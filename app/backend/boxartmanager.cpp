@@ -105,6 +105,12 @@ private:
  * for the rest of the run either way, so this costs one small read per game per launch and
  * nothing afterwards.
  */
+void BoxArtManager::forgetCheckedCovers()
+{
+    QMutexLocker lock(&s_CheckLock);
+    s_Checked.clear();
+}
+
 bool BoxArtManager::needsRefresh(const QString& path)
 {
     QMutexLocker lock(&s_CheckLock);

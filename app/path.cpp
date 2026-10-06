@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 
 QString Path::s_CacheDir;
+QString Path::s_DefaultLogDir;
 QString Path::s_LogDir;
 QString Path::s_BoxArtCacheDir;
 QString Path::s_QmlCacheDir;
@@ -125,4 +126,53 @@ void Path::initialize(bool portable)
         s_BoxArtCacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/boxart";
         s_QmlCacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/qmlcache";
     }
+
+    // The folder the user chose for logs (6.5.0). Read here because the log file is opened
+    // right after this, long before StreamingPreferences exists; QSettings already points at
+    // the right store, portable or not. A folder that has gone away or cannot be written falls
+    // back to the default rather than leaving the run without a log.
+    s_DefaultLogDir = s_LogDir;
+    QSettings settings;
+    const int choice = settings.value("logs/dirChoice", LDC_DEFAULT).toInt();
+    if (choice != LDC_DEFAULT) {
+        const QString dir = logDirForChoice(choice, settings.value("logs/customDir").toString());
+        if (!dir.isEmpty() && prepareLogDir(dir)) {
+            s_LogDir = dir;
+        }
+    }
+}
+
+QString Path::logDirForChoice(int choice, const QString& customDir)
+{
+    switch (choice) {
+    case LDC_DOCUMENTS:
+        return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/StreamLight/Logs";
+    case LDC_APPDATA:
+        return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/Logs";
+    case LDC_CUSTOM:
+        return customDir;
+    case LDC_DEFAULT:
+    default:
+        return s_DefaultLogDir;
+    }
+}
+
+bool Path::prepareLogDir(const QString& dir)
+{
+    if (dir.isEmpty() || !QDir().mkpath(dir)) {
+        return false;
+    }
+    QFile probe(QDir(dir).filePath("StreamLight-write-test.tmp"));
+    if (!probe.open(QIODevice::WriteOnly)) {
+        return false;
+    }
+    probe.close();
+    probe.remove();
+    return true;
+}
+
+void Path::setLogDir(const QString& dir)
+{
+    // Read by the crash handler too, so a dump lands beside the log that explains it.
+    s_LogDir = QDir::cleanPath(dir);
 }

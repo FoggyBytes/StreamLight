@@ -46,6 +46,8 @@
 #include "cli/commandlineparser.h"
 #include "singleinstance.h"
 #include "path.h"
+#include "logfile.h"
+#include "backend/logsandcache.h"
 #include "storereset.h"
 #include "utils.h"
 #include "gui/computermodel.h"
@@ -162,6 +164,57 @@ void logToLoggerStream(QString& message)
         // Log the message immediately
         LoggerTask(message).run();
     }
+}
+
+QString LogFile::currentPath()
+{
+#ifdef LOG_TO_FILE
+    QMutexLocker locker(&s_SyncLoggerMutex);
+    return s_LoggerFile != nullptr ? s_LoggerFile->fileName() : QString();
+#else
+    return QString();
+#endif
+}
+
+bool LogFile::continueIn(const QString& dir)
+{
+#ifdef LOG_TO_FILE
+    if (s_LoggerFile == nullptr) {
+        // stderr was redirected at launch: there is no file of ours to move
+        return false;
+    }
+
+    QString name = QString("StreamLight-%1.log").arg(QDateTime::currentSecsSinceEpoch());
+    for (int i = 1; QFile::exists(QDir(dir).filePath(name)); i++) {
+        name = QString("StreamLight-%1-%2.log").arg(QDateTime::currentSecsSinceEpoch()).arg(i);
+    }
+    auto* newFile = new QFile(QDir(dir).filePath(name));
+    if (!newFile->open(QIODevice::WriteOnly | QIODevice::Text)) {
+        delete newFile;
+        return false;
+    }
+
+    QString oldName;
+    {
+        // The stream is swapped under the lock every writer takes (LoggerTask), so no line is
+        // split between the two files and none is written to a closed one, async or not.
+        QMutexLocker locker(&s_SyncLoggerMutex);
+        oldName = s_LoggerFile->fileName();
+        s_LoggerStream << "The log continues in " << QDir::toNativeSeparators(newFile->fileName()) << "\n";
+        s_LoggerStream.flush();
+        s_LoggerStream.setDevice(newFile);
+        s_LoggerFile->close();
+        delete s_LoggerFile;
+        s_LoggerFile = newFile;
+        s_LogBytesWritten = 0;
+    }
+
+    qInfo() << "Log continued from" << QDir::toNativeSeparators(oldName);
+    return true;
+#else
+    Q_UNUSED(dir);
+    return false;
+#endif
 }
 
 void sdlLogToDiskHandler(void*, int category, SDL_LogPriority priority, const char* message)
@@ -1048,6 +1101,11 @@ int main(int argc, char *argv[])
                                          [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                              return WindowMove::get(qmlEngine);
                                          });
+    qmlRegisterSingletonType<LogsAndCache>("LogsAndCache", 1, 0,
+                                           "LogsAndCache",
+                                           [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
+                                               return LogsAndCache::get(qmlEngine);
+                                           });
 
     // Create the identity manager on the main thread
     IdentityManager::get();

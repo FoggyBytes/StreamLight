@@ -323,20 +323,6 @@ void FFmpegVideoDecoder::reset()
         m_DecoderThread = nullptr;
     }
 
-    // Logged here because the decoder thread is joined above, so the counters are
-    // final. That is now the only thing constraining where this goes: it also used to
-    // have to run before the Pacer and the renderers were torn down, because
-    // stringifyVideoStats() read the frame pacing mechanism in effect from both of
-    // them and logging afterwards made the summary always claim "Frame pacing: Off".
-    // That line went in 5.2.0 and the function no longer touches either of them.
-    if (m_CurrentTestMode != TestMode::TestFrameOnly) {
-        logVideoStats(m_GlobalVideoStats, "Global video stats");
-    }
-    else {
-        // Test-only decoders can't have any frames submitted
-        SDL_assert(m_GlobalVideoStats.totalFrames == 0);
-    }
-
     m_FramesIn = m_FramesOut = 0;
     m_FrameInfoQueue.clear();
     m_FrameSubmitTimeQueue.clear();
@@ -364,6 +350,19 @@ void FFmpegVideoDecoder::reset()
     // owned values before the final global log is produced.
     finalizeActiveVideoStats();
 
+    // Logged only now, after the last window and the pacer's final snapshot are merged —
+    // the order of Nonary's original. ⚠️ Until 6.4.2 this ran before both, right after the
+    // decoder thread was joined, so the summary left out up to the last second of every
+    // counter (and then disagreed with the PyroWave totals below, #26). Nothing else ties
+    // it down: stringifyVideoStats() has not read the Pacer or the renderers since 5.2.0.
+    if (m_CurrentTestMode != TestMode::TestFrameOnly) {
+        logVideoStats(m_GlobalVideoStats, "Global video stats");
+    }
+    else {
+        // Test-only decoders can't have any frames submitted
+        SDL_assert(m_GlobalVideoStats.totalFrames == 0);
+    }
+
     // This must be called after deleting Pacer because it
     // may be holding AVFrames to free in its destructor.
     // However, it must be called before deleting the IFFmpegRenderer
@@ -377,14 +376,32 @@ void FFmpegVideoDecoder::reset()
     // work; frames still referencing surfaces only touch the shared free list.
     if (m_PyroWave) {
         if (m_PyroWaveRejectedFrames != 0) {
+            // Same count and denominator as "(rejected …)" on the overlay line.
+            const uint32_t total = m_GlobalVideoStats.totalFrames;
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "PyroWave rejected %u frames this session",
-                        m_PyroWaveRejectedFrames);
+                        "PyroWave rejected %u of %u frames this session (%.2f%%)",
+                        m_PyroWaveRejectedFrames, total,
+                        total ? (float)m_PyroWaveRejectedFrames / total * 100 : 0.0f);
+        }
+        if (m_GlobalVideoStats.decoderRejectedFrames != m_PyroWaveRejectedFrames) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "PyroWave rejected-frame count disagrees: %u in the statistics, %u rejected",
+                        m_GlobalVideoStats.decoderRejectedFrames, m_PyroWaveRejectedFrames);
         }
         if (m_PyroWavePartialFrames != 0) {
+            // The same count and the same denominator as the overlay's "Frames decoded with
+            // lost packets" line, so the percentage there can be checked against this one.
+            const uint32_t total = m_GlobalVideoStats.totalFrames;
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "PyroWave decoded %u frames with lost packets this session",
-                        m_PyroWavePartialFrames);
+                        "PyroWave decoded %u of %u frames with lost packets this session (%.2f%%)",
+                        m_PyroWavePartialFrames, total,
+                        total ? (float)m_PyroWavePartialFrames / total * 100 : 0.0f);
+        }
+        // Both are counted at the same point; a difference means a window was lost.
+        if (m_GlobalVideoStats.decoderPartialFrames != m_PyroWavePartialFrames) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "PyroWave lost-packet count disagrees: %u in the statistics, %u decoded",
+                        m_GlobalVideoStats.decoderPartialFrames, m_PyroWavePartialFrames);
         }
         if (m_PyroWaveStaleSkips != 0) {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -950,6 +967,9 @@ void FFmpegVideoDecoder::addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst)
     dst.networkDroppedFrames += src.networkDroppedFrames;
     dst.pacerDroppedFrames += src.pacerDroppedFrames;
     dst.decoderSkippedFrames += src.decoderSkippedFrames;
+    dst.decoderPartialFrames += src.decoderPartialFrames;
+    dst.decoderRejectedFrames += src.decoderRejectedFrames;
+    dst.receivedBytes += src.receivedBytes;
     // Keep the latest 30-interval snapshot instead of widening its window when
     // merging the one-second overlay windows or whole-session log statistics.
     // A newer unavailable snapshot must also replace older valid evidence.
@@ -1056,6 +1076,7 @@ void FFmpegVideoDecoder::addVideoStats(VIDEO_STATS& src, VIDEO_STATS& dst)
     dst.receivedFps     = (double)dst.receivedFrames / timeDiffSecs;
     dst.decodedFps      = (double)dst.decodedFrames / timeDiffSecs;
     dst.renderedFps     = (double)dst.renderedFrames / timeDiffSecs;
+    dst.receivedMbps    = (double)dst.receivedBytes * 8 / 1000000.0 / timeDiffSecs;
 }
 
 void FFmpegVideoDecoder::syncPacerTelemetry()
@@ -1360,7 +1381,16 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
             // the average off there is nothing for it to be the peak of, which is why
             // the settings page greys it out in that case rather than letting it lie.
             if (WANT(OI_BITRATE)) {
-                if (WANT(OI_BITRATE_PEAK)) {
+                if (forceFullDetail) {
+                    // The log summary describes the session, and the tracker's figures do
+                    // not: its average covers the last 2.5 s and its peak the last 10 s
+                    // before the line is written — the quit, the menu, the black screen.
+                    // Bytes over the same span as the frame rates (addVideoStats).
+                    ret = snprintf(&output[offset], length - offset,
+                                   "Bitrate: %.1f Mbps (session average)\n",
+                                   stats.receivedMbps);
+                }
+                else if (WANT(OI_BITRATE_PEAK)) {
                     ret = snprintf(&output[offset], length - offset,
                                    "Bitrate: %.1f Mbps, Peak (%us): %.1f\n",
                                    m_BwTracker.GetAverageMbps(),
@@ -1436,6 +1466,18 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
                            (float)stats.networkDroppedFrames / stats.totalFrames * 100);
             if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
             offset += ret;
+            // PyroWave shows a frame that lost packets instead of dropping it, blurred where
+            // the data is missing (#26): the line above stays at 0% while the picture
+            // flickers. Only PyroWave delivers incomplete frames. "Rejected" are the ones
+            // that lost too much to decode at all — not shown, and counted nowhere else.
+            if (m_PyroWaveActive) {
+                ret = snprintf(&output[offset], length - offset,
+                               "Frames decoded with lost packets: %.2f%% (rejected %.2f%%)\n",
+                               stats.totalFrames ? (float)stats.decoderPartialFrames / stats.totalFrames * 100 : 0.0f,
+                               stats.totalFrames ? (float)stats.decoderRejectedFrames / stats.totalFrames * 100 : 0.0f);
+                if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
+                offset += ret;
+            }
         }
         if (WANT(OI_JITTER_DROPS)) {
             ret = snprintf(&output[offset], length - offset,
@@ -1461,9 +1503,12 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
             offset += ret;
         }
         if (WANT(OI_DECODE_TIME)) {
+            // As in Nonary's vrr18: the share of the decoding time spent queued behind the
+            // decoder, already part of the first figure, not added to it.
             ret = snprintf(&output[offset], length - offset,
-                           "Average decoding time: %.2f ms\n",
-                           (double)(stats.totalDecodeTimeUs / 1000.0) / stats.decodedFrames);
+                           "Average decoding time: %.2f ms (waiting for the decoder %.2f ms)\n",
+                           (double)(stats.totalDecodeTimeUs / 1000.0) / stats.decodedFrames,
+                           (double)(stats.totalDecodeQueueTimeUs / 1000.0) / stats.decodedFrames);
             if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
             offset += ret;
         }
@@ -1723,10 +1768,14 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
 
         // The heading is drawn only when there is a client section above it to be
         // told apart from — on its own it is a title over the only thing there is.
+        // In the log summary these are the last sample the host sent, not the session:
+        // the heading says so rather than let them pass for averages.
         ret = snprintf(&output[offset], length - offset,
                        "%sGPU: %s%% | Enc: %s | Temp: %sC | VRAM: %s\n"
                        "CPU: %s%% | Net TX: %s Mbps\n",
-                       anyClientItem ? "--- Host Metrics (StreamTweak) ---\n" : "",
+                       !anyClientItem ? "" :
+                       forceFullDetail ? "--- Host Metrics (StreamTweak, last sample) ---\n" :
+                                         "--- Host Metrics (StreamTweak) ---\n",
                        gpuStr, encField, tempStr, vramStr, cpuStr, netStr);
 
         if (ret > 0 && ret < length - offset)
@@ -2539,6 +2588,7 @@ int FFmpegVideoDecoder::sendPyroWaveFrame(int length, uint32_t rtpTimestamp)
     if (!decoded) {
         av_frame_free(&frame);
         m_PyroWaveRejectedFrames++;
+        m_ActiveWndVideoStats.decoderRejectedFrames++;
 
         // Every frame is independent, so there is nothing to request from the
         // host: the next frame replaces this one. Log at most once a second.
@@ -2555,6 +2605,7 @@ int FFmpegVideoDecoder::sendPyroWaveFrame(int length, uint32_t rtpTimestamp)
 
     if (m_PyroWave->lastFramePartial()) {
         m_PyroWavePartialFrames++;
+        m_ActiveWndVideoStats.decoderPartialFrames++;
     }
 
     // Colour follows the negotiation; PyroWave carries none in its bitstream
@@ -2734,6 +2785,7 @@ void FFmpegVideoDecoder::writeBuffer(PLENTRY entry, int& offset)
     if (m_NeedsSpsFixup && entry->bufferType == BUFFER_TYPE_SPS) {
         h264_stream_t* stream = h264_new();
         int nalStart, nalEnd;
+        bool needsFixup;
 
         // Read the old NALU
         find_nal_unit((uint8_t*)entry->data, entry->length, &nalStart, &nalEnd);
@@ -2746,33 +2798,64 @@ void FFmpegVideoDecoder::writeBuffer(PLENTRY entry, int& offset)
 
         // Fixup the SPS to what OS X needs to use hardware acceleration
         // This is also critical for decoding latency on the Pi 2.
-        stream->sps->num_ref_frames = 1;
-        stream->sps->vui.max_dec_frame_buffering = 1;
+        //
+        // As in upstream v6.2.0 (2fc0d84a, fba7c411): an SPS that already says what we need is
+        // passed through untouched instead of being rewritten by h264bitstream, and debug
+        // builds check that a rewrite would have given back the same bytes (6.4.2, §85.4).
+        needsFixup = (stream->sps->num_ref_frames != 1 || stream->sps->vui.max_dec_frame_buffering != 1);
+#ifndef QT_DEBUG
+        if (needsFixup)
+#endif
+        {
+            stream->sps->num_ref_frames = 1;
+            stream->sps->vui.max_dec_frame_buffering = 1;
 
-        // NVENC doesn't seem to add bitstream restrictions anymore (591.59),
-        // so we need to add them ourselves if not present to ensure that
-        // the max_dec_frame_buffering option actually takes effect.
-        // We use the defaults for everything except max_dec_frame_buffering.
-        if (!stream->sps->vui.bitstream_restriction_flag) {
-            stream->sps->vui.bitstream_restriction_flag = 1;
-            stream->sps->vui.motion_vectors_over_pic_boundaries_flag = 1;
-            stream->sps->vui.max_bytes_per_pic_denom = 2;
-            stream->sps->vui.max_bits_per_mb_denom = 1;
-            stream->sps->vui.log2_max_mv_length_horizontal = 16;
-            stream->sps->vui.log2_max_mv_length_vertical = 16;
-            stream->sps->vui.num_reorder_frames = 0;
+            // NVENC doesn't seem to add bitstream restrictions anymore (591.59),
+            // so we need to add them ourselves if not present to ensure that
+            // the max_dec_frame_buffering option actually takes effect.
+            // We use the defaults for everything except max_dec_frame_buffering.
+            if (!stream->sps->vui.bitstream_restriction_flag) {
+                stream->sps->vui.bitstream_restriction_flag = 1;
+                stream->sps->vui.motion_vectors_over_pic_boundaries_flag = 1;
+                stream->sps->vui.max_bytes_per_pic_denom = 2;
+                stream->sps->vui.max_bits_per_mb_denom = 1;
+                stream->sps->vui.log2_max_mv_length_horizontal = 16;
+                stream->sps->vui.log2_max_mv_length_vertical = 16;
+                stream->sps->vui.num_reorder_frames = 0;
+            }
+
+            int initialOffset = offset;
+
+            // Copy the modified NALU data. This clobbers byte 0 and starts NALU data at byte 1.
+            // Since it prepended one extra byte, subtract one from the returned length.
+            offset += write_nal_unit(stream, (uint8_t*)&m_DecodeBuffer.data()[initialOffset + nalStart - 1],
+                                     MAX_SPS_EXTRA_SIZE + entry->length - nalStart) - 1;
+
+            // Copy the NALU prefix over from the original SPS
+            memcpy(&m_DecodeBuffer.data()[initialOffset], entry->data, nalStart);
+            offset += nalStart;
+
+#ifdef QT_DEBUG
+            // If we didn't need a fixup, the SPS should have stayed the exact same
+            if (!needsFixup) {
+                SDL_assert(offset - initialOffset == entry->length);
+                SDL_assert(memcmp(&m_DecodeBuffer.data()[initialOffset], entry->data, entry->length) == 0);
+            }
+            else {
+                // The SPS should never get smaller with a fixup
+                SDL_assert(offset - initialOffset >= entry->length);
+            }
+#endif
         }
-
-        int initialOffset = offset;
-
-        // Copy the modified NALU data. This clobbers byte 0 and starts NALU data at byte 1.
-        // Since it prepended one extra byte, subtract one from the returned length.
-        offset += write_nal_unit(stream, (uint8_t*)&m_DecodeBuffer.data()[initialOffset + nalStart - 1],
-                                 MAX_SPS_EXTRA_SIZE + entry->length - nalStart) - 1;
-
-        // Copy the NALU prefix over from the original SPS
-        memcpy(&m_DecodeBuffer.data()[initialOffset], entry->data, nalStart);
-        offset += nalStart;
+#ifndef QT_DEBUG
+        else {
+            // Write the SPS as-is if it required no modification
+            memcpy(&m_DecodeBuffer.data()[offset],
+                   entry->data,
+                   entry->length);
+            offset += entry->length;
+        }
+#endif
 
         h264_free(stream);
     }
@@ -3174,6 +3257,7 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
     }
 
     m_BwTracker.AddBytes(du->fullLength);
+    m_ActiveWndVideoStats.receivedBytes += du->fullLength;
 
     // Flip stats windows roughly every second
     if (LiGetMicroseconds() > m_ActiveWndVideoStats.measurementStartUs + 1000000) {
@@ -3199,6 +3283,25 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
         // and cost most exactly when the fault was present. This runs on the decoder
         // thread, which nothing measures.
         logPacingWindow();
+
+        // The overlay's "Frames decoded with lost packets" reading, logged as it is shown: the
+        // same two windows (previous + this one, as lastTwoWndStats above), whenever it is not
+        // zero, overlay on or off — so each figure on screen can be found here (#26).
+        // m_LastWndVideoStats is written only on this thread; the lock is for the Qt readers.
+        {
+            const uint32_t partial = m_LastWndVideoStats.decoderPartialFrames +
+                                     m_ActiveWndVideoStats.decoderPartialFrames;
+            const uint32_t rejected = m_LastWndVideoStats.decoderRejectedFrames +
+                                      m_ActiveWndVideoStats.decoderRejectedFrames;
+            const uint32_t total = m_LastWndVideoStats.totalFrames + m_ActiveWndVideoStats.totalFrames;
+            if (partial != 0 || rejected != 0) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "PyroWave: frames decoded with lost packets %.2f%% (rejected %.2f%%) - %u and %u of %u, last two windows",
+                            total ? (float)partial / total * 100 : 0.0f,
+                            total ? (float)rejected / total * 100 : 0.0f,
+                            partial, rejected, total);
+            }
+        }
 
         // Accumulate these values into the global stats
         addVideoStats(m_ActiveWndVideoStats, m_GlobalVideoStats);

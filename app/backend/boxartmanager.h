@@ -18,6 +18,10 @@ class BoxArtManager : public QObject
 public:
     explicit BoxArtManager(QObject *parent = nullptr);
 
+    // Forgets which covers this run has already looked at (6.5.0). Called after the cache is
+    // cleared from Settings, so nothing is remembered about files that are gone.
+    static void forgetCheckedCovers();
+
     QUrl
     loadBoxArt(NvComputer* computer, NvApp& app);
 

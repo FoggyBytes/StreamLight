@@ -58,13 +58,14 @@ Everything below is in the current release, whichever version first introduced i
 - **PyroWave** *(6.4.0+)* — a fifth video codec for wired networks: every frame is coded on its own, so decoding takes well under a millisecond and a lost packet blurs part of one picture instead of breaking the next ones. Needs hundreds of Mbps and a Vibeshine or Vibepollo 2.0 host; other hosts stream H.264
 
 **⚙️ Settings and profiles**
-- Ten tabs, pill-style selectors instead of dropdowns, inline subtitles instead of tooltips, and a bitrate slider with hold-to-accelerate and a **Default** prompt
+- Nine tabs, pill-style selectors instead of dropdowns, inline subtitles instead of tooltips, and a bitrate slider with hold-to-accelerate and a **Default** prompt
 - **Per-host profiles** — up to three named profiles per host, each overriding resolution, frame rate, bitrate, HDR, YUV 4:4:4, codec, display mode, V-Sync, frame pacing, fractional V-Sync, VRR, audio, link matching, launch wait and Hue. Switchable from Home or the host page
 - **Per-game overrides** on top of the active profile, for the settings that vary by title
 - **Profiles in tabs** *(6.0.0+)* — the host profile and per-game dialogs are split into Settings' own tabs, one section at a time, switched with **LB / RB** drawn at the ends of the strip, each tab showing how many of its values are changed
 - **Inherited values look inherited** *(6.0.0+)* — the accent marks only what a profile or a game changes, every row says where its value comes from, **Y** gives a row back, and **LT / RT** switch profile anywhere in the dialog. **X** names a profile from eight ready-made names, or your own with a keyboard
 - A setting that cannot act says so wherever you meet it — greyed, with the reason on the line beneath, in Settings, in the profile and in the per-game dialog alike
 - Every change is written to disk the moment you make it
+- **Logs and cache** *(6.5.0+)* — *Settings → About* shows where logs, crash dumps and covers are kept and how much space they take, opens each folder and clears them after a confirmation. Logs and crash dumps can move to another folder, and the running log follows at once
 - **Update from the app** *(5.8.0+)* — *Settings → About* downloads a newer release when there is one and checks it against GitHub's checksum; *Install now* opens the installer, which reopens StreamLight when it finishes, after a single Windows permission prompt. A newer version is also announced at startup
 
 **🎯 Windows Xbox app integration**
@@ -93,29 +94,21 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in *Settings → StreamTweak*; the host has its own switch
 
-## ✨ What's New in 6.4.1 — Steady Focus
+## ✨ What's New in 6.5.0 — Clear View
 
 Client-side, any host.
 
-- **Controller navigation with a Steam Input pointer** — with *Button prompts* on *Controller*, a trackpad mapped to the mouse points and clicks while the focus stays with the pad
-
-## ✨ What's New in 6.4.0 — Fast Lane
-
-Client-side, any host; PyroWave needs a **Vibeshine or Vibepollo 2.0** host. StreamTweak 9.1.0, out alongside it, shows which codec each stream used.
-
-- **PyroWave** — a fifth video codec, in *Settings → Video codec* and in host and per-game profiles, for wired networks with bandwidth to spare, with the bitrate up to 3000 Mbps
-- **YUV 4:4:4 per profile** — set per host profile and per game, so a PyroWave 4:4:4 profile and an AV1 one can sit side by side
-- **Settings → Video regrouped** — codec, HDR and 4:4:4 sit right above the bitrate they set the default of, and the bitrate is unlocked for every codec
-- **VRR pacing from Nonary's vrr18** — steadier through slowdowns and frame-rate changes
-- **Newer engine** — FFmpeg 9.0.2, newer SDL and libplacebo, and a fix for a crash on connect on some Windows 11 PCs
-- **Host commands reach the host you picked** — Power, Update now, Delete, Rename and wake no longer land on another PC when the host list changes under them
-- **Everything scales** — the Home header and the last fixed-size dialogs now grow with the window
+- **Logs and cache in Settings** — *About* shows where logs, crash dumps and covers are kept, opens each folder and clears them; logs and crash dumps can move to another folder
+- **Security fix from Moonlight 6.2.0** — a malicious host can no longer crash the client through an H.264 stream (CVE-2026-41210), and the libraries match 6.2.0's
+- **PyroWave on Intel Arc** — Core Ultra and N100 graphics are no longer refused
+- **One press, one step with Steam open** — Steam's Desktop Layout no longer makes a controller press move the focus by two
+- **PyroWave losses in the overlay** — frames shown blurred because packets were lost, and those too damaged to show, get a line of their own instead of hiding behind a 0% drop rate
 
 *Older releases are in [changelog.txt](changelog.txt).*
 
 ## 🏗️ Architecture
 
-A Qt 6 / QML fork of Moonlight-Qt. The decoder pipeline — FFmpeg, D3D11VA, DXVA2, libplacebo — and the protocol, `moonlight-common-c`, are upstream's, and they track Moonlight's **development branch** rather than its releases: upstream has not tagged one since v6.1.0 in September 2024, while its master branch is still moving. As of 6.4.0 our copy of `moonlight-common-c` is master's plus Nonary's PyroWave commits, and upstream's application fixes are carried over as they land. The VRR pacing *(6.0.0+)* and PyroWave *(6.4.0+)* are Nonary's, imported unchanged so that they can be kept in step with the original. The UI layer is ours.
+A Qt 6 / QML fork of Moonlight-Qt. The decoder pipeline — FFmpeg, D3D11VA, DXVA2, libplacebo — and the protocol, `moonlight-common-c`, are upstream's, and they track Moonlight's **development branch** rather than its releases — for two years there was none after v6.1.0, and as of 6.5.0 the security fixes and libraries of Moonlight 6.2.0 (October 2026) are in. As of 6.4.0 our copy of `moonlight-common-c` is master's plus Nonary's PyroWave commits, and upstream's application fixes are carried over as they land. The VRR pacing *(6.0.0+)* and PyroWave *(6.4.0+)* are Nonary's, imported unchanged so that they can be kept in step with the original. The UI layer is ours.
 
 Integration with StreamTweak runs over a TCP bridge on **port 47998** (LAN, line-delimited ASCII), carrying link speed (`NETINFO`, `SETSPEED`), host metrics (`STATS`), store data (`APPSTORES`), telemetry (`SESSIONDATA`), Tailscale presence, launch state (`GAMESTATE`), lock state, and the power and Windows Update commands. Each command is preceded by an `AUTH1` line signing it with the client's Moonlight certificate (RSA-SHA256); a one-time `ENROLL` registers the client with the host for approval.
 

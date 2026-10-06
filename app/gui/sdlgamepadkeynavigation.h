@@ -3,6 +3,10 @@
 #include <QTimer>
 #include <QEvent>
 #include <QPoint>
+#include <QElapsedTimer>
+#include <QHash>
+
+class QKeyEvent;
 
 #include "SDL_compat.h"
 
@@ -70,6 +74,19 @@ private:
     // Button prompts = Controller: mouse movement and clicks leave inputMode on "key" (#24).
     bool padNavigationPinned() const;
 
+    // Steam Input echoes (#24). With Steam open on the client, its Desktop Layout sends a
+    // controller's D-pad and face buttons as keyboard keys too, while SDL reads the same
+    // controller directly — so every press arrived twice and the focus moved by two. A pad
+    // press and a keyboard key meaning the same thing within a short window are one press:
+    // whichever arrives first acts, the other is dropped (and its release with it).
+    enum NavButton { NB_UP, NB_DOWN, NB_LEFT, NB_RIGHT, NB_ACCEPT, NB_BACK, NB_COUNT };
+    static int navButtonForKey(int qtKey);
+    static int navButtonForPad(int sdlButton);
+    // Pad side: true = this press echoes a key already delivered, drop it.
+    bool padPressIsEcho(int nav);
+    // Keyboard side, from the event filter: true = swallow the event.
+    bool keyEventIsEcho(QKeyEvent* ke);
+
 private slots:
     void onPollingTimerFired();
 
@@ -90,4 +107,19 @@ private:
     QString m_InputMode;
     QPoint m_LastMousePos;
     bool m_HasLastMousePos;
+
+    // Echo matching (#24). Times on m_NavClock, -1 = nothing waiting. Each press cancels at
+    // most one press from the other side, so fast tapping with both sources stays 1:1.
+    QElapsedTimer m_NavClock;
+    qint64 m_PadNavAt[NB_COUNT];
+    qint64 m_KeyNavAt[NB_COUNT];
+    bool m_PadNavDropped[NB_COUNT];
+    // The decision taken for the current press of each keyboard key. A real key reaches the
+    // filter first as ShortcutOverride and then as KeyPress (same timestamp): both must get
+    // the same answer, and its auto-repeats and release follow it.
+    struct KeyDecision {
+        quint64 timestamp;
+        bool echo;
+    };
+    QHash<int, KeyDecision> m_KeyDecisions;
 };

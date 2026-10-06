@@ -31,6 +31,25 @@ static void slDbg(const QString& line)
 
 #define AXIS_NAVIGATION_REPEAT_DELAY 150
 
+// How far apart a pad press and Steam Input's keyboard copy of it can land and still be one
+// press (#24). The pad is polled every 50 ms, so the copy usually comes first by up to that.
+#define INPUT_ECHO_WINDOW_MS 150
+
+// #24 diagnostics: every controller the interface opens, in the main StreamLight-*.log. A
+// second device here (Steam's virtual pad is VID 28de PID 11ff) is the other way a press can
+// arrive twice, and the echo matching below does not cover it.
+static void logPadDevice(const char* what, SDL_GameController* gc)
+{
+    SDL_Joystick* js = SDL_GameControllerGetJoystick(gc);
+    const char* name = SDL_GameControllerName(gc);
+    const char* path = SDL_GameControllerPath(gc);
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "[padnav] %s: '%s' instance=%d VID=%04x PID=%04x type=%d path=%s",
+                what, name ? name : "(null)", (int)SDL_JoystickInstanceID(js),
+                SDL_GameControllerGetVendor(gc), SDL_GameControllerGetProduct(gc),
+                (int)SDL_GameControllerGetType(gc), path ? path : "(null)");
+}
+
 SdlGamepadKeyNavigation::SdlGamepadKeyNavigation(StreamingPreferences* prefs)
     : m_Prefs(prefs),
       m_Enabled(false),
@@ -46,6 +65,13 @@ SdlGamepadKeyNavigation::SdlGamepadKeyNavigation(StreamingPreferences* prefs)
 {
     m_PollingTimer = new QTimer(this);
     connect(m_PollingTimer, &QTimer::timeout, this, &SdlGamepadKeyNavigation::onPollingTimerFired);
+
+    m_NavClock.start();
+    for (int i = 0; i < NB_COUNT; i++) {
+        m_PadNavAt[i] = -1;
+        m_KeyNavAt[i] = -1;
+        m_PadNavDropped[i] = false;
+    }
 
     // Issue #24: Button prompts = Controller also pins the navigation to the pad, so a Steam
     // Input trackpad can point and click without switching the interface to mouse use. The
@@ -181,11 +207,128 @@ bool SdlGamepadKeyNavigation::eventFilter(QObject* watched, QEvent* event)
         break;
     case QEvent::KeyPress:
         setInputMode(QStringLiteral("key"));
+        // Only keys the window system delivered: the pad's own keys are sent by sendKey()
+        // and are never spontaneous.
+        if (event->spontaneous() && keyEventIsEcho(static_cast<QKeyEvent*>(event))) {
+            return true;
+        }
+        break;
+    case QEvent::ShortcutOverride:
+    case QEvent::KeyRelease:
+        if (event->spontaneous() && keyEventIsEcho(static_cast<QKeyEvent*>(event))) {
+            return true;
+        }
         break;
     default:
         break;
     }
     return QObject::eventFilter(watched, event);
+}
+
+int SdlGamepadKeyNavigation::navButtonForKey(int qtKey)
+{
+    switch (qtKey) {
+    case Qt::Key_Up:     return NB_UP;
+    case Qt::Key_Down:   return NB_DOWN;
+    case Qt::Key_Left:   return NB_LEFT;
+    case Qt::Key_Right:  return NB_RIGHT;
+    case Qt::Key_Return:
+    case Qt::Key_Enter:  return NB_ACCEPT;
+    case Qt::Key_Escape: return NB_BACK;
+    default:             return NB_COUNT;
+    }
+}
+
+int SdlGamepadKeyNavigation::navButtonForPad(int sdlButton)
+{
+    // After the face-button swap: what the press will act as, not where it sits.
+    switch (sdlButton) {
+    case SDL_CONTROLLER_BUTTON_DPAD_UP:    return NB_UP;
+    case SDL_CONTROLLER_BUTTON_DPAD_DOWN:  return NB_DOWN;
+    case SDL_CONTROLLER_BUTTON_DPAD_LEFT:  return NB_LEFT;
+    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: return NB_RIGHT;
+    case SDL_CONTROLLER_BUTTON_A:          return NB_ACCEPT;
+    case SDL_CONTROLLER_BUTTON_B:          return NB_BACK;
+    default:                               return NB_COUNT;
+    }
+}
+
+bool SdlGamepadKeyNavigation::padPressIsEcho(int nav)
+{
+    const qint64 now = m_NavClock.elapsed();
+    if (m_KeyNavAt[nav] >= 0 && now - m_KeyNavAt[nav] <= INPUT_ECHO_WINDOW_MS) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "[padnav] pad press %d dropped: the same key came from the keyboard %d ms earlier",
+                    nav, (int)(now - m_KeyNavAt[nav]));
+        m_KeyNavAt[nav] = -1;
+        return true;
+    }
+    m_PadNavAt[nav] = now;
+    return false;
+}
+
+bool SdlGamepadKeyNavigation::keyEventIsEcho(QKeyEvent* ke)
+{
+    const int key = ke->key();
+    auto it = m_KeyDecisions.find(key);
+
+    if (ke->type() == QEvent::KeyRelease) {
+        if (it == m_KeyDecisions.end()) {
+            return false;
+        }
+        const bool echo = it->echo;
+        if (!ke->isAutoRepeat()) {
+            m_KeyDecisions.erase(it);
+        }
+        return echo;
+    }
+
+    // ShortcutOverride or KeyPress. Auto-repeat, and the KeyPress that follows its own
+    // ShortcutOverride, belong to a press already decided.
+    const bool samePress = it != m_KeyDecisions.end()
+            && (ke->isAutoRepeat() || it->timestamp == ke->timestamp());
+    bool echo;
+    if (samePress) {
+        echo = it->echo;
+    }
+    else if (ke->isAutoRepeat()) {
+        return false;
+    }
+    else {
+        const int nav = navButtonForKey(key);
+        if (nav == NB_COUNT || (ke->modifiers() & (Qt::ShiftModifier | Qt::ControlModifier |
+                                                   Qt::AltModifier | Qt::MetaModifier))) {
+            if (it != m_KeyDecisions.end()) {
+                m_KeyDecisions.erase(it);
+            }
+            return false;
+        }
+
+        const qint64 now = m_NavClock.elapsed();
+        echo = m_PadNavAt[nav] >= 0 && now - m_PadNavAt[nav] <= INPUT_ECHO_WINDOW_MS;
+        if (echo) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "[padnav] keyboard key 0x%x dropped: the same press came from the pad %d ms earlier",
+                        key, (int)(now - m_PadNavAt[nav]));
+            m_PadNavAt[nav] = -1;
+        }
+        else {
+            m_KeyNavAt[nav] = now;
+        }
+        // A new press overwrites whatever a lost release left behind.
+        m_KeyDecisions.insert(key, KeyDecision { ke->timestamp(), echo });
+    }
+
+    if (echo) {
+        // It was the pad: undo the keyboard reading InputHints may have taken from it.
+        InputHints::get()->notePadInput();
+        if (ke->type() == QEvent::ShortcutOverride) {
+            // Accepted override = no shortcut fires (a popup's Escape would close it), and the
+            // KeyPress that follows comes back here to be swallowed.
+            ke->accept();
+        }
+    }
+    return echo;
 }
 
 void SdlGamepadKeyNavigation::enable()
@@ -228,8 +371,17 @@ void SdlGamepadKeyNavigation::enable()
             SDL_GameController* gc = SDL_GameControllerOpen(i);
             if (gc != nullptr) {
                 m_Gamepads.append(gc);
+                logPadDevice("opened", gc);
             }
         }
+    }
+
+    {
+        SDL_version linked;
+        SDL_GetVersion(&linked);
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "[padnav] enable(): %d controller(s), %d joystick(s), SDL %d.%d.%d",
+                    (int)m_Gamepads.size(), numJoysticks, linked.major, linked.minor, linked.patch);
     }
 
     updateControllerType();
@@ -334,6 +486,22 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
                 }
             }
 
+            // Steam Input's keyboard copy of this press may already have acted (#24). A
+            // dropped press drops its release too.
+            const int nav = navButtonForPad(event.cbutton.button);
+            if (nav != NB_COUNT) {
+                if (type == QEvent::Type::KeyPress) {
+                    m_PadNavDropped[nav] = padPressIsEcho(nav);
+                    if (m_PadNavDropped[nav]) {
+                        break;
+                    }
+                }
+                else if (m_PadNavDropped[nav]) {
+                    m_PadNavDropped[nav] = false;
+                    break;
+                }
+            }
+
             switch (event.cbutton.button) {
             case SDL_CONTROLLER_BUTTON_DPAD_UP:
                 if (m_UiNavMode) {
@@ -425,6 +593,7 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
                 // before we've processed the add event.
                 if (!m_Gamepads.contains(gc)) {
                     m_Gamepads.append(gc);
+                    logPadDevice("added", gc);
                     updateControllerType();
                 }
                 else {
@@ -447,8 +616,20 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
             InputHints::get()->notePadInput();
         }
 
+        // The one direction this poll would step, in the order the branches below test them.
+        const int stickNav = leftY < -30000 ? NB_UP
+                           : leftY > 30000  ? NB_DOWN
+                           : leftX < -30000 ? NB_LEFT
+                           : leftX > 30000  ? NB_RIGHT
+                           : NB_COUNT;
+
         if (SDL_GetTicks() - m_LastAxisNavigationEventTime < AXIS_NAVIGATION_REPEAT_DELAY) {
             // Do nothing
+        }
+        // A layout that sends the stick as arrow keys echoes it like the D-pad (#24). The repeat
+        // delay still restarts, so a dropped step is not retried on the next poll.
+        else if (stickNav != NB_COUNT && padPressIsEcho(stickNav)) {
+            m_LastAxisNavigationEventTime = SDL_GetTicks();
         }
         else if (leftY < -30000) {
             if (m_UiNavMode) {

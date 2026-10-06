@@ -10,6 +10,8 @@ import SdlGamepadKeyNavigation 1.0
 import SystemProperties 1.0
 import ShortcutManager 1.0
 import AppUpdate 1.0
+import LogsAndCache 1.0
+import QtQuick.Dialogs as QD
 
 // SettingsScreen — Xbox-style flat settings panel.
 // Tabs: see _tabs below (nine since 6.4.0, when Decoder joined Video).
@@ -5459,6 +5461,203 @@ FocusScope {
                     }
                 }
 
+                // Logs, crash dumps and the cover cache (6.5.0). Here and not in a tab of its own:
+                // whoever is asked for a log in an issue comes looking where the version is, and the
+                // nine tabs stay nine (option A of the mockup, Marcello, 06/10/2026). One folder for
+                // logs and dumps because the crash handler writes beside the log (Path::getLogDir).
+                // Every figure is read on demand: LogsAndCache.refresh() when the tab opens and after
+                // each action here.
+                Rectangle {
+                    id: aboutFilesCard
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: settingsScreen._px(8)
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: aboutFilesCol.implicitHeight + settingsScreen._px(32)
+
+                    property string logsResult: ""
+                    property string coversResult: ""
+                    property bool chooserOpen: false
+                    // The folder logs went to when this visit to About began. Picking it again
+                    // is a return to where you started, not a change, so it clears the notice
+                    // instead of announcing a move (Marcello, 06/10/2026).
+                    property string startLogDir: ""
+
+                    function applyLogDirResult(result) {
+                        logsResult = LogsAndCache.logDir === startLogDir ? "" : result
+                    }
+
+                    Column {
+                        id: aboutFilesCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: settingsScreen._px(16)
+                        anchors.leftMargin: settingsScreen._px(18)
+                        spacing: settingsScreen._px(10)
+
+                        // ── Logs & crash dumps ─────────────────────────────────────────
+                        Item {
+                            width: parent.width
+                            implicitHeight: Math.max(logsTitle.implicitHeight, logsSummary.implicitHeight)
+                            Label {
+                                id: logsTitle
+                                anchors.left: parent.left
+                                text: qsTr("Logs & crash dumps")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontTitle)
+                                font.bold: true
+                                color: settingsScreen._text
+                            }
+                            Label {
+                                id: logsSummary
+                                anchors.right: parent.right
+                                anchors.baseline: logsTitle.baseline
+                                text: LogsAndCache.logSummary
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                color: settingsScreen._textDim
+                            }
+                        }
+                        FolderPath { path: LogsAndCache.logDir }
+                        Row {
+                            spacing: settingsScreen._px(10)
+                            AboutLinkButton {
+                                id: logsOpenBtn
+                                label: qsTr("Open folder")
+                                onTriggered: LogsAndCache.openLogFolder()
+                            }
+                            AboutLinkButton {
+                                id: logsClearBtn
+                                label: qsTr("Clear logs")
+                                onTriggered: {
+                                    if (LogsAndCache.hasOldLogs) clearLogsDialog.open()
+                                    else aboutFilesCard.logsResult = qsTr("Nothing to remove · the current log is kept")
+                                }
+                            }
+                            AboutLinkButton {
+                                id: logsChangeBtn
+                                label: aboutFilesCard.chooserOpen ? qsTr("Close") : qsTr("Change folder")
+                                onTriggered: aboutFilesCard.chooserOpen = !aboutFilesCard.chooserOpen
+                            }
+                        }
+                        // The folder list. Three fixed places a pad can pick, and "Other folder…",
+                        // which opens the Windows folder picker (mouse and keyboard only).
+                        Column {
+                            width: parent.width
+                            visible: aboutFilesCard.chooserOpen
+                            spacing: settingsScreen._px(6)
+                            Repeater {
+                                model: [
+                                    { choice: 0, label: qsTr("Temporary folder (default)") },
+                                    { choice: 1, label: qsTr("Documents") },
+                                    { choice: 2, label: qsTr("StreamLight app data") },
+                                    { choice: 3, label: qsTr("Other folder…") }
+                                ]
+                                delegate: FolderChoice {
+                                    required property var modelData
+                                    width: parent.width
+                                    label: modelData.label
+                                    // ⚠️ choicePath() is a call, and a binding on a call alone is
+                                    // never re-run: reading logDir (which notifies) is what makes
+                                    // a newly picked custom folder show up at once.
+                                    path: {
+                                        LogsAndCache.logDir
+                                        const p = LogsAndCache.choicePath(modelData.choice)
+                                        return modelData.choice === 3 && p.length === 0 ? qsTr("Pick a folder") : p
+                                    }
+                                    selected: LogsAndCache.logDirChoice === modelData.choice
+                                    onPicked: {
+                                        if (modelData.choice === 3) {
+                                            logFolderDialog.open()
+                                        } else {
+                                            aboutFilesCard.applyLogDirResult(LogsAndCache.setLogDirChoice(modelData.choice))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Label {
+                            width: parent.width
+                            visible: text.length > 0
+                            text: aboutFilesCard.logsResult
+                            wrapMode: Text.Wrap
+                            font.family: Theme.family
+                            font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                            color: Theme.accent
+                        }
+
+                        Rectangle { width: parent.width; height: 1; color: settingsScreen._border }
+
+                        // ── Cover cache ────────────────────────────────────────────────
+                        Item {
+                            width: parent.width
+                            implicitHeight: Math.max(coversTitle.implicitHeight, coversSummary.implicitHeight)
+                            Label {
+                                id: coversTitle
+                                anchors.left: parent.left
+                                text: qsTr("Cover cache")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontTitle)
+                                font.bold: true
+                                color: settingsScreen._text
+                            }
+                            Label {
+                                id: coversSummary
+                                anchors.right: parent.right
+                                anchors.baseline: coversTitle.baseline
+                                text: LogsAndCache.coverSummary
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                color: settingsScreen._textDim
+                            }
+                        }
+                        FolderPath { path: LogsAndCache.coverDir }
+                        Row {
+                            spacing: settingsScreen._px(10)
+                            AboutLinkButton {
+                                id: coversOpenBtn
+                                label: qsTr("Open folder")
+                                onTriggered: LogsAndCache.openCoverFolder()
+                            }
+                            AboutLinkButton {
+                                id: coversClearBtn
+                                label: qsTr("Clear cache")
+                                onTriggered: {
+                                    if (LogsAndCache.hasCovers) clearCoversDialog.open()
+                                    else aboutFilesCard.coversResult = qsTr("The cache is already empty")
+                                }
+                            }
+                        }
+                        Label {
+                            width: parent.width
+                            visible: text.length > 0
+                            text: aboutFilesCard.coversResult
+                            wrapMode: Text.Wrap
+                            font.family: Theme.family
+                            font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                            color: Theme.accent
+                        }
+                    }
+                }
+
+                // Settings can open straight onto About (the update chip), and then the tab is
+                // born visible and onVisibleChanged never fires for this visit.
+                Component.onCompleted: if (visible) aboutFilesCard.startLogDir = LogsAndCache.logDir
+
+                onVisibleChanged: {
+                    if (visible) {
+                        LogsAndCache.refresh()
+                        aboutFilesCard.startLogDir = LogsAndCache.logDir
+                    } else {
+                        // A result belongs to the visit it answered
+                        aboutFilesCard.logsResult = ""
+                        aboutFilesCard.coversResult = ""
+                        aboutFilesCard.chooserOpen = false
+                    }
+                }
+
                 // The StreamTweak card that used to sit here now lives in its own tab, where
                 // it can say what the app is for instead of only what version it is at.
             }
@@ -5766,6 +5965,32 @@ FocusScope {
         standardButtons: Dialog.Ok
     }
 
+    // About → Logs & crash dumps / Cover cache (6.5.0): a confirmation before deleting, by
+    // Marcello's choice. The result is written under the button that asked.
+    NavigableMessageDialog {
+        id: clearLogsDialog
+        headerText: qsTr("CLEAR LOGS")
+        text: qsTr("Delete the logs and crash dumps in this folder? The current log is kept.")
+        standardButtons: Dialog.Yes | Dialog.No
+        onAccepted: aboutFilesCard.logsResult = LogsAndCache.clearLogs()
+    }
+
+    NavigableMessageDialog {
+        id: clearCoversDialog
+        headerText: qsTr("CLEAR COVER CACHE")
+        text: qsTr("Delete the downloaded covers? They download again when shown.")
+        standardButtons: Dialog.Yes | Dialog.No
+        onAccepted: aboutFilesCard.coversResult = LogsAndCache.clearCoverCache()
+    }
+
+    // "Other folder…" in the log-folder list. The Windows picker: mouse and keyboard only, which
+    // is why the three fixed places come first in the list.
+    QD.FolderDialog {
+        id: logFolderDialog
+        title: qsTr("Folder for logs and crash dumps")
+        onAccepted: aboutFilesCard.applyLogDirResult(LogsAndCache.setLogDirChoice(3, selectedFolder.toString()))
+    }
+
     NavigableMessageDialog {
         id: tailscaleStopNoticeDialog
         headerText: qsTr("TAILSCALE")
@@ -5861,6 +6086,79 @@ FocusScope {
             font.bold: true
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
+        }
+    }
+
+    // A folder as text (6.5.0, About → Logs & crash dumps / Cover cache): the mono face, on the
+    // raised card colour, and elided in the middle so the drive and the last folder both stay.
+    component FolderPath: Rectangle {
+        property string path: ""
+        width: parent ? parent.width : 0
+        implicitHeight: pathLabel.implicitHeight + settingsScreen._px(14)
+        radius: settingsScreen._px(6)
+        color: Theme.cardHigh
+        border.color: settingsScreen._border
+        border.width: 1
+        Label {
+            id: pathLabel
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: settingsScreen._px(10)
+            anchors.rightMargin: settingsScreen._px(10)
+            text: parent.path
+            elide: Text.ElideMiddle
+            font.family: Theme.monoFamily
+            font.pixelSize: settingsScreen._px(Theme.fontCaption)
+            color: settingsScreen._textDim
+        }
+    }
+
+    // One entry of the log-folder list: what it is and where it points. Selected = accent
+    // outline at rest; focus = the thick accent outline every button here uses.
+    component FolderChoice: Button {
+        id: choiceBtn
+        property string label: ""
+        property string path: ""
+        property bool selected: false
+        signal picked()
+        activeFocusOnTab: true
+        onClicked: picked()
+        Keys.onReturnPressed: picked()
+        Keys.onEnterPressed:  picked()
+        Keys.onSpacePressed:  picked()
+
+        HoverState { id: choiceHov }
+
+        background: Rectangle {
+            implicitHeight: settingsScreen._px(48)
+            radius: settingsScreen._px(8)
+            color: choiceBtn.selected ? settingsScreen._btnBg : "transparent"
+            border.color: choiceHov.keyFocused || choiceBtn.selected ? Theme.accent
+                        : choiceHov.active                          ? Theme.lineHigh
+                        :                                             Theme.line
+            border.width: choiceHov.keyFocused ? settingsScreen._focusBd : 1
+        }
+        contentItem: Column {
+            spacing: settingsScreen._px(2)
+            leftPadding: settingsScreen._px(4)
+            Label {
+                width: parent.width - parent.leftPadding
+                text: choiceBtn.label
+                elide: Text.ElideRight
+                color: settingsScreen._text
+                font.family: Theme.family
+                font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                font.bold: choiceBtn.selected
+            }
+            Label {
+                width: parent.width - parent.leftPadding
+                text: choiceBtn.path
+                elide: Text.ElideMiddle
+                color: settingsScreen._textDim
+                font.family: Theme.monoFamily
+                font.pixelSize: settingsScreen._px(Theme.fontCaption)
+            }
         }
     }
 }
