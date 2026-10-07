@@ -8,6 +8,95 @@ const vm = require('node:vm');
 // checks selection and launch behaviour without installing Qt on the developer's PC.
 const source = fs.readFileSync(path.join(__dirname, '../../app/gui/AppsScreen.qml'), 'utf8');
 
+test('grid covers reuse HeroCover styling without an idle frame or inner padding', () => {
+    const start = source.indexOf('id: tileFrame');
+    assert.ok(start >= 0, 'Missing grid cover container');
+    const end = source.indexOf('anchors.top: tileFrame.bottom', start);
+    assert.ok(end > start, 'Missing grid cover title');
+    const tile = source.slice(start, end);
+    assert.match(tile, /HeroCover\s*\{\s*id: tileArt/);
+    assert.match(tile, /radius: appsRoot\._px\(10\)/);
+    assert.match(tile, /shadow: appDelegate\._gridTile && !Theme\.reduceAnimations/);
+    assert.match(tile, /shadowOffset: appsRoot\._px\(10\)/);
+    assert.match(tile, /anchors\.fill: tileArt\s+radius: tileArt\.radius\s+visible: appDelegate\._lit\s+color: "transparent"\s+border\.width: 3\s+border\.color: Theme\.accent/);
+    assert.doesNotMatch(tile, /paintedWidth|paintedHeight|anchors\.margins: appsRoot\._px\(5\)/);
+    assert.equal((tile.match(/border\.width:/g) || []).length, 1);
+});
+
+function gridMetrics(width, scale, coverSize = 1, showTitles = true) {
+    const start = source.indexOf('id: coverGrid');
+    const end = source.indexOf('// Shared model:', start);
+    const grid = source.slice(start, end);
+    const globals = {
+        width,
+        appsRoot: { _px: (value) => Math.round(value * scale) },
+        Theme: { libraryCoverSize: coverSize, libraryShowTitles: showTitles },
+    };
+    for (const name of ['targetCellWidth', 'columns', 'cellWidth', 'cellHeight']) {
+        const binding = grid.match(new RegExp(`\\b${name}: ([\\s\\S]*?)(?=\\n        \\S)`));
+        assert.ok(binding, `Missing grid binding: ${name}`);
+        globals[name] = vm.runInNewContext(`(${binding[1]})`, globals);
+    }
+    return globals;
+}
+
+test('cover sizes change density while Medium preserves the original grid dimensions', () => {
+    for (const [width, scale] of [[760, 0.62], [1238, 1], [1933, 1.6]]) {
+        const small = gridMetrics(width, scale, 0);
+        const medium = gridMetrics(width, scale, 1);
+        const large = gridMetrics(width, scale, 2);
+        assert.ok(small.columns > medium.columns);
+        assert.ok(medium.columns > large.columns);
+        assert.ok(small.cellWidth < medium.cellWidth);
+        assert.ok(medium.cellWidth < large.cellWidth);
+        assert.equal(medium.columns, Math.max(1, Math.floor(width / Math.round(170 * scale))));
+        assert.equal(medium.cellHeight,
+            Math.round((medium.cellWidth - Math.round(20 * scale)) * 1.5) + Math.round(70 * scale));
+    }
+    for (const size of [0, 1, 2]) {
+        const narrow = gridMetrics(100, 1, size);
+        assert.equal(narrow.columns, 1);
+        assert.equal(narrow.cellWidth, 100);
+        assert.ok(narrow.cellHeight > 0);
+    }
+});
+
+test('hiding grid titles removes label space without changing columns or cover size', () => {
+    for (const size of [0, 1, 2]) {
+        for (const scale of [0.62, 1, 1.6]) {
+            const titled = gridMetrics(1238, scale, size, true);
+            const covers = gridMetrics(1238, scale, size, false);
+            assert.equal(covers.columns, titled.columns);
+            assert.equal(covers.cellWidth, titled.cellWidth);
+            assert.equal(titled.cellHeight - covers.cellHeight,
+                Math.round(70 * scale) - Math.round(32 * scale));
+        }
+    }
+    assert.match(source, /anchors\.top: tileFrame\.bottom\s+visible: Theme\.libraryShowTitles/);
+    assert.match(source, /Accessible\.name: model\.name/);
+    assert.match(source, /visible: tileArt\.status !== Image\.Ready\s+text: model\.name/);
+});
+
+test('Interface controls bind to persisted preferences with Medium and titles-on defaults', () => {
+    const read = (file) => fs.readFileSync(path.join(__dirname, '../../', file), 'utf8');
+    const settings = read('app/gui/SettingsScreen.qml');
+    const theme = read('app/settings/theme.cpp');
+    const header = read('app/settings/theme.h');
+    assert.ok(settings.indexOf('qsTr("Date format")') < settings.indexOf('qsTr("Grid cover size")'));
+    assert.ok(settings.indexOf('qsTr("Show grid titles")') < settings.indexOf('qsTr("Accent colour")'));
+    assert.match(settings, /Binding on currentIndex \{ value: Theme\.libraryCoverSize \}/);
+    assert.match(settings, /onActivated: function\(idx\) \{ Theme\.libraryCoverSize = idx \}/);
+    assert.match(settings, /checked: Theme\.libraryShowTitles/);
+    assert.match(settings, /onToggled: function\(v\) \{ Theme\.libraryShowTitles = v \}/);
+    assert.match(theme, /m_LibraryCoverSize = qBound\(0, settings\.value\(SER_LIBRARY_COVER_SIZE, 1\)\.toInt\(\), 2\)/);
+    assert.match(theme, /m_LibraryShowTitles = settings\.value\(SER_LIBRARY_SHOW_TITLES, true\)\.toBool\(\)/);
+    assert.match(theme, /settings\.setValue\(SER_LIBRARY_COVER_SIZE, m_LibraryCoverSize\)/);
+    assert.match(theme, /settings\.setValue\(SER_LIBRARY_SHOW_TITLES, m_LibraryShowTitles\)/);
+    assert.match(theme, /void Theme::setLibraryCoverSize\(int size\)\s*\{\s*size = qBound\(0, size, 2\)/);
+    assert.match(header, /Q_PROPERTY\(int libraryCoverSize READ libraryCoverSize WRITE setLibraryCoverSize NOTIFY libraryAppearanceChanged\)/);
+    assert.match(header, /Q_PROPERTY\(bool libraryShowTitles READ libraryShowTitles WRITE setLibraryShowTitles NOTIFY libraryAppearanceChanged\)/);
+});
+
 function qmlFunction(name, globals) {
     const signature = new RegExp(`^([ \\t]*)function ${name}\\([^\\n]*\\) \\{`, 'm');
     const match = source.match(signature);
