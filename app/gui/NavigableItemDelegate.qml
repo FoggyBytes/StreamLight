@@ -7,13 +7,10 @@ import SdlGamepadKeyNavigation 1.0
 // The delegate itself must NOT consume Left/Right/Up/Down, or that navigation
 // would be bypassed.
 //
-// ⚠️ The property is a ListView, not a GridView, and the name is historical: the
-// library became a vertical list of titles in 5.0.0 and a ListView cannot be
-// assigned to a GridView-typed property — they are siblings under Flickable, not
-// relatives. Left as GridView it fails the type check at delegate creation, which
-// takes the whole row down with it.
+// Both library layouts use this delegate. ListView and GridView are siblings,
+// so accept either view rather than restricting this property to one layout.
 ItemDelegate {
-    property ListView grid
+    property var grid
 
     readonly property bool keyboardFocused: grid.activeFocus && grid.currentItem === this
     readonly property bool pointerFocused: hovered

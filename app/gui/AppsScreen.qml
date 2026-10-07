@@ -11,20 +11,9 @@ import SdlGamepadKeyNavigation 1.0
 import WindowMove 1.0
 
 /*
- * The host page — the showcase.
- *
- * Same grammar as Home: one thing in the spotlight and everything else in a strip, two
- * navigation zones, and the action row saying what A will do. There the spotlight is the
- * host, here it is the game — so moving between the two screens does not mean learning a
- * second way of reading.
- *
- * What the grid of covers could never show, because there was nowhere to put it: which
- * store a game comes from in words rather than a 16px badge, whether it is running right
- * now, whether it carries settings of its own, and the right verb on the button — Resume
- * for a session already up, Play for one that isn't.
- *
- * Root is FocusScope (not Item) — required for activeFocus propagation from the Loader
- * above us down into the two zones. Plain Items do not propagate.
+ * The host library has two layouts: a full-width cover grid, and a title list with a
+ * spotlight. Both share the model, delegate and session actions. FocusScope propagates
+ * controller/keyboard focus from the Loader down into whichever view is active.
  */
 FocusScope {
     id: appsRoot
@@ -101,6 +90,30 @@ FocusScope {
     readonly property color _text3: _coverGrey ? "#26323a" : Theme.text3
     function _px(n) { return Math.round(n * _u) }
 
+    // The active view changes; both views share the same AppModel and delegate.
+    readonly property bool gridLayout: Theme.libraryGrid
+    readonly property var appGrid: gridLayout ? coverGrid : appList
+    readonly property string layoutActionLabel: gridLayout ? qsTr("List layout") : qsTr("Grid layout")
+
+    // Both views must be complete before initialization scrolls or focuses either one.
+    Component.onCompleted: appList.initializeLibrary()
+
+    function toggleLibraryLayout() {
+        var selectedId = appGrid && appGrid.currentItem ? appGrid.currentItem._appId : -1
+        var selectedIndex = appGrid ? appGrid.currentIndex : 0
+        Theme.libraryGrid = !gridLayout
+        var view = appGrid
+        var index = selectedId >= 0 ? view.appModel.indexOfAppId(selectedId) : selectedIndex
+        view.currentIndex = view.count > 0 ? Math.max(0, Math.min(index, view.count - 1)) : -1
+        appsRoot._playtimeEpoch++
+        // Geometry and the new current delegate must settle before scrolling and focusing.
+        Qt.callLater(function() {
+            if (view !== appsRoot.appGrid) return
+            if (view.currentIndex >= 0) view.positionViewAtIndex(view.currentIndex, GridView.Contain)
+            appsRoot.focusLibrary()
+        })
+    }
+
     // ── The two columns ──────────────────────────────────────────────────────
     /*
      * The library on the left, the spotlight on the right, both running the full height
@@ -130,7 +143,7 @@ FocusScope {
      * four actions and only Shutdown has a button of its own, so there the second zone is
      * the only way to reach the other three and it stays.
      */
-    function focusLibrary() { appGrid.forceActiveFocus() }
+    function focusLibrary() { if (appGrid) appGrid.forceActiveFocus() }
 
     // The host went away while a launch screen was up. Deferred rather than dropped: see
     // computerLost().
@@ -527,6 +540,9 @@ FocusScope {
             event.accepted = true
         } else if (event.key === Qt.Key_X && focusedAppIsRunning) {
             stopFocusedApp()
+            event.accepted = true
+        } else if (event.key === Qt.Key_F20 || event.key === Qt.Key_V) {
+            if (!event.isAutoRepeat) toggleLibraryLayout()
             event.accepted = true
         }
         /*
@@ -1065,7 +1081,7 @@ FocusScope {
         anchors.bottomMargin: appsRoot._px(58)
         width: appsRoot.width - appsRoot._sideMargin * 2
                - appsRoot._colGap - appsRoot._libraryWidth
-        visible: appGrid.count > 0
+        visible: !appsRoot.gridLayout && appGrid.count > 0
 
         // Cover, name, meta, figures and actions as one centred stack. The column is what
         // the library leaves, so everything in it is laid out from the centre outwards.
@@ -1235,15 +1251,7 @@ FocusScope {
     // ═════════════════════════════════════════════════════════════════════════
     // The library — the only zone
     // ═════════════════════════════════════════════════════════════════════════
-    /*
-     * A vertical list of titles, not a wall of covers.
-     *
-     * The cover already has a place — the spotlight above, at a size worth looking at — so
-     * repeating it forty times small was showing the same thing twice and reading neither
-     * well. A list gives every game its name in full, which a 200px cover cannot, and one
-     * axis to move along instead of two: on a pad that is the difference between arriving at
-     * a game and hunting for it.
-     */
+    // Tabs and filtering are shared by the title list and cover grid.
     // The tabs over the library (5.9.0; ALL since 6.1.0). Clickable for the mouse. LB/RB sit at
     // the two ends (6.1.0 — they were LT/RT, named in the status bar), the way the dialogs'
     // SectionTabBar draws them: the prompt beside the thing it moves needs no caption.
@@ -1330,7 +1338,9 @@ FocusScope {
     // The right stick scrolls this view (7.0.0) — see PadScroll.
     PadScroll { flick: appGrid }
     ListView {
-        id: appGrid
+        id: appList
+        visible: !appsRoot.gridLayout
+        enabled: visible
         // Straight under the tabs: the column's caption is the list's own first section
         // header, which scrolls away with the rows it names.
         anchors.top: libraryTabs.bottom
@@ -1439,7 +1449,7 @@ FocusScope {
          */
         property string firstSection: ""
         function updateContinue() {
-            firstSection = count > 0 ? appModel.sectionAt(0) : ""
+            firstSection = appModel && count > 0 ? appModel.sectionAt(0) : ""
         }
         onCountChanged: updateContinue()
 
@@ -1457,9 +1467,9 @@ FocusScope {
          * default), so each heading now leaves the screen when its rows do.
          */
         section.delegate: Item {
-            width: appGrid.width
+            width: appList.width
             readonly property bool _isContinue: section === "continue"
-            readonly property bool _isFirst: section === appGrid.firstSection
+            readonly property bool _isFirst: section === appList.firstSection
             // The first heading needs no room above it — the caption line already sits there.
             height: _isFirst ? appsRoot._px(24) : appsRoot._px(46)
 
@@ -1491,19 +1501,20 @@ FocusScope {
             }
         }
 
-        focus: true
-        activeFocusOnTab: true
+        focus: !appsRoot.gridLayout
+        activeFocusOnTab: visible
 
         readonly property int _rowH: appsRoot._px(84)
         readonly property int _gap:  appsRoot._px(6)
 
-        Component.onCompleted: {
+        function initializeLibrary() {
             // The tab first: it decides which rows exist. Then row 0 is the game you last
             // played whenever there is one — the model sorts it there — so opening the page
             // already has A pointed at it.
             appsRoot._pickOpeningTab()
-            currentIndex = 0
+            appsRoot.appGrid.currentIndex = 0
             updateContinue()
+            appsRoot.focusLibrary()
             appModel.computerLost.connect(computerLost)
             activated = true
 
@@ -1520,8 +1531,11 @@ FocusScope {
                     if (directLaunchAppIndex < 0) appsRoot.setLibraryTab(startTab, false)
                 }
                 if (directLaunchAppIndex >= 0) {
-                    currentIndex = directLaunchAppIndex
-                    currentItem.launchOrResumeSelectedApp(false)
+                    appsRoot.appGrid.currentIndex = directLaunchAppIndex
+                    Qt.callLater(function() {
+                        if (appsRoot.appGrid.currentItem)
+                            appsRoot.appGrid.currentItem.launchOrResumeSelectedApp(false)
+                    })
                     showGames = true
                 }
             }
@@ -1594,11 +1608,88 @@ FocusScope {
 
         model: appModel
 
-        delegate: NavigableItemDelegate {
+        delegate: libraryDelegate
+
+        /*
+         * On the left edge of the list, not the right.
+         *
+         * A ScrollBar sits at the trailing edge by default, which was fine when the list was
+         * the whole page. With the library in the left column that edge lands in the middle
+         * of the screen, between the two halves, where it reads as a divider rather than as
+         * the scrollbar of anything. On the outside edge it separates nothing and stays
+         * attached to the column it describes.
+         *
+         * ⚠️ mirrored, not a negative x: the handle has to grow from the correct side, and
+         * LayoutMirroring on the bar alone flips it without touching the list's own layout.
+         */
+        ScrollBar.vertical: ScrollBar {
+            parent: appList
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: -appsRoot._px(14)
+            LayoutMirroring.enabled: true
+        }
+    }
+
+
+    GridView {
+        id: coverGrid
+        anchors.top: libraryTabs.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.topMargin: appsRoot._px(8)
+        anchors.leftMargin: appsRoot._sideMargin - appsRoot._px(10)
+        anchors.rightMargin: appsRoot._sideMargin - appsRoot._px(10)
+        anchors.bottomMargin: appsRoot._px(58)
+        visible: appsRoot.gridLayout
+        enabled: visible
+        focus: appsRoot.gridLayout
+        activeFocusOnTab: visible
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        keyNavigationWraps: false
+
+        readonly property int columns: Math.max(1, Math.floor(width / appsRoot._px(170)))
+        cellWidth: Math.floor(width / columns)
+        cellHeight: Math.round((cellWidth - appsRoot._px(20)) * 1.5) + appsRoot._px(70)
+        highlightRangeMode: SdlGamepadKeyNavigation.inputMode === "key"
+                            ? GridView.ApplyRange : GridView.NoHighlightRange
+        preferredHighlightBegin: 0
+        preferredHighlightEnd: height
+        highlightMoveDuration: Theme.reduceAnimations ? 0 : 160
+
+        // Shared model: switching layout never rebuilds host/session state.
+        property alias appModel: appList.appModel
+        property alias storeMap: appList.storeMap
+        function updateContinue() { appList.updateContinue() }
+        model: appModel
+        delegate: libraryDelegate
+
+        // A newly paired host can populate its library after the page opens.
+        onCountChanged: {
+            if (count > 0 && currentIndex < 0) currentIndex = 0
+        }
+
+        Keys.onReturnPressed: function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
+        Keys.onEnterPressed: function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
+        Keys.onSpacePressed: function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
+
+        ScrollBar.vertical: ScrollBar {}
+    }
+
+    // The launch, resume and quit paths are identical in both layouts.
+    Component {
+        id: libraryDelegate
+        NavigableItemDelegate {
             id: appDelegate
-            width: appGrid.width
-            height: appGrid._rowH
-            grid: appGrid
+            readonly property var libraryView: ListView.view || GridView.view
+            readonly property bool _gridTile: libraryView === coverGrid
+            width: _gridTile ? libraryView.cellWidth : libraryView.width
+            height: _gridTile ? libraryView.cellHeight : libraryView._rowH
+            grid: libraryView
+            Accessible.name: model.name
 
             // Exposed to appsRoot for the hero and the status-bar prompts.
             property int    _appId:      model.appid
@@ -1615,17 +1706,18 @@ FocusScope {
             // Selected is not the same as focused: a dialog on top of the page takes the
             // focus away while the spotlight still shows the selected game, so the row keeps
             // a quiet marker in that case and only lights up when the list itself has it.
-            readonly property bool _selected: appGrid.currentIndex === index
+            readonly property bool _selected: libraryView.currentIndex === index
             readonly property bool _lit:
-                appDelegate.inputFocused || (_selected && appGrid.activeFocus)
+                appDelegate.inputFocused || (_selected && libraryView.activeFocus)
 
             // Disable Material's default focus highlight; the row draws its own.
             background: Item { anchors.fill: parent }
 
             Rectangle {
                 id: row
+                visible: !appDelegate._gridTile
                 anchors.fill: parent
-                anchors.bottomMargin: appGrid._gap
+                anchors.bottomMargin: appDelegate._gridTile ? 0 : libraryView._gap
                 radius: appsRoot._px(10)
 
                 color: (appDelegate._lit && appGrid._glide) ? "transparent"
@@ -1715,7 +1807,7 @@ FocusScope {
                     }
 
                     Label {
-                        property string store: appGrid.storeMap[model.name] || ""
+                        property string store: libraryView.storeMap[model.name] || ""
                         width: parent.width
                         visible: store.length > 0 || model.overridden
                                  || (!model.isApp && model.playtime && model.playtime.length > 0)
@@ -1757,7 +1849,7 @@ FocusScope {
                     color: Theme.accentFill
 
                     SequentialAnimation on opacity {
-                        running: runTag.visible && !Theme.reduceAnimations
+                        running: !appDelegate._gridTile && runTag.visible && !Theme.reduceAnimations
                         // Held while the window is dragged — see WindowMove / AmbientWaves.
                         paused: running && WindowMove.moving
                         loops: Animation.Infinite
@@ -1784,6 +1876,73 @@ FocusScope {
                 //  mouse reaches the same dialog from the Per-game settings button above.)
             }
 
+
+            // Grid mode contains artwork and a title only; metadata stays in List mode.
+            Item {
+                visible: appDelegate._gridTile
+                anchors.fill: parent
+                anchors.margins: appsRoot._px(10)
+
+                Rectangle {
+                    id: tileFrame
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: width * 1.5
+                    radius: appsRoot._px(8)
+                    color: Theme.card
+                    border.width: appDelegate._lit ? 3 : 1
+                    border.color: appDelegate._lit ? Theme.accent : Theme.lineHigh
+
+                    Image {
+                        id: tileArt
+                        anchors.fill: parent
+                        anchors.margins: appsRoot._px(5)
+                        source: model.boxart
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        smooth: true
+                        mipmap: true
+                    }
+
+                    Label {
+                        anchors.fill: parent
+                        anchors.margins: appsRoot._px(12)
+                        visible: tileArt.status !== Image.Ready
+                        text: model.name
+                        color: Theme.text2
+                        font.family: Theme.family
+                        font.pixelSize: appsRoot._px(Theme.fontTitle)
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        wrapMode: Text.Wrap
+                        elide: Text.ElideRight
+                    }
+
+                    Behavior on border.color {
+                        enabled: !Theme.reduceAnimations
+                        ColorAnimation { duration: 120 }
+                    }
+                }
+
+                Label {
+                    anchors.top: tileFrame.bottom
+                    anchors.topMargin: appsRoot._px(8)
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: appsRoot._px(42)
+                    text: model.name
+                    color: appDelegate._lit ? Theme.text : Theme.text2
+                    font.family: Theme.family
+                    font.pixelSize: appsRoot._px(Theme.fontBody)
+                    font.weight: appDelegate._lit ? Font.DemiBold : Font.Normal
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                }
+            }
+
             function launchOrResumeSelectedApp(quitExistingApp) {
                 // Drop stale events that arrive after a stream session pops.
                 if (Window.window && Window.window._streamJustEnded === true) {
@@ -1796,8 +1955,8 @@ FocusScope {
                     return
                 }
 
-                // Must use appGrid.appModel — bare appModel is not in scope.
-                var m = appGrid.appModel
+                // Must use libraryView.appModel — bare appModel is not in scope.
+                var m = libraryView.appModel
                 var runningId = m.getRunningAppId()
                 // A host control runs beside the game rather than replacing it (Remote Input
                 // and Remote Monitor exist precisely to be used while one is running), so it
@@ -1848,15 +2007,15 @@ FocusScope {
              */
             onHoveredChanged: {
                 if (!hovered || SdlGamepadKeyNavigation.inputMode === "key"
-                        || appGrid.currentIndex === index)
+                        || libraryView.currentIndex === index)
                     return
-                var top = appDelegate.mapToItem(appGrid, 0, 0).y
-                if (top >= 0 && top + appDelegate.height <= appGrid.height)
-                    appGrid.currentIndex = index
+                var top = appDelegate.mapToItem(libraryView, 0, 0).y
+                if (top >= 0 && top + appDelegate.height <= libraryView.height)
+                    libraryView.currentIndex = index
             }
 
             onClicked: {
-                appGrid.currentIndex = index
+                libraryView.currentIndex = index
                 appsRoot.focusLibrary()
                 launchOrResumeSelectedApp(true)
             }
@@ -1864,33 +2023,13 @@ FocusScope {
             Keys.onEnterPressed:  launchOrResumeSelectedApp(true)
 
             function doQuitGame() {
-                quitAppDialog.appName = appGrid.appModel.getRunningAppName()
-                quitAppDialog.boxArt = appGrid.appModel.getRunningAppBoxArt()
+                quitAppDialog.appName = libraryView.appModel.getRunningAppName()
+                quitAppDialog.boxArt = libraryView.appModel.getRunningAppBoxArt()
                 quitAppDialog.segueToStream = false
                 quitAppDialog.open()
             }
         }
 
-        /*
-         * On the left edge of the list, not the right.
-         *
-         * A ScrollBar sits at the trailing edge by default, which was fine when the list was
-         * the whole page. With the library in the left column that edge lands in the middle
-         * of the screen, between the two halves, where it reads as a divider rather than as
-         * the scrollbar of anything. On the outside edge it separates nothing and stays
-         * attached to the column it describes.
-         *
-         * ⚠️ mirrored, not a negative x: the handle has to grow from the correct side, and
-         * LayoutMirroring on the bar alone flips it without touching the list's own layout.
-         */
-        ScrollBar.vertical: ScrollBar {
-            parent: appGrid
-            anchors.left: parent.left
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.leftMargin: -appsRoot._px(14)
-            LayoutMirroring.enabled: true
-        }
     }
 
     // ── Empty state ───────────────────────────────────────────────────────────

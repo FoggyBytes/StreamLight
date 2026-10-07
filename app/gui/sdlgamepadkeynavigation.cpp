@@ -629,6 +629,10 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
                 // only the page's own handler does. Start still does NOT open Settings (see Y).
                 sendKey(type, Qt::Key_F18);
                 break;
+            case SDL_CONTROLLER_BUTTON_LEFTSTICK:
+                // Left stick click switches the library between covers and the title list.
+                sendKey(type, Qt::Key_F20);
+                break;
             case SDL_CONTROLLER_BUTTON_RIGHTSTICK:
                 // Right stick click (6.1.0): moves the selected entry between GAMES and APPS on
                 // the host page; on Home (7.0.0) it switches between Dark and Light. Inert key,

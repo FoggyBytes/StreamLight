@@ -1,13 +1,13 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Build release completo di StreamLight — FoggyBytes
+    Build release completo di StreamLight - FoggyBytes
     Esegui con doppio clic o da PowerShell senza parametri.
 
 .DESCRIPTION
     1. Aggiunge Qt 6.12.0 e 7-Zip al PATH della sessione
     2. Esegue build-arch.bat release (clean build completo)
-       Il bat fallisce volutamente alla fine (flag windeployqt non supportato) — e' normale
+       Il bat fallisce volutamente alla fine (flag windeployqt non supportato) - e' normale
     3. Verifica che StreamLight.exe sia stato prodotto
     4. Esegue windeployqt con i flag corretti per Qt 6.12.0
     5. Copia StreamLight.exe e le DLL di libs nella cartella di output finale
@@ -29,7 +29,7 @@ trap {
 # ---------------------------------------------------------------------------
 # Percorsi fissi
 # ---------------------------------------------------------------------------
-$StreamLightRoot  = 'C:\Users\marce\source\repos\StreamLight'
+$StreamLightRoot  = $PSScriptRoot
 $QtBinPath        = 'C:\Qt\6.12.0\msvc2022_64\bin'
 $SevenZipPath     = 'C:\Program Files\7-Zip'
 $WinDeployQt      = Join-Path $QtBinPath 'windeployqt.exe'
@@ -70,14 +70,14 @@ function Write-Fail {
 # ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "========================================" -ForegroundColor White
-Write-Host "  StreamLight — Build Release Completo" -ForegroundColor White
+Write-Host "  StreamLight - Build Release Completo" -ForegroundColor White
 Write-Host "  FoggyBytes" -ForegroundColor White
 Write-Host "========================================" -ForegroundColor White
 Write-Host "  Data: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "  Output: $OutputFolder"
 
 # ---------------------------------------------------------------------------
-# Step 0 — Verifica prerequisiti
+# Step 0 - Verifica prerequisiti
 # ---------------------------------------------------------------------------
 Write-Step "Verifica prerequisiti"
 
@@ -118,7 +118,7 @@ if (-not (Test-Path $LibsFolder)) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 1 — Aggiunge Qt e 7-Zip al PATH della sessione
+# Step 1 - Aggiunge Qt e 7-Zip al PATH della sessione
 # ---------------------------------------------------------------------------
 Write-Step "Configurazione PATH (Qt + 7-Zip)"
 
@@ -126,7 +126,7 @@ $env:PATH = "$QtBinPath;$SevenZipPath;$env:PATH"
 Write-OK "PATH aggiornato per la sessione corrente"
 
 # ---------------------------------------------------------------------------
-# Step 2 — Clean build via build-arch.bat
+# Step 2 - Clean build via build-arch.bat
 # ---------------------------------------------------------------------------
 Write-Step "Avvio clean build (build-arch.bat release)"
 Write-Host "    Questo step richiede diversi minuti. Attendere..."
@@ -148,7 +148,7 @@ try {
     Pop-Location
 }
 
-# Il bat fallisce volutamente — verifichiamo che l'exe esista prima di considerarlo un errore reale
+# Il bat fallisce volutamente - verifichiamo che l'exe esista prima di considerarlo un errore reale
 if (-not (Test-Path $CompiledExe)) {
     Write-Fail "build-arch.bat ha fallito E StreamLight.exe non e' stato prodotto."
     Write-Fail "Controlla l'output sopra per errori di compilazione reali."
@@ -163,10 +163,10 @@ if (-not (Test-Path $CompiledExe)) {
 }
 
 Write-OK "StreamLight.exe prodotto correttamente"
-Write-Warn "build-arch.bat ha restituito exit code $batExitCode (atteso — step windeployqt del bat ignorato)"
+Write-Warn "build-arch.bat ha restituito exit code $batExitCode (atteso - step windeployqt del bat ignorato)"
 
 # ---------------------------------------------------------------------------
-# Step 3 — Prepara la cartella di output finale
+# Step 3 - Prepara la cartella di output finale
 # ---------------------------------------------------------------------------
 Write-Step "Preparazione cartella output: $OutputFolder"
 
@@ -178,7 +178,7 @@ New-Item -ItemType Directory -Force -Path $OutputFolder | Out-Null
 Write-OK "Cartella output creata"
 
 # ---------------------------------------------------------------------------
-# Step 4 — Copia le DLL di libs
+# Step 4 - Copia le DLL di libs
 # ---------------------------------------------------------------------------
 Write-Step "Copia DLL di libs (libs/windows/lib/x64)"
 
@@ -193,11 +193,11 @@ if ($LibsAvailable) {
         Write-OK "$($libDlls.Count) DLL copiate da libs"
     }
 } else {
-    Write-Warn "libs non disponibili — DLL non copiate"
+    Write-Warn "libs non disponibili - DLL non copiate"
 }
 
 # ---------------------------------------------------------------------------
-# Step 5 — Copia AntiHooking.dll e gamecontrollerdb.txt da deploy-x64-release
+# Step 5 - Copia AntiHooking.dll e gamecontrollerdb.txt da deploy-x64-release
 # ---------------------------------------------------------------------------
 Write-Step "Copia file aggiuntivi da deploy-x64-release"
 
@@ -206,7 +206,7 @@ if (Test-Path $antiHooking) {
     Copy-Item $antiHooking -Destination $OutputFolder -Force
     Write-OK "AntiHooking.dll copiato"
 } else {
-    Write-Warn "AntiHooking.dll non trovato in $DeployFolder — saltato"
+    Write-Warn "AntiHooking.dll non trovato in $DeployFolder - saltato"
 }
 
 $gcDb = Join-Path $DeployFolder 'gamecontrollerdb.txt'
@@ -214,11 +214,11 @@ if (Test-Path $gcDb) {
     Copy-Item $gcDb -Destination $OutputFolder -Force
     Write-OK "gamecontrollerdb.txt copiato"
 } else {
-    Write-Warn "gamecontrollerdb.txt non trovato in $DeployFolder — saltato"
+    Write-Warn "gamecontrollerdb.txt non trovato in $DeployFolder - saltato"
 }
 
 # ---------------------------------------------------------------------------
-# Step 6 — windeployqt (con flag corretti per Qt 6.12.0)
+# Step 6 - windeployqt (con flag corretti per Qt 6.12.0)
 # ---------------------------------------------------------------------------
 Write-Step "Deploy dipendenze Qt (windeployqt)"
 Write-Host "    Exe sorgente: $CompiledExe"
@@ -255,8 +255,8 @@ if ($LASTEXITCODE -ne 0) {
 Write-OK "windeployqt completato"
 
 # ---------------------------------------------------------------------------
-# Step 7 — Copia StreamLight.exe nella cartella di output
-# (windeployqt non copia l'exe — lo fa questo step)
+# Step 7 - Copia StreamLight.exe nella cartella di output
+# (windeployqt non copia l'exe - lo fa questo step)
 # ---------------------------------------------------------------------------
 Write-Step "Copia StreamLight.exe nell'output finale"
 
@@ -264,7 +264,7 @@ Copy-Item $CompiledExe -Destination $OutputFolder -Force
 Write-OK "StreamLight.exe copiato in $OutputFolder"
 
 # ---------------------------------------------------------------------------
-# Step 8 — Pulizia directory Qt inutilizzate (speculare a build-arch.bat)
+# Step 8 - Pulizia directory Qt inutilizzate (speculare a build-arch.bat)
 # ---------------------------------------------------------------------------
 Write-Step "Pulizia directory Qt non necessarie"
 

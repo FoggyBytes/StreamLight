@@ -421,6 +421,18 @@ FocusScope {
         case "pin":
             if (appsLoader.item && appsLoader.item.togglePinFocused) appsLoader.item.togglePinFocused()
             break
+        case "libraryLayout":
+            if (appsLoader.item) appsLoader.item.toggleLibraryLayout()
+            break
+        case "launchApp":
+            if (appsLoader.item) appsLoader.item.resumeFocusedApp()
+            break
+        case "customizeApp":
+            if (appsLoader.item) appsLoader.item.openCustomizeForFocused()
+            break
+        case "stopApp":
+            if (appsLoader.item) appsLoader.item.stopFocusedApp()
+            break
         case "prevTab":
             SdlGamepadKeyNavigation.simulateKey(Qt.Key_PageUp)
             break
@@ -784,10 +796,8 @@ FocusScope {
             { btn: "RS", key: "T",   act: Theme.light ? qsTr("Dark theme") : qsTr("Light theme"), kind: "theme" },
             { btn: "B",  key: "Esc", act: qsTr("Exit"),     kind: "back" }
         ]
-        // Same as Home, and for the same reason: A, X and Select are drawn on the host
-        // page's own buttons, next to the words for what they do, so the bar does not say it
-        // a second time. A prompt row that repeats what a button already carries is the
-        // arrangement that let the two disagree.
+        // List mode draws A, X and Select on the spotlight buttons. Grid mode puts those
+        // actions in this bar. Left-stick click switches layout in either mode.
         //
         // What is left is what has no button to sit on: Y opens a screen that is not on this
         // page, and B leaves it. "Hosts", not "Back" — B always lands in the same place from
@@ -805,6 +815,16 @@ FocusScope {
                 { btn: "B",  key: "Esc",  act: qsTr("Hosts"),    kind: "back" }
             ]
             var page = appsLoader.item
+            if (page) {
+                h.push({ btn: "LS", key: "V", act: page.layoutActionLabel, kind: "libraryLayout" })
+                // Grid mode has no spotlight buttons, so expose their actions here.
+                if (page.gridLayout && page.focusedAppName.length > 0) {
+                    h.unshift({ btn: "A", key: "Enter", act: page.focusedVerb, kind: "launchApp" })
+                    h.push({ btn: "SELECT", key: "G", act: qsTr("Per-game settings"), kind: "customizeApp" })
+                    if (page.focusedAppIsRunning)
+                        h.push({ btn: "X", key: "X", act: qsTr("Stop"), kind: "stopApp" })
+                }
+            }
             if (page && page.focusedPinnable === true)
                 h.push({ btn: "START", key: "P",
                          act: page.focusedPinned === true ? qsTr("Unpin") : qsTr("Pin"),

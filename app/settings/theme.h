@@ -249,6 +249,9 @@ class Theme : public QObject
      */
     Q_PROPERTY(bool startupAnimation READ startupAnimation WRITE setStartupAnimation NOTIFY changed)
 
+    // Library layout, shared by hosts and remembered across application restarts.
+    Q_PROPERTY(bool libraryGrid READ libraryGrid WRITE setLibraryGrid NOTIFY libraryGridChanged)
+
     /**
      * The host page's background (7.0.0, 13/10/2026): false = the app's floor and its waves, as
      * on Home; true = the focused game's cover, blurred, as in 6.5.1 (CoverAmbient — lifted
@@ -437,6 +440,7 @@ public:
     void  setTextScale(qreal s) { if (qFuzzyCompare(s, m_TextScale)) return; m_TextScale = s; emit textScaleChanged(); }
     bool startupAnimation() const { return m_StartupAnimation; }
     bool hostPageCovers() const { return m_HostPageCovers; }
+    bool libraryGrid() const { return m_LibraryGrid; }
 
     qreal uiScale() const { return m_UiScale; }
     qreal heightFit() const { return m_HeightFit; }
@@ -453,6 +457,7 @@ public:
     Q_INVOKABLE int interfaceRefreshHz() const;
     void setStartupAnimation(bool on);
     void setHostPageCovers(bool on);
+    void setLibraryGrid(bool on);
     void setUiScale(qreal s);
 
     /**
@@ -486,6 +491,7 @@ public:
 signals:
     void changed();
     void textScaleChanged();
+    void libraryGridChanged();
     void uiScaleChanged();
     void scheduleChanged();
     void holdChanged();
@@ -544,6 +550,7 @@ private:
     qreal  m_HeightFit = 100.0;
     bool   m_StartupAnimation = true;
     bool   m_HostPageCovers = false;
+    bool   m_LibraryGrid = true;
 
     // 1.0 until AppShell has a width to measure. Not persisted: it describes the window the
     // app happens to be in, not anything the user chose.
