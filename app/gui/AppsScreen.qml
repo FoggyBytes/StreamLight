@@ -1651,7 +1651,7 @@ FocusScope {
         boundsBehavior: Flickable.StopAtBounds
         keyNavigationWraps: false
 
-        readonly property int targetCellWidth: appsRoot._px(Theme.libraryCoverSize === 0 ? 140
+        readonly property int targetCellWidth: appsRoot._px(Theme.libraryCoverSize === 0 ? 120
                                                           : Theme.libraryCoverSize === 2 ? 220 : 170)
         readonly property int columns: Math.max(1, Math.floor(width / targetCellWidth))
         cellWidth: Math.floor(width / columns)
