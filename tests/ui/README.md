@@ -5,7 +5,8 @@ or the clickable layout prompt switches between Grid and List. The choice is
 saved globally across hosts and restarts. X retains its existing Stop action.
 
 Grid mode shows covers and game titles across the full page, without the
-spotlight, store metadata, play time or session figures. Missing covers display
+spotlight, store metadata, play time or session figures. Covers have no idle frame
+or padding; the focused cover has an accent outline. Missing covers display
 the title as a fallback. List mode keeps the existing sections and spotlight.
 
 Run the JavaScript selection/session regressions without Qt dependencies:

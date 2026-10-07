@@ -1883,21 +1883,22 @@ FocusScope {
                 anchors.fill: parent
                 anchors.margins: appsRoot._px(10)
 
-                Rectangle {
+                Item {
                     id: tileFrame
                     anchors.top: parent.top
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: width * 1.5
-                    radius: appsRoot._px(8)
-                    color: Theme.card
-                    border.width: appDelegate._lit ? 3 : 1
-                    border.color: appDelegate._lit ? Theme.accent : Theme.lineHigh
+
+                    Rectangle {
+                        anchors.fill: parent
+                        visible: tileArt.status !== Image.Ready
+                        color: Theme.card
+                    }
 
                     Image {
                         id: tileArt
                         anchors.fill: parent
-                        anchors.margins: appsRoot._px(5)
                         source: model.boxart
                         fillMode: Image.PreserveAspectFit
                         asynchronous: true
@@ -1919,9 +1920,14 @@ FocusScope {
                         elide: Text.ElideRight
                     }
 
-                    Behavior on border.color {
-                        enabled: !Theme.reduceAnimations
-                        ColorAnimation { duration: 120 }
+                    Rectangle {
+                        anchors.centerIn: tileArt
+                        width: tileArt.status === Image.Ready ? tileArt.paintedWidth : tileFrame.width
+                        height: tileArt.status === Image.Ready ? tileArt.paintedHeight : tileFrame.height
+                        visible: appDelegate._lit
+                        color: "transparent"
+                        border.width: 3
+                        border.color: Theme.accent
                     }
                 }
 
