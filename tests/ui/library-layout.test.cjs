@@ -23,6 +23,76 @@ test('grid covers reuse HeroCover styling without an idle frame or inner padding
     assert.equal((tile.match(/border\.width:/g) || []).length, 1);
 });
 
+function gridBadgeFixture() {
+    const binding = source.match(/readonly property string _gridBadgeKind: ([\s\S]*?)(?=\n            width:)/);
+    assert.ok(binding, 'Missing grid badge binding');
+    const globals = {
+        _gridTile: true, _running: false, _lit: false,
+        model: { section: 'all' }, Theme: { libraryShowTitles: true },
+    };
+    const context = vm.createContext(globals);
+    return { globals, kind: () => vm.runInContext(`(${binding[1]})`, context) };
+}
+
+test('grid streaming badge takes priority over last played and follows running state', () => {
+    const f = gridBadgeFixture();
+    for (const section of ['continue', 'pinned', 'all']) {
+        f.globals.model.section = section;
+        f.globals._running = true;
+        assert.equal(f.kind(), 'streaming');
+        f.globals._running = false;
+        assert.equal(f.kind(), section === 'continue' ? 'lastPlayed' : '');
+    }
+});
+
+test('grid last-played badge uses the existing single Continue role, not the first index', () => {
+    const f = gridBadgeFixture();
+    f.globals.index = 0;
+    assert.equal(f.kind(), '');
+    f.globals.model.section = 'pinned';
+    assert.equal(f.kind(), '');
+    f.globals.model.section = 'continue';
+    assert.equal(f.kind(), 'lastPlayed');
+    f.globals.model.section = 'all';
+    assert.equal(f.kind(), '');
+});
+
+test('grid badges remain present without focus or titles and do not change List mode', () => {
+    const f = gridBadgeFixture();
+    for (const running of [false, true]) {
+        f.globals._running = running;
+        f.globals.model.section = 'continue';
+        for (const focused of [false, true]) {
+            f.globals._lit = focused;
+            for (const titles of [false, true]) {
+                f.globals.Theme.libraryShowTitles = titles;
+                assert.equal(f.kind(), running ? 'streaming' : 'lastPlayed');
+            }
+        }
+        f.globals._gridTile = false;
+        assert.equal(f.kind(), '');
+        f.globals._gridTile = true;
+    }
+});
+
+test('grid badges are inset on the artwork, use status-specific colours and add no click handlers', () => {
+    const start = source.indexOf('id: gridStatusBadge');
+    assert.ok(start >= 0, 'Missing grid badge');
+    const end = source.indexOf('anchors.top: tileFrame.bottom', start);
+    assert.ok(end > start, 'Missing grid cover title');
+    const badge = source.slice(start, end);
+    assert.match(badge, /anchors\.top: tileArt\.top/);
+    assert.match(badge, /anchors\.right: tileArt\.right/);
+    assert.match(badge, /visible: appDelegate\._gridBadgeKind !== ""/);
+    assert.match(badge, /color: appDelegate\._gridBadgeKind === "streaming" \? Theme\.accent/);
+    assert.match(badge, /Qt\.rgba\(Theme\.card\.r, Theme\.card\.g, Theme\.card\.b, 0\.92\)/);
+    assert.match(badge, /color: appDelegate\._gridBadgeKind === "streaming" \? Theme\.onAccent : Theme\.text/);
+    assert.match(badge, /qsTr\("STREAMING"\)/);
+    assert.match(badge, /qsTr\("LAST PLAYED"\)/);
+    assert.doesNotMatch(badge, /MouseArea|TapHandler|onClicked|libraryShowTitles|_lit/);
+    assert.match(source, /Accessible\.description: _gridBadgeKind === "streaming"/);
+});
+
 function gridMetrics(width, scale, coverSize = 1, showTitles = true) {
     const start = source.indexOf('id: coverGrid');
     const end = source.indexOf('// Shared model:', start);

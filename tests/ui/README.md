@@ -16,6 +16,11 @@ rounded corners, shadow and 2:3 crop, with no idle frame or padding; the focused
 cover has a rounded accent outline. Missing covers display
 the title as a fallback. List mode keeps the existing sections and spotlight.
 
+Grid covers show a top-right STREAMING badge for a running app, or a subdued
+LAST PLAYED badge for the same single game that List mode promotes. STREAMING
+takes priority when both apply. Badges remain visible with titles hidden and
+when the card is not selected. The existing ordering and List mode are unchanged.
+
 Run the JavaScript selection/session regressions without Qt dependencies:
 
 ```powershell
@@ -47,3 +52,9 @@ Manual verification using the Windows CI build:
    off and on. Check column count, row spacing, scrolling, selection and launch,
    including the last row and missing covers. Verify both options survive a restart
    and do not affect List mode.
+8. With a running app, check its STREAMING badge remains visible while selecting
+   another cover and with titles off. Check only the existing single last-played
+   game has LAST PLAYED, and STREAMING replaces that badge if it is also running.
+   After stopping or ending a session, verify the badges follow the model's state.
+   Check hosts with no play history and the Apps tab do not mark an arbitrary first
+   entry as LAST PLAYED. Confirm badges do not intercept cover clicks.

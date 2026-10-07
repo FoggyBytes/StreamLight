@@ -1689,10 +1689,15 @@ FocusScope {
             id: appDelegate
             readonly property var libraryView: ListView.view || GridView.view
             readonly property bool _gridTile: libraryView === coverGrid
+            readonly property string _gridBadgeKind: !_gridTile ? ""
+                                                     : _running ? "streaming"
+                                                     : model.section === "continue" ? "lastPlayed" : ""
             width: _gridTile ? libraryView.cellWidth : libraryView.width
             height: _gridTile ? libraryView.cellHeight : libraryView._rowH
             grid: libraryView
             Accessible.name: model.name
+            Accessible.description: _gridBadgeKind === "streaming" ? qsTr("Streaming")
+                                    : _gridBadgeKind === "lastPlayed" ? qsTr("Last played") : ""
 
             // Exposed to appsRoot for the hero and the status-bar prompts.
             property int    _appId:      model.appid
@@ -1880,7 +1885,6 @@ FocusScope {
             }
 
 
-            // Grid mode contains artwork and a title only; metadata stays in List mode.
             Item {
                 visible: appDelegate._gridTile
                 anchors.fill: parent
@@ -1931,6 +1935,39 @@ FocusScope {
                         color: "transparent"
                         border.width: 3
                         border.color: Theme.accent
+                    }
+
+                    Rectangle {
+                        id: gridStatusBadge
+                        anchors.top: tileArt.top
+                        anchors.right: tileArt.right
+                        anchors.topMargin: appsRoot._px(8)
+                        anchors.rightMargin: appsRoot._px(8)
+                        visible: appDelegate._gridBadgeKind !== ""
+                        width: Math.min(gridStatusLabel.implicitWidth + appsRoot._px(16),
+                                        Math.max(0, tileArt.width - appsRoot._px(16)))
+                        height: appsRoot._px(24)
+                        radius: appsRoot._px(6)
+                        color: appDelegate._gridBadgeKind === "streaming" ? Theme.accent
+                               : Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, 0.92)
+
+                        Label {
+                            id: gridStatusLabel
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: appsRoot._px(8)
+                            anchors.rightMargin: appsRoot._px(8)
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: appDelegate._gridBadgeKind === "streaming" ? qsTr("STREAMING")
+                                  : appDelegate._gridBadgeKind === "lastPlayed" ? qsTr("LAST PLAYED") : ""
+                            color: appDelegate._gridBadgeKind === "streaming" ? Theme.onAccent : Theme.text
+                            font.family: Theme.family
+                            font.pixelSize: appsRoot._px(Theme.fontCaption)
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                        }
                     }
                 }
 
