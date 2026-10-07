@@ -48,6 +48,7 @@ Item {
         : buttonKey === "RT"     ? (_ps ? "qrc:/res/pad_ps_r2.svg"       : _sw ? "qrc:/res/pad_switch_zr.svg"    : _st ? "qrc:/res/pad_steam_r2.svg"   : "qrc:/res/pad_xbox_rt.svg")
         : buttonKey === "SELECT" ? (_ps ? "qrc:/res/pad_ps_create.svg"   : _sw ? "qrc:/res/pad_switch_minus.svg" : _st ? "qrc:/res/pad_steam_view.svg" : "qrc:/res/pad_xbox_view.svg")
         : buttonKey === "START"  ? (_ps ? "qrc:/res/pad_ps_options.svg"  : _sw ? (Theme.light ? "qrc:/res/pad_switch_plus_dark.svg" : "qrc:/res/pad_switch_plus.svg")  : _st ? "qrc:/res/pad_steam_menu.svg" : "qrc:/res/pad_xbox_start.svg")
+        : buttonKey === "LS"     ? (_ps ? "qrc:/res/pad_ps_l3.svg"       : _sw ? "qrc:/res/pad_switch_ls.svg"    : _st ? "qrc:/res/pad_steam_l3.svg"   : "qrc:/res/pad_xbox_ls.svg")
         : buttonKey === "RS"     ? (_ps ? "qrc:/res/pad_ps_r3.svg"       : _sw ? "qrc:/res/pad_switch_rs.svg"    : _st ? "qrc:/res/pad_steam_r3.svg"   : "qrc:/res/pad_xbox_rs.svg")
         // 7.0.0: the right stick held up or down, not clicked — the "Scroll" prompt.
         : buttonKey === "RSCROLL" ? (_ps ? "qrc:/res/pad_ps_r_scroll.svg" : _sw ? "qrc:/res/pad_switch_rs_scroll.svg" : _st ? "qrc:/res/pad_steam_rs_scroll.svg" : "qrc:/res/pad_xbox_rs_scroll.svg")
@@ -80,7 +81,7 @@ Item {
         border.width: 1
         Text {
             anchors.centerIn: parent
-            text: glyph.buttonKey === "LS" ? (glyph._ps ? "L3" : "LS") : glyph.label
+            text: glyph.label
             color: Theme.text
             font.family: Theme.family
             font.pixelSize: Math.max(11, glyph.size - 11)
