@@ -1651,9 +1651,12 @@ FocusScope {
         boundsBehavior: Flickable.StopAtBounds
         keyNavigationWraps: false
 
-        readonly property int columns: Math.max(1, Math.floor(width / appsRoot._px(170)))
+        readonly property int targetCellWidth: appsRoot._px(Theme.libraryCoverSize === 0 ? 140
+                                                          : Theme.libraryCoverSize === 2 ? 220 : 170)
+        readonly property int columns: Math.max(1, Math.floor(width / targetCellWidth))
         cellWidth: Math.floor(width / columns)
-        cellHeight: Math.round((cellWidth - appsRoot._px(20)) * 1.5) + appsRoot._px(70)
+        cellHeight: Math.round((cellWidth - appsRoot._px(20)) * 1.5)
+                    + appsRoot._px(Theme.libraryShowTitles ? 70 : 32)
         highlightRangeMode: SdlGamepadKeyNavigation.inputMode === "key"
                             ? GridView.ApplyRange : GridView.NoHighlightRange
         preferredHighlightBegin: 0
@@ -1894,16 +1897,17 @@ FocusScope {
                         anchors.fill: parent
                         visible: tileArt.status !== Image.Ready
                         color: Theme.card
+                        radius: tileArt.radius
                     }
 
-                    Image {
+                    HeroCover {
                         id: tileArt
-                        anchors.fill: parent
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        height: parent.height
                         source: model.boxart
-                        fillMode: Image.PreserveAspectFit
-                        asynchronous: true
-                        smooth: true
-                        mipmap: true
+                        radius: appsRoot._px(10)
+                        shadow: appDelegate._gridTile && !Theme.reduceAnimations
+                        shadowOffset: appsRoot._px(10)
                     }
 
                     Label {
@@ -1921,9 +1925,8 @@ FocusScope {
                     }
 
                     Rectangle {
-                        anchors.centerIn: tileArt
-                        width: tileArt.status === Image.Ready ? tileArt.paintedWidth : tileFrame.width
-                        height: tileArt.status === Image.Ready ? tileArt.paintedHeight : tileFrame.height
+                        anchors.fill: tileArt
+                        radius: tileArt.radius
                         visible: appDelegate._lit
                         color: "transparent"
                         border.width: 3
@@ -1933,6 +1936,7 @@ FocusScope {
 
                 Label {
                     anchors.top: tileFrame.bottom
+                    visible: Theme.libraryShowTitles
                     anchors.topMargin: appsRoot._px(8)
                     anchors.left: parent.left
                     anchors.right: parent.right
