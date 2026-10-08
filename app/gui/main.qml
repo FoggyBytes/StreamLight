@@ -224,7 +224,8 @@ ApplicationWindow {
 
     Component.onCompleted: {
         // Honor the GUI mode preference (default on first launch: maximised).
-        if (SystemProperties.hasDesktopEnvironment) {
+        // gamescope can't maximize a window, so it would stay at its default size there.
+        if (SystemProperties.hasDesktopEnvironment && !SystemProperties.isRunningGamescope) {
             if (StreamingPreferences.uiDisplayMode === StreamingPreferences.UI_MAXIMIZED) {
                 window.showMaximized()
             } else if (StreamingPreferences.uiDisplayMode === StreamingPreferences.UI_FULLSCREEN) {

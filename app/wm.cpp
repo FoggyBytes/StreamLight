@@ -205,6 +205,14 @@ bool WMUtils::isRunningDesktopEnvironment()
 #endif
 }
 
+bool WMUtils::isRunningGamescope()
+{
+    // Steam's Game Mode (and a nested gamescope) sets this for everything it launches.
+    // gamescope has no window manager to maximize a window and only hands keyboard
+    // focus to whatever it decides is focused, so a few things need doing differently.
+    return qEnvironmentVariableIsSet("GAMESCOPE_WAYLAND_DISPLAY");
+}
+
 bool WMUtils::isGpuSlow()
 {
     bool ret;

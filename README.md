@@ -16,7 +16,7 @@ The streaming engine is upstream Moonlight's — FFmpeg, D3D11VA, DXVA2, libplac
 
 ## ✅ Compatibility
 
-Windows 10 and 11. Works as an ordinary Moonlight-compatible client against any **Sunshine / Apollo / Vibeshine / Vibepollo** host, and unlocks its paired feature set when [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) is running on the host.
+Windows 10 and 11, and **Linux** (AppImage, x86_64 and arm64). Works as an ordinary Moonlight-compatible client against any **Sunshine / Apollo / Vibeshine / Vibepollo** host, and unlocks its paired feature set when [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) is running on the host.
 
 > 🔐 **The bridge is authenticated.** Every command StreamLight sends is signed with its existing Moonlight identity certificate; the host approves each client once, via a 4-digit PIN shown on both screens. **Streaming never depends on it** — without approval you stream normally and simply lose the paired features. Each host card shows its state as a badge (AUTHORIZED / PENDING / DENIED).
 
@@ -134,6 +134,22 @@ StreamTweak (WinUI 3, host PC)  →  Named Pipe  →  StreamTweakService (LocalS
 ## 📝 Installation
 
 Download the latest installer from the [Releases](https://github.com/FoggyBytes/StreamLight/releases) page and run it.
+
+**Linux** — one line:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/FoggyBytes/StreamLight/main/install.sh | bash
+```
+
+The script installs the AppImage for your architecture (x86_64 or arm64) to `/usr/local/bin`, adds a desktop entry, and doubles as the updater — run it again to update. `install.sh --build` builds from source instead.
+
+**SteamOS Game Mode (touchscreen handhelds)** — when StreamLight runs as a non-Steam shortcut, Steam turns the touchscreen into mouse emulation by default, so taps on the stream land in the wrong place. To fix it:
+
+1. StreamLight → **Controller Settings → Edit Layout → Action Sets**, select the **Default** set (adding it to another set or layer won't take effect), then **Add Always-On Command → System → Touchscreen Native Support**.
+2. In StreamLight's settings, turn on **Optimize mouse for remote desktop** so a tap clicks where your finger is instead of acting like a trackpad.
+3. Restart StreamLight from Steam.
+
+Artwork for the Steam library (cover, hero, logo, wide banner) is in `app/deploy/linux/steam/`.
 
 Settings — paired hosts, video / audio / input preferences, client certificate — live under `HKCU\Software\FoggyBytes\StreamLight`, and box art is cached in `%LOCALAPPDATA%\FoggyBytes\StreamLight`. Upgrades from 5.4.0 onward keep everything.
 

@@ -55,8 +55,10 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
         SDL_SetHint(SDL_HINT_MOUSE_AUTO_CAPTURE, "0");
     }
 
-    // Allow gamepad input when the app doesn't have focus if requested
-    m_BackgroundGamepad = prefs.backgroundGamepad;
+    // Allow gamepad input when the app doesn't have focus if requested. Under gamescope
+    // the stream window never gets X keyboard focus, so SDL would drop every pad event;
+    // gamescope only feeds Steam's virtual pad to the focused app anyway.
+    m_BackgroundGamepad = prefs.backgroundGamepad || WMUtils::isRunningGamescope();
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, m_BackgroundGamepad ? "1" : "0");
 
 #if !SDL_VERSION_ATLEAST(2, 0, 15)

@@ -135,6 +135,7 @@ SystemProperties::SystemProperties()
 #endif
 
     hasDesktopEnvironment = WMUtils::isRunningDesktopEnvironment();
+    isRunningGamescope = WMUtils::isRunningGamescope();
     isRunningWayland = WMUtils::isRunningWayland();
     isRunningXWayland = isRunningWayland && QGuiApplication::platformName() == "xcb";
     usesMaterial3Theme = QLibraryInfo::version() >= QVersionNumber(6, 5, 0);

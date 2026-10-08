@@ -1,0 +1,376 @@
+---
+name: Build - Linux AppImage
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_tag:
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'scripts/**'
+      - 'libs/**'
+      - 'moonlight-qt.pro'
+      - '.github/workflows/build-linux.yml'
+
+jobs:
+  build:
+    # The runner only HOSTS the container. The artifact is built INSIDE it, and the
+    # container's glibc becomes the floor the AppImage needs at runtime. Building on
+    # the bare ubuntu-24.04 runner put a GLIBC_2.38 floor on the bundle: all 21
+    # libraries that demanded it (libcrypto, libsystemd, libxkbcommon, libdbus,
+    # libSDL3, libplacebo, libva, ...) came from the runner image, none from our code.
+    # The AppImage therefore could not start on Ubuntu 22.04 or Debian 12.
+    # jammy = glibc 2.35 = the oldest still-supported Ubuntu LTS, which is the bar the
+    # AppImage catalog tests against ("can run on the oldest still-supported LTS
+    # release of Ubuntu"). Nothing else about the build changes: Qt still comes from
+    # aqtinstall, so jammy's 6.2.4 distro Qt is irrelevant (that was the original
+    # reason for leaving jammy, and it stopped applying once aqtinstall landed).
+    # aarch64 builds natively on GitHub's arm64 runner, but in noble (glibc 2.39):
+    # aqt's linux_arm64 Qt is itself built against glibc 2.38 (its syncqt won't
+    # even start in jammy), so that's the floor for the arm64 AppImage anyway.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            aqt_host: linux
+            aqt_arch: gcc_64
+            image: ubuntu:22.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            aqt_host: linux_arm64
+            aqt_arch: gcc_arm64
+            image: ubuntu:24.04
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.image }}
+    defaults:
+      run:
+        # A container job's default shell is /bin/sh (dash), NOT the bash a runner job
+        # gives you — so `pushd`/`popd` are missing and exit 127. This was latent in the
+        # Build dav1d step long before the container: it only ever worked because runner
+        # jobs defaulted to bash. bash -e {0} reproduces that old default exactly
+        # (bash, -e, and no pipefail, which plain `shell: bash` would add and which
+        # could turn an existing `... | grep | head` pipeline into a step failure).
+        shell: bash -e {0}
+    timeout-minutes: 120
+    env:
+      QT_VERSION: 6.8.3
+      # A container has no /dev/fuse, so an AppImage cannot mount itself in order to
+      # run. linuxdeploy and linuxdeploy-plugin-qt ARE AppImages, and without this they
+      # die with "Cannot mount AppImage, please check your FUSE setup" (verified in a
+      # jammy container: direct run exits 141, installing libfuse2 does not help
+      # because the device itself is absent, this variable makes it work).
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+
+    steps:
+      # ubuntu:22.04 is a bare image, not a GitHub runner image: git, sudo, wget, the
+      # compiler and ninja are all absent, and checkout needs git before it can even
+      # run. Everything the runner image used to supply implicitly is installed here.
+      - name: Bootstrap the container
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            sudo git wget curl ca-certificates \
+            build-essential cmake ninja-build pkgconf \
+            python3 python3-pip python-is-python3 \
+            bison flex file libssl-dev zlib1g-dev \
+            patchelf
+          # python-is-python3: shaderc's build script (built from source below) is
+          # invoked as `env python`, and jammy has no bare `python`.
+          # file: on every runner image, absent from bare jammy; linuxdeploy uses it to
+          # identify binary types. Deliberately NOT adding desktop-file-utils: a
+          # validator can reject an AppImage that appimagetool previously accepted on
+          # the runner, and that is a risk this change does not need to take.
+          # libssl-dev: THE reason the first container build died at Build Binaries with
+          # "Project ERROR: openssl development package not found" — app.pro has
+          # `PKGCONFIG += openssl` unconditionally, and every runner image ships
+          # libssl-dev, so the Setup environment list below never had to name it.
+          # jammy's is OpenSSL 3.0.2, which is what aqt's Qt 6.8.3 was built against.
+          # zlib1g-dev: same argument, added in the same breath rather than spending a
+          # second 12-minute run discovering it. It cannot reject anything.
+          # pkgconf, NOT pkg-config — a behavioural difference, not a rename. jammy's
+          # `pkg-config` is the classic 0.29.2, which does not implement the `Provides:`
+          # field; jammy's `pkgconf` does, and installing it takes over
+          # /usr/bin/pkg-config (it Provides/Conflicts pkg-config). noble's pkg-config
+          # IS pkgconf, so this restores the implementation the build was written
+          # against rather than changing tools. Why it matters here: sdl2-compat (built
+          # from source below) deliberately ships `sdl2-compat.pc` carrying
+          # `Provides: sdl2 = <ver>`, NOT an `sdl2.pc`. Under classic pkg-config
+          # `pkg-config --exists sdl2` is therefore false and qmake reports "sdl2
+          # development package not found" while the shim sits right there in
+          # /usr/local. Verified in a jammy container: classic pkg-config resolves a
+          # Provides name NO, pkgconf resolves it YES. This also means the other
+          # Provides-based modules in this chain resolve the way they did on noble.
+          # These belong here rather than in Setup environment below: that step lists
+          # what StreamLight needs, and this one lists what the runner image used to supply
+          # for free.
+
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: 'recursive'
+          fetch-depth: 1
+
+      - name: Setup environment
+        run: |
+          sudo apt update
+          # Qt is provided by aqtinstall below, NOT by the distro: the app's QML
+          # uses Shape.CurveRenderer (Qt 6.4+) and MultiEffect (Qt 6.5+), and the
+          # 6.2.4 distro Qt on jammy silently produced an AppImage that bounced
+          # on launch on every machine (missing QtQuick/Shapes + too-old Qt).
+          sudo apt install -y qml6-module-qtqml-workerscript python3-pip nasm libgbm-dev libdrm-dev libfreetype-dev libasound2-dev \
+          libdbus-1-dev libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev libglu1-mesa-dev libibus-1.0-dev libpulse-dev libudev-dev libx11-dev libxcursor-dev \
+          libxext-dev libxi-dev libxinerama-dev libxkbcommon-dev libxrandr-dev libxss-dev libxt-dev libxv-dev libxxf86vm-dev libxcb-dri3-dev libx11-xcb-dev \
+          libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 \
+          libxfixes-dev libxtst-dev wayland-protocols libwayland-dev libopus-dev libvdpau-dev libgl-dev libpipewire-0.3-dev liburing-dev \
+          libvulkan-dev libtool autoconf automake
+          # NB: no libshaderc-dev here. jammy ships no shaderc at all (not libshaderc-dev,
+          # not libshaderc1, not even glslc) — libplacebo needs the pkg-config module named
+          # 'shaderc', so it is built from source in its own step below. On noble the same
+          # package was simply installed from apt.
+          # Plain pip: --break-system-packages is a noble-ism (PEP 668) and jammy's pip 22
+          # rejects the flag outright.
+          sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install aqtinstall
+          # Arch name varies by Qt version (gcc_64 pre-6.7, linux_gcc_64 after);
+          # arm64 desktop Qt lives under the linux_arm64 host as linux_gcc_arm64.
+          QT_ARCH=$(aqt list-qt ${{ matrix.aqt_host }} desktop --arch "$QT_VERSION" | grep -oE '[a-z_]*${{ matrix.aqt_arch }}' | tail -1)
+          echo "Using Qt arch: $QT_ARCH"
+          aqt install-qt ${{ matrix.aqt_host }} desktop $QT_VERSION "$QT_ARCH" --outputdir /opt/qt
+          # aqt's desktop archive does NOT ship the Qt Wayland platform plugin
+          # (libqwayland). Build it from the qtwayland source matching $QT_VERSION
+          # so Wayland sessions run native instead of falling back to XWayland.
+          sudo apt install -y libwayland-egl1-mesa 2>/dev/null || true
+          aqt install-src linux desktop "$QT_VERSION" --archives qtwayland --outputdir /opt/qt-src
+          QW_SRC=$(find /opt/qt-src -maxdepth 3 -type d -name "qtwayland*" | head -1)
+          test -n "$QW_SRC" && test -f "$QW_SRC/CMakeLists.txt" || { echo "qtwayland source not found under /opt/qt-src"; exit 1; }
+          QT_DIR=$(ls -d /opt/qt/$QT_VERSION/*/ | head -1)
+          cmake -S "$QW_SRC" -B "$QW_SRC/build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_DIR" \
+            -DCMAKE_INSTALL_PREFIX="$QT_DIR" \
+            -DBUILD_TESTING=OFF \
+            -DFEATURE_qtwayland_compositor=OFF
+          # -j2: full -j OOM-kills the hosted runner (two prior attempts died
+          # mid-compile with cc1plus killed). Client plugin only, we don't
+          # need the compositor.
+          cmake --build "$QW_SRC/build" -j2
+          cmake --install "$QW_SRC/build"
+          ls "$(ls -d /opt/qt/$QT_VERSION/*/ | head -1)plugins/platforms/" | grep -q '^libqwayland-.*\.so$' || { echo "libqwayland missing after qtwayland build"; ls -la "$(ls -d /opt/qt/$QT_VERSION/*/ | head -1)plugins/platforms/"; exit 1; }
+          # plugin-qt and the build script both look for 'qmake6'.
+          # NB: aqt's arch NAME (linux_gcc_64) differs from the actual install
+          # DIRECTORY (gcc_64) - discover the dir instead of guessing.
+          QT_DIR=$(ls -d /opt/qt/$QT_VERSION/*/ | head -1 | sed 's:/$::')
+          echo "Qt installed at: $QT_DIR"
+          sudo ln -sf "$QT_DIR/bin/qmake" "$QT_DIR/bin/qmake6"
+          echo "$QT_DIR/bin" >> "${GITHUB_PATH}"
+          sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install meson
+          mkdir -p dep_root/{bin,include,lib}
+          echo "DEP_ROOT=$PWD/dep_root" >> "${GITHUB_ENV}"
+          echo "$PWD/dep_root/bin" >> "${GITHUB_PATH}"
+
+      - name: Build Qt Virtual Keyboard
+        run: |
+          # The app's on-screen keyboard (app/gui/OnScreenKeyboard.qml) IS this module, and
+          # aqt's desktop binary archives do not carry it: the archive set for $QT_VERSION
+          # is icu, qtbase, qtdeclarative, qtsvg, qttools, qttranslations, qtwayland. So it
+          # gets built from source against the same Qt, the way qtwayland is above.
+          aqt install-src linux desktop "$QT_VERSION" --archives qtvirtualkeyboard --outputdir /opt/qt-src
+          VK_SRC=$(find /opt/qt-src -maxdepth 3 -type d -name "qtvirtualkeyboard*" | head -1)
+          test -n "$VK_SRC" && test -f "$VK_SRC/CMakeLists.txt" || { echo "qtvirtualkeyboard source not found under /opt/qt-src"; exit 1; }
+          # Discover the install dir rather than guessing it: aqt's arch name (linux_gcc_64)
+          # differs from the directory it installs into (gcc_64).
+          QT_DIR=$(ls -d /opt/qt/$QT_VERSION/*/ | head -1 | sed 's:/$::')
+          # -j2 for the same reason qtwayland uses it: the hosted runner has been OOM-killed
+          # mid-compile (cc1plus killed) on this repo before.
+          cmake -S "$VK_SRC" -B "$VK_SRC/build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_DIR" \
+            -DCMAKE_INSTALL_PREFIX="$QT_DIR" \
+            -DBUILD_TESTING=OFF
+          cmake --build "$VK_SRC/build" -j2
+          cmake --install "$VK_SRC/build"
+          # Fail here, loudly, if the module did not land: scripts/build-appimage.sh refuses
+          # to package an AppImage without it, and a silent miss would waste the whole run.
+          test -d "$QT_DIR/qml/QtQuick/VirtualKeyboard" || { echo "QtQuick/VirtualKeyboard missing from $QT_DIR after build"; exit 1; }
+          test -f "$QT_DIR/plugins/platforminputcontexts/libqtvirtualkeyboardplugin.so" || { echo "qtvirtualkeyboard platform input context plugin missing after build"; exit 1; }
+
+      - name: Checkout SDL3
+        uses: actions/checkout@v5
+        with:
+          repository: libsdl-org/SDL
+          ref: release-3.4.14
+          path: deps/SDL
+
+      - name: Build SDL3
+        working-directory: deps/SDL
+        run: |
+          cmake -DSDL_KMSDRM=OFF -DSDL_TEST_LIBRARY=OFF -DSDL_INSTALL_DOCS=OFF -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON -S . -B build
+          cmake --build build -j
+          sudo cmake --install build
+
+      - name: Checkout sdl2-compat
+        uses: actions/checkout@v5
+        with:
+          repository: libsdl-org/sdl2-compat
+          ref: release-2.32.70
+          path: deps/sdl2-compat
+
+      - name: Build sdl2-compat
+        working-directory: deps/sdl2-compat
+        run: |
+          cmake -DSDL2COMPAT_TESTS=OFF -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON -S . -B build
+          cmake --build build -j
+          sudo cmake --install build
+
+      - name: Checkout SDL_ttf
+        uses: actions/checkout@v5
+        with:
+          repository: libsdl-org/SDL_ttf
+          ref: a883e490e30fb44a5336ea3dcb990c6982c5216f
+          path: deps/SDL_ttf
+          submodules: 'recursive'
+
+      - name: Build SDL_ttf
+        working-directory: deps/SDL_ttf
+        run: |
+          ./autogen.sh
+          ./configure
+          make -j$(nproc)
+          sudo make install
+
+      - name: Checkout libva
+        uses: actions/checkout@v5
+        with:
+          repository: intel/libva
+          ref: 2.24.1
+          path: deps/libva
+
+      - name: Build libva
+        working-directory: deps/libva
+        run: |
+          # libva 2.24.1 declares no AC_CONFIG_AUX_DIR; current libtoolize
+          # then mis-detects the aux dir and drops ltmain.sh outside the
+          # source root, which automake rejects. Pin it explicitly.
+          sed -i '/^AC_INIT/a AC_CONFIG_AUX_DIR([.])' configure.ac
+          ./autogen.sh
+          ./configure --enable-x11
+          make -j$(nproc)
+          sudo make install
+
+      - name: Build shaderc
+        working-directory: deps
+        run: |
+          # jammy ships NO shaderc at all — not libshaderc-dev, not libshaderc1, not even
+          # glslc (noble, where this used to build, shipped libshaderc-dev and it came
+          # from apt). libplacebo's -Dshaderc=enabled resolves the pkg-config module
+          # literally named 'shaderc', so it gets compiled here.
+          # Pinned to v2023.8 on purpose: that is exactly the version noble shipped, i.e.
+          # the shaderc the currently-working AV1/Vulkan decode path was built against.
+          # A different version generates different SPIR-V, which is not a variable worth
+          # introducing in the same change as a glibc floor fix.
+          git clone --depth 1 --branch v2023.8 https://github.com/google/shaderc
+          pushd shaderc
+          python3 utils/git-sync-deps
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DSHADERC_SKIP_TESTS=ON -DSHADERC_SKIP_EXAMPLES=ON \
+            -DSHADERC_SKIP_COPYRIGHT_CHECK=ON
+          # -j2 for the same reason qtwayland uses it: heavy C++ trees have been
+          # OOM-killed (cc1plus killed) on this repo's runners before.
+          cmake --build build -j2
+          sudo cmake --install build
+          popd
+          # Fail loudly here rather than as a confusing meson error two steps later.
+          # Without shaderc the Vulkan video path has no SPIR-V compiler at all.
+          pkg-config --exists shaderc || { echo "shaderc.pc missing after build - libplacebo would have no SPIR-V compiler"; ls -la /usr/local/lib/pkgconfig/ /usr/local/lib/; exit 1; }
+          echo "Installed shaderc $(pkg-config --modversion shaderc)"
+
+      - name: Checkout libplacebo
+        uses: actions/checkout@v5
+        with:
+          repository: haasn/libplacebo
+          ref: 41ac2980e1a898f41d7c2e07999f9862ee89d99f
+          path: deps/libplacebo
+          submodules: 'recursive'
+
+      - name: Build libplacebo
+        working-directory: deps/libplacebo
+        run: |
+          git apply ../../app/deploy/linux/appimage/*.patch
+          meson setup build -Dvulkan=enabled -Dshaderc=enabled -Dopengl=disabled -Ddemos=false
+          ninja -C build
+          sudo ninja install -C build
+
+      - name: Build dav1d
+        working-directory: deps
+        env:
+          DAV1D_VER: 1.5.4
+        run: |
+          git clone --branch $DAV1D_VER --depth 1 https://code.videolan.org/videolan/dav1d.git
+          pushd dav1d
+          meson setup build -Ddefault_library=static -Dbuildtype=release -Denable_tools=false -Denable_tests=false
+          ninja -C build
+          sudo ninja install -C build
+          popd
+
+      - name: Install Vulkan headers (noble's libvulkan-dev is too old for FFmpeg 9 Vulkan hwaccels)
+        run: |
+          git clone --depth 1 --branch v1.4.361 https://github.com/KhronosGroup/Vulkan-Headers /tmp/vulkan-headers
+          cd /tmp/vulkan-headers && cmake . -B build -DCMAKE_INSTALL_PREFIX=/usr/local && sudo cmake --install build
+
+      - name: Checkout FFmpeg
+        uses: actions/checkout@v5
+        with:
+          repository: FFmpeg/FFmpeg
+          ref: n9.0.1
+          path: deps/FFmpeg
+
+      - name: Build FFmpeg
+        working-directory: deps/FFmpeg
+        run: |
+          # FLAGS POLICY (root-caused 2026-09-04): the AV1 brick artifacts were
+          # traced to THIS build of FFmpeg, not the code. Proof: byte-diffing
+          # CI vs hand-baked libs showed libplacebo + libshaderc identical,
+          # ONLY libavcodec/libavutil/libswscale differed (same n9.0.1);
+          # grafting the hand libs into the CI AppImage = 20+ min clean stream.
+          # The proven-good hand bake uses NO LTO, --disable-debug, and lets configure pick defaults.
+          # The old flags (--enable-lto) miscompiled the Vulkan hwaccel path.
+          # Do NOT re-add --enable-lto here without a full graft A/B test.
+          # --disable-autodetect is kept for deterministic bundling (runner
+          # dev-package creep would otherwise change libavcodec's deps); the
+          # grafted hand libs had the exact same NEEDED set with it off.
+          ./configure --disable-doc --disable-programs --disable-debug --disable-static --enable-shared --disable-autodetect \
+            --enable-vulkan --enable-libdrm --enable-vaapi --enable-vdpau \
+            --enable-libdav1d \
+            --enable-decoder=av1,h264,hevc,vp9 --enable-hwaccels
+          make -j$(nproc)
+          sudo make install
+
+      - name: Install linuxdeploy
+        working-directory: dep_root/bin
+        run: |
+          wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${{ matrix.arch }}.AppImage
+          wget https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-${{ matrix.arch }}.AppImage
+          chmod +x linuxdeploy*.AppImage
+
+      - name: Build Binaries
+        run: |
+          sudo ldconfig
+          scripts/build-appimage.sh
+
+      - name: Upload Binaries
+        uses: actions/upload-artifact@v6
+        with:
+          name: StreamLight-LinuxAppImage-${{ matrix.arch }}${{ inputs.release_tag != '' && format('-{0}', inputs.release_tag) || '' }}
+          path: build/installer-release/StreamLight-*-${{ matrix.arch }}.AppImage
+          compression-level: 0
+          if-no-files-found: error
