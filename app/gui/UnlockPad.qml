@@ -55,7 +55,8 @@ Item {
     // ⚠️ 1330, the same divisor as AppsScreen, HostStage and Theme.uiScale. This was left on
     // 1450 when that reference changed, so the pad came out about 9% smaller than the page it
     // opens from — scaling, but to a scale of its own.
-    readonly property real _u : Math.max(0.62, Math.min(1.6, width / 1330))
+    // Times the user's Interface scale (7.0.0), like Theme.uiScale for the dialogs.
+    readonly property real _u : Math.max(0.62, Math.min(1.6, width / 1330)) * Theme.scaleFactor
 
     function _press(index) {
         if (_busy) return
@@ -146,7 +147,7 @@ Item {
                     // DEFAULT accent: a user who had chosen amber typed their PIN into a cyan
                     // pad. This whole file used to name its own colours — it did not even
                     // import Theme — which is the one thing theme.h exists to prevent.
-                    color: root.state_ === "wrong" ? Theme.danger : Theme.accent
+                    color: root.state_ === "wrong" ? Theme.danger : Theme.ink
                 }
             }
         }
@@ -180,11 +181,15 @@ Item {
                     // Focus is the accent tinting the fill and drawing the border — the same
                     // grammar DialogButton uses, rather than the two hand-mixed cyans
                     // (#0d2f37 / #00d3f2) that were here and could not follow the setting.
+                    // At rest, the wash and hairline of Play again on Home (HostStage's
+                    // panelActionBtn): the pad stands on the same moving floor, and the opaque
+                    // Theme.card it had made its keys solid tiles beside that button's glass.
                     color: activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g,
                                                  Theme.accent.b, 0.20)
-                                       : Theme.card
+                                       : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g,
+                                                 Theme.tintBase.b, 0.08)
                     border.width: activeFocus ? 2 : 1
-                    border.color: activeFocus ? Theme.accent : Theme.line
+                    border.color: activeFocus ? Theme.ink : Theme.lineHigh
                     scale: activeFocus ? 1.06 : 1.0
                     Behavior on scale {
                         enabled: !Theme.reduceAnimations
@@ -198,7 +203,7 @@ Item {
                         anchors.centerIn: parent
                         text: key.glyph
                         font.pointSize: Math.max(12, Math.round(root._h * 0.024))
-                        color: key.activeFocus ? Theme.accent
+                        color: key.activeFocus ? Theme.inkText
                              : key.isAction    ? Theme.text2 : Theme.text
                     }
 
@@ -209,8 +214,12 @@ Item {
                     Keys.onUpPressed:    if (index >= 3) keys.itemAt(index - 3).forceActiveFocus()
                     Keys.onDownPressed:  if (index + 3 < 12) keys.itemAt(index + 3).forceActiveFocus()
 
-                    Keys.onReturnPressed: root._press(index)
-                    Keys.onEnterPressed:  root._press(index)
+                    // Return and Enter sign in from wherever the cursor is, as on the screen
+                    // this stands in for (7.0.0, #35); they used to press the focused key, so
+                    // Enter typed a 1. Space presses it — and so does A, which the session's
+                    // input handler sends as Space for exactly this reason (gamepad.cpp).
+                    Keys.onReturnPressed: if (!root._busy) root.submitPressed()
+                    Keys.onEnterPressed:  if (!root._busy) root.submitPressed()
                     Keys.onSpacePressed:  root._press(index)
 
                     MouseArea {

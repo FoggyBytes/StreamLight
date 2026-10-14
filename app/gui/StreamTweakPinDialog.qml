@@ -11,6 +11,10 @@ import QtQuick.Controls 2.5
 Popup {
     id: pop
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    enter: PopEnter {}
+    exit: PopExit {}
+
     property string pin: ""
     property string hostName: ""
     property string hostAddress: ""
@@ -69,7 +73,7 @@ Popup {
             font.pixelSize: pop._px(52)
             font.bold: true
             font.letterSpacing: 10 * pop._u
-            color: Theme.accent
+            color: Theme.ink
         }
         DialogButton {
             id: dismissBtn

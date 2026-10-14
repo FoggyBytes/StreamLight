@@ -6,6 +6,8 @@ import QtQuick.Window 2.2
 
 import StreamingPreferences 1.0
 import SystemProperties 1.0
+import SdlGamepadKeyNavigation 1.0
+import InputHints 1.0
 
 // Per-game settings overrides (StreamLight 4.0.0). Each control has a "Global"
 // option meaning "inherit the global setting". SegmentedSelector rows use index 0
@@ -14,6 +16,10 @@ import SystemProperties 1.0
 // d-pad navigable (rows → footer Done / Reset to Global).
 Popup {
     id: dlg
+
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    enter: PopEnter {}
+    exit: PopExit {}
 
     // Shared dialog measurements — see Theme.uiScale.
     readonly property real _u: Theme.uiScale
@@ -46,7 +52,10 @@ Popup {
     // to the grid behind it.
     signal closedByUser()
 
-    readonly property color _accent: Theme.accent
+    readonly property color _accent: Theme.accentFill
+    // 7.0.0: the accent as a line (ink) and as text (inkText) — see Theme. _accent stays for fills.
+    readonly property color _ink: Theme.ink
+    readonly property color _inkText: Theme.inkText
     readonly property color _text:   Theme.text
     readonly property color _dim:    Theme.text2
     readonly property color _line:   Theme.line
@@ -77,13 +86,15 @@ Popup {
     /*
      * The rows split into the tabs of Settings, with Settings' own names and order — the
      * same arrangement as HostProfilesDialog, minus Network: link matching is not per game.
+     * 13/10/2026 (7.0.0): no Session tab, as in Settings — Philips Hue in Video → While
+     * streaming, Wait for the game to appear in the StreamTweak tab (Launch).
      * ⚠️ The row -> tab map was measured on SettingsScreen.qml. No Decoder tab since 6.4.0: codec,
      * HDR and 4:4:4 are in Video, under Stream, above the bitrate.
      */
     readonly property var _sections: [
         { label: qsTr("Video")   },
         { label: qsTr("Audio")   },
-        { label: qsTr("Session") }
+        { icon:  "qrc:/res/streamtweak_logo.png" }
     ]
     /*
      * How many rows each tab holds of this game's own, read off the same indices
@@ -93,9 +104,9 @@ Popup {
     readonly property var _sectionCounts: [
         _n(resSel.currentIndex !== 0 || _customResW > 0) + _n(fpsSel.currentIndex !== 0 || _customFps > 0)
             + _n(codecSel.currentIndex > 0) + _n(hdrSel.currentIndex > 0) + _n(yuv444Sel.currentIndex > 0)
-            + _n(_bitrateOverridden) + _n(fpSel.currentIndex > 0),
+            + _n(_bitrateOverridden) + _n(fpSel.currentIndex > 0) + _n(hueSel.currentIndex > 0),
         _n(audSel.currentIndex > 0),
-        _n(waitGameSel.currentIndex > 0) + _n(hueSel.currentIndex > 0)
+        _n(waitGameSel.currentIndex > 0)
     ]
 
     readonly property int _totalCount: {
@@ -110,7 +121,7 @@ Popup {
 
     // Where the D-pad enters and leaves each tab: up from the footer lands on the last row.
     function _firstOfSection(i) { return [resSel, audSel, waitGameSel][i] || resSel }
-    function _lastOfSection(i)  { return [fpSel, audSel, hueSel][i] || fpSel }
+    function _lastOfSection(i)  { return [hueSel, audSel, waitGameSel][i] || hueSel }
 
     // Whether the pad focus was inside the rows, kept by the Flickable below.
     property bool _focusInBody: false
@@ -307,6 +318,9 @@ Popup {
     Overlay.modal: Rectangle { color: Theme.scrim }
 
     background: Rectangle {
+        // Opaque (13/10/2026, Marcello: «togli completamente la trasparenza»). It went 90% on 09/10
+        // to take the glare off the light surface, then 95%; at 60% the Home under the dialog read
+        // through its rows.
         color: Theme.card
         radius: dlg._px(14)
         border.color: Theme.line
@@ -541,7 +555,7 @@ Popup {
                 visible: row.detail.length > 0 || row.source.length > 0
                 text: row.detail.length > 0 ? row.detail : row.source
                 font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontCaption)
-                color: (row.detail.length === 0 && row.overridden) ? dlg._accent : dlg._dim
+                color: (row.detail.length === 0 && row.overridden) ? dlg._inkText : dlg._dim
                 elide: Text.ElideRight
             }
         }
@@ -616,7 +630,7 @@ Popup {
                 // Without artwork, the settings glyph the header always had.
                 Image {
                     visible: dlg.cover === ""
-                    source: "qrc:/res/tune.svg"
+                    source: Theme.light ? "qrc:/res/tune_dark.svg" : "qrc:/res/tune.svg"
                     sourceSize.width: 22; sourceSize.height: 22
                     Layout.alignment: Qt.AlignVCenter
                     Layout.preferredWidth: dlg._px(22); Layout.preferredHeight: dlg._px(22)
@@ -675,8 +689,13 @@ Popup {
         }
 
         // ── Rows, one tab at a time (content-sized; scrolls only on tiny screens) ─
+        // The right stick scrolls this view (7.0.0) — see PadScroll.
+        PadScroll { flick: flick }
+        TabSlide { id: tabSlide }
         Flickable {
             id: flick
+            
+            
             Layout.fillWidth: true
             Layout.preferredHeight: Math.min(
                 (Overlay.overlay ? Overlay.overlay.height - dlg._chromeH : dlg._px(800)),
@@ -697,7 +716,7 @@ Popup {
                 anchors.rightMargin: dlg._px(7)
                 contentItem: Rectangle {
                     radius: width / 2
-                    color: rowsScrollBar.pressed ? dlg._accent : dlg._dim
+                    color: rowsScrollBar.pressed ? dlg._ink : dlg._dim
                     opacity: rowsScrollBar.pressed ? 1.0 : 0.7
                 }
                 background: Rectangle {
@@ -746,6 +765,10 @@ Popup {
                 // Tall as the tallest tab — see HostProfilesDialog — so the footer stays put.
                 height: implicitHeight
                 currentIndex: sectionBar.currentIndex
+                // Slides in the direction of LB/RB (7.0.0).
+                onCurrentIndexChanged: tabSlide.to(currentIndex)
+                transform: tabSlide.shift
+                opacity: tabSlide.opacity
 
                 // VIDEO
                 Column {
@@ -905,7 +928,7 @@ Popup {
                                 Rectangle {   // focus ring (FocusFrame equivalent)
                                     anchors.fill: parent; anchors.margins: -2
                                     radius: dlg._px(6); color: "transparent"
-                                    border.color: dlg._accent; border.width: 2
+                                    border.color: dlg._ink; border.width: 2
                                     visible: bitrateSlider.activeFocus
                                 }
 
@@ -985,7 +1008,7 @@ Popup {
                                         implicitWidth: dlg._px(14); implicitHeight: dlg._px(14); radius: dlg._px(7)
                                         // Accent only while the game holds its own bitrate
                                         // (6.0.0) — see the twin in HostProfilesDialog.
-                                        readonly property color _base: dlg._bitrateOverridden ? dlg._accent : Theme.text
+                                        readonly property color _base: dlg._bitrateOverridden ? dlg._inkText : Theme.text
                                         color: bitrateSlider.pressed ? Qt.lighter(_base, 1.2)
                                              : bitrateSlider.hovered ? Qt.lighter(_base, 1.1)
                                              :                         _base
@@ -1002,7 +1025,7 @@ Popup {
                                 // Accent only when it is this game's own number: inherited,
                                 // this reads the level below, and an accent figure there
                                 // would claim an override that does not exist.
-                                color: dlg._bitrateOverridden ? dlg._accent : Theme.text
+                                color: dlg._bitrateOverridden ? dlg._inkText : Theme.text
                                 font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall); font.bold: true
                                 horizontalAlignment: Text.AlignRight
                             }
@@ -1032,6 +1055,25 @@ Popup {
                             inheritStrip: true
                             inheritIndex: dlg._inheritIdx(dlg._fpLabels, "framepacing")
                             KeyNavigation.up: bitrateSlider
+                            KeyNavigation.down: hueSel
+                            onActivated: dlg.saveToModel()
+                        }
+                    }
+
+                    // While streaming (13/10/2026): where Settings keeps Hue Sync since its
+                    // Session tab became Interface — the last card of Video.
+                    GroupHeader { text: qsTr("While streaming") }
+
+                    SettingRow {
+                        label: qsTr("Philips Hue")
+                        overridden: hueSel.currentIndex > 0
+                        source: dlg._srcText("hue", overridden)
+                        onResetRequested: { hueSel.currentIndex = 0; dlg.saveToModel() }
+                        SegmentedSelector {
+                            id: hueSel; labels: dlg._hueLabels
+                            inheritStrip: true
+                            inheritIndex: dlg._inheritIdx(dlg._hueLabels, "hue")
+                            KeyNavigation.up: fpSel
                             KeyNavigation.down: doneBtn
                             onActivated: dlg.saveToModel()
                         }
@@ -1062,7 +1104,7 @@ Popup {
                     }
                 }
 
-                // SESSION
+                // STREAMTWEAK (13/10/2026: was Session) — Launch in Settings' StreamTweak tab.
                 Column {
                     spacing: dlg._px(0)
 
@@ -1080,22 +1122,6 @@ Popup {
                             inheritStrip: true
                             inheritIndex: dlg._inheritIdx(dlg._waitLabels, "waitgame")
                             KeyNavigation.up: doneBtn
-                            KeyNavigation.down: hueSel
-                            onActivated: dlg.saveToModel()
-                        }
-                    }
-                    // Sits with the row above because it belongs to the same context: both are
-                    // about what happens around the stream rather than to the picture.
-                    SettingRow {
-                        label: qsTr("Philips Hue")
-                        overridden: hueSel.currentIndex > 0
-                        source: dlg._srcText("hue", overridden)
-                        onResetRequested: { hueSel.currentIndex = 0; dlg.saveToModel() }
-                        SegmentedSelector {
-                            id: hueSel; labels: dlg._hueLabels
-                            inheritStrip: true
-                            inheritIndex: dlg._inheritIdx(dlg._hueLabels, "hue")
-                            KeyNavigation.up: waitGameSel
                             KeyNavigation.down: doneBtn
                             onActivated: dlg.saveToModel()
                         }
@@ -1119,15 +1145,23 @@ Popup {
             Layout.fillWidth: true
             Layout.preferredHeight: dlg._promptH
 
-            Prompt {
+            Row {
                 anchors.left: parent.left; anchors.leftMargin: dlg._padX
                 anchors.verticalCenter: parent.verticalCenter
-                visible: dlg._focusedRow !== null && dlg._focusedRow.visible
-                         && dlg._focusedRow.overridden
-                buttonKey: "Y"; keyLabel: "Y"; action: qsTr("Reset row")
-                // The mouse's way to the same action — clicking does not move the focus.
-                clickable: true
-                onClicked: if (dlg._focusedRow) dlg._focusedRow.resetRequested()
+                spacing: dlg._px(18)
+                Prompt {
+                    visible: dlg._focusedRow !== null && dlg._focusedRow.visible
+                             && dlg._focusedRow.overridden
+                    buttonKey: "Y"; keyLabel: "Y"; action: qsTr("Reset row")
+                    // The mouse's way to the same action — clicking does not move the focus.
+                    clickable: true
+                    onClicked: if (dlg._focusedRow) dlg._focusedRow.resetRequested()
+                }
+                // 7.0.0: the right stick scrolls the list, when it is longer than the dialog.
+                Prompt {
+                    visible: SdlGamepadKeyNavigation.scrollAvailable && InputHints.padActive
+                    buttonKey: "RSCROLL"; keyLabel: ""; action: qsTr("Scroll")
+                }
             }
 
             Label {
@@ -1138,7 +1172,7 @@ Popup {
                     :                         qsTr("%1 changes").arg(dlg._totalCount)
                 font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontCaption)
                 font.bold: dlg._totalCount > 0
-                color: dlg._totalCount > 0 ? dlg._accent : Theme.text3
+                color: dlg._totalCount > 0 ? dlg._inkText : Theme.text3
             }
         }
 

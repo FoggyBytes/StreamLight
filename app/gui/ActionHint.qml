@@ -17,6 +17,9 @@ Item {
     property string buttonKey: ""   // "A","B","X","Y","LB","RB","LT","RT","SELECT","START","RS"
     property string keyLabel:  ""   // keyboard equivalent, e.g. "S", "Esc", "PgDn"
     property int    size:      26   // face-button height, as in the status bar
+    // 7.0.0: drawn on a surface that stays dark in both themes (the launch curtain), so the
+    // key cap keeps its Dark colours.
+    property bool   onDark:    false
 
     // No keyboard equivalent means there is nothing honest to show a keyboard user, so the
     // glyph stays. Better an unreachable prompt than one naming a key that does nothing.
@@ -43,15 +46,15 @@ Item {
         width: implicitWidth
         height: implicitHeight
         radius: 6
-        color: Qt.rgba(1, 1, 1, 0.06)
-        border.color: Theme.line
+        color: hint.onDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.06)
+        border.color: hint.onDark ? Theme.stageLine : Theme.line
         border.width: 1
 
         Text {
             id: capText
             anchors.centerIn: parent
             text: hint.keyLabel
-            color: Theme.text
+            color: hint.onDark ? Theme.stageText : Theme.text
             font.family: Theme.family
             font.pixelSize: Math.max(11, Math.round(hint.size * 0.46))
             font.bold: true

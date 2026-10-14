@@ -216,6 +216,10 @@ if not x%QT_PATH:\5.=%==x%QT_PATH% (
     set WINDEPLOYQT_ARGS=--no-system-d3d-compiler --no-system-dxc-compiler --skip-plugin-types qmltooling,generic --no-ffmpeg
     set WINDEPLOYQT_ARGS=!WINDEPLOYQT_ARGS! --no-quickcontrols2fusion --no-quickcontrols2imagine --no-quickcontrols2universal
     set WINDEPLOYQT_ARGS=!WINDEPLOYQT_ARGS! --no-quickcontrols2fusionstyleimpl --no-quickcontrols2imaginestyleimpl --no-quickcontrols2universalstyleimpl --no-quickcontrols2windowsstyleimpl --no-quickcontrols2fluentwinui3styleimpl
+    rem Qt 6.12 also deploys the Windows, FluentWinUI3 and Native style libraries (5.5 MB).
+    rem main.cpp forces Material, Controls imports those two styles only as optional, and
+    rem no deployed binary imports any of the three except each other.
+    set WINDEPLOYQT_ARGS=!WINDEPLOYQT_ARGS! --no-quickcontrols2windows --no-quickcontrols2fluentwinui3 --no-quicknativestyle
     rem StreamLight is English-only: app.pro declares no TRANSLATIONS and the app never
     rem installs a QTranslator, so Qt's own .qm catalogues are loaded by nothing. Without
     rem this, windeployqt deploys 31 of them - 6.4 MB, every byte of it dead weight in the

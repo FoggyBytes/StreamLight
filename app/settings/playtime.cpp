@@ -3,6 +3,7 @@
 
 #include <QSettings>
 #include <QStringList>
+#include <QTimeZone>
 
 #define PLAYTIME_PREFIX "playtime/"
 
@@ -197,7 +198,7 @@ PlaytimeRecord PlaytimeManager::recordFor(const QString& hostUuid, const QString
     const QString stamp = settings.value(QStringLiteral(SER_LASTPLAYED)).toString();
     if (!stamp.isEmpty()) {
         r.lastPlayed = QDateTime::fromString(stamp, Qt::ISODate);
-        r.lastPlayed.setTimeSpec(Qt::UTC);
+        r.lastPlayed.setTimeZone(QTimeZone::UTC);
     }
 
     r.lastFpsAvg          = settings.value(QStringLiteral(SER_FPS),         -1.0f).toFloat();

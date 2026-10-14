@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue.svg)](https://github.com/FoggyBytes/StreamLight) [![Framework](https://img.shields.io/badge/Framework-Qt%206-brightgreen.svg)](https://www.qt.io/) [![Downloads](.badges/downloads.svg)](https://github.com/FoggyBytes/StreamLight/releases) [![Built on Moonlight](https://img.shields.io/badge/built%20on-Moonlight-blue?&logo=github)](https://github.com/moonlight-stream/moonlight-qt) [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-brightgreen.svg)](https://claude.ai/code)
 
 <div align="center">
-  <img width="3840" height="2160" alt="Screenshot 2026-10-01 204951" src="https://github.com/user-attachments/assets/eeabaf5c-de75-4f8e-959b-abb975399d4f" />
+  <img width="3840" height="2160" alt="StreamLight in the light theme" src=".github/images/streamlight.png" />
 </div>
 
 **StreamLight** is the client half of the FoggyBytes streaming duo: a fork of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) with a gamepad-first interface and native integration with its host-side companion, [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak).
@@ -11,7 +11,7 @@
 The streaming engine is upstream Moonlight's — FFmpeg, D3D11VA, DXVA2, libplacebo, `moonlight-common-c` — with Nonary's VRR pacing added in 6.0.0 and his PyroWave codec in 6.4.0. What is new sits around it: the interface, and everything the two apps can do together over a local TCP bridge — host link matching, host metrics in the overlay, the store each game comes from, session quality reports, remote power-off and Windows Update, Tailscale, and signing a woken host in with its PIN from the sofa.
 
 <div align="center">
-  <img width="3840" height="2160" alt="Immagine 2026-10-01 205104" src="https://github.com/user-attachments/assets/8f006d85-b670-4c40-9de7-9a8b9ed8dc39" />
+  <img width="3840" height="2160" alt="StreamLight in the dark theme" src=".github/images/streamdark.png" />
 </div>
 
 ## ✅ Compatibility
@@ -28,13 +28,15 @@ Everything below is in the current release, whichever version first introduced i
 
 **🕹️ Gamepad-first, keyboard-equal**
 - Every action is reachable from the pad: D-pad across host tabs, library, settings tabs and dialogs, with a clickable prompt bar along the bottom
-- **Prompts follow the device in your hands** — touch the keyboard and each glyph becomes the key to press; pick the pad back up and they return to that controller's own icons (Xbox / PlayStation / Nintendo / Steam, auto-detected or forced; Steam *(6.5.1+)*). *Settings → Session* can pin them to the controller or to the keyboard *(6.3.0+)*, for Steam Input and the Steam Deck, where one pad also sends clicks and keys — and on the controller a trackpad mapped to the mouse points without taking the focus away from the pad *(6.4.1+)*
+- **Prompts follow the device in your hands** — touch the keyboard and each glyph becomes the key to press; pick the pad back up and they return to that controller's own icons (Xbox / PlayStation / Nintendo / Steam, auto-detected or forced; Steam *(6.5.1+)*). *Settings → Interface* can pin them to the controller or to the keyboard *(6.3.0+)*, for Steam Input and the Steam Deck, where one pad also sends clicks and keys — and on the controller a trackpad mapped to the mouse points without taking the focus away from the pad *(6.4.1+)*
 - **Rebindable shortcuts** — every in-stream keyboard hotkey and all three controller combos, in *Settings → Shortcuts*. Defaults are **LB + RB + A** quit, **+ X** performance overlay, **+ B** stream settings, chosen to stay clear of Steam's overlay
+- **Navigation sounds** *(7.0.0+)* — soft sounds for move, confirm and back from the controller and the keyboard, never from the mouse; off in *Settings → Interface*
+- **DualSense haptics** *(7.0.0+)* — the fine vibration games play through the DualSense's actuators reaches the controller in your hands, over USB or Bluetooth, from a Vibeshine or Vibepollo 2.0.1+ host with its *DualSense USB audio and haptics* component
 
 **🏠 Home and the host page**
-- **Home** is your hosts as tabs under the wordmark. The selected one's card takes the left of the screen — name, state, addresses, stream settings and actions at once — and its game stands beside it. **LT / RT** move between hosts, **LB / RB** between that host's profiles
+- **Home** is your hosts as tabs under the wordmark. The selected one's card takes the left of the screen — name, state, addresses, stream settings and actions at once — and its game stands beside it. **LB / RB** move between hosts, **LT / RT** between that host's profiles — as on the host page *(7.0.0+)*
 - **Moving background** *(6.0.0+)* — waves in your accent colour rise over the lower three quarters of Home, Settings and the PIN pad, twice as fast while a host is streaming. Still with *Reduce animations*, paused behind dialogs
-- **Opening animation** *(6.0.0+)* — the waves rise, the icon fades in and a band of light writes STREAMLIGHT before Home appears; any button skips it, and *Settings → Session* turns it off
+- **Opening animation** *(6.0.0+)* — the waves rise, the icon fades in and a band of light writes STREAMLIGHT before Home appears; any button skips it, and *Settings → Interface* turns it off
 - **The host page** puts the library down the left at full height and the game in the spotlight beside it — cover, name, store, and the right verb (*Resume* if it is already running, *Play* if not)
 - **All, Games and Apps** *(5.9.0+, All 6.1.0+)* — **LB / RB** switch the host page between everything you can launch, the games, and everything else: Desktop, Virtual Display, Steam Big Picture and the host's controls, which open with *Open* and never count hours. The page reopens on the tab you last chose on that host *(6.3.0+)*, All the first time; **LT / RT** move the host's profile
 - **Move between Games and Apps** *(6.1.0+)* — the **right stick click** or **M** moves the selected entry to the other tab, remembered per host. The host's own controls stay on Apps
@@ -43,8 +45,9 @@ Everything below is in the current release, whichever version first introduced i
 - **Play time** *(5.7.0+)* — how long you have streamed each game, beside the store on every row. Filed under the game's name, so it survives a reinstall, and resettable from the per-game panel
 - **Pinned games** *(6.0.0+)* — **Start** on the pad (Menu / Options / +) or **P** pins the selected game: pinned games sit under their own heading right after *Last played*, alphabetically, marked with a pin on the row. Kept per host and by name, so a pin survives a reinstall
 - **Resume from Home** *(6.0.0+)* — while a host is streaming, its card shows the game in progress, marked *Streaming now*, with **Resume** in place of *Play again*
-- **Per-host backgrounds** — a colour you pick or a picture of your own, with the card's gradient derived from it, and *(6.0.0+)* how much of the moving background shows through the card, from 70% to 100%
-- **Your accent colour** — five presets or any hex code. Status colours never follow it: online stays green, a pending link change amber, *Shutdown* red
+- **Per-host backgrounds** — *(7.0.0+: a small popup that previews on the card)* a picture of your own, and *(6.0.0+)* how much of the moving background shows through the card, from 70% to 100%. Without a picture the card wears your accent colour, in a gradient
+- **Your accent colour** *(7.0.0+: a palette of 24, previewed live)* — or any hex code. Status colours never follow it: online stays green, a pending link change amber, *Shutdown* red
+- **Light or dark** *(7.0.0+)* — *Dark*, *Light*, *System* or *Auto* (sunrise and sunset, or two set hours), switched from Home with the right stick click, and an interface scale of 90%, 100% or 110%
 - **Time, date and battery** in the top right of every screen, in the clock and date format you read
 
 **🎬 In-stream**
@@ -56,6 +59,7 @@ Everything below is in the current release, whichever version first introduced i
 - **Fractional V-Sync** *(5.6.0+)* — shows each frame for a whole number of refreshes instead of once per refresh, so 60 FPS on a 120 Hz screen becomes one frame every two. Needs V-Sync and frame pacing, and a screen running at an exact multiple of the frame rate: at 60 FPS that is 120 / 180 / 240 Hz, and a 144 Hz screen wants 72 FPS. Off by default
 - **VRR** *(6.0.0+, experimental)* — on a variable-refresh display each frame is shown as soon as it is ready, with three timing profiles (*Low latency*, *Balanced*, *Smooth*) and *Reduce judder*. Built on Nonary's VRR work for Moonlight; needs V-Sync, runs borderless, and switches Fractional V-Sync off while it is on
 - **PyroWave** *(6.4.0+)* — a fifth video codec for wired networks: every frame is coded on its own, so decoding takes well under a millisecond and a lost packet blurs part of one picture instead of breaking the next ones. Needs hundreds of Mbps and a Vibeshine or Vibepollo 2.0 host; other hosts stream H.264
+- **PyroWave Test** *(7.0.0+)* — from the host's Options: measures the wired network to the host and this device's decoder, offers a bitrate for the target you pick, and lets later PyroWave streams send their frames at the pace it found. Needs Vibeshine or Vibepollo 2.0.1+
 
 **⚙️ Settings and profiles**
 - Nine tabs, pill-style selectors instead of dropdowns, inline subtitles instead of tooltips, and a bitrate slider with hold-to-accelerate and a **Default** prompt
@@ -68,8 +72,9 @@ Everything below is in the current release, whichever version first introduced i
 - **Logs and cache** *(6.5.0+)* — *Settings → About* shows where logs, crash dumps and covers are kept and how much space they take, opens each folder and clears them after a confirmation. Logs and crash dumps can move to another folder, and the running log follows at once
 - **Update from the app** *(5.8.0+)* — *Settings → About* downloads a newer release when there is one and checks it against GitHub's checksum; *Install now* opens the installer, which reopens StreamLight when it finishes, after a single Windows permission prompt. A newer version is also announced at startup
 
-**🎯 Windows Xbox app integration**
+**🎯 Xbox app and Steam integration**
 - Branded tile artwork in the Windows 11 Xbox app's "My apps" section, seeded during setup and re-applied automatically whenever the Xbox app overwrites it
+- **Steam artwork** *(7.0.0+)* — added to Steam as a non-Steam game, StreamLight gets its own cover, header, background and logo in the library and in Big Picture from *Settings → Interface → Steam artwork*, on every Steam account on the PC; pictures you chose yourself are left alone. The images are also in the *Steam artwork* folder of the install, for assigning by hand
 
 **💡 Philips Hue Sync**
 - Optional: starts Hue Sync on this PC when a session begins and closes it when it ends, silently, with the install path resolved from the registry
@@ -82,7 +87,7 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 
 - **Host link matching** *(8.1.0+)* — before each launch StreamLight measures the wired link that actually reaches that host, asks the host to come down to it, and starts the stream only once the host confirms. A host running faster than the client sends each frame as a burst the slower link cannot drain, and the packets that die first are the few carrying audio: the symptom is sound cutting out while the picture stays perfect. The client decides the speed because only the client knows its own connection; the host keeps the permission and the restore
 - **Seamless launch** *(8.1.0+, opt-in)* — with **Wait for the game to appear** on, the stream window stays hidden until the host reports the game is really on screen, so you watch the game's cover art instead of the host's desktop rearranging itself. **B** or **Esc** reveals the host at any moment. A resume never waits: the game is already there
-- **Remote PIN unlock** *(8.1.0+)* — after a **Wake**, if the host comes up at its lock screen, a controller-navigable number pad takes its Windows PIN. The session carrying the PIN is never shown and never recorded on the host; wrong attempts stop at three, since Windows suspends the PIN after a few failures
+- **Remote PIN unlock** *(8.1.0+)* — after a **Wake**, or *(7.0.0+)* from the **Unlock** button of any host sitting at its lock screen and before any launch on it, a controller-navigable number pad takes its Windows PIN. The session carrying the PIN is never shown and never recorded on the host; wrong attempts stop at three, since Windows suspends the PIN after a few failures
 - **Host metrics in the overlay** *(4.4.0+)* — GPU %, encoder %, GPU temperature, VRAM, CPU and network TX, hidden entirely when StreamTweak is unreachable
 - **Store badges** *(5.0.0+)* — which store the selected game comes from, its mark beside its name on the host page: Steam, Epic, GOG, Ubisoft, Xbox, Battle.net and EA App
 - **Session quality reporting** *(5.2.0+)* — FPS, drops, RTT, jitter, decode latency and bitrate sent every second; StreamTweak turns them into a grade and charts
@@ -94,22 +99,26 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in *Settings → StreamTweak*; the host has its own switch
 
-## ✨ What's New in 6.5.1 — Full Steam
+## ✨ What's New in 7.0.0 — In a New Light
 
 Client-side, any host.
 
-- **Steam button icons** — a fifth icon set for the Steam Controller and the Steam Deck, picked by *Auto*
-- **Steam Desktop layout notice** — when Steam also sends the controller as keyboard and mouse, StreamLight says how to switch it to Gamepad
-
-## ✨ What's New in 6.5.0 — Clear View
-
-Client-side, any host.
-
-- **Logs and cache in Settings** — *About* shows where logs, crash dumps and covers are kept, opens each folder and clears them; logs and crash dumps can move to another folder
-- **Security fix from Moonlight 6.2.0** — a malicious host can no longer crash the client through an H.264 stream (CVE-2026-41210), and the libraries match 6.2.0's
-- **PyroWave on Intel Arc** — Core Ultra and N100 graphics are no longer refused
-- **One press, one step with Steam open** — Steam's Desktop Layout no longer makes a controller press move the focus by two
-- **PyroWave losses in the overlay** — frames shown blurred because packets were lost, and those too damaged to show, get a line of their own instead of hiding behind a 0% drop rate
+- **Light theme** — *Dark*, *Light*, *System* or *Auto* (sunrise and sunset from the Windows location, or two set hours) in Settings → Interface; a soft grey rather than white, every text checked for contrast, the launch screen stays dark
+- **Theme toggle on Home** — the right stick click (**T** on the keyboard) switches between Dark and Light; each theme keeps its own accent and host pictures
+- **Accent palette** — twenty-four colours in a popup that previews each one on the whole interface; **A** keeps it, **B** puts back the one you had
+- **Interface scale** — text and controls at 90%, 100% or 110%, on top of the automatic fit to the window
+- **Host background popup** — a picture or one of the last three and the card's opacity, beside a card that stays whole as the preview; without a picture the card wears your accent, in a gradient
+- **Host page on the waves** — the same moving background as Home, or the selected game's cover as before, in Settings → Interface; the launch screen keeps the game's cover
+- **VRR frame rate** — with VRR on, the rate your display can hold joins the frame rate choices and is selected for you
+- **Right-stick scrolling** — Settings, About, profiles and the host page scroll without moving the focus, with a *Scroll* prompt when there is something to scroll; a held D-pad now repeats
+- **A new launch screen** — the page fades to black and the launch rises out of it: host and stream settings along the top, the game at the lower left, and a bar that fills step by step — *Connect*, *Launch*, and *Load* when it waits for the game; quitting wears the same look
+- **Navigation sounds** — soft sounds for move, confirm and back, from the controller and the keyboard only; off in Settings → Interface
+- **PIN unlock whenever the host is locked** — however it was switched on, its card says **Unlock** instead of *Open* and its page stays closed until it is signed in; a game launched on it gets the PIN pad first and starts by itself afterwards; **Enter** now signs in
+- **DualSense haptics** — the fine vibration games play through the DualSense's actuators reaches your controller, over USB or Bluetooth; needs Vibeshine or Vibepollo 2.0.1+ on the host with its optional *DualSense USB audio and haptics* component, every other host keeps ordinary rumble
+- **Steam artwork** — a cover, header, background and logo for StreamLight's non-Steam shortcut in the library and in Big Picture, applied from Settings → Interface; your own pictures are kept
+- **PyroWave Test** — a tile in the host's Options measures the wired network and this device's decoder and offers a bitrate for the target you pick; later PyroWave streams send their frames at the pace it found. Needs Vibeshine or Vibepollo 2.0.1+; *All Apps* left Options, as it opened the same page as *Open*
+- **What's new in About**, and a **NEW** mark beside what this release added
+- **Motion** — sliding focus and selections, springy popups, pages that zoom and slide; *Reduce animations* turns it all off
 
 *Older releases are in [changelog.txt](changelog.txt).*
 
@@ -146,7 +155,8 @@ Up to 5.3.0 both lived under `Moonlight Game Streaming Project\Moonlight` — up
 
 - [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) — the host-side companion, designed in lockstep with StreamLight
 - [**Moonlight**](https://github.com/moonlight-stream/moonlight-qt) — the open-source client this fork is built on; full credit to its contributors
-- [**Nonary's VRR work for Moonlight**](https://github.com/Nonary/moonlight-qt) — the VRR pacing in 6.0.0 and PyroWave support in 6.4.0 are Chase Payne's code, imported as it is (tag `v6.1.0-vrr18`) together with its test harness; the PyroWave codec itself is [Hans-Kristian Arntzen's](https://github.com/Themaister/pyrowave)
+- [**Nonary's VRR work for Moonlight**](https://github.com/Nonary/moonlight-qt) — the VRR pacing in 6.0.0 and PyroWave support in 6.4.0 are Chase Payne's code, imported as it is (tag `v6.1.0-vrr18`) together with its test harness; the PyroWave codec itself is [Hans-Kristian Arntzen's](https://github.com/Themaister/pyrowave). The DualSense haptics and the PyroWave Test's measurements in 7.0.0 are his too, from the `master` branch
+- [**SAxense**](https://github.com/egormanga/SAxense) — Sdore's (Egor Vorontsov) research into the DualSense's Bluetooth haptics report, which the Bluetooth path is built on; MPL-2.0, kept with its notices in [`third-party/saxense`](third-party/saxense)
 - [**Sunshine**](https://github.com/LizardByte/Sunshine) — the streaming host that started it all
 - [**Apollo**](https://github.com/ClassicOldSong/Apollo) — community-driven Sunshine fork
 - [**Vibeshine**](https://github.com/Nonary/vibeshine) and [**Vibepollo**](https://github.com/Nonary/Vibepollo) — fully supported

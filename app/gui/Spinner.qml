@@ -25,7 +25,7 @@ Item {
     // Follows the user's accent by default, like everything else that is drawn rather
     // than themed. Read from Theme and not Material.accent: attached properties assigned
     // from JS do not track, which is the trap documented in §40.
-    property color color: Theme.accent
+    property color color: Theme.ink
     property bool running: true
     property real thickness: Math.max(1.5, Math.min(width, height) * 0.085)
 

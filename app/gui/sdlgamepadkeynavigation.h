@@ -26,6 +26,12 @@ class SdlGamepadKeyNavigation : public QObject
     // Values: "pointer" (mouse), "key" (gamepad or keyboard). With Button prompts = Controller
     // it stays "key": the mouse still points and clicks, but never switches the mode (#24).
     Q_PROPERTY(QString inputMode READ inputMode NOTIFY inputModeChanged)
+    // 7.0.0: the right stick's scrolling speed in px/s, positive = down, 0 at rest. A speed and
+    // not a step: PadScroll.qml moves the view by it on every frame (see the note in the poll).
+    Q_PROPERTY(qreal scrollVelocity READ scrollVelocity NOTIFY scrollVelocityChanged)
+    // 7.0.0: some view would move under the right stick right now (a PadScroll with room to
+    // scroll holds the focus) — the status bar draws its "Scroll" prompt from this.
+    Q_PROPERTY(bool scrollAvailable READ scrollAvailable NOTIFY scrollAvailableChanged)
 
 public:
     SdlGamepadKeyNavigation(StreamingPreferences* prefs);
@@ -47,6 +53,13 @@ public:
     // "Back" produces the same effect as the matching gamepad button.
     Q_INVOKABLE void simulateKey(int qtKey);
 
+    /** A view really moved for scrollVelocity: the next navigation step re-focuses (7.0.0). */
+    Q_INVOKABLE void noteScrolled() { m_ScrolledAway = true; }
+
+    /** A PadScroll says whether its view could scroll now (7.0.0). Forgotten when it goes. */
+    Q_INVOKABLE void setScrollAvailable(QObject* view, bool available);
+    bool scrollAvailable() const { return !m_ScrollViews.isEmpty(); }
+
     // Re-emit controllerTypeChanged so the UI re-resolves glyphs after the user
     // changes the glyph-set preference in Settings.
     Q_INVOKABLE void refreshGlyphPreference() { emit controllerTypeChanged(); }
@@ -54,6 +67,8 @@ public:
     QString controllerType() const;
 
     QString inputMode() const { return m_InputMode; }
+
+    qreal scrollVelocity() const { return m_ScrollVelocity; }
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -66,10 +81,23 @@ signals:
     // (28de:1304), whose Desktop Layout switches to Gamepad on a long press of Menu.
     void steamDesktopLayoutDetected(bool menuHoldSwitches);
 
+    // 7.0.0 — the right stick scrolls. The view that holds the focus moves by scrollVelocity
+    // (PadScroll.qml) and calls noteScrolled(); the next D-pad or left-stick step then only
+    // brings the focused element back into view (refocusRequested) instead of moving the focus.
+    void scrollVelocityChanged();
+    void scrollAvailableChanged();
+    void refocusRequested();
+
 private:
-    void sendKey(QEvent::Type type, Qt::Key key, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
+    void sendKey(QEvent::Type type, Qt::Key key, Qt::KeyboardModifiers modifiers = Qt::NoModifier,
+                 bool autoRepeat = false);
+
+    // One D-pad direction as the key it stands for (Tab / Shift+Tab in UI nav mode).
+    void sendDpad(int sdlButton, QEvent::Type type, bool autoRepeat = false);
 
     void updateTimerState();
+
+    void setScrollVelocity(qreal pxPerSecond);
 
     void updateControllerType();
 
@@ -108,6 +136,15 @@ private:
     Uint32 m_LastAxisNavigationEventTime;
     // Triggers are edge-detected, not fed through the stick repeat timer above:
     // pulling LT/RT is one discrete "previous/next host", not a direction you hold.
+    bool m_ScrolledAway = false;
+    qreal m_ScrollVelocity = 0;
+    QHash<QObject*, QMetaObject::Connection> m_ScrollViews;
+    // 7.0.0: the D-pad direction held down (an SDL button, -1 = none), when it went down and
+    // when it last repeated. SDL sends one event per press, so a held D-pad used to move one
+    // step and stop: a slider could not be swept, a list not run through.
+    int m_HeldDpad = -1;
+    Uint32 m_HeldDpadSince = 0;
+    Uint32 m_LastDpadRepeat = 0;
     bool m_LeftTriggerDown;
     bool m_RightTriggerDown;
     QString m_ControllerType;

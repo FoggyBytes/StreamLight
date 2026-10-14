@@ -1,6 +1,7 @@
 #include <Limelight.h>
 #include "SDL_compat.h"
 #include "streaming/session.h"
+#include "streaming/input/dualsensehaptics.h"
 #include "settings/mappingmanager.h"
 #include "settings/shortcutmanager.h"
 #include "streaming/video/streamsettingsoverlay.h"
@@ -81,6 +82,10 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     // want this behavior, they can override it with the environment variable.
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5_RUMBLE, "1");
+    // SDL3's name for the same switch (7.0.0, with the waveform haptics, as in Nonary's tree).
+#ifdef SDL_HINT_JOYSTICK_ENHANCED_REPORTS
+    SDL_SetHint(SDL_HINT_JOYSTICK_ENHANCED_REPORTS, "1");
+#endif
 
     // Populate special key combo configuration from the user's saved shortcuts.
     // The KeyCombo enum order matches ShortcutManager::KbAction 1:1.
@@ -260,6 +265,8 @@ SdlInputHandler::~SdlInputHandler()
         }
 #endif
         if (m_GamepadState[i].controller != nullptr) {
+            // The waveform worker may still touch the controller: join it first.
+            if (m_GamepadState[i].hapticsAttached) DualSenseHaptics::detach(m_GamepadState[i].index);
             SDL_GameControllerClose(m_GamepadState[i].controller);
         }
     }

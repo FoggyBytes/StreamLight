@@ -15,6 +15,10 @@ import Theme 1.0
 Popup {
     id: dlg
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    enter: PopEnter {}
+    exit: PopExit {}
+
     // The shared dialog measurements, all of them multiplied by the window scale — see
     // Theme.uiScale for why a dialog cannot take this from the page it is covering.
     readonly property real _u: Theme.uiScale

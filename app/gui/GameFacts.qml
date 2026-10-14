@@ -59,8 +59,18 @@ Item {
     // settings". The store is kept apart because it is the half with a picture.
     property string metaExtra: ""
     property color  metaColor: Theme.text2
+    // The grey tones of the badge and the figures. The theme's, except on the host page over
+    // its cover in Light, which needs a darker grey (AppsScreen._text2/_text3).
+    property color  tone2: Theme.text2
+    property color  tone3: Theme.text3
 
+    // The store icons are white-only drawings; in Light they swap to their *_dark twins
+    // (7.0.0). Theme.light is read here, inside the binding that calls this, so it tracks.
     function storeIconSource(s) {
+        var p = _storeIcon(s)
+        return (p !== "" && Theme.light) ? p.replace(".svg", "_dark.svg") : p
+    }
+    function _storeIcon(s) {
         if (s === "Steam")           return "qrc:/res/store_steam.svg"
         if (s === "Epic Games")      return "qrc:/res/store_epic.svg"
         if (s === "GOG")             return "qrc:/res/store_gog.svg"
@@ -201,7 +211,7 @@ Item {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.badgeMain.toUpperCase()
-                    color: Theme.text2
+                    color: root.tone2
                     font.family: Theme.family
                     font.pixelSize: root._px(Theme.fontBody)
                     font.weight: Font.DemiBold
@@ -211,7 +221,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: text.length > 0
                     text: root.badgeMuted.toUpperCase()
-                    color: Theme.text3
+                    color: root.tone3
                     font.family: Theme.family
                     font.pixelSize: root._px(Theme.fontBody)
                     font.weight: Font.DemiBold
@@ -404,7 +414,7 @@ Item {
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: modelData.c
-                            color: Theme.text3
+                            color: root.tone3
                             font.family: Theme.family
                             font.pixelSize: root._px(Theme.fontCaption)
                             font.letterSpacing: root.u * 1.5

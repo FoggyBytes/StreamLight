@@ -5,6 +5,59 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 ---------------------------------------
+Version 7.0.0 - In a New Light (14/10/2026)
+---------------------------------------
+
+No StreamTweak update required — 7.0.0 is client-side and works with any host. A light theme, a palette of accent colours, a picture for each host's card, and an interface that moves.
+
+✨ NEW FEATURES:
+• Light theme — Settings → Interface → Theme: Dark, Light, System, which follows Windows, or Auto, which switches at sunrise and sunset where Windows locates the PC — or at two hours you set, also used when location is off. A soft grey rather than white, every text checked for contrast on every surface; the launch screen stays dark
+• Theme toggle on Home — the right stick click, or T on the keyboard, switches between Dark and Light; under System or Auto it holds the other theme until the next change
+• Accent colour palette — twenty-four colours in a popup that previews each one on the whole interface as the cursor moves: A keeps it, B puts back the one you had. The hex code field is still there
+• What's new in About — the changelog of this release, from 7.0.0 on, and a NEW mark beside each setting it added
+• Interface scale — Settings → Interface makes text and controls a step smaller or larger — 90%, 100% or 110% — on top of the automatic fit to the window
+• Scroll with the right stick — Settings, About, profiles and the host page scroll without moving the focus, so a controller can read what no control reaches; the next D-pad press brings the view back to the focus, and the status bar says Scroll whenever there is something to scroll
+• Navigation sounds — soft sounds when you move, confirm and go back with a controller or the keyboard, never with the mouse; pushing past the end of a list stays silent. Settings → Interface → Navigation sounds turns them off
+• PIN unlock whenever the host is locked — however the host was switched on, its card offers Unlock in place of Open and the PIN pad comes straight up; its page stays closed until it is signed in, and is left for Home if it locks while open. A game launched on a locked host brings up the pad first and starts by itself once Windows signs in. A host that is unlocked, or cannot say, behaves as before. Needs StreamTweak 8.1.0 or later on the host, like the unlock after a Wake
+• DualSense haptics — the fine vibration a game plays through the DualSense's actuators now reaches the controller on this device, over USB or Bluetooth. Needs Vibeshine or Vibepollo 2.0.1 or later on the host with its optional DualSense USB audio and haptics component; every other host keeps ordinary rumble. Built on Nonary's work for Moonlight and Sdore's SAxense
+• Steam artwork — StreamLight added to Steam as a non-Steam game gets its own cover, header, background and logo in the library and in Big Picture: Settings → Interface → Steam artwork applies them to every Steam account on the PC, and never replaces pictures you chose yourself. The same four images are installed in the Steam artwork folder, for assigning by hand
+• PyroWave Test — a new tile in the host's Options measures the wired network to the host and this device's decoder, then offers a bitrate for the target you choose: Minimum, Recommended, Moderate or Maximum. The host also learns how fast its frames can travel, and every later PyroWave stream to it uses that pace. Needs Vibeshine or Vibepollo 2.0.1 or later. Built on Nonary's calibration for Moonlight
+
+✨ IMPROVEMENTS:
+• Host background in a small popup — beside the card, which stays whole and is the preview: a picture or one of the last three, and the card's opacity. A picks a picture, B goes back and keeps it, X clears. Without a picture the card wears the accent colour, in a gradient checked for contrast
+• Badges and buttons that stand out — on the host page they have a neutral fill of their own, softened to half strength, instead of a faint wash of the colours behind them
+• The host card follows its picture — over a background picture its words, badges and buttons are drawn light, as in Dark, whichever theme is on
+• Each theme keeps its own — its accent colour and each host's background picture; the first time, Light starts from Dark's
+• Same buttons on Home and on the host page — LT/RT change the profile on both, and on Home LB/RB now move between hosts (PgUp/PgDn and Q/E on the keyboard, as before)
+• Settings → Session is now Interface — what happens around a stream (optimizing game settings, quitting the app on the host, keeping the display awake, Discord, Hue Sync) moved to Video → While streaming, and Wait for the game to appear to StreamTweak → Launch; host profiles and per-game settings follow the same tabs
+• Hold the D-pad to repeat — a held direction keeps moving, so sliders sweep and long lists run
+• The host page stands on the waves — the same moving background as Home, instead of the selected game's blurred cover; the launch screen keeps the cover, and Settings → Interface → Host page background brings the cover back to the host page for whoever prefers it
+• Last played stays when the game is gone — if the host no longer offers it, Home still shows it, with Play again greyed out
+• Settings and Options in a more natural order — Shortcuts beside Input, appearance first in Interface, the mouse before the keyboard, and Delete as the last tile in Options
+• All Apps out of Options — it opened the same page as Open on the host card; PyroWave Test takes its place
+• Recommended VRR frame rate in the list — with VRR on, the rate the display can hold (116 on a 120 Hz screen) joins the Frame rate choices as "116 VRR", and switching VRR on selects it; switching it off brings back the rate you had. In host profiles too
+• Qt 6.12 LTS — the interface runs on the newest long-term release of Qt, with a year and a half of its fixes since 6.8.3
+
+🎨 UI:
+• Motion throughout — the selection slides, buttons dip when pressed, popups spring in, pages zoom and slide into each other, tabs slide with LB/RB, lists fill in a cascade and give at their ends, and a wait that ends well draws its check, all of it quick. Settings → Reduce animations turns all of it off
+• A new launch screen — the page fades to black and the launch rises out of it: the host and the stream's settings along the top, the cover, the game and what is happening now at the lower left, and a bar along the foot that fills step by step — Connect and Launch, and Load when the launch waits for the game. Quitting wears the same look
+
+🐛 FIXES:
+• Readable selections with every accent — the text on a selected pill or a lit button is now dark or white by whichever reads better; with Rose, Ember or Magenta it was white at about 3:1
+• Cancelling and Applying new settings now show on the launch screen — the step under way always took their place
+• Small popups centred again — naming a profile or typing a custom resolution or frame rate from inside the profile dialogs opened the popup off to one side
+• StreamTweak found in green — Settings → StreamTweak drew "Found on this host" in the accent colour, which with a red accent read as a fault
+• Up on the D-pad in text fields — in Custom resolution, Custom frame rate, the profile name and Add a host, up on the pad moved forward instead of back
+• Enter signs in on the PIN pad — it typed the digit under the cursor instead
+• Same badges and buttons on Home and the host page — the host page's had a solid body of their own; both now wear the same light wash, in Dark and in Light, and so do the PIN pad's keys
+
+🙏 THANKS:
+• Thanks to @vitorhugoaranda (https://github.com/FoggyBytes/StreamLight/issues/33) for asking for a palette and a light theme
+• Thanks to @ykorsten (https://github.com/FoggyBytes/StreamLight/issues/35) for asking for the PIN pad on a host that is already awake
+• Thanks to @markmghali (https://github.com/FoggyBytes/StreamLight/issues/37) for asking for DualSense haptics and finding that Nonary's build already played them
+• Thanks to @Nik768 (https://github.com/FoggyBytes/StreamLight/issues/38) for asking for Steam library artwork and pointing to how Steam stores it
+
+---------------------------------------
 Version 6.5.1 - Full Steam (07/10/2026)
 ---------------------------------------
 

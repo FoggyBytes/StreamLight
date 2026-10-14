@@ -6,6 +6,8 @@ import QtQuick.Window 2.2
 
 import StreamingPreferences 1.0
 import SystemProperties 1.0
+import InputHints 1.0
+import SdlGamepadKeyNavigation 1.0
 
 // Per-host streaming profiles (StreamLight 4.0.0). Up to 3 named profiles per
 // host, each overriding a subset of the global StreamingPreferences (same model
@@ -18,6 +20,10 @@ import SystemProperties 1.0
 Popup {
     id: dlg
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    enter: PopEnter {}
+    exit: PopExit {}
+
     // Shared dialog measurements — see Theme.uiScale.
     readonly property real _u: Theme.uiScale
     function _px(n) { return Math.round(n * _u) }
@@ -26,7 +32,10 @@ Popup {
     property int pcIndex: -1
     property string hostName: ""
 
-    readonly property color _accent: Theme.accent
+    readonly property color _accent: Theme.accentFill
+    // 7.0.0: the accent as a line (ink) and as text (inkText) — see Theme. _accent stays for fills.
+    readonly property color _ink: Theme.ink
+    readonly property color _inkText: Theme.inkText
     readonly property color _danger: Theme.danger
     readonly property color _text:   Theme.text
     readonly property color _dim:    Theme.text2
@@ -164,9 +173,20 @@ Popup {
     readonly property var _resW:      [0].concat(_video.res.map(function(e) { return e.width }))
     readonly property var _resH:      [0].concat(_video.res.map(function(e) { return e.height }))
     readonly property var _resNative: _nativeIndices(_video.res)
+    // The rates, and while this profile streams with VRR the recommended rate as the last pill
+    // ("116 VRR"), as in Settings (7.0.0, in the strip since 09/10/2026). _vrrIdx is its index,
+    // 0 when it is not shown.
+    readonly property int _vrrIdx: {
+        var rec = _vrrRec.fps || 0
+        if (!_vrrOn || rec <= 0) return 0
+        for (var i = 0; i < _video.fps.length; i++) if (_video.fps[i].value === rec) return 0
+        return _video.fps.length + 1
+    }
     readonly property var _fpsLabels: [""].concat(
-        _video.fps.map(function(e) { return e.label }))
-    readonly property var _fpsVals:   [0].concat(_video.fps.map(function(e) { return e.value }))
+        _video.fps.map(function(e) { return e.label }),
+        _vrrIdx > 0 ? [qsTr("%1 VRR").arg(_vrrRec.fps)] : [])
+    readonly property var _fpsVals:   [0].concat(_video.fps.map(function(e) { return e.value }),
+                                                 _vrrIdx > 0 ? [_vrrRec.fps] : [])
     readonly property var _fpsNative: _nativeIndices(_video.fps)
     readonly property var _hdrLabels: ["", "On", "Off"]
     readonly property var _yuv444Labels: ["", "On", "Off"]
@@ -233,18 +253,57 @@ Popup {
     readonly property bool _effPyroWave:   _effCodec === StreamingPreferences.VCC_FORCE_PYROWAVE
 
     property bool _bitrateOverridden: false
+
+    // 7.0.0 — the VRR rate in a profile, as in Settings. The rate it replaced, for switching
+    // VRR back off: the dialog's own memory, the profile itself keeps only what is chosen.
+    property var  _fpsBeforeVrr: null
+    property bool _vrrWasOn: false
+    function _applyVrrRate() {
+        var rec = dlg._vrrRec.fps || 0
+        var on = dlg._vrrOn
+        if (rec > 0 && on && !dlg._vrrWasOn && dlg._effFps !== rec) {
+            dlg._fpsBeforeVrr = { custom: dlg._customFps, idx: fpsSel.currentIndex }
+            dlg._customFps = dlg._vrrIdx > 0 ? 0 : rec
+            fpsSel.currentIndex = dlg._vrrIdx > 0 ? dlg._vrrIdx : -1
+        } else if (rec > 0 && !on && dlg._vrrWasOn && dlg._effFps === rec) {
+            if (dlg._fpsBeforeVrr) {
+                dlg._customFps = dlg._fpsBeforeVrr.custom
+                fpsSel.currentIndex = dlg._fpsBeforeVrr.idx
+            } else {
+                // Nothing remembered (the profile was opened with VRR already on): back to
+                // the inherited rate, which is what an untouched profile row means.
+                dlg._customFps = 0
+                fpsSel.currentIndex = 0
+            }
+            dlg._fpsBeforeVrr = null
+        }
+        dlg._vrrWasOn = on
+    }
     // Custom resolution override for the edited slot (0 == none / using a preset).
     property int _customResW: 0
     property int _customResH: 0
     // Custom frame-rate override, same tri-state (5.5.0).
     property int _customFps: 0
+
+    // The VRR pill comes and goes with the switch: the selection follows the value, not the
+    // index. A custom rate equal to the VRR one moves onto its pill; the pill going away
+    // leaves its value as a custom rate (which _applyVrrRate then puts back as it was).
+    on_VrrIdxChanged: {
+        if (_loading) return
+        var rec = _vrrRec.fps || 0
+        if (_vrrIdx > 0 && _customFps === rec) { _customFps = 0; fpsSel.currentIndex = _vrrIdx }
+        else if (_vrrIdx === 0 && fpsSel.currentIndex >= _fpsVals.length) { _customFps = rec; fpsSel.currentIndex = -1 }
+    }
     readonly property bool _hasProfiles: profileCount > 0
 
     // ── Sections (6.0.0) ─────────────────────────────────────────────────────
     /*
      * The override rows split into the tabs of Settings, with Settings' own names and order,
      * so an option sits under the label it has there. Only tabs with at least one row: Input,
-     * Overlay, Shortcuts, StreamTweak and About have nothing a profile can override.
+     * Overlay, Shortcuts, Interface and About have nothing a profile can override.
+     * 13/10/2026 (7.0.0): Settings' Session tab became Interface and lost its host rows, so
+     * the dialog's Session tab went too — Philips Hue to Video → While streaming, Wait for the
+     * game to appear to the StreamTweak tab (Launch), exactly where Settings has them.
      *
      * ⚠️ The row -> tab map was MEASURED on SettingsScreen.qml, not assumed: link matching sits
      * under Network there. Move a row in Settings and it moves here too — and so do
@@ -255,7 +314,7 @@ Popup {
         { label: qsTr("Video")   },
         { label: qsTr("Audio")   },
         { label: qsTr("Network") },
-        { label: qsTr("Session") }
+        { icon:  "qrc:/res/streamtweak_logo.png" }
     ]
     /*
      * How many rows each tab holds that are not Global, read off the same indices
@@ -270,10 +329,11 @@ Popup {
         _n(resSel.currentIndex !== 0 || _customResW > 0) + _n(fpsSel.currentIndex !== 0 || _customFps > 0)
             + _n(codecSel.currentIndex > 0) + _n(hdrSel.currentIndex > 0) + _n(yuv444Sel.currentIndex > 0)
             + _n(_bitrateOverridden) + _n(dmSel.currentIndex > 0) + _n(vsyncSel.currentIndex > 0)
-            + _n(fpSel.currentIndex > 0) + _n(fracVsyncSel.currentIndex > 0) + _n(vrrSel.currentIndex > 0),
+            + _n(fpSel.currentIndex > 0) + _n(fracVsyncSel.currentIndex > 0) + _n(vrrSel.currentIndex > 0)
+            + _n(hueSel.currentIndex > 0),
         _n(audSel.currentIndex > 0),
         _n(linkSel.currentIndex > 0),
-        _n(waitGameSel.currentIndex > 0) + _n(hueSel.currentIndex > 0)
+        _n(waitGameSel.currentIndex > 0)
     ]
 
     // The same figure for the whole profile, for the footer and for the chip of the profile
@@ -287,7 +347,7 @@ Popup {
 
     // Where the D-pad enters and leaves each tab: down from Name, up from the footer.
     function _firstOfSection(i) { return [resSel, audSel, linkSel, waitGameSel][i] || resSel }
-    function _lastOfSection(i)  { return [vrrSel, audSel, linkSel, hueSel][i] || vrrSel }
+    function _lastOfSection(i)  { return [hueSel, audSel, linkSel, waitGameSel][i] || hueSel }
 
     // Whether the pad focus was inside the rows, kept by the Flickable below.
     property bool _focusInBody: false
@@ -355,6 +415,9 @@ Popup {
     Overlay.modal: Rectangle { color: Theme.scrim }
 
     background: Rectangle {
+        // Opaque (13/10/2026, Marcello: «togli completamente la trasparenza»). It went 90% on 09/10
+        // to take the glare off the light surface, then 95%; at 60% the Home under the dialog read
+        // through its rows.
         color: Theme.card
         radius: dlg._px(14)
         border.color: Theme.line
@@ -438,20 +501,6 @@ Popup {
         } else {
             resSel.currentIndex = 0
         }
-        // Frame rate is tri-state exactly like resolution: Global (0) / listed (>0) /
-        // custom (-1 + _customFps).
-        _customFps = 0
-        if (ov.fps !== undefined) {
-            var fpi = _fpsVals.indexOf(ov.fps)
-            if (fpi > 0) {
-                fpsSel.currentIndex = fpi
-            } else {
-                fpsSel.currentIndex = -1
-                _customFps = ov.fps
-            }
-        } else {
-            fpsSel.currentIndex = 0
-        }
         hdrSel.currentIndex   = (ov.hdr !== undefined) ? (ov.hdr ? 1 : 2) : 0
         yuv444Sel.currentIndex = (ov.yuv444 !== undefined) ? (ov.yuv444 ? 1 : 2) : 0
         codecSel.currentIndex = (ov.codec !== undefined) ? _idxByVal(_codecVals, ov.codec) : 0
@@ -464,9 +513,27 @@ Popup {
         vsyncSel.currentIndex = (ov.vsync !== undefined) ? (ov.vsync ? 1 : 2) : 0
         fracVsyncSel.currentIndex = (ov.fractionalvsync !== undefined) ? (ov.fractionalvsync ? 1 : 2) : 0
         vrrSel.currentIndex = (ov.vrr !== undefined) ? (ov.vrr ? 1 : 2) : 0
+        // Frame rate is tri-state exactly like resolution: Global (0) / listed (>0) /
+        // custom (-1 + _customFps). ⚠️ After VRR (7.0.0): with VRR on, the list ends with the
+        // VRR pill, and a stored rate equal to it must land on it rather than on Custom.
+        _customFps = 0
+        if (ov.fps !== undefined) {
+            var fpi = _fpsVals.indexOf(ov.fps)
+            if (fpi > 0) {
+                fpsSel.currentIndex = fpi
+            } else {
+                fpsSel.currentIndex = -1
+                _customFps = ov.fps
+            }
+        } else {
+            fpsSel.currentIndex = 0
+        }
         _bitrateOverridden = (ov.bitrate !== undefined && ov.bitrate >= bitrateSlider.from)
         bitrateSlider.value = _bitrateOverridden ? ov.bitrate
                             : Math.max(bitrateSlider.from, StreamingPreferences.bitrateKbps)
+        // Where the VRR switch starts for this slot, so _applyVrrRate sees only real changes.
+        _vrrWasOn = _vrrOn
+        _fpsBeforeVrr = null
         _loading = false
     }
 
@@ -734,7 +801,7 @@ Popup {
                 font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontCaption)
                 // The accent says the same thing here as on a pill: this value is the
                 // profile's own. A row following Global stays quiet.
-                color: (row.detail.length === 0 && row.overridden) ? dlg._accent : dlg._dim
+                color: (row.detail.length === 0 && row.overridden) ? dlg._inkText : dlg._dim
                 elide: Text.ElideRight
             }
         }
@@ -800,7 +867,7 @@ Popup {
                 anchors.rightMargin: dlg._padX
                 spacing: dlg._px(12)
                 Image {
-                    source: "qrc:/res/tune.svg"
+                    source: Theme.light ? "qrc:/res/tune_dark.svg" : "qrc:/res/tune.svg"
                     sourceSize.width: 22; sourceSize.height: 22
                     Layout.preferredWidth: dlg._px(22); Layout.preferredHeight: dlg._px(22)
                 }
@@ -883,8 +950,8 @@ Popup {
                         color: offBtn.selected
                                ? dlg._accent
                                : Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-                        border.color: offBtn.activeFocus ? (offBtn.selected ? Theme.text : dlg._accent)
-                                    : offBtn.selected    ? dlg._accent
+                        border.color: offBtn.activeFocus ? (offBtn.selected ? Theme.text : dlg._ink)
+                                    : offBtn.selected    ? dlg._ink
                                     :                      Theme.line
                         border.width: offBtn.activeFocus ? 3 : 1
                     }
@@ -947,8 +1014,8 @@ Popup {
                                 color: ptTile._active
                                        ? dlg._accent
                                        : Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-                                border.color: ptTile._cursor ? (ptTile._active ? Theme.text : dlg._accent)
-                                            : ptTile._active ? dlg._accent
+                                border.color: ptTile._cursor ? (ptTile._active ? Theme.text : dlg._ink)
+                                            : ptTile._active ? dlg._ink
                                             :                  Theme.line
                                 border.width: ptTile._cursor ? 3 : 1
 
@@ -976,7 +1043,7 @@ Popup {
                                             :                       qsTr("%1 changes").arg(ptTile._count)
                                         color: ptTile._active ? Qt.rgba(Theme.onAccent.r, Theme.onAccent.g,
                                                                         Theme.onAccent.b, 0.72)
-                                             : ptTile._count > 0 ? dlg._accent
+                                             : ptTile._count > 0 ? dlg._inkText
                                              :                     Theme.text3
                                         font.family: Theme.family
                                         font.pixelSize: dlg._px(Theme.fontCaption)
@@ -1046,7 +1113,7 @@ Popup {
                         anchors.fill: parent
                         radius: dlg._px(8)
                         color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-                        border.color: addBtn.activeFocus ? dlg._accent : Theme.line
+                        border.color: addBtn.activeFocus ? dlg._ink : Theme.line
                         border.width: addBtn.activeFocus ? 3 : 1
                     }
                     Item {
@@ -1059,7 +1126,7 @@ Popup {
                             id: addLabel
                             anchors.centerIn: parent
                             text: qsTr("+ Add")
-                            color: dlg._accent
+                            color: dlg._inkText
                             font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall); font.bold: true
                         }
                     }
@@ -1150,8 +1217,13 @@ Popup {
         }
 
         // ── Override rows, one tab at a time (only while a profile is selected) ─
+        // The right stick scrolls this view (7.0.0) — see PadScroll.
+        PadScroll { flick: flick }
+        TabSlide { id: tabSlide }
         Flickable {
             id: flick
+            
+            
             Layout.fillWidth: true
             visible: dlg._editing
             Layout.preferredHeight: dlg._editing ? Math.min(
@@ -1177,7 +1249,7 @@ Popup {
                 // Sits inside the _padX gutter, so it never covers a control.
                 contentItem: Rectangle {
                     radius: width / 2
-                    color: rowsScrollBar.pressed ? dlg._accent : dlg._dim
+                    color: rowsScrollBar.pressed ? dlg._ink : dlg._dim
                     opacity: rowsScrollBar.pressed ? 1.0 : 0.7
                 }
                 background: Rectangle {
@@ -1228,6 +1300,10 @@ Popup {
                 // LB/RB go round.
                 height: implicitHeight
                 currentIndex: sectionBar.currentIndex
+                // Slides in the direction of LB/RB (7.0.0).
+                onCurrentIndexChanged: tabSlide.to(currentIndex)
+                transform: tabSlide.shift
+                opacity: tabSlide.opacity
 
                 // VIDEO
                 Column {
@@ -1388,7 +1464,7 @@ Popup {
                                 Rectangle {   // focus ring (FocusFrame equivalent)
                                     anchors.fill: parent; anchors.margins: -2
                                     radius: dlg._px(6); color: "transparent"
-                                    border.color: dlg._accent; border.width: 2
+                                    border.color: dlg._ink; border.width: 2
                                     visible: bitrateSlider.activeFocus
                                 }
 
@@ -1468,7 +1544,7 @@ Popup {
                                         // (6.0.0): the one control left that painted the accent
                                         // on an inherited value. Neutral otherwise, like the
                                         // inherited pill of every other row.
-                                        readonly property color _base: dlg._bitrateOverridden ? dlg._accent : Theme.text
+                                        readonly property color _base: dlg._bitrateOverridden ? dlg._inkText : Theme.text
                                         color: bitrateSlider.pressed ? Qt.lighter(_base, 1.2)
                                              : bitrateSlider.hovered ? Qt.lighter(_base, 1.1)
                                              :                         _base
@@ -1485,7 +1561,7 @@ Popup {
                                 // Accent only when it is the profile's own number: while the
                                 // row follows Global this reads the global bitrate, and an
                                 // accent figure there would claim an override that is not.
-                                color: dlg._bitrateOverridden ? dlg._accent : Theme.text
+                                color: dlg._bitrateOverridden ? dlg._inkText : Theme.text
                                 font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall); font.bold: true
                                 horizontalAlignment: Text.AlignRight
                             }
@@ -1604,6 +1680,25 @@ Popup {
                             inheritStrip: true
                             inheritIndex: dlg._inheritIdx(dlg._vrrLabels, "vrr")
                             KeyNavigation.up: fracVsyncSel
+                            KeyNavigation.down: hueSel
+                            onActivated: { dlg._applyVrrRate(); dlg.saveOverride() }
+                        }
+                    }
+
+                    // While streaming (13/10/2026): where Settings keeps Hue Sync since its
+                    // Session tab became Interface — the last card of Video.
+                    GroupHeader { text: qsTr("While streaming") }
+
+                    SettingRow {
+                        label: qsTr("Philips Hue")
+                        overridden: hueSel.currentIndex > 0
+                        source: dlg._srcText("hue", overridden)
+                        onResetRequested: { hueSel.currentIndex = 0; dlg.saveOverride() }
+                        SegmentedSelector {
+                            id: hueSel; labels: dlg._hueLabels
+                            inheritStrip: true
+                            inheritIndex: dlg._inheritIdx(dlg._hueLabels, "hue")
+                            KeyNavigation.up: vrrSel
                             KeyNavigation.down: removeBtn
                             onActivated: dlg.saveOverride()
                         }
@@ -1653,15 +1748,15 @@ Popup {
                     }
                 }
 
-                // SESSION
+                // STREAMTWEAK (13/10/2026: was Session) — Launch in Settings' StreamTweak tab.
                 Column {
                     spacing: dlg._px(0)
 
-                    // Same reason as the row above: it belongs to a situation. A profile used at the
-                    // desk, where the host is an arm's length away, has little to gain from the
-                    // wait; one used on a TV in another room does, because the alternative is
-                    // looking at that host's desktop rearranging itself.
-                    // Global = follow the setting in Settings → Session.
+                    // It belongs to a situation, like the link above. A profile used at the desk,
+                    // where the host is an arm's length away, has little to gain from the wait;
+                    // one used on a TV in another room does, because the alternative is looking
+                    // at that host's desktop rearranging itself.
+                    // Global = follow the setting in Settings → StreamTweak → Launch.
                     SettingRow {
                         label: qsTr("Wait for the game to appear")
                         overridden: waitGameSel.currentIndex > 0
@@ -1672,23 +1767,6 @@ Popup {
                             inheritStrip: true
                             inheritIndex: dlg._inheritIdx(dlg._waitLabels, "waitgame")
                             KeyNavigation.up: profileTabs
-                            KeyNavigation.down: hueSel
-                            onActivated: dlg.saveOverride()
-                        }
-                    }
-                    // Sits with the row above because it belongs to the same context: both are
-                    // about what happens around the stream rather than to the picture, and both
-                    // live in Settings → Session.
-                    SettingRow {
-                        label: qsTr("Philips Hue")
-                        overridden: hueSel.currentIndex > 0
-                        source: dlg._srcText("hue", overridden)
-                        onResetRequested: { hueSel.currentIndex = 0; dlg.saveOverride() }
-                        SegmentedSelector {
-                            id: hueSel; labels: dlg._hueLabels
-                            inheritStrip: true
-                            inheritIndex: dlg._inheritIdx(dlg._hueLabels, "hue")
-                            KeyNavigation.up: waitGameSel
                             KeyNavigation.down: removeBtn
                             onActivated: dlg.saveOverride()
                         }
@@ -1744,6 +1822,12 @@ Popup {
                     clickable: true
                     onClicked: if (dlg._focusedRow) dlg._focusedRow.resetRequested()
                 }
+                // 7.0.0: the right stick scrolls the list, when it is longer than the dialog.
+                // Here and not in the status bar, which this dialog's scrim covers.
+                Prompt {
+                    visible: SdlGamepadKeyNavigation.scrollAvailable && InputHints.padActive
+                    buttonKey: "RSCROLL"; keyLabel: ""; action: qsTr("Scroll")
+                }
                 // LT/RT are not here: they are drawn beside the profile chips they cycle.
             }
 
@@ -1758,7 +1842,7 @@ Popup {
                     :                         qsTr("%1 changes").arg(dlg._totalCount)
                 font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontCaption)
                 font.bold: dlg._totalCount > 0
-                color: dlg._totalCount > 0 ? dlg._accent : Theme.text3
+                color: dlg._totalCount > 0 ? dlg._inkText : Theme.text3
             }
         }
 

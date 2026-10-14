@@ -8,6 +8,8 @@
 #include "streaming/vrrratepolicy.h"
 #include "backend/richpresencemanager.h"
 #include "backend/networkbuffers.h"
+#include "backend/pyrowavetest.h"
+#include "streaming/input/dualsensehaptics.h"
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -76,9 +78,15 @@ CONNECTION_LISTENER_CALLBACKS Session::k_ConnCallbacks = {
     Session::clSetMotionEventState,
     Session::clSetControllerLED,
     Session::clSetAdaptiveTriggers,
-    // controllerHaptics (6.4.0, with the protocol of Nonary's fork): the DualSense
-    // waveform extension is not taken — nullptr keeps the stream to ordinary rumble.
+    // controllerHaptics: DualSense waveform haptics (7.0.0, from Nonary's tree; the
+    // protocol came in 6.4.0). Non-null advertises ML_FF_HAPTICS_PCM in the SDP, and
+    // each pad with a backend adds LI_CCAP_HAPTICS_PCM to its arrival. Runs on the
+    // control receive thread: DualSenseHaptics::receive only queues, never blocks.
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+    DualSenseHaptics::receive
+#else
     nullptr
+#endif
 };
 
 Session* Session::s_ActiveSession;
@@ -319,16 +327,19 @@ void Session::clSetAdaptiveTriggers(uint16_t controllerNumber, uint8_t eventFlag
 
     // Based on the following SDL code:
     // https://github.com/libsdl-org/SDL/blob/120c76c84bbce4c1bfed4e9eb74e10678bd83120/test/testgamecontroller.c#L286-L307
+    // Only the trigger validity bits (dualsensetriggers.h): a waveform being played must
+    // not be switched back to emulated rumble by a trigger change.
     DualSenseOutputReport *state = (DualSenseOutputReport *) SDL_malloc(sizeof(DualSenseOutputReport));
-    SDL_zero(*state);
-    state->validFlag0 = (eventFlags & DS_EFFECT_RIGHT_TRIGGER) | (eventFlags & DS_EFFECT_LEFT_TRIGGER);
-    state->rightTriggerEffectType = typeRight;
-    SDL_memcpy(state->rightTriggerEffect, right, sizeof(state->rightTriggerEffect));
-    state->leftTriggerEffectType = typeLeft;
-    SDL_memcpy(state->leftTriggerEffect, left, sizeof(state->leftTriggerEffect));
+    if (!state || !left || !right) {
+        SDL_free(state);
+        return;
+    }
+    *state = makeDualSenseTriggerReport(eventFlags, typeLeft, typeRight, left, right);
 
     setControllerLEDEvent.user.data2 = (void *) state;
-    SDL_PushEvent(&setControllerLEDEvent);
+    if (SDL_PushEvent(&setControllerLEDEvent) <= 0) {
+        SDL_free(state);
+    }
 }
 
 
@@ -679,6 +690,38 @@ bool Session::populateDecoderProperties(SDL_Window* window)
     delete decoder;
 
     return true;
+}
+
+QString Session::hostName() const
+{
+    return m_Computer ? m_Computer->name : QString();
+}
+
+QStringList Session::streamBadges() const
+{
+    // The Home card's wording (HostStage._resLabel/_codecLabel), so a host reads the same on
+    // the card you launched from and on the curtain that follows it.
+    QStringList b;
+    const int w = m_Preferences->width, h = m_Preferences->height;
+    if (w == 3840 && h == 2160)      b << QStringLiteral("4K");
+    else if (w == 2560 && h == 1440) b << QStringLiteral("1440p");
+    else if (w == 1920 && h == 1080) b << QStringLiteral("1080p");
+    else if (w == 1280 && h == 720)  b << QStringLiteral("720p");
+    else                             b << QStringLiteral("%1×%2").arg(w).arg(h);
+
+    b << QStringLiteral("%1 FPS").arg(m_Preferences->fps);
+    if (m_Preferences->enableHdr) b << QStringLiteral("HDR");
+
+    switch (m_Preferences->videoCodecConfig) {
+    case StreamingPreferences::VCC_FORCE_H264:     b << QStringLiteral("H.264"); break;
+    case StreamingPreferences::VCC_FORCE_HEVC:
+    case StreamingPreferences::VCC_FORCE_HEVC_HDR_DEPRECATED:
+                                                    b << QStringLiteral("HEVC"); break;
+    case StreamingPreferences::VCC_FORCE_AV1:      b << QStringLiteral("AV1"); break;
+    case StreamingPreferences::VCC_FORCE_PYROWAVE: b << QStringLiteral("PyroWave"); break;
+    default: break;   // "Auto codec" says nothing about this stream: left out
+    }
+    return b;
 }
 
 Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *preferences)
@@ -2227,9 +2270,16 @@ bool Session::startConnectionAsync()
 
     QString rtspSessionUrl;
 
+    // The curtain's Connect segment ends here and Launch begins (7.0.0). Queued: this runs on
+    // AsyncConnectionStartThread, and the curtain is a main-thread object QML is bound to.
+    const bool resuming = m_Computer->currentGameId != 0 && !hostControl;
+    QMetaObject::invokeMethod(&m_Curtain, [this, resuming]() {
+        m_Curtain.onLaunchRequested(resuming);
+    }, Qt::QueuedConnection);
+
     try {
         NvHTTP http(m_Computer);
-        http.startApp((m_Computer->currentGameId != 0 && !hostControl) ? "resume" : "launch",
+        http.startApp(resuming ? "resume" : "launch",
                       m_Computer->isNvidiaServerSoftware,
                       m_App.id, &m_StreamConfig,
                       enableGameOptimizations,
@@ -2316,6 +2366,20 @@ bool Session::startConnectionAsync()
         }
     }
 
+    // PyroWave pacing hints (7.0.0, with Nonary's protocol 9ab99497 + 9348def9). The SDP carries
+    // them only on a PyroWave stream. The link is this device's wired link on the route to the
+    // host; the pace is the PyroWave Test's for this host, and only while that link is the one
+    // it was measured on and the host is on the LAN — over Tailscale or a VPN there is no
+    // measured path. Zero means "unknown": the host keeps its own default.
+    {
+        const int clientLinkMbps = NetworkBuffers::routedWiredLinkMbps(QHostAddress(m_Computer->activeAddress.address()));
+        const bool lan = m_Computer->getActiveAddressReachability() == NvComputer::RI_LAN;
+        m_StreamConfig.pyrowaveLinkMbps = (std::max)(0, clientLinkMbps);
+        m_StreamConfig.pyrowavePaceMbps = lan ? PyroWaveTest::paceMbpsFor(m_Computer->uuid, clientLinkMbps) : 0;
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "PyroWave pacing hints: link %d Mbps, tested pace %d Mbps",
+                    m_StreamConfig.pyrowaveLinkMbps, m_StreamConfig.pyrowavePaceMbps);
+    }
+
     // If the user has chosen YUV444 without adjusting the bitrate but the host doesn't
     // support YUV444 streaming, use the default non-444 bitrate for the stream instead.
     // This should provide equivalent image quality for YUV420 as the stream would have
@@ -2367,6 +2431,15 @@ bool Session::startConnectionAsync()
     }
 
     emit connectionStarted();
+
+    // Without the wait for the game this is the end of the launch, and the curtain's two
+    // segments are both done; with it the host's watcher has the rest. Same thread rule as above.
+    {
+        const bool waits = waitsForGame();
+        QMetaObject::invokeMethod(&m_Curtain, [this, waits]() {
+            m_Curtain.onStreamStarted(waits);
+        }, Qt::QueuedConnection);
+    }
 
     // Start asking the host how the launch is going. This is the earliest useful moment:
     // LiStartConnection has returned, so the server has already run the app's command and

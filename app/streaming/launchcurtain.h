@@ -25,8 +25,17 @@ class LaunchCurtain : public QObject
     Q_PROPERTY(QString      warning  READ warning  NOTIFY changed)
     Q_PROPERTY(qreal        progress READ progress NOTIFY changed)
     // No `steps` property: the QML used to draw a checklist of them and no longer does — one
-    // line and a prompt replaced it. ⚠️ m_Steps itself stays, and is not dead: `progress`, and
-    // with it the cover's brightness, is computed from how many have completed.
+    // line and a prompt replaced it. ⚠️ m_Steps itself stays, and is not dead: `progress` is
+    // computed from how many have completed.
+
+    /**
+     * Where the launch is, for the bar under the curtain (7.0.0): 0 Connect, 1 Launch, 2 Load,
+     * 3 everything done. Only ever moves forward. A launch that does not wait for the game
+     * draws two segments, Connect and Launch, and is done at 2 — see onStreamStarted().
+     */
+    Q_PROPERTY(int          stage    READ stage    NOTIFY changed)
+    /** The host's launch watcher gave up (its 90-second cap): the line turns red. */
+    Q_PROPERTY(bool         stalled  READ stalled  NOTIFY changed)
 
 public:
     explicit LaunchCurtain(QObject* parent = nullptr);
@@ -37,6 +46,8 @@ public:
     QString      detail()   const { return m_Detail; }
     QString      warning()  const { return m_Warning; }
     qreal        progress() const { return m_Progress; }
+    int          stage()    const { return m_Stage; }
+    bool         stalled()  const { return m_Stalled; }
 
     /** The launch is starting. Called once, before anything else. */
     void begin(const QString& gameName);
@@ -56,6 +67,18 @@ public:
 
     /** A new phase from the host's launch watcher (values of LaunchPhase). */
     void onLaunchPhase(int phase, const QString& foreground, qint64 elapsedMs);
+
+    /**
+     * The host is being asked to start (or resume) the app: Connect is over, Launch begins.
+     * The one milestone every launch has, with or without the wait for the game.
+     */
+    void onLaunchRequested(bool resume);
+
+    /**
+     * The stream is up. Without the wait for the game that is the end of the launch, so both
+     * segments are done; with it, the host's watcher carries on and this does nothing.
+     */
+    void onStreamStarted(bool waitsForGame);
 
     /** The curtain comes down. */
     void finish();
@@ -81,6 +104,7 @@ private:
     qint64 nowMs() const;
 
     void ensureLaunchSteps();
+    void advanceTo(int stage);
 
     QList<Step>  m_Steps;
     QTimer       m_Ticker;
@@ -102,4 +126,6 @@ private:
     QString  m_Detail;
     QString  m_Warning;
     qreal    m_Progress = 0.0;
+    int      m_Stage = 0;
+    bool     m_Stalled = false;
 };

@@ -1,0 +1,320 @@
+// XAudio2 2.9 ships with Windows 10, which is also StreamLight's floor; its header refuses to
+// compile below Windows 8, and nothing on the command line sets the target, so it is set here,
+// before the first Windows header.
+#ifdef _WIN32
+#  ifdef _WIN32_WINNT
+#    undef _WIN32_WINNT
+#  endif
+#  define _WIN32_WINNT 0x0A00
+#  include <windows.h>
+#  include <xaudio2.h>
+#  pragma comment(lib, "xaudio2.lib")
+#endif
+
+#include "uisound.h"
+
+#include <QCoreApplication>
+#include <QFile>
+#include <QKeyEvent>
+#include <QQuickItem>
+#include <QQuickWindow>
+#include <QSettings>
+#include <QtEndian>
+
+#include <atomic>
+
+namespace
+{
+    const char* SER_ENABLED = "ui/navigationsounds";
+
+    // How long the engine stays up after the last sound. Long enough that browsing never
+    // restarts it between steps, short enough that a launch has long since let it go by the
+    // time the stream opens its own audio.
+    constexpr int IdleMs = 4000;
+
+    // The fastest each sound may repeat. A held D-pad steps every ~100 ms and keyboard
+    // auto-repeat about every 33: Move keeps up with the first and thins out the second.
+    constexpr qint64 MinGapMs[3] = { 45, 90, 90 };
+
+    // Voices per sound: Move overlaps itself when held, the other two hardly ever do.
+    constexpr int VoiceCount[3] = { 4, 2, 2 };
+
+    const char* const ClipPath[3] = {
+        ":/sounds/move.wav", ":/sounds/confirm.wav", ":/sounds/back.wav"
+    };
+}
+
+#ifdef _WIN32
+namespace
+{
+    // A device unplugged or an endpoint gone: the engine is dead and is rebuilt on the next
+    // sound. The callback arrives on XAudio2's own thread, so it only raises a flag.
+    struct EngineCallback : public IXAudio2EngineCallback
+    {
+        std::atomic<bool> broken { false };
+        void STDMETHODCALLTYPE OnProcessingPassStart() override {}
+        void STDMETHODCALLTYPE OnProcessingPassEnd() override {}
+        void STDMETHODCALLTYPE OnCriticalError(HRESULT) override { broken = true; }
+    };
+
+    struct Clip
+    {
+        WAVEFORMATEX                fmt {};
+        QByteArray                  pcm;      // kept alive: XAudio2 reads it while it plays
+        QList<IXAudio2SourceVoice*> voices;
+        int                         next = 0;
+        bool                        valid = false;
+    };
+
+    // RIFF/WAVE, PCM only — the files are ours and are written by gen.mjs.
+    bool loadClip(const char* path, Clip& clip)
+    {
+        QFile f(QString::fromLatin1(path));
+        if (!f.open(QIODevice::ReadOnly)) return false;
+        const QByteArray d = f.readAll();
+        if (d.size() < 12 || !d.startsWith("RIFF") || d.mid(8, 4) != "WAVE") return false;
+
+        bool haveFmt = false;
+        int pos = 12;
+        while (pos + 8 <= d.size()) {
+            const QByteArray id = d.mid(pos, 4);
+            const quint32 len = qFromLittleEndian<quint32>(d.constData() + pos + 4);
+            const int body = pos + 8;
+            if (body + qint64(len) > d.size()) break;
+            if (id == "fmt " && len >= 16) {
+                memcpy(&clip.fmt, d.constData() + body, 16);
+                clip.fmt.cbSize = 0;
+                haveFmt = clip.fmt.wFormatTag == WAVE_FORMAT_PCM;
+            }
+            else if (id == "data") {
+                clip.pcm = d.mid(body, int(len));
+            }
+            pos = body + int(len) + (len & 1);
+        }
+        clip.valid = haveFmt && !clip.pcm.isEmpty();
+        return clip.valid;
+    }
+}
+
+struct UiSound::Impl
+{
+    IXAudio2*               engine = nullptr;
+    IXAudio2MasteringVoice* master = nullptr;
+    EngineCallback          callback;
+    Clip                    clips[3];
+    bool                    running = false;
+    bool                    loaded = false;
+};
+#else
+struct UiSound::Impl {};
+#endif
+
+UiSound* UiSound::get(QQmlEngine*)
+{
+    static UiSound* instance = new UiSound();
+    // Created before the QML engine (main.cpp installs its filter early), and kept by C++:
+    // SdlGamepadKeyNavigation calls it directly, and must never find it collected.
+    QQmlEngine::setObjectOwnership(instance, QQmlEngine::CppOwnership);
+    return instance;
+}
+
+UiSound::UiSound(QObject* parent)
+    : QObject(parent),
+      m_Impl(new Impl)
+{
+    m_Enabled = QSettings().value(SER_ENABLED, true).toBool();
+    m_Clock.start();
+
+    m_IdleTimer.setSingleShot(true);
+    m_IdleTimer.setInterval(IdleMs);
+    connect(&m_IdleTimer, &QTimer::timeout, this, [this]() {
+#ifdef _WIN32
+        if (m_Impl->engine && m_Impl->running) {
+            m_Impl->engine->StopEngine();
+            m_Impl->running = false;
+        }
+#endif
+    });
+
+    if (QCoreApplication::instance() != nullptr) {
+        QCoreApplication::instance()->installEventFilter(this);
+    }
+}
+
+UiSound::~UiSound()
+{
+    teardown();
+    delete m_Impl;
+}
+
+void UiSound::setEnabled(bool on)
+{
+    if (on == m_Enabled) return;
+    m_Enabled = on;
+    QSettings().setValue(SER_ENABLED, m_Enabled);
+    emit enabledChanged();
+}
+
+void UiSound::play(int kind)
+{
+    if (kind < Move || kind > Back) return;
+    // The dedupe described in the header: a QML request that follows the key that caused it.
+    if (m_Clock.elapsed() - m_LastMs[kind] < 200) return;
+    playNow(kind);
+}
+
+int UiSound::kindForKey(int key, Qt::KeyboardModifiers modifiers)
+{
+    // Ctrl/Alt combinations are shortcuts, not navigation.
+    if (modifiers & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) return -1;
+
+    switch (key) {
+    case Qt::Key_Up: case Qt::Key_Down: case Qt::Key_Left: case Qt::Key_Right:
+    case Qt::Key_Tab: case Qt::Key_Backtab:
+    case Qt::Key_PageUp: case Qt::Key_PageDown:
+    case Qt::Key_F14: case Qt::Key_F15:   // LT / RT: the profile
+    case Qt::Key_F16: case Qt::Key_F17:   // LB / RB: the tab, or the host on Home
+        return Move;
+    case Qt::Key_Return: case Qt::Key_Enter: case Qt::Key_Space:
+    case Qt::Key_Menu:     // X
+    case Qt::Key_Hangup:   // Y: Settings
+    case Qt::Key_F13:      // Select: per-game settings
+    case Qt::Key_F18:      // Start: pin
+    case Qt::Key_F19:      // right stick: move to the other tab, theme on Home
+        return Confirm;
+    case Qt::Key_Escape: case Qt::Key_Back:
+        return Back;
+    default:
+        return -1;
+    }
+}
+
+bool UiSound::focusIsText(QWindow* window)
+{
+    auto* quick = qobject_cast<QQuickWindow*>(window);
+    QQuickItem* item = quick ? quick->activeFocusItem() : nullptr;
+    return item && (item->inherits("QQuickTextInput") || item->inherits("QQuickTextEdit"));
+}
+
+void UiSound::noteKey(QWindow* window, int key, Qt::KeyboardModifiers modifiers, bool autoRepeat,
+                      bool accepted, bool wasText)
+{
+    if (!m_Enabled || !accepted || wasText) return;
+
+    // Without a focused item nobody could have taken the key — and a key event starts out
+    // accepted, so `accepted` would claim otherwise.
+    auto* quick = qobject_cast<QQuickWindow*>(window);
+    if (quick == nullptr || !quick->isVisible() || quick->activeFocusItem() == nullptr) return;
+
+    const int kind = kindForKey(key, modifiers);
+    if (kind < 0) return;
+    // Held: only a move repeats. A held A does not confirm ten times.
+    if (autoRepeat && kind != Move) return;
+    playNow(kind);
+}
+
+bool UiSound::eventFilter(QObject* watched, QEvent* event)
+{
+    // The real keyboard only — pad presses come in through noteKey() with a real answer.
+    // Watched == the window: the delivery to the window, not each item it is passed on to.
+    if (event->type() == QEvent::KeyPress && event->spontaneous() && m_Enabled) {
+        if (auto* window = qobject_cast<QQuickWindow*>(watched)) {
+            const auto* ke = static_cast<QKeyEvent*>(event);
+            if (!focusIsText(window)) {
+                noteKey(window, ke->key(), ke->modifiers(), ke->isAutoRepeat(), true, false);
+            }
+        }
+    }
+    return QObject::eventFilter(watched, event);
+}
+
+void UiSound::playNow(int kind)
+{
+    const qint64 now = m_Clock.elapsed();
+    if (now - m_LastMs[kind] < MinGapMs[kind]) return;
+    m_LastMs[kind] = now;
+
+#ifdef _WIN32
+    if (!ensureEngine()) return;
+    Clip& clip = m_Impl->clips[kind];
+    if (!clip.valid || clip.voices.isEmpty()) return;
+
+    IXAudio2SourceVoice* voice = clip.voices[clip.next];
+    clip.next = (clip.next + 1) % clip.voices.size();
+
+    // The oldest voice of this sound is reused: stopped, emptied, given the clip again.
+    voice->Stop(0);
+    voice->FlushSourceBuffers();
+    XAUDIO2_BUFFER buffer {};
+    buffer.Flags = XAUDIO2_END_OF_STREAM;
+    buffer.AudioBytes = UINT32(clip.pcm.size());
+    buffer.pAudioData = reinterpret_cast<const BYTE*>(clip.pcm.constData());
+    if (SUCCEEDED(voice->SubmitSourceBuffer(&buffer))) {
+        voice->Start(0);
+    }
+    m_IdleTimer.start();
+#endif
+}
+
+bool UiSound::ensureEngine()
+{
+#ifdef _WIN32
+    Impl* d = m_Impl;
+    if (d->callback.broken) teardown();
+
+    if (!d->loaded) {
+        for (int k = 0; k < 3; k++) {
+            if (!loadClip(ClipPath[k], d->clips[k])) {
+                qWarning() << "UiSound: could not read" << ClipPath[k];
+            }
+        }
+        d->loaded = true;
+    }
+
+    if (d->engine == nullptr) {
+        if (FAILED(XAudio2Create(&d->engine, 0, XAUDIO2_DEFAULT_PROCESSOR))) {
+            d->engine = nullptr;
+            return false;
+        }
+        d->engine->RegisterForCallbacks(&d->callback);
+        if (FAILED(d->engine->CreateMasteringVoice(&d->master))) {
+            teardown();
+            return false;
+        }
+        for (int k = 0; k < 3; k++) {
+            Clip& clip = d->clips[k];
+            if (!clip.valid) continue;
+            for (int v = 0; v < VoiceCount[k]; v++) {
+                IXAudio2SourceVoice* voice = nullptr;
+                if (SUCCEEDED(d->engine->CreateSourceVoice(&voice, &clip.fmt))) {
+                    clip.voices.append(voice);
+                }
+            }
+            clip.next = 0;
+        }
+        d->running = true;
+    }
+    else if (!d->running) {
+        if (FAILED(d->engine->StartEngine())) return false;
+        d->running = true;
+    }
+    return true;
+#else
+    return false;
+#endif
+}
+
+void UiSound::teardown()
+{
+#ifdef _WIN32
+    Impl* d = m_Impl;
+    for (Clip& clip : d->clips) {
+        for (IXAudio2SourceVoice* voice : clip.voices) voice->DestroyVoice();
+        clip.voices.clear();
+    }
+    if (d->master) { d->master->DestroyVoice(); d->master = nullptr; }
+    if (d->engine) { d->engine->Release(); d->engine = nullptr; }
+    d->running = false;
+    d->callback.broken = false;
+#endif
+}

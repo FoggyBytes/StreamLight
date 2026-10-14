@@ -63,6 +63,13 @@ Item {
     // Designed at 1280 wide, like everything else, and grown with the window.
     readonly property real _u: Theme.uiScale
 
+    // 7.0.0: the waves are lines and thin washes on the floor, so they take the ink — in Light
+    // a pale accent drawn at 2% would not show at all. Same strength in both themes since the
+    // light floor stopped being near-white (08/10/2026): ×1.3 on grey-blue made them shout.
+    property bool dark: false
+    readonly property color _ink: dark ? Theme.accent : Theme.ink
+    readonly property real  _k: 1.0
+
     clip: true
 
     property real _speed: speed
@@ -185,12 +192,12 @@ Item {
             ShapePath {
                 strokeWidth: -1
                 strokeColor: "transparent"
-                fillColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, wave.fillAlpha)
+                fillColor: Qt.rgba(waves._ink.r, waves._ink.g, waves._ink.b, wave.fillAlpha * waves._k)
                 PathPolyline { path: wave.body }
             }
             ShapePath {
                 strokeWidth: Math.max(1, 1.5 * waves._u)
-                strokeColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, wave.crestAlpha)
+                strokeColor: Qt.rgba(waves._ink.r, waves._ink.g, waves._ink.b, wave.crestAlpha * waves._k)
                 fillColor: "transparent"
                 joinStyle: ShapePath.RoundJoin
                 PathPolyline { path: wave.crest }

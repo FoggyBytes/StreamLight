@@ -441,8 +441,21 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
             err |= addAttributeString(&optionHead, "x-ss-video[0].pyrowaveAdaptiveFec", "0");
             err |= addAttributeString(&optionHead, "x-ss-video[0].pyrowaveAdaptiveBitrate", "0");
 
-            snprintf(payloadStr, sizeof(payloadStr), "%u", (unsigned int)PYROWAVE_FEATURE_RECORD_FRAMING);
+            const unsigned int pyrowaveFeatures = PYROWAVE_FEATURE_RECORD_FRAMING |
+                (StreamConfig.pyrowaveCompression ? PYROWAVE_FEATURE_COMPRESSION : 0);
+            snprintf(payloadStr, sizeof(payloadStr), "%u", pyrowaveFeatures);
             err |= addAttributeString(&optionHead, "x-ss-video[0].pyrowaveFeatures", payloadStr);
+            if (StreamConfig.pyrowaveCompression) {
+                err |= addAttributeString(&optionHead, "x-ss-video[0].pyrowaveCompression", "1");
+            }
+            if (StreamConfig.pyrowaveLinkMbps > 0) {
+                snprintf(payloadStr, sizeof(payloadStr), "%d", StreamConfig.pyrowaveLinkMbps);
+                err |= addAttributeString(&optionHead, "x-ss-video[0].pyrowaveLinkMbps", payloadStr);
+            }
+            if (StreamConfig.pyrowavePaceMbps > 0) {
+                snprintf(payloadStr, sizeof(payloadStr), "%d", StreamConfig.pyrowavePaceMbps);
+                err |= addAttributeString(&optionHead, "x-ss-video[0].pyrowavePaceMbps", payloadStr);
+            }
         }
         else if (NegotiatedVideoFormat & VIDEO_FORMAT_MASK_AV1) {
             err |= addAttributeString(&optionHead, "x-nv-vqos[0].bitStreamFormat", "2");

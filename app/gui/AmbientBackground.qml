@@ -39,15 +39,26 @@ Item {
      */
     property bool waves: true
 
+    /**
+     * Dark whatever the theme (7.0.0). The launch curtain and the quit screen stay dark in
+     * Light: they lead into the stream and out of it, and what they show is the game's cover.
+     */
+    property bool dark: false
+
+    readonly property color _floor: dark ? "#151515" : Theme.floor
+
     DitheredGradient {
         anchors.fill: parent
         orientation: Qt.Vertical
         stops: [
-            { pos: 0.0, color: "#151515" },
-            { pos: 0.7, color: Qt.tint("#151515", Qt.rgba(Theme.accent.r, Theme.accent.g,
-                                                          Theme.accent.b, 0.07)) },
-            { pos: 1.0, color: Qt.tint("#151515", Qt.rgba(Theme.accent.r, Theme.accent.g,
-                                                          Theme.accent.b, 0.20)) }
+            // Theme.floor (7.0.0): #151515 in Dark as before, grey-blue in Light. The foot takes
+            // half the accent in Light (8% against 20%): on a light floor the same share reads as
+            // a coloured wash rather than a hint — it turned the lower third pink with Rose.
+            { pos: 0.0, color: ambient._floor },
+            { pos: 0.7, color: Qt.tint(ambient._floor, Qt.rgba(Theme.accent.r, Theme.accent.g,
+                                                            Theme.accent.b, 0.07)) },
+            { pos: 1.0, color: Qt.tint(ambient._floor, Qt.rgba(Theme.accent.r, Theme.accent.g,
+                                                            Theme.accent.b, (Theme.light && !ambient.dark) ? 0.08 : 0.20)) }
         ]
     }
 
@@ -56,5 +67,6 @@ Item {
         visible: ambient.waves
         speed: ambient.streaming ? 2.0 : 1.0
         rise: ambient.rise
+        dark: ambient.dark
     }
 }

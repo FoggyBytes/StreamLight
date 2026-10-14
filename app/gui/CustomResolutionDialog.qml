@@ -10,6 +10,10 @@ import QtQuick.Layouts 1.3
 Popup {
     id: pop
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    enter: PopEnter {}
+    exit: PopExit {}
+
     signal accepted(int outWidth, int outHeight)
 
     property int initWidth:  1920
@@ -45,6 +49,10 @@ Popup {
     Overlay.modal: Item {}
     focus: true
     // Centred but offset higher so a virtual keyboard (handheld) does not cover it.
+    // Placed in the window, not in whatever opened it (7.0.0): x and y are worked out on the
+    // overlay, and a popup positions itself in its PARENT's coordinates — opened from inside
+    // a dialog, it landed off to the right by the dialog's own offset.
+    parent: Overlay.overlay
     x: (Overlay.overlay ? (Overlay.overlay.width  - width)  / 2 : 0)
     y: (Overlay.overlay ? Math.max(pop._px(40), Overlay.overlay.height * 0.12) : pop._px(40))
     closePolicy: Popup.CloseOnEscape
@@ -52,7 +60,7 @@ Popup {
 
     background: Rectangle {
         color: Theme.card
-        border.color: Theme.line
+        border.color: Theme.lineHigh // 7.0.0: no scrim, so the edge has to separate it from the card below
         border.width: 1
         radius: pop._px(12)
     }
@@ -67,7 +75,7 @@ Popup {
         implicitHeight: _fpx(48)
         color: Theme.text
         selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
-        selectedTextColor: Theme.onAccent
+        selectedTextColor: Theme.text
         font.family: Theme.family
         font.pixelSize: _fpx(Theme.fontTitle)
         font.bold: true
@@ -79,7 +87,7 @@ Popup {
             // Not parent._fpx(): a Control's background sees its parent as a bare
             // QQuickItem, so the call resolves at runtime and nowhere earlier.
             radius: Math.round(Theme.uiScale * 8)
-            border.color: parent.activeFocus ? Theme.accent : Theme.line
+            border.color: parent.activeFocus ? Theme.ink : Theme.line
             border.width: parent.activeFocus ? 2 : 1
         }
     }
@@ -117,7 +125,8 @@ Popup {
                 Keys.onReturnPressed: pop._commit()
                 Keys.onEnterPressed:  pop._commit()
                 Keys.onRightPressed:  hField.forceActiveFocus()
-                Keys.onTabPressed:    hField.forceActiveFocus()
+                // Shift+Tab (the pad's up in Settings arrives as Tab + Shift) keeps going back.
+                Keys.onTabPressed:    function(event) { if ((event.modifiers & Qt.ShiftModifier)) { event.accepted = false; return } hField.forceActiveFocus() }
                 Keys.onDownPressed:   applyBtn.forceActiveFocus()
             }
             Label {
@@ -132,7 +141,7 @@ Popup {
                 Keys.onReturnPressed: pop._commit()
                 Keys.onEnterPressed:  pop._commit()
                 Keys.onLeftPressed:   wField.forceActiveFocus()
-                Keys.onTabPressed:    applyBtn.forceActiveFocus()
+                Keys.onTabPressed:    function(event) { if ((event.modifiers & Qt.ShiftModifier)) wField.forceActiveFocus(); else applyBtn.forceActiveFocus() }
                 Keys.onDownPressed:   applyBtn.forceActiveFocus()
             }
         }
@@ -180,16 +189,16 @@ Popup {
                     implicitHeight: pop._px(42)
                     radius: pop._px(8)
                     color: applyBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
-                         : applyBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
+                         : applyBtn.hovered     ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.05)
                          :                         Theme.card
-                    border.color: applyBtn.activeFocus ? Theme.accent
+                    border.color: applyBtn.activeFocus ? Theme.ink
                                 : applyBtn.hovered     ? Theme.lineHigh
                                 :                         Theme.line
                     border.width: applyBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: applyBtn.text
-                    color: Theme.accent
+                    color: Theme.inkText
                     font.family: Theme.family
                     font.pixelSize: pop._px(Theme.fontBody)
                     font.bold: true
@@ -214,9 +223,9 @@ Popup {
                     implicitHeight: pop._px(42)
                     radius: pop._px(8)
                     color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
-                         : cancelBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
+                         : cancelBtn.hovered     ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.05)
                          :                         Theme.card
-                    border.color: cancelBtn.activeFocus ? Theme.accent
+                    border.color: cancelBtn.activeFocus ? Theme.ink
                                 : cancelBtn.hovered     ? Theme.lineHigh
                                 :                         Theme.line
                     border.width: cancelBtn.activeFocus ? 2 : 1

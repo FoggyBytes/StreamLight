@@ -12,6 +12,9 @@
 #include <QLibraryInfo>
 #include <QProcess>
 #include <QStringList>
+#include <QFile>
+#include <QRegularExpression>
+#include <QVersionNumber>
 
 #include "settings/videooptions.h"
 #include "streaming/session.h"
@@ -727,4 +730,86 @@ bool SystemProperties::updatesPending()
 #else
     return false;
 #endif
+}
+
+QVariantList SystemProperties::changelogForCurrentMajor() const
+{
+    QVariantList out;
+    QFile f(QStringLiteral(":/changelog.txt"));
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return out;
+    }
+    const QStringList lines = QString::fromUtf8(f.readAll()).split(QLatin1Char('\n'));
+
+    const QVersionNumber running = QVersionNumber::fromString(versionString);
+    // "Version 7.0.0 - Name (dd/mm/yyyy)" or "Version 7.0.0 (dd/mm/yyyy)"
+    static const QRegularExpression header(
+        QStringLiteral("^Version\\s+([0-9.]+)(?:\\s+-\\s+\"?(.*?)\"?)?\\s+\\(([^)]*)\\)\\s*$"));
+
+    QVariantMap entry;
+    QVariantList sections;
+    QVariantMap section;
+    QVariantList items;
+    bool keep = false;
+
+    auto flushSection = [&]() {
+        if (!section.isEmpty()) {
+            section[QStringLiteral("items")] = items;
+            sections.append(section);
+        }
+        section.clear();
+        items.clear();
+    };
+    auto flushEntry = [&]() {
+        flushSection();
+        if (keep && !entry.isEmpty()) {
+            entry[QStringLiteral("sections")] = sections;
+            out.append(entry);
+        }
+        entry.clear();
+        sections.clear();
+        keep = false;
+    };
+
+    for (QString line : lines) {
+        line = line.trimmed();
+        const QRegularExpressionMatch m = header.match(line);
+        if (m.hasMatch()) {
+            flushEntry();
+            const QVersionNumber v = QVersionNumber::fromString(m.captured(1));
+            // This major only, and nothing newer than what is running: a changelog written
+            // ahead of a release must not show up in the build before it.
+            keep = v.majorVersion() == running.majorVersion() && v <= running;
+            entry[QStringLiteral("version")] = m.captured(1);
+            entry[QStringLiteral("name")] = m.captured(2);
+            entry[QStringLiteral("date")] = m.captured(3);
+            entry[QStringLiteral("intro")] = QString();
+            continue;
+        }
+        if (entry.isEmpty() || line.isEmpty()
+                || line.startsWith(QLatin1String("---")) || line.startsWith(QLatin1String("==="))) {
+            continue;
+        }
+        const QString bullet = QStringLiteral("•");
+        if (line.endsWith(QLatin1Char(':')) && !line.startsWith(bullet)) {
+            flushSection();
+            section[QStringLiteral("title")] = line.left(line.size() - 1);
+            continue;
+        }
+        if (line.startsWith(bullet)) {
+            const QString body = line.mid(1).trimmed();
+            const int dash = body.indexOf(QStringLiteral(" — "));
+            QVariantMap item;
+            item[QStringLiteral("lead")] = dash > 0 ? body.left(dash) : QString();
+            item[QStringLiteral("text")] = dash > 0 ? body.mid(dash + 3) : body;
+            items.append(item);
+            continue;
+        }
+        if (section.isEmpty()) {
+            const QString intro = entry.value(QStringLiteral("intro")).toString();
+            entry[QStringLiteral("intro")] = intro.isEmpty() ? line : intro + QLatin1Char(' ') + line;
+        }
+    }
+    flushEntry();
+    return out;
 }

@@ -93,6 +93,14 @@ public:
      */
     Q_INVOKABLE QVariantMap vrrRecommendation();
 
+    /**
+     * The changelog of the major release this build belongs to (7.0.0): every entry from X.0.0
+     * up to the running version, newest first, parsed from the changelog.txt embedded in the
+     * resources. Each entry is { version, name, date, intro, sections: [{ title, items:
+     * [{ lead, text }] }] } — a bullet's lead is the part before its em dash. About shows it.
+     */
+    Q_INVOKABLE QVariantList changelogForCurrentMajor() const;
+
     Q_INVOKABLE void startAsyncLoad();
     Q_INVOKABLE void waitForAsyncLoad();
     Q_INVOKABLE void refreshDisplays();

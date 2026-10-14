@@ -10,6 +10,12 @@ import SdlGamepadKeyNavigation 1.0
 Popup {
     id: dlg
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    // Grows out of the card's Options button, low on the left of the card (7.0.0).
+    transformOrigin: Popup.BottomLeft
+    enter: PopEnter { fromScale: 0.55 }
+    exit: PopExit {}
+
     // Shared dialog measurements — see Theme.uiScale.
     readonly property real _u: Theme.uiScale
     function _px(n) { return Math.round(n * _u) }
@@ -17,6 +23,20 @@ Popup {
     property string hostName: ""
     property var    items: []
     signal chosen(string kind)
+
+    /*
+     * The tile the cursor was on last time (7.0.0, 09/10/2026): Options opens on it again, for
+     * as long as the app runs. By KIND, not by index — the tiles change with the host and its
+     * state (Wake, Tailscale, the link tile come and go), so an index would land on another one.
+     * ⚠️ Placed in onAboutToShow, before the popup is drawn. It was reset to the first tile in
+     * onOpened, after the opening animation: the cursor was seen on the last tile for the whole
+     * spring and then jumped to the top left.
+     */
+    property string _lastKind: ""
+    function _indexOfKind(kind) {
+        for (var i = 0; i < dlg._count; i++) if (dlg.items[i].kind === kind) return i
+        return -1
+    }
 
     readonly property int _cols:  3
     readonly property int _cellW: dlg._px(200)
@@ -61,6 +81,41 @@ Popup {
             keyNavigationEnabled: true
             keyNavigationWraps: false
             currentIndex: 0
+            onCurrentIndexChanged: if (dlg.opened && currentIndex >= 0 && currentIndex < dlg._count)
+                                       dlg._lastKind = dlg.items[currentIndex].kind
+
+            // The focus glides (7.0.0): with the pad or the keyboard, the lit tile is one shape
+            // that slides between tiles; the tiles then draw no light.
+            // ⚠️ Moved by the GridView, and only for a step the user took (09/10/2026). It had a
+            // spring of its own on x and y, so every opening — currentIndex back to 0 — flew it
+            // from the tile chosen last time across the grid.
+            property bool _stepping: false
+            Timer { id: stepWindow; interval: 350; onTriggered: grid._stepping = false }
+            Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Left || event.key === Qt.Key_Right
+                        || event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
+                    grid._stepping = true
+                    stepWindow.restart()
+                }
+                event.accepted = false
+            }
+            highlightFollowsCurrentItem: true
+            highlightMoveDuration: Theme.reduceAnimations || !grid._stepping ? 0 : 120
+            readonly property bool _glide: SdlGamepadKeyNavigation.inputMode === "key" && !Theme.reduceAnimations
+            readonly property bool _curDanger: currentIndex >= 0 && dlg.items && currentIndex < dlg.items.length
+                                               && dlg.items[currentIndex].danger === true
+            highlight: Item {
+              Rectangle {
+                visible: grid._glide && grid.currentItem !== null
+                anchors.fill: parent
+                anchors.margins: 8
+                radius: dlg._px(10)
+                color: grid._curDanger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.18)
+                                       : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16)
+                border.color: grid._curDanger ? Theme.danger : Theme.ink
+                border.width: 2
+              }
+            }
 
             function _activate() {
                 if (currentIndex >= 0 && dlg.items && currentIndex < dlg.items.length) {
@@ -74,8 +129,28 @@ Popup {
             Keys.onSpacePressed:  function(event) { _activate(); event.accepted = true }
 
             delegate: Item {
+                id: tile
                 width: grid.cellWidth
                 height: grid.cellHeight
+
+                // The tiles arrive one after another when the grid opens (7.0.0): each rises
+                // 10 px and fades in, 20 ms after the one before.
+                property real _in: 1
+                opacity: _in
+                transform: Translate { y: (1 - tile._in) * dlg._px(10) }
+                Connections {
+                    target: dlg
+                    function onAboutToShow() {
+                        if (Theme.reduceAnimations) { tile._in = 1; return }
+                        tile._in = 0
+                        tileIn.restart()
+                    }
+                }
+                SequentialAnimation {
+                    id: tileIn
+                    PauseAnimation { duration: 30 + index * 20 }
+                    NumberAnimation { target: tile; property: "_in"; to: 1; duration: 170; easing.type: Easing.OutCubic }
+                }
                 readonly property bool _sel:      grid.currentIndex === index
                 readonly property bool _danger:   modelData.danger === true
                 readonly property bool _disabled: modelData.disabled === true
@@ -87,19 +162,21 @@ Popup {
                     anchors.margins: 8
                     radius: dlg._px(10)
                     opacity: _disabled ? 0.4 : 1.0
-                    color: _sel ? (_danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.18)
+                    color: (_sel && grid._glide) ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.04)
+                         : _sel ? (_danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.18)
                                            : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16))
-                                : Qt.rgba(1, 1, 1, 0.04)
-                    border.color: _sel ? (_danger ? Theme.danger : Theme.accent)
+                                : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.04)
+                    border.color: (_sel && !grid._glide) ? (_danger ? Theme.danger : Theme.ink)
                                        : Theme.line
-                    border.width: _sel ? 2 : 1
+                    border.width: (_sel && !grid._glide) ? 2 : 1
 
                     // Same snap as every other focusable thing in the app.
                     Behavior on scale {
                         enabled: !Theme.reduceAnimations
                         NumberAnimation { duration: 130; easing.type: Easing.OutBack; easing.overshoot: 2.0 }
                     }
-                    scale: _sel && !Theme.reduceAnimations ? 1.04 : 1.0
+                    // 7.0.0: a press dips it before it springs back.
+                    scale: Theme.reduceAnimations ? 1.0 : tileMouse.pressed ? 0.96 : _sel ? 1.04 : 1.0
 
                     Column {
                         anchors.centerIn: parent
@@ -155,19 +232,27 @@ Popup {
                         // the question is only "is this worth going to fix?", not "what is it".
                         // Without it a disabled tile is a dead end: the app says why everywhere
                         // else it withholds something, and this dialog was the exception.
+                        // On a live tile, `note` takes the same place: a fact worth seeing before
+                        // choosing it (7.0.0 — PyroWave Test: when it last ran, and its answer).
                         Label {
                             anchors.horizontalCenter: parent.horizontalCenter
                             width: grid.cellWidth - dlg._px(28)
-                            visible: _disabled && text.length > 0
-                            text: modelData.reason || ""
+                            visible: text.length > 0
+                            text: _disabled ? (modelData.reason || "") : (modelData.note || "")
                             color: Theme.text3
                             font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontCaption)
                             horizontalAlignment: Text.AlignHCenter
                             elide: Text.ElideRight
                         }
+                        // NEW on a tile the installed release added or rebuilt (7.0.0).
+                        NewBadge {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            since: modelData.since || ""
+                        }
                     }
 
                     MouseArea {
+                        id: tileMouse
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: _disabled ? Qt.ArrowCursor : Qt.PointingHandCursor
@@ -181,6 +266,7 @@ Popup {
         }
     }
 
-    onOpened: { grid.currentIndex = 0; grid.forceActiveFocus() }
+    onAboutToShow: grid.currentIndex = Math.max(0, dlg._indexOfKind(dlg._lastKind))
+    onOpened: grid.forceActiveFocus()
     onClosed: { if (typeof stackView !== "undefined" && stackView) stackView.forceActiveFocus() }
 }

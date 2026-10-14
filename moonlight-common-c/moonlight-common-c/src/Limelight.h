@@ -100,6 +100,19 @@ typedef struct _STREAM_CONFIGURATION {
     // in /launch and /resume requests.
     char remoteInputAesKey[16];
     char remoteInputAesIv[16];
+
+    // Request independent PyroWave compression only after checking host support.
+    // Zero preserves the normal intra-only PyroWave stream.
+    int pyrowaveCompression;
+
+    // Routed client wired-link speed in Mbps, used by PyroWave host pacing.
+    // Zero means unknown; other codecs do not advertise this value.
+    int pyrowaveLinkMbps;
+
+    // Highest frame pace in Mbps that calibration kept within its loss limit.
+    // The host paces PyroWave frames at this rate instead of its default
+    // link headroom. Zero means uncalibrated; only sent for PyroWave.
+    int pyrowavePaceMbps;
 } STREAM_CONFIGURATION, *PSTREAM_CONFIGURATION;
 
 // Use this function to zero the stream configuration when allocated on the stack or heap
@@ -276,6 +289,8 @@ typedef struct _DECODE_UNIT {
 // Partial-frame decoding needs no bit: a record-framed client always decodes
 // what arrives, and 0x2 (once reserved for it) is ignored by hosts.
 #define PYROWAVE_FEATURE_RECORD_FRAMING 0x1 // Parses record framing with padding records
+#define PYROWAVE_FEATURE_COMPRESSION         0x8 // Independent LZ4 detail groups; no frame references
+#define PYROWAVE_COMPRESSION_VERSION         1
 
 // If set in the renderer capabilities field, this flag will cause audio/video data to
 // be submitted directly from the receive thread. This should only be specified if the
@@ -1068,6 +1083,8 @@ bool LiGetHdrMetadata(PSS_HDR_METADATA metadata);
 // that encode PyroWave without advertising it use an unknown bitstream revision.
 // Valid after the RTSP handshake. This is a Sunshine protocol extension.
 const char* LiGetHostPyroWaveBitstreamId(void);
+
+
 
 // This function requests an IDR frame from the host. Typically this is done using DR_NEED_IDR, but clients
 // processing frames asynchronously may need to reset their decoder state even after returning DR_OK for

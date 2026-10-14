@@ -54,13 +54,11 @@ class ComputerModel : public QAbstractListModel
         ProfileCountRole,
         ActiveProfileSlotRole,
         ActiveProfileNameRole,
-        StageColorFromRole,
-        StageColorToRole,
         StageImageRole,
-        StageSeedRole,
         StageOpacityRole,
         StreamTweakEnabledRole,
-        AsleepRole          // put to sleep by this client, not polled until Wake (6.2.0)
+        AsleepRole,         // put to sleep by this client, not polled until Wake (6.2.0)
+        PyroWaveTestRole    // 0 no PyroWave · 1 PyroWave, host too old for the test · 2 testable (7.0.0)
     };
 
 public:
@@ -195,15 +193,9 @@ public:
      */
     Q_INVOKABLE void refreshTailscale(int computerIndex);
 
-    /**
-     * Sets this host's stage backdrop. Pass a picture path, OR a "#rrggbb" seed, OR neither
-     * to clear it and fall back to the colours derived from the host name.
-     *
-     * The gradient pair is worked out once, here, and stored on the host — not recomputed
-     * when the stage is drawn, which happens every time the user changes tab.
-     */
-    Q_INVOKABLE void setHostStageBackground(int computerIndex, const QString& imagePath,
-                                            const QString& seedColor);
+    /** Sets this host's stage picture (7.0.0: a picture only); an empty path clears it. */
+    Q_INVOKABLE void setHostStageBackground(int computerIndex, const QString& imagePath);
+
 
     /**
      * How opaque this host's card is on Home, in percent (6.0.0). Clamped to
@@ -211,6 +203,15 @@ public:
      * Stored on the host with the rest of its backdrop.
      */
     Q_INVOKABLE void setHostStageOpacity(int computerIndex, int percent);
+
+    /**
+     * The last three pictures chosen as a host background, newest first, for any host
+     * (7.0.0) — the Background panel offers them so a pad can pick a picture without the
+     * file dialog. Files that no longer exist are dropped on read.
+     */
+    Q_INVOKABLE QStringList recentStagePictures() const;
+    /** Puts @p imagePath at the head of recentStagePictures() (max 3). */
+    Q_INVOKABLE void rememberStagePicture(const QString& imagePath);
 
     /**
      * The StreamTweak integration, per host. Everything that talks to the bridge is gated
@@ -371,6 +372,9 @@ private:
 
     QVector<NvComputer*> m_Computers;
     int m_LayoutRevision = 0;
+    // The theme the stage pictures were last served for: each theme has its own (13/10/2026),
+    // so a theme change repaints every card.
+    bool m_StageLight = false;
     ComputerManager* m_ComputerManager;
     StreamTweakBridge m_streamTweakBridge;
     // Keyed by host UUID, not list index: the index shifts whenever the model is

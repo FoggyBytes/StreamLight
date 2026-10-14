@@ -1,6 +1,5 @@
 #include "computermanager.h"
 #include "boxartmanager.h"
-#include "coverpalette.h"
 #include "nvhttp.h"
 #include "nvpairingmanager.h"
 #include "../settings/appsettings.h"
@@ -1288,7 +1287,7 @@ bool ComputerManager::setTailscaleAddress(QString uuid, QString tailscaleIp)
     return changed;
 }
 
-bool ComputerManager::setStageBackground(QString uuid, QString imagePath, QString seedColor)
+bool ComputerManager::setStageBackground(QString uuid, QString imagePath, bool lightTheme)
 {
     if (uuid.isEmpty()) {
         return false;
@@ -1303,27 +1302,15 @@ bool ComputerManager::setStageBackground(QString uuid, QString imagePath, QStrin
         return false;
     }
 
-    // Derive here, once, rather than on every repaint: the picture may be a multi-megabyte
-    // JPEG and the stage is drawn every time the user changes host. Storing the result also
-    // means the gradient survives the picture being moved or deleted afterwards.
-    QColor from, to;
-    bool haveColours = false;
-    if (!imagePath.isEmpty()) {
-        haveColours = CoverPalette::fromImageFile(imagePath, from, to);
-    }
-    else if (!seedColor.isEmpty()) {
-        haveColours = CoverPalette::fromSeed(QColor(seedColor), from, to);
-    }
-
     {
         QWriteLocker cLock(&computer->lock);
-        computer->stageImagePath = imagePath;
-        computer->stageSeedColor = seedColor;
-        // A source that yielded nothing usable (a grey picture, an unreadable file) clears
-        // the pair instead of storing the neutral fallback, so the Home screen goes back to
-        // the host's own colours rather than showing every such host the same slate blue.
-        computer->stageColorFrom = haveColours ? from.name() : QString();
-        computer->stageColorTo   = haveColours ? to.name()   : QString();
+        if (lightTheme) {
+            computer->stageImagePathLight = imagePath;
+            computer->stageImageLightSet = true;
+        }
+        else {
+            computer->stageImagePath = imagePath;
+        }
     }
 
     saveHost(computer);

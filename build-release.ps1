@@ -5,11 +5,11 @@
     Esegui con doppio clic o da PowerShell senza parametri.
 
 .DESCRIPTION
-    1. Aggiunge Qt 6.8.3 e 7-Zip al PATH della sessione
+    1. Aggiunge Qt 6.12.0 e 7-Zip al PATH della sessione
     2. Esegue build-arch.bat release (clean build completo)
        Il bat fallisce volutamente alla fine (flag windeployqt non supportato) — e' normale
     3. Verifica che StreamLight.exe sia stato prodotto
-    4. Esegue windeployqt con i flag corretti per Qt 6.8.3
+    4. Esegue windeployqt con i flag corretti per Qt 6.12.0
     5. Copia StreamLight.exe e le DLL di libs nella cartella di output finale
     6. Apre la cartella output in Explorer
 #>
@@ -30,7 +30,7 @@ trap {
 # Percorsi fissi
 # ---------------------------------------------------------------------------
 $StreamLightRoot  = 'C:\Users\marce\source\repos\StreamLight'
-$QtBinPath        = 'C:\Qt\6.8.3\msvc2022_64\bin'
+$QtBinPath        = 'C:\Qt\6.12.0\msvc2022_64\bin'
 $SevenZipPath     = 'C:\Program Files\7-Zip'
 $WinDeployQt      = Join-Path $QtBinPath 'windeployqt.exe'
 $BuildArchBat     = Join-Path $StreamLightRoot 'scripts\build-arch.bat'
@@ -93,7 +93,7 @@ if (-not (Test-Path $QtBinPath)) {
     Read-Host "Premi Invio per chiudere"
     exit 1
 }
-Write-OK "Qt 6.8.3 trovato: $QtBinPath"
+Write-OK "Qt 6.12.0 trovato: $QtBinPath"
 
 if (-not (Test-Path (Join-Path $SevenZipPath '7z.exe'))) {
     Write-Fail "7z.exe non trovato in: $SevenZipPath"
@@ -131,7 +131,7 @@ Write-OK "PATH aggiornato per la sessione corrente"
 Write-Step "Avvio clean build (build-arch.bat release)"
 Write-Host "    Questo step richiede diversi minuti. Attendere..."
 Write-Host "    NOTA: il bat terminera' con un errore su --no-quickcontrols2fluentwinui3styleimpl"
-Write-Host "          Questo e' atteso e normale su Qt 6.8.3."
+Write-Host "          Questo e' atteso e normale su Qt 6.12.0."
 
 Push-Location $StreamLightRoot
 try {
@@ -218,7 +218,7 @@ if (Test-Path $gcDb) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 6 — windeployqt (con flag corretti per Qt 6.8.3)
+# Step 6 — windeployqt (con flag corretti per Qt 6.12.0)
 # ---------------------------------------------------------------------------
 Write-Step "Deploy dipendenze Qt (windeployqt)"
 Write-Host "    Exe sorgente: $CompiledExe"
@@ -237,6 +237,9 @@ $windeployArgs = @(
     '--no-quickcontrols2fusion'
     '--no-quickcontrols2imagine'
     '--no-quickcontrols2universal'
+    '--no-quickcontrols2windows'
+    '--no-quickcontrols2fluentwinui3'
+    '--no-quicknativestyle'
     '--dir', $OutputFolder
     $CompiledExe
 )

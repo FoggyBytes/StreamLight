@@ -7,6 +7,10 @@ import QtQuick.Layouts 1.3
 Popup {
     id: pop
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    enter: PopEnter {}
+    exit: PopExit {}
+
     property string pin: "0000"
 
     modal: true
@@ -62,7 +66,7 @@ Popup {
             implicitWidth:  pinText.implicitWidth  + pop._px(64)
             implicitHeight: pinText.implicitHeight + pop._px(28)
             color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.08)
-            border.color: Theme.accent
+            border.color: Theme.ink
             border.width: 2
             radius: pop._px(12)
 
@@ -77,7 +81,7 @@ Popup {
                 font.pixelSize: pop._px(64)
                 font.bold: true
                 font.letterSpacing: 10 * pop._u
-                color: Theme.accent
+                color: Theme.ink
             }
         }
 

@@ -200,16 +200,18 @@ ApplicationWindow {
      * overrides, which is why overriding the backgrounds did not cover it.
      */
     function applyAccentToMaterial() {
-        Material.accent = Theme.accent
-        Material.primary = Theme.accent
+        // ink, not accent (7.0.0): what Material paints with it — the tab underline, switches,
+        // sliders — are lines on a card, and in Light the raw accent can vanish on white.
+        Material.accent = Theme.ink
+        Material.primary = Theme.ink
+        Material.theme = Theme.light ? Material.Light : Material.Dark
+        Material.background = Theme.ground
     }
 
     // This function runs prior to creation of the initial StackView item
     function doEarlyInit() {
-        // Force dark background on all Qt versions for the new design
-        Material.background = Theme.ground
-
-        Material.theme = Material.Dark
+        // Background and Dark/Light are set with the accent now (7.0.0), so that a theme
+        // change reaches Material through the same one place.
         window.applyAccentToMaterial()
 
         SdlGamepadKeyNavigation.enable()
@@ -285,6 +287,45 @@ ApplicationWindow {
         id: stackView
         anchors.fill: parent
         focus: true
+
+        // ── Transitions (7.0.0) ──────────────────────────────────────────────
+        // Above AppShell this stack only ever holds the curtains — launch, quit, the CLI ones —
+        // and they make their own entrance: the page underneath fades to black, then the curtain
+        // rises out of it. A push therefore only keeps that page up for as long as the curtain
+        // asks. ⚠️ Read from this property and not from currentItem: the curtain sets it when it
+        // is CREATED, i.e. before the push, so nothing depends on whether the StackView has
+        // switched currentItem by the time the transition starts.
+        property int entranceHoldMs: 0
+
+        pushEnter: Transition {}
+        pushExit: Transition {
+            PauseAnimation { duration: stackView.entranceHoldMs }
+        }
+        // Leaving a curtain fades it away over the page it returns to.
+        popEnter: Transition {}
+        popExit: Transition {
+            NumberAnimation {
+                property: "opacity"; from: 1; to: 0
+                duration: Theme.reduceAnimations ? 0 : 450
+                easing.type: Easing.OutCubic
+            }
+        }
+        // One curtain replacing another — a retry, new settings, the next game after a quit —
+        // cross-fades in place.
+        replaceEnter: Transition {
+            NumberAnimation {
+                property: "opacity"; from: 0; to: 1
+                duration: Theme.reduceAnimations ? 0 : 350
+                easing.type: Easing.OutCubic
+            }
+        }
+        replaceExit: Transition {
+            NumberAnimation {
+                property: "opacity"; from: 1; to: 0
+                duration: Theme.reduceAnimations ? 0 : 350
+                easing.type: Easing.OutCubic
+            }
+        }
 
         Component.onCompleted: {
             // Perform our early initialization before constructing the
@@ -408,8 +449,10 @@ ApplicationWindow {
         }
     }
 
+    // sequences, not sequence: since Qt 6.12 New and HelpContents carry a second binding (the
+    // dedicated New and Help keys), and sequence binds only the first and warns about the rest.
     Shortcut {
-        sequence: StandardKey.New
+        sequences: [ StandardKey.New ]
         onActivated: {
             var item = stackView.currentItem
             if (item && item.openAddPc) item.openAddPc()
@@ -417,7 +460,7 @@ ApplicationWindow {
     }
 
     Shortcut {
-        sequence: StandardKey.HelpContents
+        sequences: [ StandardKey.HelpContents ]
         enabled: SystemProperties.hasBrowser
         onActivated: Qt.openUrlExternally("https://github.com/moonlight-stream/moonlight-docs/wiki/Setup-Guide")
     }

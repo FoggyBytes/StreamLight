@@ -3,8 +3,12 @@
 #include "identitymanager.h"
 #include "nvapp.h"
 #include "nvaddress.h"
+#include "streaming/video/pyrowave/pyrowavelinkpolicy.h"
 
 #include <Limelight.h>
+
+#include <atomic>
+#include <functional>
 
 #include <QUrl>
 #include <QNetworkAccessManager>
@@ -120,6 +124,14 @@ public:
     QString
     getServerInfo(NvLogLevel logLevel, bool fastFail = false);
 
+    // PyroWave Test (7.0.0, from Nonary's tree at f96b0524). The host sends UDP at kbps to a
+    // socket opened here, over a pinned HTTPS request that only paired clients may make (Vibeshine
+    // and Vibepollo 2.0.1). With burstFps set (PyroWaveUdpProbeBurstVersion 1) the same packets
+    // leave as video frames at that cadence, paced at paceKbps in the stream's 1 ms groups; only
+    // loss is meaningful for those probes. Throws on an unsupported or failed request.
+    PyroWaveLink::Result probePyroWaveUdp(int kbps, int packetSize, const std::atomic<bool>& cancelled,
+                                          bool useHandshake = true, int burstFps = 0, int paceKbps = 0);
+
     static
     void
     verifyResponseStatus(QString xml);
@@ -196,7 +208,8 @@ private:
                    QString command,
                    QString arguments,
                    int timeoutMs,
-                   NvLogLevel logLevel);
+                   NvLogLevel logLevel,
+                   const std::function<QString(QNetworkReply*)>& receiveHeaders = {});
 
     NvAddress m_Address;
     QNetworkAccessManager* m_Nam;

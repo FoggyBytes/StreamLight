@@ -76,9 +76,12 @@ FocusScope {
     readonly property string _word: "STREAMLIGHT"
 
     // The accent, half way to white: what a letter shows at the peak of its glow.
-    readonly property color _hot: Qt.rgba(Theme.accent.r + (1 - Theme.accent.r) * 0.55,
-                                          Theme.accent.g + (1 - Theme.accent.g) * 0.55,
-                                          Theme.accent.b + (1 - Theme.accent.b) * 0.55, 1)
+    // 7.0.0, Light: the splash stands on the app's floor, which is pale there, and a glow half
+    // way to white would not show on it — so the peak is the ink, the accent darkened to hold.
+    readonly property color _hot: Theme.light ? Theme.ink
+                                  : Qt.rgba(Theme.accent.r + (1 - Theme.accent.r) * 0.55,
+                                            Theme.accent.g + (1 - Theme.accent.g) * 0.55,
+                                            Theme.accent.b + (1 - Theme.accent.b) * 0.55, 1)
 
     // Phases, as in the mockup.
     readonly property real _pIcon: _clamp((t - 0.5) / 0.8)
@@ -179,7 +182,7 @@ FocusScope {
                 height: width
                 radius: width / 2
                 color: "transparent"
-                border.color: Theme.accent
+                border.color: Theme.ink
                 border.width: Math.max(1, (1 + 2 * (1 - splash._pRing)) * splash._u)
                 opacity: (1 - splash._pRing) * 0.8
                 visible: splash._pRing > 0 && splash._pRing < 1
@@ -232,7 +235,7 @@ FocusScope {
                         font.family: Theme.family
                         font.pixelSize: splash._fontPx
                         font.bold: true
-                        color: Theme.accent
+                        color: Theme.ink
                         visible: false
                     }
                     MultiEffect {

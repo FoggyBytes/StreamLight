@@ -12,6 +12,7 @@ import Session 1.0
 import ShortcutManager 1.0
 import SystemProperties 1.0
 import StreamingPreferences 1.0
+import UiSound 1.0
 
 Item {
     id: streamSegue
@@ -125,7 +126,12 @@ Item {
         linkWarning = warning
         // Only now does anything touch the network: the adapter has settled (or we gave up),
         // so the launch can't be cut off by a renegotiation half-way through.
-        streamLoader.active = true
+        //
+        // 7.0.0: and not before the screen has gone black. session.initialize() runs on the GUI
+        // thread and stalls it for a moment; on a black screen that is invisible, in the middle
+        // of the fade it was a stutter. _atBlack() starts the loader if this came first.
+        _linkReady = true
+        if (_black) streamLoader.active = true
     }
 
     // How many transparent auto-retries remain for a transient "no video from
@@ -170,6 +176,7 @@ Item {
         // Something moved, so the host is alive: give it another full window before
         // complaining. A slow-but-progressing connection must never be called stalled.
         hostSlowTimer.restart()
+        _hostSlow = false
     }
 
     // Every way the wait can end: revealed, failed, over. Kept in one place so a path added
@@ -196,6 +203,7 @@ Item {
         _endLaunchWait()
         hostSlowTimer.stop()
         stageText = qsTr("Cancelling…")
+        _override = stageText
         streamSegueErrorDialog.text = ""
 
         if (session && _sessionStarted) {
@@ -266,8 +274,7 @@ Item {
         // The stream window is already up and in front of us, so this happens unseen. Hide
         // the contents first for the same reason the old code did: they must not flash back
         // into view when the StackView pops.
-        stageSpinner.visible = false
-        stageLabel.visible = false
+        _contentShown = false
         _revealed = true
 
         window.hideForStream()
@@ -299,7 +306,11 @@ Item {
                           component.createObject(stackView, {
                               "appName":           appName,
                               "boxArt":            boxArt,
-                              "onQuitSucceededFn": onSessionEndedFn
+                              "onQuitSucceededFn": onSessionEndedFn,
+                              // From the stream: the window comes back on black, and the
+                              // quit curtain rises out of it.
+                              "entrance":          "rise",
+                              "hostName":          _hostName
                           }),
                           StackView.Immediate)
 
@@ -331,8 +342,8 @@ Item {
                 SdlGamepadKeyNavigation.enable()
                 streamSegueErrorDialog.text = ""
                 stageText = qsTr("Applying new settings…")
-                stageSpinner.visible = true
-                stageLabel.visible = true
+                _override = stageText
+                _contentShown = true
                 window.restoreAfterStream()
                 reconfigureTimer.start()
                 return
@@ -359,8 +370,7 @@ Item {
                 // told them about a failure they were never meant to see, and turned one smooth
                 // wait into two visibly different ones. The line simply stays as it was, and
                 // the replacement segue is seeded with it below so nothing flickers.
-                stageSpinner.visible = true
-                stageLabel.visible = true
+                _contentShown = true
                 window.restoreAfterStream()
 
                 noVideoRetryTimer.start()
@@ -480,7 +490,8 @@ Item {
             "session":        newSession,
             "isResume":       true,
             "quitAfter":      quitAfter,
-            "noVideoRetries": noVideoRetries - 1
+            "noVideoRetries": noVideoRetries - 1,
+            "entrance":       "cross"
         })
         if (Window.window) Window.window.markStreamLaunching()
         stackView.replace(stackView.currentItem, segue)
@@ -515,7 +526,8 @@ Item {
             "session":        newSession,
             "isResume":       true,
             "quitAfter":      quitAfter,
-            "noVideoRetries": StreamingPreferences.autoReconnectNoVideo ? 1 : 0
+            "noVideoRetries": StreamingPreferences.autoReconnectNoVideo ? 1 : 0,
+            "entrance":       "cross"
         })
         if (Window.window) Window.window.markStreamLaunching()
         stackView.replace(stackView.currentItem, segue)
@@ -528,8 +540,27 @@ Item {
         SdlGamepadKeyNavigation.enable()
     }
 
-    StackView.onActivated: {
-        // (toolbar removed in 3.0 redesign — nothing to hide here)
+    // 7.0.0: from Activating, the START of the push. The page underneath stays up for the fade
+    // to black (main.qml holds it for entranceHoldMs), and the link match should not wait for
+    // that: it runs during the fade. Activated still calls this, for the paths that skip
+    // Activating; the flag makes the second call a no-op.
+    property bool _started: false
+    StackView.onActivating: _start()
+    StackView.onActivated: _start()
+
+    function _start() {
+        if (_started) return
+        _started = true
+
+        // The badges are latched, like the cover: the Session is released while this screen
+        // can still be up (a no-video retry holds it for another second and a half).
+        _hostName = session.hostName
+        _badges = session.streamBadges
+
+        // A launch's own sound. A launch started with A already has it — UiSound drops the
+        // second within 200 ms — so this is for the click, and the one place both pass.
+        if (entrance === "fade" && !unlockMode) UiSound.play(UiSound.Confirm)
+        _beginEntrance()
 
         // Hook up our signals
         session.stageStarting.connect(stageStarting)
@@ -547,8 +578,6 @@ Item {
         // Ensure the SystemProperties async thread is finished,
         // since it may currently be using the SDL video subsystem
         SystemProperties.waitForAsyncLoad()
-
-        spinnerTimer.start()
 
         // Hand the curtain the artwork before anything else has a chance to draw: the two
         // colours behind everything are derived from it, once, right here.
@@ -575,8 +604,7 @@ Item {
             // and forcing focus onto the pad's root afterwards would take it straight back
             // off that key — leaving the arrows with nothing to move.
             unlockPad.visible = true
-            stageSpinner.visible = false
-            stageLabel.visible = false
+            _contentShown = false
         }
     }
 
@@ -666,7 +694,10 @@ Item {
         // with no indication that anything was wrong. Restarted on every stage, so this only
         // speaks up when nothing has moved at all.
         interval: 30000
-        onTriggered: stageText = qsTr("Still waiting for the host to answer…")
+        onTriggered: {
+            stageText = qsTr("Still waiting for the host to answer…")
+            streamSegue._hostSlow = true
+        }
     }
 
     Timer {
@@ -690,18 +721,6 @@ Item {
         // that anyone still looking at this screen and wondering has already been told.
         interval: 5000
         onTriggered: streamSegue._cancelHintOn = true
-    }
-
-    Timer {
-        id: spinnerTimer
-
-        // Display the spinner appearance a bit to allow us to reach
-        // the code in Session.exec() that pumps the event loop.
-        // If we display it immediately, it will briefly hang in the
-        // middle of the animation on Windows, which looks very
-        // obviously broken.
-        interval: 100
-        onTriggered: stageSpinner.visible = true
     }
 
     Timer {
@@ -756,6 +775,12 @@ Item {
                 return;
             }
 
+            // The stall is over: the curtain may rise now if it was waiting for it.
+            if (streamSegue._riseAfterInit) {
+                streamSegue._riseAfterInit = false
+                Qt.callLater(streamSegue._startRise)
+            }
+
             // Don't wait unless we have toasts to display
             startSessionTimer.interval = 0
 
@@ -786,10 +811,11 @@ Item {
         sourceComponent: Item {}
     }
 
-    // ── The launch curtain ────────────────────────────────────────────────────
-    // Everything below reads Session.curtain and computes nothing of its own. This is the
-    // whole curtain: the stream window is created hidden and only appears once the host says
-    // the game is on screen, so nothing else ever draws this wait.
+    // ── The launch curtain (7.0.0: "Horizon") ─────────────────────────────────
+    // Everything below reads Session.curtain and computes nothing of its own. The stream
+    // window is created hidden and only appears once the host says the game is on screen, so
+    // nothing else ever draws this wait. The look is CurtainHorizon's, shared with QuitSegue;
+    // the background is this screen's own and is the one it always had.
     //
     // Sizes are fractions of the window height so the same layout holds from a handheld to
     // a 4K TV without a table of exceptions.
@@ -797,28 +823,102 @@ Item {
     readonly property real   _h: height > 0 ? height : 1080
 
     // ⚠️ Read from this screen's own boxArt, never from the curtain (which kept a copy, as
-    // coverUrl, until 6.3.1 removed it for having no reader). The curtain
-    // belongs to the Session, and the Session is released while this screen is still up: a
-    // no-video retry holds it here for another second and a half showing "reconnecting", and
-    // readyForDeletion lands in the middle of that. Bound to the curtain, the cover vanished
-    // and the background dropped to the neutral default at exactly that moment — the same
-    // launch, suddenly wearing a different face.
+    // coverUrl, until 6.3.1 removed it for having no reader). The curtain belongs to the
+    // Session, and the Session is released while this screen is still up: a no-video retry
+    // holds it here for another second and a half, and readyForDeletion lands in the middle
+    // of that. The stage, the host and the badges are latched for the same reason.
     readonly property bool   _hasCover: boxArt.toString() !== ""
-
-    // Latched for the same reason: the brightness the cover has reached is computed in C++
-    // by the curtain, so it can only come from there — but it must outlive it. Bound to the
-    // curtain directly it fell back to zero when the session went, dimming the artwork just
-    // as the retry appeared.
-    property real  _bgProgress : 0.0
-
-    function _latchCurtainColours() {
-        if (!_c) return
-        _bgProgress = _c.progress
-    }
+    property int    _stage: 0
+    property string _hostName: ""
+    property var    _badges: []
 
     Connections {
         target: streamSegue._c
-        function onChanged() { streamSegue._latchCurtainColours() }
+        function onChanged() { if (streamSegue._c) streamSegue._stage = streamSegue._c.stage }
+    }
+
+    // What the status line says. Cancelling and Applying new settings come from this screen
+    // and win over the curtain's own title — until 7.0.0 the title always won, so those two
+    // lines were written and never seen.
+    property string _override: ""
+    property bool   _hostSlow: false
+    property bool   _contentShown: true
+    readonly property string _status: _override !== "" ? _override
+                                    : (_c && _c.title !== "") ? _c.title : stageText
+
+    // Connect and Launch for every launch; Load only when it waits for the game, because only
+    // then is there a game window to wait for (Marcello, 13/10/2026).
+    readonly property var _segments: _waiting ? [qsTr("Connect"), qsTr("Launch"), qsTr("Load")]
+                                              : [qsTr("Connect"), qsTr("Launch")]
+
+    // ── The entrance ──────────────────────────────────────────────────────────
+    // "fade": from a page — that page fades to black under this screen (main.qml keeps it up
+    //         for entranceHoldMs), then the curtain rises out of the black. Paced on the launch
+    //         sound to come: black at 0.9 s, risen by about 2.3 s.
+    // "rise": from the stream, whose window comes back on black: only the second half.
+    // "cross": replacing another curtain in place (retry, new settings, the next game after a
+    //         quit): no entrance, the StackView cross-fades the two.
+    // Reduce animations cuts straight to the curtain.
+    property string entrance: "fade"
+    readonly property int entranceHoldMs: entrance === "fade" && !Theme.reduceAnimations ? 950 : 0
+
+    // Told to the StackView when this screen is created — before the push — so the page
+    // underneath stays up for the fade (main.qml).
+    Component.onCompleted: stackView.entranceHoldMs = entranceHoldMs
+
+    property real _veil: entrance === "rise" ? 1 : 0
+    property real _rise: entrance === "cross" || Theme.reduceAnimations ? 1 : 0
+    property bool _black: entrance !== "fade" || Theme.reduceAnimations
+    property bool _linkReady: false
+    property bool _riseAfterInit: false
+
+    NumberAnimation {
+        id: veilIn
+        target: streamSegue; property: "_veil"; to: 1
+        duration: 900; easing.type: Easing.InOutSine
+        onFinished: streamSegue._atBlack()
+    }
+    NumberAnimation {
+        id: riseIn
+        target: streamSegue; property: "_rise"; to: 1
+        duration: 1300; easing.type: Easing.OutCubic
+    }
+    // If initialize() is slow to come, the curtain does not wait on a black screen for it.
+    Timer {
+        id: riseFallback
+        interval: 1500
+        onTriggered: if (streamSegue._riseAfterInit) { streamSegue._riseAfterInit = false; streamSegue._startRise() }
+    }
+
+    function _beginEntrance() {
+        if (!_black) veilIn.start()
+        else _startRise()
+    }
+    function _atBlack() {
+        _black = true
+        if (_linkReady) {
+            // Black and ready: the stall of initialize() happens now, unseen, and the curtain
+            // rises once it is over.
+            _riseAfterInit = true
+            riseFallback.start()
+            streamLoader.active = true
+        }
+        else {
+            _startRise()
+        }
+    }
+    function _startRise() {
+        if (_rise < 1 && !riseIn.running) riseIn.start()
+    }
+
+    readonly property real _bgOpacity: Math.min(1, _rise / 0.6)
+
+    // The black the page underneath fades into.
+    Rectangle {
+        anchors.fill: parent
+        color: "#000000"
+        opacity: streamSegue._veil
+        visible: opacity > 0
     }
 
     /*
@@ -836,157 +936,70 @@ Item {
      * 6.1.0: the waves only on the PIN pad, never on a game's launch screen. At normal
      * speed: Home does not count the unlock's own session as a stream either
      * (HomeScreen._runningFor), and the two must agree.
+     *
+     * 7.0.0: unchanged, by decision (13/10/2026) — it only rises out of the black now.
      */
     AmbientBackground {
         waves: streamSegue.unlockMode
+        // The curtain stays dark in Light (7.0.0); the PIN pad follows the theme.
+        dark: !streamSegue.unlockMode
+        opacity: streamSegue._bgOpacity
     }
 
     CoverAmbient {
         source: streamSegue.unlockMode ? "" : streamSegue.boxArt
+        opacity: streamSegue._bgOpacity
     }
 
-    // Four things and nothing else: what is starting, a picture of it, one line saying what
-    // is happening now and one saying what that means. The step-by-step checklist that used
-    // to sit here — ticks, elapsed seconds, the limit each one would be given — was an
-    // engineer's view of a wait the user only needs one sentence about, and B now answers
-    // the question it existed for ("how much longer before I can look?").
-    Column {
-        anchors.centerIn: parent
-        width: parent.width * 0.8
-        spacing: _h * 0.030
-        // In unlock mode there is no game and no cover: the pad takes this space.
-        visible: !streamSegue.unlockMode
+    CurtainHorizon {
+        anchors.fill: parent
+        // In unlock mode there is no game and no cover: the pad takes this screen.
+        visible: !streamSegue.unlockMode && streamSegue._contentShown
+        rise: streamSegue._rise
 
-        // Cover art. It brightens as the launch advances, which is the progress indicator:
-        // a percentage would have to be invented, since nothing can know how long a game
-        // takes to load.
-        //
-        // Same component as the host page's spotlight, so the cover you pressed A on and
-        // the cover you are now waiting behind are the same picture with the same rounded
-        // corners and the same shadow — a second apart, and they used to be drawn by two
-        // different pieces of code.
-        //
-        // ⚠️ The note that used to be here said QtQuick.Effects was not in the deployed Qt
-        // and that is why this was a bare Image. It has been deployed since 5.0.0 and the
-        // host page has used MultiEffect all along.
-        HeroCover {
-            id: coverImage
-            visible: streamSegue._hasCover
-            source: streamSegue.boxArt
-            height: _h * 0.36
-            radius: _h * 0.010
-            shadowOffset: _h * 0.008
-            anchors.horizontalCenter: parent.horizontalCenter
-            opacity: 0.4 + 0.6 * streamSegue._bgProgress
-            // Off with Reduce animations, like every other Behavior in the app (6.3.1).
-            Behavior on opacity {
-                enabled: !Theme.reduceAnimations
-                NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
-            }
-        }
-
-        Label {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: _c ? _c.gameName : streamSegue.appName
-            font.pointSize: Math.max(18, Math.round(_h * 0.042))
-            font.bold: true
-            color: Theme.text
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.Wrap
-            width: parent.width
-        }
-
-        Row {
-            anchors.horizontalCenter: parent.horizontalCenter
-            spacing: _h * 0.016
-
-            Spinner {
-                id: stageSpinner
-                running: visible
-                visible: false
-                // Tied to the label font size and not to the label height, and vertically
-                // centred. A Label height is the whole line box with the leading in it, so
-                // a nominal 1.4 of that came out at about 1.69 of the type and dominated
-                // the line. 1.30 of the body sits level with the text, and both are driven
-                // by _h, so the pair keeps its proportion at any resolution.
-                bodySize: stageLabel.font.pixelSize
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Label {
-                id: stageLabel
-                anchors.verticalCenter: parent.verticalCenter
-                text: _c && _c.title !== "" ? _c.title : stageText
-                font.pointSize: Math.max(13, Math.round(_h * 0.026))
-                color: Theme.text
-                verticalAlignment: Text.AlignVCenter
-                wrapMode: Text.Wrap
-            }
-        }
-
-        Label {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: _c ? _c.detail : ""
-            visible: text !== ""
-            font.pointSize: Math.max(10, Math.round(_h * 0.018))
-            color: Theme.text2
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.Wrap
-            width: parent.width
-        }
-
-        // Amber, and only a line: a link that didn't switch never stops a launch, so it
-        // must not look like the fatal errors that do.
-        Label {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: _c && _c.warning !== "" ? "⚠ " + _c.warning : streamSegue.linkWarning
-            visible: text !== "" && text !== "⚠ "
-            font.pointSize: Math.max(10, Math.round(_h * 0.017))
-            color: Theme.warning
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.Wrap
-            width: parent.width
-        }
-    }
-
-    // The one thing worth offering during a wait: a way to stop waiting. Some launches stall
-    // on something only visible at the host — a game's own launcher wanting to update, a
-    // dialog behind the splash — and until now the only answer was to sit here until the
-    // host gave up at ninety seconds.
-    //
-    // This replaces the disconnect combo that used to be drawn here. Both would be one line
-    // too many, and of the two this is the one that helps while the launch is still running:
-    // once the host is on screen the session is a normal one and the combo works as always.
-    // Sits directly above whichever of the two hints below is showing, because it is the
-    // reason to read that hint rather than a message of its own. Amber and one line: the
-    // launch has not failed and nothing needs doing — the row underneath already says what
-    // to press, and repeating it here would be the second of two lines saying one thing.
-    Label {
-        id: launchSlowHint
-        anchors.bottom: hintRow.top
-        anchors.bottomMargin: streamSegue._h * 0.014
-        anchors.horizontalCenter: parent.horizontalCenter
-        text: qsTr("Taking longer than usual")
-        visible: streamSegue._launchSlow && !streamSegue.unlockMode
-        font.pointSize: Math.max(10, Math.round(streamSegue._h * 0.016))
-        color: Theme.warning
+        hostName: streamSegue._hostName
+        badges: streamSegue._badges
+        boxArt: streamSegue.boxArt
+        kicker: streamSegue.isResume ? qsTr("RESUMING") : qsTr("NOW STARTING")
+        gameName: streamSegue._c && streamSegue._c.gameName !== "" ? streamSegue._c.gameName
+                                                                    : streamSegue.appName
+        status: streamSegue._status
+        detail: streamSegue._c ? streamSegue._c.detail : ""
+        // One amber line, the most specific first: the link, then a launch past the usual
+        // span, then a host that has not answered at all.
+        amber: streamSegue._c && streamSegue._c.warning !== "" ? streamSegue._c.warning
+             : streamSegue.linkWarning !== ""                  ? streamSegue.linkWarning
+             : streamSegue._launchSlow                          ? qsTr("Taking longer than usual")
+             : streamSegue._hostSlow                            ? qsTr("Still waiting for the host to answer")
+             : ""
+        tone: streamSegue._c && streamSegue._c.stalled                  ? "bad"
+            : streamSegue._stage >= streamSegue._segments.length        ? "done"
+            :                                                            "busy"
+        segments: streamSegue._segments
+        stage: streamSegue._stage
     }
 
     // One row for both prompts and both devices. ActionHint draws the vendor glyph or the
     // keyboard cap by itself, which is why the pad and keyboard variants that used to sit at
     // opposite ends of this file are now a single row — two hints written twice each would be
     // four places for the same sentence to drift.
+    //
+    // 7.0.0: at the lower right, across from the curtain's text; centred on the PIN pad,
+    // where there is nothing else on the screen to be across from.
     Row {
         id: hintRow
         anchors.bottom: parent.bottom
         anchors.bottomMargin: streamSegue._h * 0.035
-        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.right: streamSegue.unlockMode ? undefined : parent.right
+        anchors.rightMargin: streamSegue._h * 0.08
+        anchors.horizontalCenter: streamSegue.unlockMode ? parent.horizontalCenter : undefined
         spacing: streamSegue._h * 0.024
         visible: streamSegue._exitHintOn || streamSegue._giveUpHintOn
+        opacity: streamSegue._rise
 
         readonly property int  _glyph: Math.max(22, Math.round(streamSegue._h * 0.028))
         readonly property int  _font:  Math.max(10, Math.round(streamSegue._h * 0.016))
-        readonly property color _dim:  Theme.text2
+        readonly property color _dim:  streamSegue.unlockMode ? Theme.text2 : Theme.stageText2
 
         // "B" as the app means it, which is what the user's controller calls B on every
         // vendor — the glyph resolver handles that, including Nintendo's swapped faces.
@@ -999,6 +1012,7 @@ Item {
                 buttonKey: "B"
                 keyLabel: "Esc"
                 size: hintRow._glyph
+                onDark: !streamSegue.unlockMode
             }
 
             Label {
@@ -1018,6 +1032,7 @@ Item {
                 buttonKey: "X"
                 keyLabel: "X"
                 size: hintRow._glyph
+                onDark: !streamSegue.unlockMode
             }
 
             Label {
@@ -1036,6 +1051,7 @@ Item {
         anchors.centerIn: parent
         spacing: streamSegue._h * 0.016
         visible: streamSegue.unlockMode && !unlockPad.visible
+        opacity: streamSegue._rise
 
         Spinner {
             id: unlockWaitSpinner

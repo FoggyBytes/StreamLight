@@ -16,6 +16,7 @@
         <file>gui/Spinner.qml</file>
         <file>gui/CoverAmbient.qml</file>
         <file>gui/HeroCover.qml</file>
+        <file>gui/CurtainHorizon.qml</file>
         <file>gui/GameFacts.qml</file>
         <file>gui/HoverState.qml</file>
         <file>gui/UnlockPad.qml</file>
@@ -41,9 +42,19 @@
         <file>gui/DialogButton.qml</file>
         <file>gui/UpdateDialog.qml</file>
         <file>gui/HostOptionsDialog.qml</file>
+        <file>gui/PyroWaveTestDialog.qml</file>
         <file>gui/AppSettingsDialog.qml</file>
         <file>gui/HostProfilesDialog.qml</file>
         <file>gui/ProfileNameDialog.qml</file>
+        <file>gui/AccentPaletteDialog.qml</file>
+        <file>gui/NewBadge.qml</file>
+        <file>gui/PadScroll.qml</file>
+        <file>gui/Plate.qml</file>
+        <file>gui/PopEnter.qml</file>
+        <file>gui/PopExit.qml</file>
+        <file>gui/PressBounce.qml</file>
+        <file>gui/TabSlide.qml</file>
+        <file>gui/SuccessTick.qml</file>
         <file>gui/PillButton.qml</file>
         <file>gui/CustomResolutionDialog.qml</file>
         <file>gui/CustomFrameRateDialog.qml</file>

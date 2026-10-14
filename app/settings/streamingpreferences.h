@@ -260,6 +260,9 @@ public:
     Q_PROPERTY(bool enableVsync MEMBER enableVsync NOTIFY enableVsyncChanged)
     Q_PROPERTY(bool fractionalVsync MEMBER fractionalVsync NOTIFY fractionalVsyncChanged)
     Q_PROPERTY(bool enableVrr MEMBER enableVrr NOTIFY enableVrrChanged)
+    // 7.0.0: the frame rate in use before VRR switched on and selected its recommended rate,
+    // so switching VRR off can put it back. 0 = nothing to restore. Settings owns the logic.
+    Q_PROPERTY(int fpsBeforeVrr MEMBER fpsBeforeVrr NOTIFY fpsBeforeVrrChanged)
     Q_PROPERTY(int vrrLatencyMode MEMBER vrrLatencyMode NOTIFY vrrLatencyModeChanged)
     Q_PROPERTY(bool smoothVrrFrameTiming MEMBER smoothVrrFrameTiming NOTIFY smoothVrrFrameTimingChanged)
     Q_PROPERTY(bool gameOptimizations MEMBER gameOptimizations NOTIFY gameOptimizationsChanged)
@@ -322,6 +325,7 @@ public:
     bool fractionalVsync;
 
     bool enableVrr;
+    int fpsBeforeVrr;
     int vrrLatencyMode;
     // Re-present the last frame inside a host gap longer than the panel's
     // adaptive-refresh floor, so the panel never engages its own
@@ -389,6 +393,7 @@ signals:
     void enableVsyncChanged();
     void fractionalVsyncChanged();
     void enableVrrChanged();
+    void fpsBeforeVrrChanged();
     void vrrLatencyModeChanged();
     void smoothVrrFrameTimingChanged();
     void gameOptimizationsChanged();

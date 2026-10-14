@@ -11,6 +11,7 @@
 #include <QStandardPaths>
 
 #include "settings/mappingmanager.h"
+#include "backend/uisound.h"
 
 // Append a line to a debug log file next to the executable.
 // Lets us diagnose gamepad-nav issues without redirecting stderr
@@ -20,7 +21,11 @@ static void slDbg(const QString& line)
     static QFile* f = nullptr;
     if (!f) {
         f = new QFile(QCoreApplication::applicationDirPath() + "/streamlight_pad.log");
-        f->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+        // Next to the executable is not writable in an install under Program Files: the
+        // log is then simply off, which the isOpen() below already handles.
+        if (!f->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+            return;
+        }
     }
     if (f->isOpen()) {
         QTextStream(f) << QDateTime::currentDateTime().toString("hh:mm:ss.zzz")
@@ -547,29 +552,33 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
                 }
             }
 
+            // After the right stick scrolled the view away, the first D-pad step brings the
+            // focused element back into view and goes no further (7.0.0). Its release is let
+            // through: a release with no press is ignored by every control.
+            if (m_ScrolledAway && type == QEvent::Type::KeyPress
+                    && (event.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP
+                        || event.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN
+                        || event.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT
+                        || event.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) {
+                m_ScrolledAway = false;
+                emit refocusRequested();
+                break;
+            }
+
             switch (event.cbutton.button) {
             case SDL_CONTROLLER_BUTTON_DPAD_UP:
-                if (m_UiNavMode) {
-                    // Back-tab
-                    sendKey(type, Qt::Key_Tab, Qt::ShiftModifier);
-                }
-                else {
-                    sendKey(type, Qt::Key_Up);
-                }
-                break;
             case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
-                if (m_UiNavMode) {
-                    sendKey(type, Qt::Key_Tab);
-                }
-                else {
-                    sendKey(type, Qt::Key_Down);
-                }
-                break;
             case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
-                sendKey(type, Qt::Key_Left);
-                break;
             case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
-                sendKey(type, Qt::Key_Right);
+                sendDpad(event.cbutton.button, type);
+                // Held, it repeats from the poll below; the last direction pressed wins.
+                if (type == QEvent::Type::KeyPress) {
+                    m_HeldDpad = event.cbutton.button;
+                    m_HeldDpadSince = m_LastDpadRepeat = SDL_GetTicks();
+                }
+                else if (m_HeldDpad == event.cbutton.button) {
+                    m_HeldDpad = -1;
+                }
                 break;
             case SDL_CONTROLLER_BUTTON_A:
                 if (m_UiNavMode) {
@@ -621,7 +630,8 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
                 break;
             case SDL_CONTROLLER_BUTTON_RIGHTSTICK:
                 // Right stick click (6.1.0): moves the selected entry between GAMES and APPS on
-                // the host page. Inert key, same reason as F13 and F18.
+                // the host page; on Home (7.0.0) it switches between Dark and Light. Inert key,
+                // same reason as F13 and F18.
                 sendKey(type, Qt::Key_F19);
                 break;
             default:
@@ -650,10 +660,28 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
         }
     }
 
+    // A held D-pad repeats like a held key (7.0.0): after 400 ms, ten steps a second, then
+    // one per poll after another second — a slider sweeps, a long list runs. The repeats go
+    // out as auto-repeat presses, which the echo filter and every control already treat as
+    // the same press continuing.
+    if (m_HeldDpad >= 0) {
+        const Uint32 now = SDL_GetTicks();
+        const Uint32 held = now - m_HeldDpadSince;
+        const Uint32 every = held > 1400 ? 45 : 95;
+        if (held >= 400 && now - m_LastDpadRepeat >= every) {
+            sendDpad(m_HeldDpad, QEvent::Type::KeyPress, true);
+            m_LastDpadRepeat = now;
+        }
+    }
+
     // Handle analog sticks by polling
+    qreal scrollVelocity = 0;
     for (auto gc : std::as_const(m_Gamepads)) {
-        short leftX = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTX);
-        short leftY = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTY);
+        // ⚠️ int, not short: a stick pushed all the way up or left reads −32768, and qAbs() of
+        // that as a short is −32768 again. The right stick pushed straight to the top read as
+        // resting, so the view would not scroll up until the push eased off (7.0.0).
+        const int leftX = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTX);
+        const int leftY = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTY);
 
         // The stick navigates as much as the D-pad does, so it is pad input as much as a
         // button is. Same threshold as the navigation below: resting drift must not count.
@@ -668,8 +696,31 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
                            : leftX > 30000  ? NB_RIGHT
                            : NB_COUNT;
 
+        // The right stick scrolls the view under the focus (7.0.0). Speed grows with the
+        // square of the deflection past a dead zone wide enough for a worn stick: a nudge
+        // reads, a full push moves about 2500 px/s. Only vertical — no page here is wider
+        // than the window.
+        // ⚠️ Published as a SPEED, not as a step: this poll runs at 20 Hz, and moving the view
+        // here jumped it up to 125 px twenty times a second — visibly jerky, held or not.
+        // PadScroll.qml moves the view by this speed on every frame instead.
+        const int rightY = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_RIGHTY);
+        const int deadZone = 8000;
+        if (qAbs(rightY) > deadZone) {
+            InputHints::get()->notePadInput();
+            const qreal norm = qMin(1.0, (qAbs(rightY) - deadZone) / qreal(32767 - deadZone));
+            const qreal pxPerSecond = (rightY > 0 ? 1.0 : -1.0) * (250.0 + 2250.0 * norm * norm);
+            // Two pads pushed at once: the stronger push wins.
+            if (qAbs(pxPerSecond) > qAbs(scrollVelocity)) scrollVelocity = pxPerSecond;
+        }
+
         if (SDL_GetTicks() - m_LastAxisNavigationEventTime < AXIS_NAVIGATION_REPEAT_DELAY) {
             // Do nothing
+        }
+        // The first left-stick step after a scroll only re-focuses, as the D-pad does.
+        else if (stickNav != NB_COUNT && m_ScrolledAway) {
+            m_ScrolledAway = false;
+            emit refocusRequested();
+            m_LastAxisNavigationEventTime = SDL_GetTicks();
         }
         // A layout that sends the stick as arrow keys echoes it like the D-pad (#24). The repeat
         // delay still restarts, so a dropped step is not retried on the next poll.
@@ -743,9 +794,63 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
             m_RightTriggerDown = false;
         }
     }
+
+    setScrollVelocity(scrollVelocity);
 }
 
-void SdlGamepadKeyNavigation::sendKey(QEvent::Type type, Qt::Key key, Qt::KeyboardModifiers modifiers)
+void SdlGamepadKeyNavigation::setScrollVelocity(qreal pxPerSecond)
+{
+    if (qFuzzyCompare(1.0 + m_ScrollVelocity, 1.0 + pxPerSecond)) return;
+    m_ScrollVelocity = pxPerSecond;
+    emit scrollVelocityChanged();
+}
+
+void SdlGamepadKeyNavigation::setScrollAvailable(QObject* view, bool available)
+{
+    if (view == nullptr) return;
+    const bool before = !m_ScrollViews.isEmpty();
+    if (available && !m_ScrollViews.contains(view)) {
+        // A view destroyed while it could scroll must not leave the prompt on. One connection
+        // per view while it is in the set, dropped with it: availability flips at every focus
+        // move, and Qt::UniqueConnection does not work with a lambda.
+        m_ScrollViews.insert(view, connect(view, &QObject::destroyed, this, [this, view]() {
+            if (m_ScrollViews.remove(view) && m_ScrollViews.isEmpty()) emit scrollAvailableChanged();
+        }));
+    }
+    else if (!available && m_ScrollViews.contains(view)) {
+        disconnect(m_ScrollViews.take(view));
+    }
+    if (before != !m_ScrollViews.isEmpty()) emit scrollAvailableChanged();
+}
+
+void SdlGamepadKeyNavigation::sendDpad(int sdlButton, QEvent::Type type, bool autoRepeat)
+{
+    switch (sdlButton) {
+    case SDL_CONTROLLER_BUTTON_DPAD_UP:
+        if (m_UiNavMode) {
+            // Back-tab
+            sendKey(type, Qt::Key_Tab, Qt::ShiftModifier, autoRepeat);
+        }
+        else {
+            sendKey(type, Qt::Key_Up, Qt::NoModifier, autoRepeat);
+        }
+        break;
+    case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+        sendKey(type, m_UiNavMode ? Qt::Key_Tab : Qt::Key_Down, Qt::NoModifier, autoRepeat);
+        break;
+    case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+        sendKey(type, Qt::Key_Left, Qt::NoModifier, autoRepeat);
+        break;
+    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+        sendKey(type, Qt::Key_Right, Qt::NoModifier, autoRepeat);
+        break;
+    default:
+        break;
+    }
+}
+
+void SdlGamepadKeyNavigation::sendKey(QEvent::Type type, Qt::Key key, Qt::KeyboardModifiers modifiers,
+                                      bool autoRepeat)
 {
     QGuiApplication* app = static_cast<QGuiApplication*>(QGuiApplication::instance());
     QWindow* focusWindow = app->focusWindow();
@@ -755,8 +860,16 @@ void SdlGamepadKeyNavigation::sendKey(QEvent::Type type, Qt::Key key, Qt::Keyboa
               .arg(m_UiNavMode ? 1 : 0)
               .arg(focusWindow ? "OK" : "NULL"));
     if (focusWindow != nullptr) {
-        QKeyEvent keyPressEvent(type, key, modifiers);
+        // Read before delivery: a press can move the focus into a text field (or out of one),
+        // and what counts is where it was when the key arrived.
+        const bool wasText = type == QEvent::Type::KeyPress && UiSound::focusIsText(focusWindow);
+        QKeyEvent keyPressEvent(type, key, modifiers, QString(), autoRepeat);
         app->sendEvent(focusWindow, &keyPressEvent);
+        // 7.0.0: the navigation sound, only if a control took the key — see UiSound.
+        if (type == QEvent::Type::KeyPress) {
+            UiSound::get()->noteKey(focusWindow, key, modifiers, autoRepeat,
+                                    keyPressEvent.isAccepted(), wasText);
+        }
     }
 }
 
@@ -764,6 +877,10 @@ void SdlGamepadKeyNavigation::updateTimerState()
 {
     if (m_PollingTimer->isActive() && (!m_HasFocus || !m_Enabled)) {
         m_PollingTimer->stop();
+        // No poll, no stick: a view must not go on scrolling at the last speed read, and a
+        // D-pad held as the window lost focus must not repeat when it comes back.
+        setScrollVelocity(0);
+        m_HeldDpad = -1;
         slDbg("polling timer STOPPED");
     }
     else if (!m_PollingTimer->isActive() && m_HasFocus && m_Enabled) {

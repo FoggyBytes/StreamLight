@@ -1,18 +1,35 @@
 <RCC>
     <qresource prefix="/">
         <file>res/no_app_image.png</file>
+        <file alias="changelog.txt">../changelog.txt</file>
+        <file alias="sounds/move.wav">res/sounds/move.wav</file>
+        <file alias="sounds/confirm.wav">res/sounds/confirm.wav</file>
+        <file alias="sounds/back.wav">res/sounds/back.wav</file>
+        <file alias="steam/capsule.png">res/steam/streamlight_capsule_600x900.png</file>
+        <file alias="steam/header.png">res/steam/streamlight_header_920x430.png</file>
+        <file alias="steam/hero.png">res/steam/streamlight_hero_3840x1240.png</file>
+        <file alias="steam/logo.png">res/steam/streamlight_logo.png</file>
         <file>res/tailscale.svg</file>
+        <file>res/tailscale_dark.svg</file>
         <file>res/tune.svg</file>
+        <file>res/tune_dark.svg</file>
         <file>streamlight.ico</file>
         <file>streamlightxbox.png</file>
         <file>res/streamtweak_logo.png</file>
         <file>res/store_steam.svg</file>
+        <file>res/store_steam_dark.svg</file>
         <file>res/store_epic.svg</file>
+        <file>res/store_epic_dark.svg</file>
         <file>res/store_gog.svg</file>
+        <file>res/store_gog_dark.svg</file>
         <file>res/store_ubisoft.svg</file>
+        <file>res/store_ubisoft_dark.svg</file>
         <file>res/store_xbox.svg</file>
+        <file>res/store_xbox_dark.svg</file>
         <file>res/store_battlenet.svg</file>
+        <file>res/store_battlenet_dark.svg</file>
         <file>res/store_ea.svg</file>
+        <file>res/store_ea_dark.svg</file>
         <file>res/pad_xbox_a.svg</file>
         <file>res/pad_xbox_b.svg</file>
         <file>res/pad_xbox_x.svg</file>
@@ -40,11 +57,17 @@
         <file>res/pad_switch_minus.svg</file>
         <file>res/pad_xbox_start.svg</file>
         <file>res/pin.svg</file>
+        <file>res/pin_dark.svg</file>
         <file>res/pad_xbox_view.svg</file>
         <file>res/pad_ps_options.svg</file>
         <file>res/pad_ps_create.svg</file>
         <file>res/pad_switch_plus.svg</file>
+        <file>res/pad_switch_plus_dark.svg</file>
         <file>res/pad_xbox_rs.svg</file>
+        <file>res/pad_xbox_rs_scroll.svg</file>
+        <file>res/pad_ps_r_scroll.svg</file>
+        <file>res/pad_switch_rs_scroll.svg</file>
+        <file>res/pad_steam_rs_scroll.svg</file>
         <file>res/pad_ps_r3.svg</file>
         <file>res/pad_switch_rs.svg</file>
         <file>res/pad_steam_a.svg</file>

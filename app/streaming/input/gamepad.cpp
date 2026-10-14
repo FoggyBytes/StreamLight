@@ -1,7 +1,9 @@
 #include "streaming/session.h"
 
 #include <Limelight.h>
+#include <ControllerHaptics.h>
 #include "SDL_compat.h"
+#include "streaming/input/dualsensehaptics.h"
 #include "settings/mappingmanager.h"
 #include "utils.h"
 #include "streaming/video/streamsettingsoverlay.h"
@@ -485,7 +487,10 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
                 case SDL_CONTROLLER_BUTTON_DPAD_DOWN:  key = Qt::Key_Down;   break;
                 case SDL_CONTROLLER_BUTTON_DPAD_LEFT:  key = Qt::Key_Left;   break;
                 case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: key = Qt::Key_Right;  break;
-                case SDL_CONTROLLER_BUTTON_A:          key = Qt::Key_Return; break;
+                // Space, not Return (7.0.0, #35): A presses the key under the cursor, while
+                // Return from a real keyboard submits the PIN. Sent as Return they could not
+                // be told apart, and Enter typed the focused digit instead of signing in.
+                case SDL_CONTROLLER_BUTTON_A:          key = Qt::Key_Space;  break;
                 case SDL_CONTROLLER_BUTTON_B:          key = Qt::Key_Escape; break;
                 default: break;
                 }
@@ -755,6 +760,11 @@ void SdlInputHandler::handleControllerDeviceEvent(SDL_ControllerDeviceEvent* eve
             SDL_free((void*)mapping);
         }
 
+        // DualSense waveform haptics (7.0.0, from Nonary): Bluetooth through SAxense
+        // reports on SDL's own HID path, USB through the pad's 4-channel audio endpoint.
+        // Before the arrival event, which advertises LI_CCAP_HAPTICS_PCM.
+        state->hapticsAttached = DualSenseHaptics::attach(state->index, state->controller);
+
         // Add this gamepad to the gamepad mask
         if (m_MultiController) {
             // NB: Don't assert that it's unset here because we will already
@@ -807,6 +817,9 @@ void SdlInputHandler::handleControllerDeviceEvent(SDL_ControllerDeviceEvent* eve
         }
         if (SDL_GameControllerHasLED(state->controller)) {
             capabilities |= LI_CCAP_RGB_LED;
+        }
+        if (state->hapticsAttached) {
+            capabilities |= LI_CCAP_HAPTICS_PCM;
         }
 
         uint8_t type;
@@ -886,6 +899,8 @@ void SdlInputHandler::handleControllerDeviceEvent(SDL_ControllerDeviceEvent* eve
                 SDL_RemoveTimer(state->mouseEmulationTimer);
             }
 
+            // The waveform worker may still touch the controller: join it first.
+            if (state->hapticsAttached) DualSenseHaptics::detach(state->index);
             SDL_GameControllerClose(state->controller);
 
 #if !SDL_VERSION_ATLEAST(2, 0, 9)
@@ -950,6 +965,11 @@ void SdlInputHandler::rumble(unsigned short controllerNumber, unsigned short low
 {
     // Make sure the controller number is within our supported count
     if (controllerNumber >= MAX_GAMEPADS) {
+        return;
+    }
+
+    // A waveform being played takes precedence over legacy rumble (7.0.0, from Nonary).
+    if (DualSenseHaptics::playing(controllerNumber)) {
         return;
     }
 

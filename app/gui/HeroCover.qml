@@ -4,7 +4,7 @@ import QtQuick.Effects
 // The large game cover, drawn once for everywhere that shows one at size: the host
 // page's spotlight and the launch curtain.
 //
-// It exists as a component for the reason CoverPalette and CoverAmbient do — two
+// It exists as a component for the reason CoverAmbient does — two
 // copies of a look diverge at the first tweak, and these two are meant to read as
 // the same picture on two screens a second apart. Give it a height; the 2:3 box,
 // the crop, the rounded corners and the shadow come with it.

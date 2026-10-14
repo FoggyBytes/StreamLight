@@ -12,6 +12,10 @@ import Theme 1.0
 Popup {
     id: dlg
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    enter: PopEnter {}
+    exit: PopExit {}
+
     property string hostName: ""
     property int    pcIndex: -1
 

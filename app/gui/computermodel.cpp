@@ -6,13 +6,16 @@
 #include "settings/appsettings.h"
 #include "settings/playtime.h"
 #include "settings/streamingpreferences.h"
+#include "settings/theme.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRandomGenerator>
+#include <QFileInfo>
 #include <QSettings>
 #include <QThreadPool>
+#include <QUrl>
 
 ComputerModel::ComputerModel(QObject* object)
     : QAbstractListModel(object) {}
@@ -27,6 +30,18 @@ void ComputerModel::initialize(ComputerManager* computerManager)
 
     m_Computers = m_ComputerManager->getComputers();
     bumpLayoutRevision();
+
+    // Each theme has its own picture per host (13/10/2026): when the theme in force flips,
+    // every card has to fetch the other one.
+    m_StageLight = Theme::get()->light();
+    connect(Theme::get(), &Theme::changed, this, [this]() {
+        const bool l = Theme::get()->light();
+        if (l == m_StageLight) return;
+        m_StageLight = l;
+        if (!m_Computers.isEmpty()) {
+            emit dataChanged(createIndex(0, 0), createIndex(m_Computers.count() - 1, 0), { StageImageRole });
+        }
+    });
 }
 
 void ComputerModel::bumpLayoutRevision()
@@ -121,14 +136,10 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
         int a = HostProfileManager::get()->active(computer->uuid);
         return a >= 0 ? HostProfileManager::get()->name(computer->uuid, a) : QString();
     }
-    case StageColorFromRole:
-        return computer->stageColorFrom;
-    case StageColorToRole:
-        return computer->stageColorTo;
     case StageImageRole:
-        return computer->stageImagePath;
-    case StageSeedRole:
-        return computer->stageSeedColor;
+        // The theme in force's picture; Light falls back to Dark's until it has one of its own.
+        return Theme::get()->light() && computer->stageImageLightSet ? computer->stageImagePathLight
+                                                                     : computer->stageImagePath;
     case StageOpacityRole:
         // 0 is "never set" — every host saved before 6.0.0 — and reads as the default.
         // Clamped on the way out as well as on the way in: the floor has already moved once
@@ -140,6 +151,8 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
         return computer->streamTweakEnabled;
     case AsleepRole:
         return computer->heldAsleep;
+    case PyroWaveTestRole:
+        return !(computer->serverCodecModeSupport & SCM_PYROWAVE) ? 0 : computer->pyrowaveTestable ? 2 : 1;
     case DetailsRole: {
         QString state, pairState;
 
@@ -218,13 +231,11 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
     names[ProfileCountRole] = "profileCount";
     names[ActiveProfileSlotRole] = "activeProfileSlot";
     names[ActiveProfileNameRole] = "activeProfileName";
-    names[StageColorFromRole] = "stageColorFrom";
-    names[StageColorToRole] = "stageColorTo";
     names[StageImageRole] = "stageImage";
-    names[StageSeedRole] = "stageSeed";
     names[StageOpacityRole] = "stageOpacity";
     names[StreamTweakEnabledRole] = "streamTweakEnabled";
     names[AsleepRole] = "asleep";
+    names[PyroWaveTestRole] = "pyroWaveTest";
 
     return names;
 }
@@ -500,8 +511,7 @@ void ComputerModel::restoreHostLink(int computerIndex)
     m_streamTweakBridge.sendRestore(address, [](const QString&) {});
 }
 
-void ComputerModel::setHostStageBackground(int computerIndex, const QString& imagePath,
-                                           const QString& seedColor)
+void ComputerModel::setHostStageBackground(int computerIndex, const QString& imagePath)
 {
     if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
 
@@ -513,12 +523,37 @@ void ComputerModel::setHostStageBackground(int computerIndex, const QString& ima
     }
     if (uuid.isEmpty()) return;
 
-    m_ComputerManager->setStageBackground(uuid, imagePath, seedColor);
+    // Into the theme in force: each keeps its own picture (13/10/2026).
+    m_ComputerManager->setStageBackground(uuid, imagePath, Theme::get()->light());
 
     // computerStateChanged only reaches the model on the next poll tick, and the user has
-    // just picked a colour — repaint now so the stage answers the click.
+    // just picked a picture — repaint now so the stage answers the click.
     QModelIndex idx = createIndex(computerIndex, 0);
-    emit dataChanged(idx, idx, { StageColorFromRole, StageColorToRole, StageImageRole, StageSeedRole });
+    emit dataChanged(idx, idx, { StageImageRole });
+}
+
+void ComputerModel::rememberStagePicture(const QString& imagePath)
+{
+    // Called on Apply only (7.0.0): the panel previews as the cursor moves, and a picture the
+    // user looked at and then cancelled must not push a real one out of the list.
+    if (!imagePath.isEmpty()) {
+        QSettings settings;
+        QStringList recent = settings.value(QStringLiteral("stage/recentPictures")).toStringList();
+        recent.removeAll(imagePath);
+        recent.prepend(imagePath);
+        while (recent.count() > 3) recent.removeLast();
+        settings.setValue(QStringLiteral("stage/recentPictures"), recent);
+    }
+}
+
+QStringList ComputerModel::recentStagePictures() const
+{
+    QSettings settings;
+    QStringList out;
+    for (const QString& p : settings.value(QStringLiteral("stage/recentPictures")).toStringList()) {
+        if (QFileInfo::exists(p)) out.append(p);
+    }
+    return out;
 }
 
 void ComputerModel::setHostStageOpacity(int computerIndex, int percent)
@@ -1319,11 +1354,12 @@ QVariantMap ComputerModel::lastPlayedFor(int computerIndex) const
     /*
      * Find it in the host's current app list, by name.
      *
-     * ⚠️ This lookup is the gate, not a step towards one. If the name is not there the game
-     * cannot be launched — that IS what the app list means, since it is the list the server
-     * accepts launches from — so the block is not drawn at all rather than offering a button
-     * that would fail. A game uninstalled on the host disappears from apps.json at the next
-     * sync (SunshineSync removes managed entries whose games are gone), and from here with it.
+     * ⚠️ This lookup decides whether the game can be launched — that IS what the app list
+     * means, since it is the list the server accepts launches from. A game uninstalled on the
+     * host disappears from apps.json at the next sync (SunshineSync removes managed entries
+     * whose games are gone), and from here with it. Until 7.0.0 the block was then not drawn
+     * at all; now it stays, with "available" false, and the card greys Play again out and
+     * keeps the pad off it (09/10/2026): the record is still yours, only the launch is gone.
      *
      * ⚠️ By name and not by rec.appId, even though we stored one: ids move when the host
      * rebuilds apps.json, and for StreamTweak-managed entries the id is derived from the
@@ -1343,8 +1379,11 @@ QVariantMap ComputerModel::lastPlayedFor(int computerIndex) const
         }
     }
 
+    // Gone from the host: its artwork is looked up under the id it last had, which is still
+    // the name of the file in the cache if it was ever drawn.
     if (!found)
-        return out;
+        appId = rec.appId;
+    out[QStringLiteral("available")] = found;
 
     // ⚠️ The name, and no app id. The id was handed out here and nothing ever read it: the
     // launch goes through indexOfAppNamed() because the model works in names, and the id is

@@ -11,6 +11,10 @@ import Theme 1.0
 Popup {
     id: dlg
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    enter: PopEnter {}
+    exit: PopExit {}
+
     property string latestVersion: ""
 
     signal accepted(bool dontRemind)
@@ -99,14 +103,14 @@ Popup {
                 implicitHeight: dlg._px(20)
                 radius: dlg._px(4)
                 y: dontRemindCheck.height / 2 - height / 2
-                color: dontRemindCheck.checked ? Theme.accent : "transparent"
-                border.color: (dontRemindCheck.activeFocus || dontRemindCheck.checked) ? Theme.accent : Theme.lineHigh
+                color: dontRemindCheck.checked ? Theme.accentFill : "transparent"
+                border.color: (dontRemindCheck.activeFocus || dontRemindCheck.checked) ? Theme.ink : Theme.lineHigh
                 border.width: dontRemindCheck.activeFocus ? 2 : 1
                 Label {
                     anchors.centerIn: parent
                     visible: dontRemindCheck.checked
                     text: "✓"
-                    color: Theme.ground
+                    color: Theme.onAccent
                     font.pixelSize: dlg._px(Theme.fontSmall)
                     font.bold: true
                 }

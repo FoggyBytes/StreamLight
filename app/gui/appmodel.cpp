@@ -716,51 +716,6 @@ bool AppModel::sortVisibleApps()
     return true;
 }
 
-void AppModel::setAppHidden(int appIndex, bool hidden)
-{
-    Q_ASSERT(appIndex < m_VisibleApps.count());
-    int appId = m_VisibleApps.at(appIndex).id;
-
-    {
-        QWriteLocker lock(&m_Computer->lock);
-
-        for (NvApp& app : m_Computer->appList) {
-            if (app.id == appId) {
-                app.hidden = hidden;
-                break;
-            }
-        }
-    }
-
-    m_ComputerManager->clientSideAttributeUpdated(m_Computer);
-}
-
-void AppModel::setAppDirectLaunch(int appIndex, bool directLaunch)
-{
-    Q_ASSERT(appIndex < m_VisibleApps.count());
-    int appId = m_VisibleApps.at(appIndex).id;
-
-    {
-        QWriteLocker lock(&m_Computer->lock);
-
-        for (NvApp& app : m_Computer->appList) {
-            if (directLaunch) {
-                // We must clear direct launch from all other apps
-                // to set it on the new app.
-                app.directLaunch = app.id == appId;
-            }
-            else if (app.id == appId) {
-                // If we're clearing direct launch, we're done once we
-                // find our matching app ID.
-                app.directLaunch = false;
-                break;
-            }
-        }
-    }
-
-    m_ComputerManager->clientSideAttributeUpdated(m_Computer);
-}
-
 void AppModel::handleComputerStateChanged(NvComputer* computer)
 {
     // Ignore updates for computers that aren't ours

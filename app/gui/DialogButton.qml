@@ -23,9 +23,12 @@ Button {
 
     activeFocusOnTab: true
     onClicked: btn.activated()
-    Keys.onReturnPressed: btn.activated()
-    Keys.onEnterPressed:  btn.activated()
-    Keys.onSpacePressed:  btn.activated()
+    Keys.onReturnPressed: { press.kick(); btn.activated() }
+    Keys.onEnterPressed:  { press.kick(); btn.activated() }
+    Keys.onSpacePressed:  { press.kick(); btn.activated() }
+
+    // 7.0.0: the press dips the button and it springs back.
+    PressBounce { id: press; down: btn.down; rest: hov.keyFocused ? 1.03 : 1.0 }
 
     // This button already brightened its border under the pointer — it is where the app-wide
     // hover idiom comes from. What HoverState adds is the cursor and the two guards, which it
@@ -51,9 +54,9 @@ Button {
         color: !btn.enabled   ? "transparent"
              : hov.keyFocused ? (btn.danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.20)
                                              : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20))
-             :                   "#14ffffff"
+             :                   Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
         border.color: !btn.enabled    ? Theme.line
-                    : hov.keyFocused ? (btn.danger ? Theme.danger : Theme.accent)
+                    : hov.keyFocused ? (btn.danger ? Theme.danger : Theme.ink)
                     : hov.active      ? Theme.lineHigh
                     :                   Theme.line
         border.width: (btn.enabled && hov.keyFocused) ? 2 : 1
@@ -71,7 +74,7 @@ Button {
             enabled: !Theme.reduceAnimations
             NumberAnimation { duration: 130; easing.type: Easing.OutBack; easing.overshoot: 2.2 }
         }
-        scale: hov.keyFocused && !Theme.reduceAnimations ? 1.03 : 1.0
+        scale: press.scale
     }
     contentItem: Label {
         text: btn.text
@@ -80,7 +83,7 @@ Button {
         // disabled control is the one place its contrast is not held to the text threshold.
         color: !btn.enabled    ? Theme.offline
              : btn.danger      ? Theme.danger
-             : btn.affirmative ? Theme.accent
+             : btn.affirmative ? Theme.inkText
              :                   Theme.text
         font.family: Theme.family; font.pixelSize: Math.round(btn.fontSize * btn._u); font.bold: true
         horizontalAlignment: Text.AlignHCenter

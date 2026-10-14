@@ -76,7 +76,6 @@ void InputHints::setPointerHidden(bool hidden)
         QGuiApplication::restoreOverrideCursor();
     }
 
-    emit pointerHiddenChanged();
 }
 
 void InputHints::notePadInput()
@@ -132,7 +131,7 @@ bool InputHints::eventFilter(QObject* watched, QEvent* event)
     case QEvent::MouseMove:
     case QEvent::HoverMove:
         // The pointer, and ONLY the pointer, comes back on movement — see the note on
-        // pointerHidden for why this rule cannot be the same as padActive's.
+        // m_PointerHidden for why this rule cannot be the same as padActive's.
         //
         // ⚠️ Both event types are needed and neither is enough on its own: a Qt Quick window
         // turns platform mouse moves into hover events for its items, and which of the two an

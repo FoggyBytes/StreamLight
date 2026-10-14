@@ -116,11 +116,14 @@ FocusScope {
     // had vanished.
     function isSkipped(i) { return isDisabled(i) || isHidden(i) }
 
-    readonly property color _accent:    Theme.accent
+    readonly property color _accent:    Theme.accentFill
     // The container carries a trace of the accent, the same way the page background does, so
     // the control belongs to the palette instead of sitting on it as a grey box.
-    readonly property color _bgPill:    Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
-                                                                    Theme.accent.b, 0.07))
+    readonly property color _bgPillSolid: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
+                                                                      Theme.accent.b, 0.07))
+    // 50% opaque (09/10/2026, Marcello, after trying 90/80/60): at full strength the light controls
+    // were a bright white; half of what is behind takes the glare off, and Dark gets the same.
+    readonly property color _bgPill:    Qt.rgba(_bgPillSolid.r, _bgPillSolid.g, _bgPillSolid.b, 0.5)
     readonly property color _border:    Theme.line
     // Was a hardcoded near-black green. That was only ever legible because the accent was
     // green too: on an amber or lime accent it is dark green on yellow, and on a deep blue one
@@ -164,8 +167,46 @@ FocusScope {
         anchors.fill: parent
         radius: selector._px(8)
         color: selector._bgPill
-        border.color: selector._keyFocused ? selector._accent : selector._border
+        border.color: selector._keyFocused ? Theme.ink : selector._border
         border.width: selector._keyFocused ? 3 : 1
+    }
+
+    /*
+     * The selection, ONE shape that slides from pill to pill (7.0.0) — the iOS segmented
+     * control. It used to be a fill inside each pill, switched off in one and on in the other.
+     * Accent when this profile chose the value, a raised neutral when the value is inherited.
+     * It does not animate the first time it is placed, only when the choice moves.
+     */
+    // pills.count is read so this re-evaluates once the Repeater has built its items.
+    readonly property Item _selItem: (pills.count > 0 && selector.currentIndex >= 0 && selector._visualIndex >= 0)
+                                     ? pills.itemAt(selector._visualIndex) : null
+    property bool _slideReady: false
+    Component.onCompleted: Qt.callLater(function() { selector._slideReady = true })
+
+    Rectangle {
+        id: slider
+        visible: selector._selItem !== null && selector._selItem.visible
+        x: selector._selItem ? row.x + selector._selItem.x + selector._px(2) : 0
+        y: row.y + selector._px(2)
+        width: selector._selItem ? selector._selItem.width - selector._px(4) : 0
+        height: selector._px(30) - selector._px(4)
+        radius: selector._px(5)
+        color: selector._inheritedSel ? Theme.cardHigh : selector._accent
+        border.color: Theme.lineHigh
+        border.width: selector._inheritedSel ? 1 : 0
+        opacity: (selector._selItem && selector.isDisabled(selector._visualIndex)) ? 0.4 : 1.0
+        Behavior on x {
+            enabled: selector._slideReady && !Theme.reduceAnimations
+            NumberAnimation { duration: 190; easing.type: Easing.OutBack; easing.overshoot: 1.05 }
+        }
+        Behavior on width {
+            enabled: selector._slideReady && !Theme.reduceAnimations
+            NumberAnimation { duration: 190; easing.type: Easing.OutBack; easing.overshoot: 1.05 }
+        }
+        Behavior on color {
+            enabled: selector._slideReady && !Theme.reduceAnimations
+            ColorAnimation { duration: 160 }
+        }
     }
 
     Row {
@@ -174,6 +215,7 @@ FocusScope {
         spacing: 0
 
         Repeater {
+            id: pills
             model: selector.labels
             delegate: Item {
                 id: pill
@@ -201,9 +243,10 @@ FocusScope {
 
                 HoverState { id: hov }
 
-                // The selection. Accent when this profile chose the value, a raised neutral
-                // when the value is merely the one being inherited — see inheritStrip.
+                // The selection used to be drawn here, per pill; it is the slider now (7.0.0).
+                // Kept, invisible, so the geometry and the notes around it stay as they were.
                 Rectangle {
+                    visible: false
                     anchors.fill: parent
                     anchors.margins: selector._px(2)
                     radius: selector._px(5)
@@ -239,7 +282,7 @@ FocusScope {
                     anchors.topMargin: selector._px(5)
                     anchors.rightMargin: selector._px(6)
                     color: (pill._selected && !pill._inherited) ? selector._textOn
-                                                                : selector._accent
+                                                                : Theme.ink
                     opacity: pill._disabled ? 0.4
                            : (pill._selected && !pill._inherited) ? 0.5 : 1.0
                 }
@@ -268,7 +311,7 @@ FocusScope {
                     anchors.fill: parent
                     anchors.margins: selector._px(2)
                     radius: selector._px(5)
-                    color: Qt.rgba(1, 1, 1, 0.05)
+                    color: Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.05)
                     opacity: (hov.active && !pill._selected) ? 1 : 0
 
                     Behavior on opacity {

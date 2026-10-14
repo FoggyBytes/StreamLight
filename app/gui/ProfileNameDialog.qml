@@ -27,6 +27,10 @@ import QtQuick.Layouts 1.3
 Popup {
     id: pop
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    enter: PopEnter {}
+    exit: PopExit {}
+
     signal accepted(string outName)
 
     property string initName: ""
@@ -49,6 +53,10 @@ Popup {
     focus: true
     // Centred but offset higher, like the other entry popups: on a handheld a virtual
     // keyboard takes the bottom of the screen.
+    // Placed in the window, not in whatever opened it (7.0.0): x and y are worked out on the
+    // overlay, and a popup positions itself in its PARENT's coordinates — opened from inside
+    // a dialog, it landed off to the right by the dialog's own offset.
+    parent: Overlay.overlay
     x: (Overlay.overlay ? (Overlay.overlay.width - width) / 2 : 0)
     y: (Overlay.overlay ? Math.max(pop._px(40), Overlay.overlay.height * 0.12) : pop._px(40))
     closePolicy: Popup.CloseOnEscape
@@ -56,7 +64,7 @@ Popup {
 
     background: Rectangle {
         color: Theme.card
-        border.color: Theme.line
+        border.color: Theme.lineHigh // 7.0.0: no scrim, so the edge has to separate it from the card below
         border.width: 1
         radius: pop._px(12)
     }
@@ -118,7 +126,7 @@ Popup {
                         readonly property bool _isCurrent: modelData === pop.initName
                         color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
                                                            Theme.accent.b, 0.07))
-                        border.color: chip._cursor ? Theme.accent : Theme.line
+                        border.color: chip._cursor ? Theme.ink : Theme.line
                         border.width: chip._cursor ? 3 : 1
 
                         Rectangle {
@@ -195,21 +203,22 @@ Popup {
                 maximumLength: pop.maxLength
                 color: Theme.text
                 selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
-                selectedTextColor: Theme.onAccent
+                selectedTextColor: Theme.text
                 font.family: Theme.family
                 font.pixelSize: pop._px(Theme.fontBody)
                 selectByMouse: true
                 background: Rectangle {
                     color: Theme.ground
                     radius: pop._px(8)
-                    border.color: nameField.activeFocus ? Theme.accent : Theme.line
+                    border.color: nameField.activeFocus ? Theme.ink : Theme.line
                     border.width: nameField.activeFocus ? 2 : 1
                 }
                 Keys.onReturnPressed: pop._commit(nameField.text)
                 Keys.onEnterPressed:  pop._commit(nameField.text)
                 Keys.onUpPressed:     nameGrid.forceActiveFocus()
                 Keys.onDownPressed:   applyBtn.forceActiveFocus()
-                Keys.onTabPressed:    applyBtn.forceActiveFocus()
+                // Shift+Tab (the pad's up in Settings arrives as Tab + Shift) goes back up, like Up.
+                Keys.onTabPressed:    function(event) { if ((event.modifiers & Qt.ShiftModifier)) nameGrid.forceActiveFocus(); else applyBtn.forceActiveFocus() }
             }
             Label {
                 text: qsTr("or type one")

@@ -29,23 +29,11 @@ class InputHints : public QObject
      */
     Q_PROPERTY(bool padActive READ padActive NOTIFY padActiveChanged)
 
-    /**
-     * True while the mouse pointer is hidden because the pad is driving.
-     *
-     * ⚠️ Deliberately NOT the same predicate as padActive, and the difference is the reason
-     * this is a second property rather than a binding on the first. `padActive` flips back on
-     * a key press or a mouse CLICK and pointedly ignores mouse movement, because a mouse
-     * knocked on a desk must not repaint every prompt in the interface. A hidden pointer
-     * cannot afford that rule: if only a click brought it back, the way to find an invisible
-     * cursor would be to click blindly with it. So movement counts here and nowhere else.
-     */
-    Q_PROPERTY(bool pointerHidden READ pointerHidden NOTIFY pointerHiddenChanged)
 
 public:
     static InputHints* get(QQmlEngine* engine = nullptr);
 
     bool padActive() const { return m_PadActive; }
-    bool pointerHidden() const { return m_PointerHidden; }
 
     /**
      * A controller button or axis moved for real. Called from the SDL poll loop, never from
@@ -68,7 +56,6 @@ public:
 
 signals:
     void padActiveChanged();
-    void pointerHiddenChanged();
 
 private:
     explicit InputHints(QObject* parent = nullptr);
@@ -84,6 +71,16 @@ private:
     // What the prompts show: m_PadDetected, or the side Settings pins them to.
     bool m_PadActive = false;
     bool m_SeenRealInput = false;
+    /*
+     * True while the mouse pointer is hidden because the pad is driving.
+     *
+     * ⚠️ Deliberately NOT the same predicate as padActive. `padActive` flips back on a key
+     * press or a mouse CLICK and pointedly ignores mouse movement, because a mouse knocked on
+     * a desk must not repaint every prompt in the interface. A hidden pointer cannot afford
+     * that rule: if only a click brought it back, the way to find an invisible cursor would be
+     * to click blindly with it. So movement counts here and nowhere else.
+     * (It was also a Q_PROPERTY until 7.0.0, with no reader in QML: removed.)
+     */
     bool m_PointerHidden = false;
 
     // Where the pointer was when it was hidden. Qt Quick manufactures hover events whenever

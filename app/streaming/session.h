@@ -6,6 +6,7 @@
 #include <QElapsedTimer>
 #include <QSemaphore>
 #include <QQuickWindow>
+#include <QStringList>
 #include <QTimer>
 
 #include <Limelight.h>
@@ -126,6 +127,15 @@ class Session : public QObject
      */
     Q_PROPERTY(bool waitsForGame READ waitsForGame CONSTANT)
 
+    /**
+     * The badges along the top of the launch curtain (7.0.0): the host, then what this stream
+     * will be — resolution, frame rate, HDR, codec — in the Home card's wording. From the
+     * EFFECTIVE preferences, like waitsForGame, so a host profile or a per-game override is in
+     * them; the stream config itself is only filled in later, by initialize().
+     */
+    Q_PROPERTY(QString hostName READ hostName CONSTANT)
+    Q_PROPERTY(QStringList streamBadges READ streamBadges CONSTANT)
+
     friend class SdlInputHandler;
     friend class DeferredSessionCleanupTask;
     friend class AsyncConnectionStartThread;
@@ -152,6 +162,9 @@ public:
             && m_StreamTweakEnabled && m_Preferences->waitForGameOnScreen
             && hostControlKind(m_App.id, m_App.uuid, m_App.name) == HostControl::None;
     }
+
+    QString hostName() const;
+    QStringList streamBadges() const;
 
     explicit Session(NvComputer* computer, NvApp& app, StreamingPreferences *preferences = nullptr);
     virtual ~Session();

@@ -5,6 +5,10 @@ import QtQuick.Controls 2.5
 Dialog {
     id: navDialog
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    enter: PopEnter {}
+    exit: PopExit {}
+
     modal: true
     anchors.centerIn: Overlay.overlay
 
@@ -61,7 +65,7 @@ Dialog {
             readonly property bool isAffirmative: role === DialogButtonBox.AcceptRole
                                                   || role === DialogButtonBox.YesRole
             readonly property bool isDanger: isAffirmative && navDialog.affirmativeIsDanger
-            readonly property color accentBase:  isDanger ? Theme.danger : Theme.accent
+            readonly property color accentBase:  isDanger ? Theme.danger : Theme.inkText
             // The tint derived from the same colour as the border and the label. The danger
             // one used to be a literal — #EF4444 at 20% — under a Theme.danger (#F87171)
             // border: two reds on one button.
@@ -81,7 +85,7 @@ Dialog {
                 // Unfocused buttons are flat with a grey border; the affirmative role is
                 // shown via text colour, so it no longer looks focused at rest.
                 color: btn.activeFocus ? btn.accentHover
-                     : btn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
+                     : btn.hovered     ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.05)
                      :                   Theme.card
                 border.color: btn.activeFocus ? btn.accentBase
                             : btn.hovered     ? Theme.lineHigh

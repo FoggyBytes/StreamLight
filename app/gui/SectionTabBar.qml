@@ -196,7 +196,7 @@ Item {
                             width: Math.max(root._px(18), countText.implicitWidth + root._px(10))
                             height: root._px(18)
                             radius: height / 2
-                            color: Theme.accent
+                            color: Theme.accentFill
 
                             Text {
                                 id: countText

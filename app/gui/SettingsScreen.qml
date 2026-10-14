@@ -11,6 +11,8 @@ import SystemProperties 1.0
 import ShortcutManager 1.0
 import AppUpdate 1.0
 import LogsAndCache 1.0
+import UiSound 1.0
+import SteamArtwork 1.0
 import QtQuick.Dialogs as QD
 
 // SettingsScreen — Xbox-style flat settings panel.
@@ -82,7 +84,9 @@ FocusScope {
      * The names stay because they are read everywhere; what they MEAN is now defined once, in
      * theme.h, together with the rest of the interface.
      */
-    readonly property color _bg2:       Theme.card
+    // The cards are 75% opaque (13/10/2026, Marcello; 80% from 09/10 after trying 90/80/60): at
+    // full strength the light surface was a bright white. Dark gets the same for consistency.
+    readonly property color _bg2:       Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, 0.75)
     readonly property color _border:    Theme.line
     readonly property color _text:      Theme.text
     readonly property color _textDim:   Theme.text2
@@ -109,8 +113,11 @@ FocusScope {
     // grey and was visibly the odd one out in the StreamTweak and About tabs.
     // (SegmentedSelector is a separate file and keeps its own copy; if this changes, so does
     // its _bgPill.)
-    readonly property color _btnBg: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
-                                                                Theme.accent.b, 0.07))
+    readonly property color _btnBgSolid: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
+                                                                     Theme.accent.b, 0.07))
+    // 50% opaque (09/10/2026, Marcello, after trying 90/80/60): at full strength the light controls
+    // were a bright white; half of what is behind takes the glare off, and Dark gets the same.
+    readonly property color _btnBg: Qt.rgba(_btnBgSolid.r, _btnBgSolid.g, _btnBgSolid.b, 0.5)
     // The leverage: these two are read 57 times across the tabs, so scaling the definitions
     // scales 57 rows without touching one of them.
     readonly property int   _rowHeight: _px(58)
@@ -161,6 +168,8 @@ FocusScope {
 
     property var    activeProfileOverride: ({})
     property string activeProfileName: ""
+    // Set by AppShell: a panel opened here (the accent palette) lends its prompts to its bar.
+    property var    appShell: null
 
     // One lock per setting, not one for the pair: a profile that pins only the frame
     // rate used to grey out the global resolution as well, which said something untrue
@@ -203,6 +212,39 @@ FocusScope {
             ? StreamingPreferences.getDefaultPyroWaveBitrate(w, h, fps, StreamingPreferences.enableYUV444,
                                                              StreamingPreferences.enableHdr)
             : StreamingPreferences.getDefaultBitrate(w, h, fps, StreamingPreferences.enableYUV444)
+    }
+
+    // Sets the stream frame rate the way the Frame rate row does: the bitrate follows when it
+    // is on automatic. One place, for the VRR pill and for switching VRR on and off (7.0.0).
+    function _setFps(f) {
+        if (!f || StreamingPreferences.fps === f) return
+        StreamingPreferences.fps = f
+        if (StreamingPreferences.autoAdjustBitrate) {
+            StreamingPreferences.bitrateKbps = _defaultBitrate(StreamingPreferences.width, StreamingPreferences.height, f)
+            if (bitrateSlider) bitrateSlider.value = StreamingPreferences.bitrateKbps
+        }
+        StreamingPreferences.save()
+    }
+
+    /*
+     * VRR switched on or off (7.0.0). On: the recommended rate is selected and the rate it
+     * replaces is remembered (StreamingPreferences.fpsBeforeVrr, saved, so it survives a
+     * restart). Off: that rate comes back — but only if the recommended one is still the one
+     * in use; a rate the user chose with VRR on is theirs and stays.
+     */
+    function _applyVrrRate(on) {
+        var rec = _vrrRec.fps || 0
+        if (rec <= 0) return
+        if (on) {
+            if (StreamingPreferences.fps !== rec) {
+                StreamingPreferences.fpsBeforeVrr = StreamingPreferences.fps
+                _setFps(rec)
+            }
+        } else {
+            if (StreamingPreferences.fps === rec && StreamingPreferences.fpsBeforeVrr > 0)
+                _setFps(StreamingPreferences.fpsBeforeVrr)
+            StreamingPreferences.fpsBeforeVrr = 0
+        }
     }
 
     function resetBitrateToDefault() {
@@ -252,7 +294,7 @@ FocusScope {
             case "audio":       if (audioConfigSelector)   audioConfigSelector.forceActiveFocus();   break
             case "input":       if (swapFaceSwitch)        swapFaceSwitch.forceActiveFocus();        break
             case "network":     if (mdnsSwitch)            mdnsSwitch.forceActiveFocus();            break
-            case "session":     if (gameOptSwitch)         gameOptSwitch.forceActiveFocus();         break
+            case "interface":   if (themeModeSelector)     themeModeSelector.forceActiveFocus();     break
             case "overlay":     if (perfOverlaySwitch)     perfOverlaySwitch.forceActiveFocus();     break
             case "shortcuts":
                 if (padComboRepeater.count > 0) padComboRepeater.itemAt(0).firstControl.forceActiveFocus()
@@ -380,6 +422,125 @@ FocusScope {
         }
     }
 
+    // The accent palette (7.0.0), opened by the Accent colour button in Settings → Interface.
+    // It previews on the cursor and saves only on A — see AccentPaletteDialog.
+    AccentPaletteDialog {
+        id: accentPaletteDialog
+        appShell: settingsScreen.appShell
+    }
+
+    // Minutes after midnight as the clock shows them — 24-hour or AM/PM, like the header.
+    function _hm(minutes) {
+        var d = new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60)
+        return Qt.formatTime(d, StreamingPreferences.clockFormat === StreamingPreferences.CF_12H
+                                ? "h:mm AP" : "HH:mm")
+    }
+
+    /*
+     * A time of day in quarter hours (7.0.0, the automatic theme's set hours). ◀/▶ on the pad
+     * and the keyboard, the chevrons with the mouse; drawn like a SegmentedSelector's container,
+     * focus ring included, so it reads as one of the row's controls.
+     * ⚠️ An inline component cannot see this file's ids: it formats the time itself.
+     */
+    component TimeStepper: FocusScope {
+        id: ts
+        property int minutes: 0
+        signal stepped(int minutes)
+
+        readonly property real _u: Theme.uiScale
+        function _px(n) { return Math.round(n * _u) }
+        function _step(d) { ts.stepped(((ts.minutes + d * 15) % 1440 + 1440) % 1440) }
+        function _text() {
+            var d = new Date(2000, 0, 1, Math.floor(ts.minutes / 60), ts.minutes % 60)
+            return Qt.formatTime(d, StreamingPreferences.clockFormat === StreamingPreferences.CF_12H
+                                    ? "h:mm AP" : "HH:mm")
+        }
+
+        activeFocusOnTab: true
+        implicitHeight: _px(36)
+        implicitWidth: tsRow.implicitWidth + _px(8)
+        width: implicitWidth
+        height: implicitHeight
+
+        readonly property bool _keyFocused: activeFocus && SdlGamepadKeyNavigation.inputMode !== "pointer"
+        readonly property color _bgSolid: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
+
+        Keys.onLeftPressed:  function(event) { ts._step(-1); event.accepted = true }
+        Keys.onRightPressed: function(event) { ts._step(1);  event.accepted = true }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: ts._px(8)
+            color: Qt.rgba(ts._bgSolid.r, ts._bgSolid.g, ts._bgSolid.b, 0.5)
+            border.color: ts._keyFocused ? Theme.ink : Theme.line
+            border.width: ts._keyFocused ? 3 : 1
+        }
+
+        Row {
+            id: tsRow
+            anchors.centerIn: parent
+            spacing: ts._px(2)
+
+            Repeater {
+                model: [-1, 0, 1]
+                delegate: Item {
+                    required property int modelData
+                    width: modelData === 0 ? Math.max(ts._px(74), timeText.implicitWidth + ts._px(12)) : ts._px(30)
+                    height: ts._px(30)
+
+                    Text {
+                        id: timeText
+                        anchors.centerIn: parent
+                        text: modelData === 0 ? ts._text() : (modelData < 0 ? "‹" : "›")
+                        color: modelData === 0 ? Theme.text : (arrowMouse.containsMouse ? Theme.text : Theme.text2)
+                        font.family: Theme.family
+                        font.pixelSize: ts._px(modelData === 0 ? Theme.fontBody : Theme.fontTitle)
+                        font.weight: modelData === 0 ? Font.DemiBold : Font.Normal
+                    }
+                    MouseArea {
+                        id: arrowMouse
+                        anchors.fill: parent
+                        enabled: modelData !== 0
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { ts.forceActiveFocus(); ts._step(modelData) }
+                    }
+                }
+            }
+        }
+    }
+
+    /*
+     * Focus goes back where it was when a popup closes (08/10/2026). NavigableDialog hands it to
+     * the stack, and Settings then gave it to its first row and scrolled to the top: closing the
+     * accent palette from Settings → Interface left the pad at "Optimize game settings". So each
+     * popup of this screen remembers the focused row as it opens and gives it back as it closes —
+     * a beat later (callLater), after the dialog's own onClosed has run. Connections, not an
+     * onClosed on the instances: those would replace the dialogs' own handlers.
+     * ⚠️ A popup added to this screen goes in this list too — a Popup, that is: logFolderDialog is
+     * the native folder picker (QtQuick.Dialogs), which has neither signal and keeps the focus
+     * where it was by itself.
+     */
+    property Item _focusBeforePopup: null
+    Repeater {
+        model: [customResDialog, customFpsDialog, accentPaletteDialog, tailscaleRestartDialog,
+                uiModeRestartDialog, pyroWaveNoticeDialog, clearLogsDialog, clearCoversDialog,
+                tailscaleStopNoticeDialog, kbCaptureDialog, padCaptureDialog]
+        delegate: Item {
+            visible: false
+            Connections {
+                target: modelData
+                function onAboutToShow() { settingsScreen._focusBeforePopup = settingsScreen.Window.activeFocusItem }
+                function onClosed() {
+                    var f = settingsScreen._focusBeforePopup
+                    settingsScreen._focusBeforePopup = null
+                    if (f && settingsScreen.visible)
+                        Qt.callLater(function() { if (f.visible && f.enabled) f.forceActiveFocus() })
+                }
+            }
+        }
+    }
+
     Item {
         id: header
         anchors.top: parent.top
@@ -448,10 +609,13 @@ FocusScope {
         { key: "video",       label: qsTr("Video")     },
         { key: "audio",       label: qsTr("Audio")     },
         { key: "input",       label: qsTr("Input")     },
-        { key: "network",     label: qsTr("Network")   },
-        { key: "session",     label: qsTr("Session")   },
-        { key: "overlay",     label: qsTr("Overlay")   },
+        // Beside Input since 7.0.0 (09/10/2026): both are about the controls in your hands.
         { key: "shortcuts",   label: qsTr("Shortcuts") },
+        { key: "network",     label: qsTr("Network")   },
+        // "Session" until 13/10/2026: its host rows moved to Video and StreamTweak, and what is
+        // left is the interface — so it is named for that.
+        { key: "interface",   label: qsTr("Interface") },
+        { key: "overlay",     label: qsTr("Overlay")   },
         { key: "streamtweak", icon:  "qrc:/res/streamtweak_logo.png" },
         { key: "about",       label: qsTr("About")     }
     ]
@@ -475,7 +639,7 @@ FocusScope {
         height: settingsScreen._px(48)
         u: settingsScreen._u
         tabs: settingsScreen._tabs
-        onCurrentIndexChanged: settingsScreen.focusFirstControl(currentIndex)
+        onCurrentIndexChanged: { tabSlide.to(currentIndex); settingsScreen.focusFirstControl(currentIndex) }
     }
 
     // Green outline shown around the active control when it has focus.
@@ -486,7 +650,7 @@ FocusScope {
         property Item target
         color: "transparent"
         radius: settingsScreen._px(6)
-        border.color: Theme.accent
+        border.color: Theme.ink
         border.width: settingsScreen._focusBd
         visible: target && target.activeFocus && SdlGamepadKeyNavigation.inputMode !== "pointer"
         z: 1
@@ -551,6 +715,9 @@ FocusScope {
         }
     }
 
+    // The right stick scrolls this view (7.0.0) — see PadScroll.
+    PadScroll { flick: contentFlick }
+    TabSlide { id: tabSlide }
     Flickable {
         id: contentFlick
         anchors.top: tabBar.bottom
@@ -620,6 +787,11 @@ FocusScope {
 
         Item {
             id: tabContent
+            // The tab content slides in the direction of LB/RB (7.0.0).
+            transform: tabSlide.shift
+            opacity: tabSlide.opacity
+            
+            
             width: contentFlick.width - settingsScreen._px(16)
             // Use only the active tab's column height; childrenRect would
             // include invisible sibling tabs and oversize the scrollbar.
@@ -630,7 +802,7 @@ FocusScope {
                     case "audio":       return audioTab.implicitHeight
                     case "input":       return inputTab.implicitHeight
                     case "network":     return networkTab.implicitHeight
-                    case "session":     return sessionTab.implicitHeight
+                    case "interface":   return interfaceTab.implicitHeight
                     case "overlay":     return overlayTab.implicitHeight
                     case "shortcuts":   return shortcutsTab.implicitHeight
                     case "streamtweak": return streamTweakTab.implicitHeight
@@ -824,12 +996,17 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 spacing: settingsScreen._px(3)
 
-                                Label {
-                                    text: qsTr("Frame rate")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
+                                Row {
+                                    spacing: settingsScreen._px(8)
+                                    Label {
+                                        text: qsTr("Frame rate")
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                        font.bold: true
+                                        color: settingsScreen._text
+                                    }
+                                    // 7.0.0: the VRR rate is new on this row.
+                                    NewBadge { since: "7.0.0"; anchors.verticalCenter: parent.verticalCenter }
                                 }
                                 Label {
                                     id: fpsHint
@@ -864,7 +1041,23 @@ FocusScope {
                                     enabled: !settingsScreen._lockFps
                                     opacity: enabled ? 1.0 : 0.4
 
-                                    readonly property var _entries: settingsScreen._video.fps
+                                    /*
+                                     * The display's rates, and — while VRR is on — the rate
+                                     * recommended for VRR as the last pill, "116 VRR" (7.0.0).
+                                     * In the strip, not beside it (09/10/2026): as a pill of its
+                                     * own it was one more pad stop than any other row had, and its
+                                     * outline read as a focus ring that never left it. Not added
+                                     * when it equals one of the rates already listed.
+                                     */
+                                    readonly property var _entries: {
+                                        var e = settingsScreen._video.fps.slice()
+                                        var rec = settingsScreen._vrrRec.fps || 0
+                                        if (StreamingPreferences.enableVrr && rec > 0
+                                                && !e.some(function(x) { return x.value === rec }))
+                                            e.push({ label: qsTr("%1 VRR").arg(rec), value: rec, isNative: false })
+                                        return e
+                                    }
+                                    on_EntriesChanged: _resync()
 
                                     labels: _entries.map(function(e) { return e.label })
                                     nativeIndices: {
@@ -1251,10 +1444,10 @@ FocusScope {
                                     implicitWidth: settingsScreen._px(14)
                                     implicitHeight: settingsScreen._px(14)
                                     radius: settingsScreen._px(7)
-                                    color: bitrateSlider.pressed ? Qt.lighter(Theme.accent, 1.2)
-                                         : bitrateSlider.hovered ? Qt.lighter(Theme.accent, 1.1)
-                                         :                         Theme.accent
-                                    border.color: Theme.accent
+                                    color: bitrateSlider.pressed ? Qt.lighter(Theme.ink, 1.2)
+                                         : bitrateSlider.hovered ? Qt.lighter(Theme.ink, 1.1)
+                                         :                         Theme.ink
+                                    border.color: Theme.ink
                                     border.width: 1
                                 }
                             }
@@ -1268,7 +1461,7 @@ FocusScope {
                                 font.family: Theme.family
                                 font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                 font.bold: true
-                                color: Theme.accent
+                                color: Theme.inkText
                                 horizontalAlignment: Text.AlignRight
                                 width: settingsScreen._px(80)
                             }
@@ -1619,7 +1812,7 @@ FocusScope {
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.enableVrr
-                                onToggled: function(v) { StreamingPreferences.enableVrr = v; StreamingPreferences.save() }
+                                onToggled: function(v) { StreamingPreferences.enableVrr = v; settingsScreen._applyVrrRate(v); StreamingPreferences.save() }
                             }
                         }
                         RowSeparator { }
@@ -1804,6 +1997,217 @@ FocusScope {
                                     }
                                 }
                                 onActivated: function(idx) { StreamingPreferences.videoDecoderSelection = _values[idx]; StreamingPreferences.save() }
+                            }
+                        }
+                    }
+                }
+
+                // ── WHILE STREAMING (13/10/2026) ──────────────────────────────
+                // What happens around a stream, on the host and on this device: the host rows
+                // that were Session → Host, and Keep display awake, Discord and Hue Sync, which
+                // were under Interface without being interface. "Wait for the game to appear"
+                // went to the StreamTweak tab instead (Launch): it needs StreamTweak.
+                Label {
+                    text: qsTr("While streaming")
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                    font.bold: true
+                    font.letterSpacing: 1.4
+                    font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut
+                    leftPadding: settingsScreen._px(14)
+                }
+
+                Rectangle {
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: settingsScreen._px(8)
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: whileStreamingCol.implicitHeight + settingsScreen._px(8)
+
+                    Column {
+                        id: whileStreamingCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: settingsScreen._px(4)
+                        spacing: 0
+
+                        // ── Optimize game settings for streaming ──────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeight
+
+                            Label {
+                                text: qsTr("Optimize game settings for streaming")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                font.bold: true
+                                color: settingsScreen._text
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+
+                            OnOffSelector {
+                                id: gameOptSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.gameOptimizations
+                                onToggled: function(v) { StreamingPreferences.gameOptimizations = v; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Quit app on host after closing the stream ─────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Quit app on host after closing the stream")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Closes the game when the stream ends. Unsaved progress will be lost.")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: quitAppSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.quitAppAfter
+                                onToggled: function(v) { StreamingPreferences.quitAppAfter = v; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Keep display awake while streaming ────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Keep display awake while streaming")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Prevents screensaver and display sleep during streaming")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: keepAwakeSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.keepAwake
+                                onToggled: function(v) { StreamingPreferences.keepAwake = v; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Discord Rich Presence ─────────────────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Discord Rich Presence")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Shows the streamed game in your Discord status")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: discordSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.richPresence
+                                onToggled: function(v) { StreamingPreferences.richPresence = v; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Launch Philips Hue Sync during streaming ──────────
+                        ProfileLockNotice { active: settingsScreen._lockHue }
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+                            enabled: !settingsScreen._lockHue
+                            opacity: enabled ? 1.0 : 0.4
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Launch Philips Hue Sync during streaming")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Auto-launches Hue Sync at stream start and closes it at end")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: hueSyncSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.hueSyncIntegration
+                                onToggled: function(v) { StreamingPreferences.hueSyncIntegration = v; StreamingPreferences.save() }
                             }
                         }
                     }
@@ -2210,96 +2614,6 @@ FocusScope {
                         }
                         RowSeparator { }
 
-                        // ── Capture system keyboard shortcuts ─────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Capture system keyboard shortcuts")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Forwards shortcuts like Alt+Tab to the host. Ctrl+Alt+Del cannot be intercepted.")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            SegmentedSelector {
-                                id: captureSysKeysSelector
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-
-                                labels: [qsTr("Never"), qsTr("In Game"), qsTr("Always")]
-                                property var _values: [
-                                    StreamingPreferences.CSK_OFF,
-                                    StreamingPreferences.CSK_FULLSCREEN,
-                                    StreamingPreferences.CSK_ALWAYS
-                                ]
-
-                                Binding on currentIndex {
-                                    value: {
-                                        var v = StreamingPreferences.captureSysKeysMode
-                                        for (var i = 0; i < captureSysKeysSelector._values.length; i++) {
-                                            if (captureSysKeysSelector._values[i] === v) return i
-                                        }
-                                        return -1
-                                    }
-                                }
-                                onActivated: function(idx) { StreamingPreferences.captureSysKeysMode = _values[idx]; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Use touchscreen as virtual trackpad ───────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Use touchscreen as virtual trackpad")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("On: behaves like a trackpad.  Off: directly controls the pointer.")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: touchSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: !StreamingPreferences.absoluteTouchMode
-                                onToggled: function(v) { StreamingPreferences.absoluteTouchMode = !v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
                         // ── Swap mouse buttons ────────────────────────────────
                         Item {
                             width: parent.width
@@ -2350,6 +2664,96 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.reverseScrollDirection
                                 onToggled: function(v) { StreamingPreferences.reverseScrollDirection = v; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Use touchscreen as virtual trackpad ───────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Use touchscreen as virtual trackpad")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("On: behaves like a trackpad.  Off: directly controls the pointer.")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: touchSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: !StreamingPreferences.absoluteTouchMode
+                                onToggled: function(v) { StreamingPreferences.absoluteTouchMode = !v; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Capture system keyboard shortcuts ─────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Capture system keyboard shortcuts")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Forwards shortcuts like Alt+Tab to the host. Ctrl+Alt+Del cannot be intercepted.")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            SegmentedSelector {
+                                id: captureSysKeysSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                labels: [qsTr("Never"), qsTr("In Game"), qsTr("Always")]
+                                property var _values: [
+                                    StreamingPreferences.CSK_OFF,
+                                    StreamingPreferences.CSK_FULLSCREEN,
+                                    StreamingPreferences.CSK_ALWAYS
+                                ]
+
+                                Binding on currentIndex {
+                                    value: {
+                                        var v = StreamingPreferences.captureSysKeysMode
+                                        for (var i = 0; i < captureSysKeysSelector._values.length; i++) {
+                                            if (captureSysKeysSelector._values[i] === v) return i
+                                        }
+                                        return -1
+                                    }
+                                }
+                                onActivated: function(idx) { StreamingPreferences.captureSysKeysMode = _values[idx]; StreamingPreferences.save() }
                             }
                         }
                     }
@@ -2679,7 +3083,7 @@ FocusScope {
                                 radius: settingsScreen._px(5)
                                 // Matches a selected SegmentedSelector pill: solid accent with dark
                                 // text, so a live value reads the same everywhere in Settings.
-                                color: settingsScreen._linkUsable ? Theme.accent : Qt.rgba(Theme.text2.r, Theme.text2.g, Theme.text2.b, 0.10)
+                                color: settingsScreen._linkUsable ? Theme.accentFill : Qt.rgba(Theme.text2.r, Theme.text2.g, Theme.text2.b, 0.10)
                                 border.width: settingsScreen._linkUsable ? 0 : 1
                                 border.color: Theme.lineHigh
 
@@ -2699,170 +3103,26 @@ FocusScope {
             }
 
             // ──────────────────────────────────────────────────────────────────
-            //                              SESSION TAB
-            //   Two sections: HOST (host-side behaviour) and INTERFACE
-            //   (StreamLight client UI/UX preferences).
+            //                              INTERFACE TAB
+            //   The client's own look and behaviour. Was "Session" until 13/10/2026, with a
+            //   HOST section above: those rows are in Video (While streaming) and StreamTweak
+            //   (Launch) now, and so are Keep display awake, Discord and Hue Sync.
             // ──────────────────────────────────────────────────────────────────
             Column {
-                id: sessionTab
+                id: interfaceTab
                 anchors.left: parent.left
                 anchors.right: parent.right
-                visible: tabBar.currentIndex === settingsScreen._ti("session")
+                visible: tabBar.currentIndex === settingsScreen._ti("interface")
+                // The position for Auto's sunrise and sunset, asked again as the tab shows (at most
+                // every ten minutes): location switched on in Windows is picked up without a restart.
+                // The Steam artwork row reads Steam's folders the same way, when the tab shows: a
+                // shortcut added in Steam meanwhile is found without leaving Settings.
+                onVisibleChanged: if (visible) {
+                    Theme.refreshLocation()
+                    steamArtworkRow.result = ""
+                    SteamArtwork.refresh()
+                }
                 spacing: settingsScreen._px(16)
-
-                // ── HOST section ──────────────────────────────────────────────
-                Label {
-                    text: qsTr("Host")
-                    font.family: Theme.family
-                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                    font.bold: true
-                    font.letterSpacing: 1.4
-                    font.capitalization: Font.AllUppercase
-                    color: settingsScreen._textMut
-                    leftPadding: settingsScreen._px(14)
-                }
-
-                Rectangle {
-                    width: parent.width
-                    color: settingsScreen._bg2
-                    radius: settingsScreen._px(8)
-                    border.color: settingsScreen._border
-                    border.width: 1
-                    implicitHeight: hostCol.implicitHeight + settingsScreen._px(8)
-
-                    Column {
-                        id: hostCol
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.topMargin: settingsScreen._px(4)
-                        spacing: 0
-
-                        // ── Optimize game settings for streaming ──────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeight
-
-                            Label {
-                                text: qsTr("Optimize game settings for streaming")
-                                font.family: Theme.family
-                                font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                font.bold: true
-                                color: settingsScreen._text
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            OnOffSelector {
-                                id: gameOptSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.gameOptimizations
-                                onToggled: function(v) { StreamingPreferences.gameOptimizations = v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Quit app on host after closing the stream ─────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Quit app on host after closing the stream")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Closes the game when the stream ends. Unsaved progress will be lost.")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: quitAppSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.quitAppAfter
-                                onToggled: function(v) { StreamingPreferences.quitAppAfter = v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Wait for the game to appear ───────────────────────
-                        // Here rather than under Network, where it first landed next to
-                        // auto-reconnect because the two answer the same moment. By subject it
-                        // belongs with the row above: both are about what happens around a
-                        // session rather than about the network. It is the bottom of its own
-                        // cascade — a host profile, then a per-game override, replace it.
-                        ProfileLockNotice { active: settingsScreen._lockWaitForGame }
-                        StreamTweakOffNotice { active: settingsScreen._stOff }
-
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-                            enabled: !settingsScreen._lockWaitForGame && !settingsScreen._stOff
-                            opacity: enabled ? 1.0 : 0.4
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.right: waitForGameSwitch.left
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Wait for the game to appear")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    // ⚠️ "the host reports" was all this used to say, so the
-                                    // switch could be turned on and quietly do nothing on a
-                                    // host without StreamTweak — the only one of the three
-                                    // StreamTweak-dependent settings that never named it.
-                                    text: qsTr("Keep the launch screen up until the host reports the game is on screen, instead of showing the stream as soon as it starts. Needs StreamTweak on the host. Games that open their own launcher never get there — turn it off for those in their per-game settings.")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                    width: parent.width
-                                    wrapMode: Text.WordWrap
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: waitForGameSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.waitForGameOnScreen
-                                onToggled: function(v) {
-                                    StreamingPreferences.waitForGameOnScreen = v
-                                    // Persisted on the toggle, not at this screen's
-                                    // Component.onDestruction: an app killed rather than
-                                    // closed never runs that, and the setting would revert.
-                                    StreamingPreferences.save()
-                                }
-                            }
-                        }
-                    }
-                }
 
                 // ── INTERFACE section ─────────────────────────────────────────
                 Label {
@@ -2892,7 +3152,264 @@ FocusScope {
                         anchors.topMargin: settingsScreen._px(4)
                         spacing: 0
 
-                        ProfileLockNotice { active: settingsScreen._lockHue }
+                        // ── Theme (7.0.0) ─────────────────────────────────────
+                        // Before the accent: the theme decides what the accent is drawn on.
+                        // System follows Windows, live; Auto (13/10/2026) follows the sun or two
+                        // set hours, with its rows below. The launch curtain stays dark in all
+                        // four — see Theme.mode.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeight
+
+                            Row {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(8)
+
+                                Label {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: qsTr("Theme")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                NewBadge { since: "7.0.0"; anchors.verticalCenter: parent.verticalCenter }
+                            }
+
+                            SegmentedSelector {
+                                id: themeModeSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                // Indices are Theme.Mode: 0 Dark, 1 Light, 2 System, 3 Auto.
+                                labels: [qsTr("Dark"), qsTr("Light"), qsTr("System"), qsTr("Auto")]
+                                Binding on currentIndex { value: Theme.mode }
+                                onActivated: function(idx) { Theme.mode = idx }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── The automatic switch (13/10/2026) — with Auto only ──
+                        // How it switches; with set hours, the two hours below. Hidden rows drop
+                        // out of the focus chain by themselves, so the pad never lands on one.
+                        // Sunrise and sunset are where Windows says this PC is: no position (location
+                        // off, desktop apps not allowed, none found) greys that choice out and Auto
+                        // runs on the set hours — Theme.effectiveAutoHow.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+                            visible: Theme.mode === Theme.ModeAuto
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: themeAutoSelector.left
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Switch")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: Theme.locationState === 2
+                                          ? qsTr("Sunrise and sunset need location turned on in Windows")
+                                          : Theme.effectiveAutoHow === 1
+                                            ? qsTr("Light between the two hours below")
+                                          : Theme.locationState === 0
+                                            ? qsTr("Reading the location from Windows…")
+                                          : Theme.sunriseMinutes < 0 || Theme.sunsetMinutes < 0
+                                            ? qsTr("No sunrise or sunset here today")
+                                            : qsTr("Sunrise %1 · Sunset %2 here today — Light between the two")
+                                                  .arg(settingsScreen._hm(Theme.sunriseMinutes))
+                                                  .arg(settingsScreen._hm(Theme.sunsetMinutes))
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            SegmentedSelector {
+                                id: themeAutoSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                // Indices are Theme.autoHow: 0 the sun, 1 set hours. The one in
+                                // force is drawn — set hours while there is no position.
+                                labels: [qsTr("Sunrise & sunset"), qsTr("Set hours")]
+                                disabledIndices: Theme.locationState === 2 ? [0] : []
+                                Binding on currentIndex { value: Theme.effectiveAutoHow }
+                                onActivated: function(idx) { Theme.autoHow = idx }
+                            }
+                        }
+                        RowSeparator { visible: Theme.mode === Theme.ModeAuto && Theme.effectiveAutoHow === 1 }
+
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeight
+                            visible: Theme.mode === Theme.ModeAuto && Theme.effectiveAutoHow === 1
+
+                            Label {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Light from")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                font.bold: true
+                                color: settingsScreen._text
+                            }
+
+                            TimeStepper {
+                                id: lightFromStepper
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                minutes: Theme.lightFrom
+                                onStepped: function(m) { Theme.lightFrom = m }
+                            }
+                        }
+                        RowSeparator { visible: Theme.mode === Theme.ModeAuto && Theme.effectiveAutoHow === 1 }
+
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeight
+                            visible: Theme.mode === Theme.ModeAuto && Theme.effectiveAutoHow === 1
+
+                            Label {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: qsTr("Dark from")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                font.bold: true
+                                color: settingsScreen._text
+                            }
+
+                            TimeStepper {
+                                id: darkFromStepper
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                minutes: Theme.darkFrom
+                                onStepped: function(m) { Theme.darkFrom = m }
+                            }
+                        }
+                        RowSeparator { visible: Theme.mode === Theme.ModeAuto }
+
+                        // ── Accent colour ─────────────────────────────────────
+                        // One colour drives the whole interface: the focus ring, the primary
+                        // button, the active tab, the mark in the header. Semantic colours are
+                        // deliberately NOT included — online stays green, a warning stays amber —
+                        // or a red accent would make "online" read as an alarm.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Row {
+                                    spacing: settingsScreen._px(8)
+                                    Label {
+                                        text: qsTr("Accent colour")
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                        font.bold: true
+                                        color: settingsScreen._text
+                                    }
+                                    NewBadge { since: "7.0.0"; anchors.verticalCenter: parent.verticalCenter }
+                                }
+                                Label {
+                                    // Each theme keeps its own accent (13/10/2026): this row edits
+                                    // the one in force, and says which.
+                                    text: Theme.light ? qsTr("Saved for the Light theme — each theme keeps its own")
+                                                      : qsTr("Saved for the Dark theme — each theme keeps its own")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            // 7.0.0: one button that opens the palette (AccentPaletteDialog).
+                            // The five pills and the hex field it replaces are inside it now —
+                            // the pills as the vivid row, the field as its last line.
+                            PillButton {
+                                id: accentButton
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                swatch: Theme.accent
+                                chevron: true
+                                // The palette's name, or the code for a colour it does not name.
+                                text: {
+                                    var n = Theme.accentName(Theme.accent)
+                                    return n.length > 0 ? n : Theme.accent.toString().toUpperCase()
+                                }
+                                onClicked: accentPaletteDialog.open()
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Interface scale (7.0.0) ───────────────────────────
+                        // On top of the automatic fit to the window (Theme.scalePercent). Applied
+                        // at once, this screen included, so the choice is judged by looking.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Row {
+                                    spacing: settingsScreen._px(8)
+                                    Label {
+                                        text: qsTr("Interface scale")
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                        font.bold: true
+                                        color: settingsScreen._text
+                                    }
+                                    NewBadge { since: "7.0.0"; anchors.verticalCenter: parent.verticalCenter }
+                                }
+                                Label {
+                                    text: qsTr("Text and controls, on top of the fit to the window")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            SegmentedSelector {
+                                id: scaleSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                // Three steps since 09/10/2026 (Marcello): 80, 125 and 150 went.
+                                readonly property var _values: [90, 100, 110]
+                                labels: _values.map(function(v) { return v + "%" })
+                                Binding on currentIndex { value: scaleSelector._values.indexOf(Theme.scalePercent) }
+                                onActivated: function(idx) { Theme.scalePercent = _values[idx] }
+                            }
+                        }
+                        RowSeparator { }
 
                         // ── GUI mode (dropdown) ───────────────────────────────
                         Item {
@@ -2945,6 +3462,178 @@ FocusScope {
                                     StreamingPreferences.save()
                                     uiModeRestartDialog.open()
                                 }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Reduce animations ─────────────────────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Reduce animations")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    text: qsTr("Turns off movement and glow outside the stream — worth it on battery")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: reduceAnimSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: Theme.reduceAnimations
+                                onToggled: function(v) { Theme.reduceAnimations = v }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Startup animation (6.0.0) ─────────────────────────
+                        // Read once at launch by AppShell, so a change shows at the next start.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Startup animation")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    // Reduce animations wins: say so, or On would look broken.
+                                    text: Theme.reduceAnimations
+                                          ? qsTr("Skipped while Reduce animations is on")
+                                          : qsTr("Waves and logo before Home")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: startupAnimSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: Theme.startupAnimation
+                                onToggled: function(v) { Theme.startupAnimation = v }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Navigation sounds (7.0.0, 14/10/2026) ─────────────
+                        // Move, confirm and back, from the controller and the keyboard; never the
+                        // mouse. Saved and applied at once (UiSound).
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Row {
+                                    spacing: settingsScreen._px(8)
+                                    Label {
+                                        text: qsTr("Navigation sounds")
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                        font.bold: true
+                                        color: settingsScreen._text
+                                    }
+                                    NewBadge { since: "7.0.0"; anchors.verticalCenter: parent.verticalCenter }
+                                }
+                                Label {
+                                    text: qsTr("Move, confirm and back, with a controller or the keyboard")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: navSoundsSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: UiSound.enabled
+                                onToggled: function(v) { UiSound.enabled = v }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Host page background (7.0.0, 13/10/2026) ──────────
+                        // The waves of Home, or the focused game's cover blurred behind the list,
+                        // as in 6.5.1 — the old look kept as a choice.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: hostBgSelector.left
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Row {
+                                    spacing: settingsScreen._px(8)
+                                    Label {
+                                        text: qsTr("Host page background")
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                        font.bold: true
+                                        color: settingsScreen._text
+                                    }
+                                    NewBadge { since: "7.0.0"; anchors.verticalCenter: parent.verticalCenter }
+                                }
+                                Label {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    // The cover is not drawn under Reduce animations: say so.
+                                    text: Theme.hostPageCovers && Theme.reduceAnimations
+                                          ? qsTr("Waves while Reduce animations is on")
+                                          : qsTr("Behind the games and apps: the waves, or the selected one's cover")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            SegmentedSelector {
+                                id: hostBgSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                labels: [qsTr("Waves"), qsTr("Game cover")]
+                                Binding on currentIndex { value: Theme.hostPageCovers ? 1 : 0 }
+                                onActivated: function(idx) { Theme.hostPageCovers = idx === 1 }
                             }
                         }
                         RowSeparator { }
@@ -3053,214 +3742,74 @@ FocusScope {
                         }
                         RowSeparator { }
 
-                        // ── Show connection quality warnings ──────────────────
+                        // ── Steam artwork (7.0.0, issue #38) ──────────────────
+                        // Puts StreamLight's pictures on its non-Steam shortcut, for the library and
+                        // Big Picture. Beside the prompts because both are about running under Steam.
+                        // Hidden without Steam; the button is Apply while there is something to
+                        // write, Check again while no shortcut is found, and gone once applied.
+                        // What is written and what is never touched: backend/steamartwork.h.
                         Item {
+                            id: steamArtworkRow
                             width: parent.width
-                            height: settingsScreen._rowHeight
+                            height: visible ? settingsScreen._rowHeightTall : 0
+                            visible: SteamArtwork.state !== SteamArtwork.NoSteam
 
-                            Label {
-                                text: qsTr("Show connection quality warnings")
-                                font.family: Theme.family
-                                font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                font.bold: true
-                                color: settingsScreen._text
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            OnOffSelector {
-                                id: connWarnSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.connectionWarnings
-                                onToggled: function(v) { StreamingPreferences.connectionWarnings = v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Show configuration warnings ───────────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeight
-
-                            Label {
-                                text: qsTr("Show configuration warnings")
-                                font.family: Theme.family
-                                font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                font.bold: true
-                                color: settingsScreen._text
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            OnOffSelector {
-                                id: configWarnSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.configurationWarnings
-                                onToggled: function(v) { StreamingPreferences.configurationWarnings = v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Discord Rich Presence ─────────────────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
+                            // What the last press did; cleared when the tab is shown again.
+                            property string result: ""
 
                             Column {
                                 anchors.left: parent.left
                                 anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: steamArtworkBtn.visible ? steamArtworkBtn.left : parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
                                 spacing: settingsScreen._px(3)
 
-                                Label {
-                                    text: qsTr("Discord Rich Presence")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
+                                Row {
+                                    spacing: settingsScreen._px(8)
+                                    Label {
+                                        text: qsTr("Steam artwork")
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                        font.bold: true
+                                        color: settingsScreen._text
+                                    }
+                                    NewBadge { since: "7.0.0"; anchors.verticalCenter: parent.verticalCenter }
                                 }
                                 Label {
-                                    text: qsTr("Shows the streamed game in your Discord status")
+                                    width: parent.width
+                                    elide: Text.ElideRight
+                                    text: steamArtworkRow.result.length > 0 ? steamArtworkRow.result : SteamArtwork.summary
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
+                                    color: steamArtworkRow.result.length > 0 ? Theme.inkText : settingsScreen._textDim
                                 }
                             }
 
-                            OnOffSelector {
-                                id: discordSwitch
+                            AboutLinkButton {
+                                id: steamArtworkBtn
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.richPresence
-                                onToggled: function(v) { StreamingPreferences.richPresence = v; StreamingPreferences.save() }
+                                visible: SteamArtwork.state === SteamArtwork.Ready
+                                         || SteamArtwork.state === SteamArtwork.NoShortcut
+                                label: SteamArtwork.state === SteamArtwork.Ready ? qsTr("Apply") : qsTr("Check again")
+                                onTriggered: {
+                                    if (SteamArtwork.state === SteamArtwork.Ready) {
+                                        steamArtworkRow.result = SteamArtwork.apply()
+                                    } else {
+                                        steamArtworkRow.result = ""
+                                        SteamArtwork.refresh()
+                                    }
+                                }
                             }
                         }
-                        RowSeparator { }
-
-                        // ── Keep display awake while streaming ────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Keep display awake while streaming")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Prevents screensaver and display sleep during streaming")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: keepAwakeSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.keepAwake
-                                onToggled: function(v) { StreamingPreferences.keepAwake = v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Launch Philips Hue Sync during streaming ──────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-                            enabled: !settingsScreen._lockHue
-                            opacity: enabled ? 1.0 : 0.4
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Launch Philips Hue Sync during streaming")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Auto-launches Hue Sync at stream start and closes it at end")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: hueSyncSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.hueSyncIntegration
-                                onToggled: function(v) { StreamingPreferences.hueSyncIntegration = v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Hide host IP addresses ────────────────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Hide host IP addresses")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Masks host IPs across the app for privacy (e.g. screenshots)")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: hideIpsSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.hideHostIps
-                                onToggled: function(v) { StreamingPreferences.hideHostIps = v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
+                        RowSeparator { visible: steamArtworkRow.visible }
 
                         // ── Clock format ──────────────────────────────────────
-                        // Here, with the rows about what the app puts on screen, rather than with
-                        // the accent below: those two are styling, these two are content. Both
-                        // drive the clock in the corner of Home — a setting and not the system
+                        // With the rows about what the app puts on screen, after the styling ones
+                        // (Interface is ordered look → motion → prompts → content → streaming
+                        // extras since 09/10/2026). Both drive the clock in the corner of Home — a setting and not the system
                         // locale, because the app is English-only and the locale would otherwise
                         // pick the order of the date fields on the user's behalf.
                         Item {
@@ -3358,11 +3907,7 @@ FocusScope {
                         }
                         RowSeparator { }
 
-                        // ── Accent colour ─────────────────────────────────────
-                        // One colour drives the whole interface: the focus ring, the primary
-                        // button, the active tab, the mark in the header. Semantic colours are
-                        // deliberately NOT included — online stays green, a warning stays amber —
-                        // or a red accent would make "online" read as an alarm.
+                        // ── Hide host IP addresses ────────────────────────────
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeightTall
@@ -3374,149 +3919,14 @@ FocusScope {
                                 spacing: settingsScreen._px(3)
 
                                 Label {
-                                    text: qsTr("Accent colour")
+                                    text: qsTr("Hide host IP addresses")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
-                                    text: qsTr("Used wherever the interface highlights something — status colours don't change")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            // Presets and a free field, side by side. The presets are for the
-                            // pad — typing a hex code with a thumbstick is not a thing anyone
-                            // should have to do — and the field is for everyone who already
-                            // knows the colour they want.
-                            Row {
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(10)
-
-                                SegmentedSelector {
-                                    id: accentSelector
-                                    anchors.verticalCenter: parent.verticalCenter
-
-                                    // Ion first, because it is the default (see theme.cpp) and the
-                                    // first pill is where anyone looks for it. Signal — the green
-                                    // the app wore until 5.0.0 — sits next to it.
-                                    //
-                                    // ⚠️ The two arrays are parallel and indexed together by both
-                                    // the Binding below and onActivated: reordering one without
-                                    // the other silently assigns the wrong colour to every name.
-                                    labels: [qsTr("Ion"), qsTr("Signal"), qsTr("Ember"), qsTr("Amber"), qsTr("Ultra")]
-                                    readonly property var _hexes: ["#00d3f2", "#00e676", "#ff6a3d", "#ffb300", "#c060ff"]
-
-                                    // -1, not 0, when the colour matches no preset: a typed
-                                    // colour must leave every pill unlit rather than light up
-                                    // "Signal" and claim the accent is green when it isn't.
-                                    Binding on currentIndex {
-                                        value: {
-                                            var cur = Theme.accent.toString().toLowerCase()
-                                            for (var i = 0; i < accentSelector._hexes.length; i++) {
-                                                if (accentSelector._hexes[i] === cur) return i
-                                            }
-                                            return -1
-                                        }
-                                    }
-                                    onActivated: function(idx) { Theme.accent = _hexes[idx] }
-                                    // At its right edge the selector leaves the key unhandled
-                                    // on purpose, so this hands the focus on to the field.
-                                    KeyNavigation.right: accentHexField
-                                }
-
-                                // Live swatch. It is the answer to "is this the colour I meant"
-                                // before the rest of the screen repaints.
-                                Rectangle {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: settingsScreen._px(28); height: settingsScreen._px(28)
-                                    radius: settingsScreen._px(6)
-                                    color: Theme.accent
-                                    border.color: Theme.lineHigh
-                                    border.width: 1
-                                }
-
-                                TextField {
-                                    id: accentHexField
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: settingsScreen._px(110)
-                                    implicitHeight: settingsScreen._px(36)
-                                    activeFocusOnTab: true
-                                    KeyNavigation.left: accentSelector
-
-                                    // Six hex digits with an optional leading #. Anything the
-                                    // validator rejects never reaches Theme, so there is no
-                                    // path from this field to an unreadable interface.
-                                    validator: RegularExpressionValidator {
-                                        regularExpression: /#?[0-9A-Fa-f]{0,6}/
-                                    }
-                                    maximumLength: 7
-                                    horizontalAlignment: TextInput.AlignHCenter
-                                    color: Theme.text
-                                    selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
-                                    selectedTextColor: Theme.onAccent
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    font.bold: true
-
-                                    background: Rectangle {
-                                        color: Theme.ground
-                                        radius: settingsScreen._px(8)
-                                        border.color: accentHexField.activeFocus ? Theme.accent : Theme.line
-                                        border.width: accentHexField.activeFocus ? 2 : 1
-                                    }
-
-                                    // Follows Theme while the user is elsewhere, so picking a
-                                    // preset updates the field — but never while it has the
-                                    // focus, or every keystroke would be overwritten mid-typing.
-                                    Binding on text {
-                                        when: !accentHexField.activeFocus
-                                        value: Theme.accent.toString()
-                                    }
-
-                                    function commit() {
-                                        var t = text.trim()
-                                        if (t.length > 0 && t.charAt(0) !== "#") t = "#" + t
-                                        // Six digits exactly: Qt would happily accept "#abc"
-                                        // and expand it, which is a different colour from the
-                                        // one a half-typed code was heading towards.
-                                        if (/^#[0-9A-Fa-f]{6}$/.test(t)) Theme.accent = t
-                                        text = Theme.accent.toString()
-                                    }
-
-                                    onEditingFinished: commit()
-                                    Keys.onReturnPressed: function(event) { commit(); event.accepted = true }
-                                    Keys.onEnterPressed:  function(event) { commit(); event.accepted = true }
-                                }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Reduce animations ─────────────────────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Reduce animations")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Turns off movement and glow outside the stream — worth it on battery")
+                                    text: qsTr("Masks host IPs across the app for privacy (e.g. screenshots)")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
@@ -3524,53 +3934,66 @@ FocusScope {
                             }
 
                             OnOffSelector {
-                                id: reduceAnimSwitch
+                                id: hideIpsSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
-                                checked: Theme.reduceAnimations
-                                onToggled: function(v) { Theme.reduceAnimations = v }
+                                checked: StreamingPreferences.hideHostIps
+                                onToggled: function(v) { StreamingPreferences.hideHostIps = v; StreamingPreferences.save() }
                             }
                         }
                         RowSeparator { }
 
-                        // ── Startup animation (6.0.0) ─────────────────────────
-                        // Read once at launch by AppShell, so a change shows at the next start.
+                        // ── Show connection quality warnings ──────────────────
                         Item {
                             width: parent.width
-                            height: settingsScreen._rowHeightTall
+                            height: settingsScreen._rowHeight
 
-                            Column {
+                            Label {
+                                text: qsTr("Show connection quality warnings")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                font.bold: true
+                                color: settingsScreen._text
                                 anchors.left: parent.left
                                 anchors.leftMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Startup animation")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    // Reduce animations wins: say so, or On would look broken.
-                                    text: Theme.reduceAnimations
-                                          ? qsTr("Skipped while Reduce animations is on")
-                                          : qsTr("Waves and logo before Home")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
                             }
 
                             OnOffSelector {
-                                id: startupAnimSwitch
+                                id: connWarnSwitch
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
-                                checked: Theme.startupAnimation
-                                onToggled: function(v) { Theme.startupAnimation = v }
+                                checked: StreamingPreferences.connectionWarnings
+                                onToggled: function(v) { StreamingPreferences.connectionWarnings = v; StreamingPreferences.save() }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Show configuration warnings ───────────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeight
+
+                            Label {
+                                text: qsTr("Show configuration warnings")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                font.bold: true
+                                color: settingsScreen._text
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+
+                            OnOffSelector {
+                                id: configWarnSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: StreamingPreferences.configurationWarnings
+                                onToggled: function(v) { StreamingPreferences.configurationWarnings = v; StreamingPreferences.save() }
                             }
                         }
                     }
@@ -3912,7 +4335,7 @@ FocusScope {
                                     height: settingsScreen._px(30)
                                     radius: settingsScreen._px(5)
                                     color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16)
-                                    border.color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.55)
+                                    border.color: Qt.rgba(Theme.ink.r, Theme.ink.g, Theme.ink.b, 0.55)
                                     border.width: 1
 
                                     Label {
@@ -3922,7 +4345,7 @@ FocusScope {
                                         font.family: Theme.family
                                         font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                         font.bold: true
-                                        color: Theme.accent
+                                        color: Theme.inkText
                                     }
                                 }
 
@@ -4007,54 +4430,6 @@ FocusScope {
                         }
                         RowSeparator { }
 
-                        // ── Text colour ───────────────────────────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeight
-
-                            Label {
-                                text: qsTr("Text colour")
-                                font.family: Theme.family
-                                font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                font.bold: true
-                                color: settingsScreen._text
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            SegmentedSelector {
-                                id: overlayColorSelector
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-
-                                labels: [qsTr("White"), qsTr("Green"), qsTr("Yellow"), qsTr("Cyan"), qsTr("Orange")]
-                                property var _values: [
-                                    StreamingPreferences.OTC_WHITE,
-                                    StreamingPreferences.OTC_GREEN,
-                                    StreamingPreferences.OTC_YELLOW,
-                                    StreamingPreferences.OTC_CYAN,
-                                    StreamingPreferences.OTC_ORANGE
-                                ]
-
-                                Binding on currentIndex {
-                                    value: {
-                                        var v = StreamingPreferences.overlayTextColor
-                                        for (var i = 0; i < overlayColorSelector._values.length; i++) {
-                                            if (overlayColorSelector._values[i] === v) return i
-                                        }
-                                        return 0
-                                    }
-                                }
-                                onActivated: function(idx) {
-                                    StreamingPreferences.overlayTextColor = _values[idx]
-                                    StreamingPreferences.save()
-                                }
-                            }
-                        }
-                        RowSeparator { }
-
                         // ── Font size ─────────────────────────────────────────
                         Item {
                             width: parent.width
@@ -4101,51 +4476,48 @@ FocusScope {
                         }
                         RowSeparator { }
 
-                        // ── Bitrate peak ──────────────────────────────────────
-                        // Here and not in the box below, because it is not a line: it appends
-                        // the windowed peak to the bitrate line. Greyed when that line is off,
-                        // since there is then nothing for it to be the peak of.
+                        // ── Text colour ───────────────────────────────────────
                         Item {
                             width: parent.width
-                            height: settingsScreen._rowHeightTall
-                            enabled: (overlayTab._itemMask & StreamingPreferences.OI_BITRATE) !== 0
-                            opacity: enabled ? 1.0 : 0.4
+                            height: settingsScreen._rowHeight
 
-                            Column {
+                            Label {
+                                text: qsTr("Text colour")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                font.bold: true
+                                color: settingsScreen._text
                                 anchors.left: parent.left
                                 anchors.leftMargin: settingsScreen._px(16)
-                                anchors.right: bitratePeakSwitch.left
-                                anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Bitrate peak")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    width: parent.width
-                                    wrapMode: Text.WordWrap
-                                    text: qsTr("Adds the highest of the last few seconds to the bitrate line")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
                             }
 
-                            OnOffSelector {
-                                id: bitratePeakSwitch
+                            SegmentedSelector {
+                                id: overlayColorSelector
                                 anchors.right: parent.right
                                 anchors.rightMargin: settingsScreen._px(16)
                                 anchors.verticalCenter: parent.verticalCenter
-                                checked: (overlayTab._itemMask & StreamingPreferences.OI_BITRATE_PEAK) !== 0
-                                onToggled: function(v) {
-                                    StreamingPreferences.overlayItems = v
-                                            ? (StreamingPreferences.overlayItems | StreamingPreferences.OI_BITRATE_PEAK)
-                                            : (StreamingPreferences.overlayItems & ~StreamingPreferences.OI_BITRATE_PEAK)
+
+                                labels: [qsTr("White"), qsTr("Green"), qsTr("Yellow"), qsTr("Cyan"), qsTr("Orange")]
+                                property var _values: [
+                                    StreamingPreferences.OTC_WHITE,
+                                    StreamingPreferences.OTC_GREEN,
+                                    StreamingPreferences.OTC_YELLOW,
+                                    StreamingPreferences.OTC_CYAN,
+                                    StreamingPreferences.OTC_ORANGE
+                                ]
+
+                                Binding on currentIndex {
+                                    value: {
+                                        var v = StreamingPreferences.overlayTextColor
+                                        for (var i = 0; i < overlayColorSelector._values.length; i++) {
+                                            if (overlayColorSelector._values[i] === v) return i
+                                        }
+                                        return 0
+                                    }
+                                }
+                                onActivated: function(idx) {
+                                    StreamingPreferences.overlayTextColor = _values[idx]
                                     StreamingPreferences.save()
                                 }
                             }
@@ -4205,6 +4577,57 @@ FocusScope {
                                 }
                                 onActivated: function(idx) {
                                     StreamingPreferences.overlayTransparency = _values[idx]
+                                    StreamingPreferences.save()
+                                }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Bitrate peak ──────────────────────────────────────
+                        // Here and not in the box below, because it is not a line: it appends
+                        // the windowed peak to the bitrate line. Greyed when that line is off,
+                        // since there is then nothing for it to be the peak of.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+                            enabled: (overlayTab._itemMask & StreamingPreferences.OI_BITRATE) !== 0
+                            opacity: enabled ? 1.0 : 0.4
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: bitratePeakSwitch.left
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Label {
+                                    text: qsTr("Bitrate peak")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: qsTr("Adds the highest of the last few seconds to the bitrate line")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: bitratePeakSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: (overlayTab._itemMask & StreamingPreferences.OI_BITRATE_PEAK) !== 0
+                                onToggled: function(v) {
+                                    StreamingPreferences.overlayItems = v
+                                            ? (StreamingPreferences.overlayItems | StreamingPreferences.OI_BITRATE_PEAK)
+                                            : (StreamingPreferences.overlayItems & ~StreamingPreferences.OI_BITRATE_PEAK)
                                     StreamingPreferences.save()
                                 }
                             }
@@ -4405,7 +4828,7 @@ FocusScope {
                                     radius: 4
                                     visible: lineHov.keyFocused
                                     color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.18)
-                                    border.color: Theme.accent
+                                    border.color: Theme.ink
                                     border.width: 1
                                 }
 
@@ -4844,7 +5267,7 @@ FocusScope {
                                       : qsTr("checking…")
                                 font.family: Theme.family
                                 font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                color: Theme.accent
+                                color: Theme.inkText
                             }
                             Label {
                                 anchors.verticalCenter: parent.verticalCenter
@@ -5046,9 +5469,11 @@ FocusScope {
                                             // radius from the width, not a scaled 3.5: _px rounds,
                                             // and a rounded half-pixel stops being a circle.
                                             width: settingsScreen._px(7); height: settingsScreen._px(7); radius: width / 2
+                                            // State colours, never the accent (7.0.0): with a red
+                                            // accent "found" was drawn red and read as a fault.
                                             color: !model.online          ? settingsScreen._textMut
-                                                 : stHostRow.presence === "found"   ? Theme.accent
-                                                 : stHostRow.presence === "missing" ? settingsScreen._textMut
+                                                 : stHostRow.presence === "found"   ? Theme.online
+                                                 : stHostRow.presence === "missing" ? Theme.danger
                                                  : settingsScreen._textDim
                                         }
                                         Label {
@@ -5066,9 +5491,10 @@ FocusScope {
                                                   : qsTr("Checking…")
                                             font.family: Theme.family
                                             font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                            color: stHostRow.presence === "found" && model.online
-                                                   ? Theme.accent
-                                                   : settingsScreen._textDim
+                                            color: !model.online ? settingsScreen._textDim
+                                                 : stHostRow.presence === "found"   ? Theme.online
+                                                 : stHostRow.presence === "missing" ? Theme.danger
+                                                 : settingsScreen._textDim
                                         }
                                         Label {
                                             anchors.verticalCenter: parent.verticalCenter
@@ -5184,6 +5610,94 @@ FocusScope {
                                 StreamingPreferences.clipboardSync = v
                                 // Persisted on the toggle, like "Wait for the game to appear".
                                 StreamingPreferences.save()
+                            }
+                        }
+                    }
+
+                    // ── Section: LAUNCH (13/10/2026) ──────────────────────────────
+                    Label {
+                        text: qsTr("Launch")
+                        font.family: Theme.family
+                        font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                        font.bold: true
+                        font.letterSpacing: 1.4
+                        font.capitalization: Font.AllUppercase
+                        color: settingsScreen._textMut
+                        leftPadding: settingsScreen._px(14)
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        color: settingsScreen._bg2
+                        radius: settingsScreen._px(8)
+                        border.color: settingsScreen._border
+                        border.width: 1
+                        implicitHeight: launchCol.implicitHeight + settingsScreen._px(8)
+
+                        Column {
+                            id: launchCol
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.topMargin: settingsScreen._px(4)
+                            spacing: 0
+
+                            // ── Wait for the game to appear ───────────────────────
+                            // In the StreamTweak tab since 13/10/2026 (it was Session → Host): it needs
+                            // StreamTweak on the host, and this is where that is said and switched on.
+                            // It is the bottom of its own cascade — a host profile, then a per-game
+                            // override, replace it.
+                            ProfileLockNotice { active: settingsScreen._lockWaitForGame }
+
+                            Item {
+                                width: parent.width
+                                height: settingsScreen._rowHeightTall
+                                enabled: !settingsScreen._lockWaitForGame && !settingsScreen._stOff
+                                opacity: enabled ? 1.0 : 0.4
+
+                                Column {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: settingsScreen._px(16)
+                                    anchors.right: waitForGameSwitch.left
+                                    anchors.rightMargin: settingsScreen._px(16)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: settingsScreen._px(3)
+
+                                    Label {
+                                        text: qsTr("Wait for the game to appear")
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                        font.bold: true
+                                        color: settingsScreen._text
+                                    }
+                                    Label {
+                                        // "Needs StreamTweak on the host" went with the move: this
+                                        // tab says it, and dims the row when the host has it off.
+                                        text: qsTr("Keep the launch screen up until the host reports the game is on screen, instead of showing the stream as soon as it starts. Games that open their own launcher never get there — turn it off for those in their per-game settings.")
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                        color: settingsScreen._textDim
+                                        width: parent.width
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+
+                                OnOffSelector {
+                                    id: waitForGameSwitch
+                                    // Like stClipSwitch: Features below holds nothing focusable.
+                                    readonly property Item revealTarget: stLowerBlock
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: settingsScreen._px(16)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    checked: StreamingPreferences.waitForGameOnScreen
+                                    onToggled: function(v) {
+                                        StreamingPreferences.waitForGameOnScreen = v
+                                        // Persisted on the toggle, not at this screen's
+                                        // Component.onDestruction: an app killed rather than
+                                        // closed never runs that, and the setting would revert.
+                                        StreamingPreferences.save()
+                                    }
+                                }
                             }
                         }
                     }
@@ -5310,7 +5824,7 @@ FocusScope {
                                                 Label {
                                                     text: "▸"
                                                     font.pixelSize: settingsScreen._px(Theme.fontCaption)
-                                                    color: Theme.accent
+                                                    color: Theme.inkText
                                                 }
                                                 Label {
                                                     id: stEntryText
@@ -5372,7 +5886,7 @@ FocusScope {
                                   : qsTr("checking…")
                             font.family: Theme.family
                             font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                            color: Theme.accent
+                            color: Theme.inkText
                         }
                         // The byline gives way to the reason while an update has failed: the
                         // button beside it only says "Retry", and this is where there is room.
@@ -5437,6 +5951,7 @@ FocusScope {
                                  :                                           qsTr("Update now")
                             onTriggered: if (!_busy) AppUpdate.updateNow()
                             KeyNavigation.right: aboutSlGithubBtn
+                            navDown: logsOpenBtn
                         }
                         AboutLinkButton {
                             id: aboutSlGithubBtn
@@ -5444,6 +5959,8 @@ FocusScope {
                             url:   "https://github.com/FoggyBytes/StreamLight/releases"
                             KeyNavigation.left:  aboutSlUpdateBtn.visible ? aboutSlUpdateBtn : null
                             KeyNavigation.right: aboutSlGplBtn
+                            navDown: logsOpenBtn
+                            navUpFrom: aboutSlUpdateBtn.visible ? aboutSlUpdateBtn : null
                         }
                         AboutLinkButton {
                             id: aboutSlGplBtn
@@ -5451,12 +5968,16 @@ FocusScope {
                             url:   "https://www.gnu.org/licenses/gpl-3.0.html"
                             KeyNavigation.left:  aboutSlGithubBtn
                             KeyNavigation.right: aboutSlDonateBtn
+                            navDown: logsOpenBtn
+                            navUpFrom: aboutSlUpdateBtn.visible ? aboutSlUpdateBtn : aboutSlGithubBtn
                         }
                         AboutLinkButton {
                             id: aboutSlDonateBtn
                             label: qsTr("Donate")
                             url:   "https://paypal.me/foggypunk"
                             KeyNavigation.left: aboutSlGplBtn
+                            navDown: logsOpenBtn
+                            navUpFrom: aboutSlUpdateBtn.visible ? aboutSlUpdateBtn : aboutSlGithubBtn
                         }
                     }
                 }
@@ -5526,11 +6047,18 @@ FocusScope {
                             AboutLinkButton {
                                 id: logsOpenBtn
                                 label: qsTr("Open folder")
+                                KeyNavigation.right: logsClearBtn
+                                navUp: aboutSlUpdateBtn.visible ? aboutSlUpdateBtn : aboutSlGithubBtn
+                                navDown: aboutFilesCard.chooserOpen ? folderChoices.itemAt(0) : coversOpenBtn
                                 onTriggered: LogsAndCache.openLogFolder()
                             }
                             AboutLinkButton {
                                 id: logsClearBtn
                                 label: qsTr("Clear logs")
+                                KeyNavigation.left: logsOpenBtn
+                                KeyNavigation.right: logsChangeBtn
+                                navUp: aboutSlUpdateBtn.visible ? aboutSlUpdateBtn : aboutSlGithubBtn
+                                navDown: aboutFilesCard.chooserOpen ? folderChoices.itemAt(0) : coversOpenBtn
                                 onTriggered: {
                                     if (LogsAndCache.hasOldLogs) clearLogsDialog.open()
                                     else aboutFilesCard.logsResult = qsTr("Nothing to remove · the current log is kept")
@@ -5539,6 +6067,9 @@ FocusScope {
                             AboutLinkButton {
                                 id: logsChangeBtn
                                 label: aboutFilesCard.chooserOpen ? qsTr("Close") : qsTr("Change folder")
+                                KeyNavigation.left: logsClearBtn
+                                navUp: aboutSlUpdateBtn.visible ? aboutSlUpdateBtn : aboutSlGithubBtn
+                                navDown: aboutFilesCard.chooserOpen ? folderChoices.itemAt(0) : coversOpenBtn
                                 onTriggered: aboutFilesCard.chooserOpen = !aboutFilesCard.chooserOpen
                             }
                         }
@@ -5549,6 +6080,7 @@ FocusScope {
                             visible: aboutFilesCard.chooserOpen
                             spacing: settingsScreen._px(6)
                             Repeater {
+                                id: folderChoices
                                 model: [
                                     { choice: 0, label: qsTr("Temporary folder (default)") },
                                     { choice: 1, label: qsTr("Documents") },
@@ -5585,7 +6117,7 @@ FocusScope {
                             wrapMode: Text.Wrap
                             font.family: Theme.family
                             font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                            color: Theme.accent
+                            color: Theme.inkText
                         }
 
                         Rectangle { width: parent.width; height: 1; color: settingsScreen._border }
@@ -5619,11 +6151,17 @@ FocusScope {
                             AboutLinkButton {
                                 id: coversOpenBtn
                                 label: qsTr("Open folder")
+                                KeyNavigation.right: coversClearBtn
+                                navUp: aboutFilesCard.chooserOpen ? folderChoices.itemAt(folderChoices.count - 1) : logsOpenBtn
+                                navLast: true
                                 onTriggered: LogsAndCache.openCoverFolder()
                             }
                             AboutLinkButton {
                                 id: coversClearBtn
                                 label: qsTr("Clear cache")
+                                KeyNavigation.left: coversOpenBtn
+                                navUp: aboutFilesCard.chooserOpen ? folderChoices.itemAt(folderChoices.count - 1) : logsOpenBtn
+                                navLast: true
                                 onTriggered: {
                                     if (LogsAndCache.hasCovers) clearCoversDialog.open()
                                     else aboutFilesCard.coversResult = qsTr("The cache is already empty")
@@ -5637,7 +6175,118 @@ FocusScope {
                             wrapMode: Text.Wrap
                             font.family: Theme.family
                             font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                            color: Theme.accent
+                            color: Theme.inkText
+                        }
+                    }
+                }
+
+                // What's new (7.0.0): the last card of About, under the folders (Marcello, 08/10/2026).
+                // The changelog of this major release, from X.0.0 up to the
+                // version running, newest first — read from the changelog.txt built into the app
+                // (SystemProperties.changelogForCurrentMajor). It is long on purpose: the right
+                // stick and the wheel scroll the page over it, without moving the focus.
+                Rectangle {
+                    id: aboutWhatsNewCard
+                    readonly property var entries: SystemProperties.changelogForCurrentMajor()
+                    visible: entries.length > 0
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: settingsScreen._px(8)
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: whatsNewCol.implicitHeight + settingsScreen._px(32)
+
+                    Column {
+                        id: whatsNewCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: settingsScreen._px(16)
+                        anchors.leftMargin: settingsScreen._px(18)
+                        spacing: settingsScreen._px(14)
+
+                        Row {
+                            spacing: settingsScreen._px(8)
+                            Label {
+                                text: {
+                                    var v = SystemProperties.versionString.split(".")
+                                    return qsTr("What's new in %1").arg(v[0] + "." + (v.length > 1 ? v[1] : "0"))
+                                }
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontTitle)
+                                font.bold: true
+                                color: settingsScreen._text
+                            }
+                            NewBadge { since: "7.0.0"; anchors.verticalCenter: parent.verticalCenter }
+                        }
+
+                        Repeater {
+                            model: aboutWhatsNewCard.entries
+                            delegate: Column {
+                                id: entryCol
+                                width: whatsNewCol.width
+                                spacing: settingsScreen._px(8)
+                                readonly property var entry: modelData
+
+                                Label {
+                                    width: parent.width
+                                    text: entryCol.entry.version
+                                          + (entryCol.entry.name.length > 0 ? "  ·  " + entryCol.entry.name : "")
+                                          + "  ·  " + entryCol.entry.date
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
+                                    font.bold: true
+                                    color: Theme.inkText
+                                    wrapMode: Text.WordWrap
+                                }
+                                Label {
+                                    width: parent.width
+                                    visible: text.length > 0
+                                    text: entryCol.entry.intro
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                    wrapMode: Text.WordWrap
+                                }
+                                Repeater {
+                                    model: entryCol.entry.sections
+                                    delegate: Column {
+                                        id: sectionCol
+                                        width: entryCol.width
+                                        spacing: settingsScreen._px(4)
+                                        readonly property var section: modelData
+                                        Label {
+                                            text: sectionCol.section.title
+                                            topPadding: settingsScreen._px(4)
+                                            font.family: Theme.family
+                                            font.pixelSize: settingsScreen._px(Theme.fontCaption)
+                                            font.bold: true
+                                            font.letterSpacing: settingsScreen._u * 1.2
+                                            color: settingsScreen._textMut
+                                        }
+                                        Repeater {
+                                            model: sectionCol.section.items
+                                            delegate: Label {
+                                                width: sectionCol.width
+                                                leftPadding: settingsScreen._px(14)
+                                                textFormat: Text.StyledText
+                                                // The lead in the text colour, the rest a step quieter —
+                                                // the changelog's own "lead — detail" shape.
+                                                text: "• " + (modelData.lead.length > 0
+                                                              ? "<b>" + _esc(modelData.lead) + "</b> — " : "")
+                                                      + "<font color='" + settingsScreen._textDim + "'>"
+                                                      + _esc(modelData.text) + "</font>"
+                                                function _esc(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
+                                                font.family: Theme.family
+                                                font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                                color: settingsScreen._text
+                                                wrapMode: Text.WordWrap
+                                                onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -5723,7 +6372,7 @@ FocusScope {
                         // Rest is Theme.line, not the "#2a2a2a" this used to hardcode: the
                         // pair only reads as a progression if both ends come from the same
                         // scale. Hover is neutral — the accent stays with the focus.
-                        border.color: miniHov.keyFocused ? Theme.accent
+                        border.color: miniHov.keyFocused ? Theme.ink
                                     : miniHov.active     ? Theme.lineHigh
                                     :                      Theme.line
                         border.width: miniHov.keyFocused ? 3 : 1
@@ -6020,6 +6669,32 @@ FocusScope {
         id: btn
         property string label: ""
         property string url: ""
+        /*
+         * About's buttons stand in ROWS (7.0.0, 09/10/2026). Left and right move along a row
+         * (KeyNavigation), up and down between rows — and in Settings the D-pad's up and down
+         * arrive as Shift+Tab and Tab, which on their own walk the buttons one by one: from
+         * Logs to Cover cache took three presses of down, through the row's other buttons.
+         * navDown / navUp say where Tab / Shift+Tab go instead; navLast keeps Tab here on the
+         * last row. Unset, the focus chain decides, as before.
+         */
+        property Item navDown: null
+        property Item navUp: null
+        // Up as if from this row's first button: whatever comes before it in the chain.
+        property Item navUpFrom: null
+        property bool navLast: false
+        function _down(event) {
+            if (btn.navDown && btn.navDown.visible) { btn.navDown.forceActiveFocus(Qt.TabFocusReason); event.accepted = true }
+            else event.accepted = btn.navLast
+        }
+        function _up(event) {
+            var up = btn.navUp && btn.navUp.visible ? btn.navUp
+                   : btn.navUpFrom ? btn.navUpFrom.nextItemInFocusChain(false) : null
+            if (up) { up.forceActiveFocus(Qt.BacktabFocusReason); event.accepted = true }
+            else event.accepted = false
+        }
+        // ⚠️ The pad's up is Key_Tab WITH Shift (a keyboard sends Key_Backtab), and lands here.
+        Keys.onTabPressed:     function(event) { if ((event.modifiers & Qt.ShiftModifier)) btn._up(event); else btn._down(event) }
+        Keys.onBacktabPressed: function(event) { btn._up(event) }
         signal triggered()
         function _activate() {
             if (url.length > 0) Qt.openUrlExternally(url)
@@ -6057,7 +6732,7 @@ FocusScope {
             //
             // Rest is Theme.line, not the "#2a2a2a" this used to hardcode: rest and hover only
             // read as a progression if both ends come from the same scale.
-            border.color: btn._keyFocused ? Theme.accent
+            border.color: btn._keyFocused ? Theme.ink
                         : hov.active      ? Theme.lineHigh
                         :                   Theme.line
             // ⚠️ Three, matching SegmentedSelector, which is the control this has to look like:
@@ -6134,7 +6809,7 @@ FocusScope {
             implicitHeight: settingsScreen._px(48)
             radius: settingsScreen._px(8)
             color: choiceBtn.selected ? settingsScreen._btnBg : "transparent"
-            border.color: choiceHov.keyFocused || choiceBtn.selected ? Theme.accent
+            border.color: choiceHov.keyFocused || choiceBtn.selected ? Theme.ink
                         : choiceHov.active                          ? Theme.lineHigh
                         :                                             Theme.line
             border.width: choiceHov.keyFocused ? settingsScreen._focusBd : 1

@@ -13,6 +13,10 @@ import QtQuick.Controls 2.5
 Popup {
     id: dialog
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    enter: PopEnter {}
+    exit: PopExit {}
+
     property string hostName : ""
     // Which row is being waited on: 0 the packet, 1 the host, 2 StreamTweak. (3 is the link
     // match, which happens after this dialog has closed — the card shows that one.)
@@ -193,10 +197,18 @@ Popup {
                         height: dialog._px(26)
                         anchors.verticalCenter: parent.verticalCenter
 
+                        // A step that ends well draws its check (7.0.0); a failed one keeps the ✗.
+                        SuccessTick {
+                            anchors.centerIn: parent
+                            size: dialog._px(18)
+                            visible: stepRow._done
+                            onVisibleChanged: if (visible) play()
+                            Component.onCompleted: if (visible) play()
+                        }
                         Label {
                             anchors.centerIn: parent
-                            visible: stepRow._done || stepRow._failed
-                            text: stepRow._done ? "✓" : "✗"
+                            visible: stepRow._failed
+                            text: "✗"
                             font.family: Theme.family
                             font.pixelSize: dialog._px(Theme.fontBody)
                             color: stepRow._done ? Theme.online : Theme.danger

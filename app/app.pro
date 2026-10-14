@@ -50,7 +50,8 @@ win32 {
     }
 
     INCLUDEPATH += $$PWD/../libs/windows/include
-    LIBS += dcomp.lib advapi32.lib ws2_32.lib winmm.lib dxva2.lib ole32.lib gdi32.lib user32.lib d3d9.lib dwmapi.lib dbghelp.lib iphlpapi.lib shell32.lib
+    # hid.lib and cfgmgr32.lib: DualSense waveform haptics (7.0.0, dualsensehid.cpp, dualsensehaptics.cpp)
+    LIBS += dcomp.lib advapi32.lib ws2_32.lib winmm.lib dxva2.lib ole32.lib gdi32.lib user32.lib d3d9.lib dwmapi.lib dbghelp.lib iphlpapi.lib shell32.lib hid.lib cfgmgr32.lib
 }
 macx:!disable-prebuilts {
     INCLUDEPATH += $$PWD/../libs/mac/include $$PWD/../libs/mac/include/SDL2
@@ -163,12 +164,16 @@ macx {
 
 SOURCES += \
     backend/nvaddress.cpp \
-    backend/coverpalette.cpp \
     backend/linkspeed.cpp \
     backend/linkmatcher.cpp \
     backend/powerstatus.cpp \
     backend/windowmove.cpp \
+    backend/uisound.cpp \
     backend/logsandcache.cpp \
+    backend/windowslocation.cpp \
+    backend/steamartwork.cpp \
+    backend/pyrowavetest.cpp \
+    backend/pyrowaveudpprobe.cpp \
     backend/gradientimage.cpp \
     backend/launchgate.cpp \
     streaming/launchcurtain.cpp \
@@ -197,6 +202,8 @@ SOURCES += \
     settings/videooptions.cpp \
     settings/shortcutmanager.cpp \
     streaming/input/abstouch.cpp \
+    streaming/input/dualsensehaptics.cpp \
+    streaming/input/dualsensehid.cpp \
     streaming/input/gamepad.cpp \
     streaming/input/input.cpp \
     streaming/input/keyboard.cpp \
@@ -234,12 +241,16 @@ SOURCES += \
 HEADERS += \
     SDL_compat.h \
     backend/nvaddress.h \
-    backend/coverpalette.h \
     backend/linkspeed.h \
     backend/linkmatcher.h \
     backend/powerstatus.h \
     backend/windowmove.h \
+    backend/uisound.h \
     backend/logsandcache.h \
+    backend/windowslocation.h \
+    backend/steamartwork.h \
+    backend/pyrowavetest.h \
+    backend/pyrowaveudpprobe.h \
     logfile.h \
     backend/gradientimage.h \
     backend/launchgate.h \
@@ -269,6 +280,10 @@ HEADERS += \
     settings/videooptions.h \
     settings/shortcutmanager.h \
     streaming/input/input.h \
+    streaming/input/dualsensehaptics.h \
+    streaming/input/dualsensehid.h \
+    streaming/input/dualsensetriggers.h \
+    ../third-party/saxense/packet.h \
     streaming/session.h \
     streaming/clipboardsync.h \
     streaming/clipboardcrypto.h \
@@ -298,6 +313,9 @@ HEADERS += \
     backend/networkbuffers.h \
     diagnostics/gputrace.h \
     streaming/video/pyrowave/pyrowavebitrate.h \
+    streaming/video/pyrowave/pyrowavebandwidth.h \
+    streaming/video/pyrowave/pyrowavecalibrationpolicy.h \
+    streaming/video/pyrowave/pyrowavelinkpolicy.h \
     streaming/video/pyrowave/pyrowaveprotocol.h \
     backend/appupdate.h
 

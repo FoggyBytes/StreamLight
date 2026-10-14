@@ -1,7 +1,10 @@
 import Theme 1.0
-import QtQuick 2.9
+import QtQuick 2.15
+import QtQuick.Controls 2.15
 
 import SdlGamepadKeyNavigation 1.0
+import InputHints 1.0
+import StreamingPreferences 1.0
 import SystemProperties 1.0
 import AppUpdate 1.0
 
@@ -77,9 +80,6 @@ FocusScope {
     // Where to return when leaving Settings (Home or Apps).
     property int    _settingsReturnPage: 0
 
-    // What the status bar sits on. Transparent by default — see the note on statusBar.color.
-    property color  statusBarFloor: "transparent"
-
     // ── Remote "Update host" job (state owned by HomeScreen; mirrored for the
     //    global status-bar chip + Select reopen shortcut) ─────────────────────────
     readonly property bool   _updateActive:  homeLoader.item ? homeLoader.item.updateJobActive  : false
@@ -105,6 +105,47 @@ FocusScope {
     // is asked on the way back to the host list.
     function noteStreamEnded(idx, hostName) {
         if (homeLoader.item) homeLoader.item.noteStreamEnded(idx, hostName)
+    }
+
+    // A new launch from the host page asks first whether the host is locked, and puts the PIN
+    // pad in front of it if so (7.0.0, #35). The unlock lives on HomeScreen with the wake's.
+    /*
+     * The host page's host went to its lock screen (7.0.0, #35): back to Home, where its card
+     * says Unlock. Checked when the lock state changes, when a stream or the PIN pad comes off
+     * the stack and when the page comes back from Settings — whichever happens last.
+     *
+     * ⚠️ Never with anything on top of the shell, and never while an unlock is under way: a
+     * launch from this page that found the host locked shows the pad ABOVE the page, and then
+     * launches from it — leaving the page in between would drop that launch
+     * (AppsScreen.Component.onDestruction → dropLaunchWhenUnlocked).
+     */
+    function _leaveLockedHostPage() {
+        if (currentPage !== 1 || !homeLoader.item) return
+        if (stackView.currentItem !== appShell) return
+        if (homeLoader.item.unlockBusy) return
+        if (!homeLoader.item.isHostLocked(_appsUuid)) return
+        console.log("[unlock] the host page's host is locked — back to Home")
+        currentPage = 0
+    }
+    Connections {
+        target: homeLoader.item
+        ignoreUnknownSignals: true
+        function onHostLockChanged(uuid, locked) {
+            if (locked && uuid === appShell._appsUuid) appShell._leaveLockedHostPage()
+        }
+        function onUnlockBusyChanged() { appShell._leaveLockedHostPage() }
+    }
+    Connections {
+        target: stackView
+        function onCurrentItemChanged() { Qt.callLater(appShell._leaveLockedHostPage) }
+    }
+
+    function launchWhenUnlocked(idx, hostName, launchFn, owner) {
+        if (homeLoader.item) homeLoader.item.launchWhenUnlocked(idx, hostName, launchFn, owner)
+        else if (launchFn)   launchFn()
+    }
+    function dropLaunchWhenUnlocked(owner) {
+        if (homeLoader.item) homeLoader.item.dropLaunchWhenUnlocked(owner)
     }
 
     function reopenUpdateDialog() {
@@ -145,8 +186,12 @@ FocusScope {
 
     // On Home, two pairs that must not be confused — the legends on the card name both:
     //
-    //   host    LT/RT  (Key_F14/F15)   ·  keyboard PgUp/PgDn
-    //   profile LB/RB  (Key_F16/F17)   ·  keyboard Q/E, handled in HomeScreen
+    //   host    LB/RB  (Key_F16/F17)   ·  keyboard PgUp/PgDn
+    //   profile LT/RT  (Key_F14/F15)   ·  keyboard Q/E, handled in HomeScreen
+    //
+    // ⚠️ Swapped on 13/10/2026 (7.0.0), to match the host page, where LB/RB move between tabs
+    // and LT/RT change the profile: the profile is on the triggers on both screens now. Until
+    // then Home had the hosts on the triggers and the profile on the shoulders.
     //
     // The shoulders carry their own inert keys precisely so they cannot land in the host
     // handler the way they did when they still sent PageUp/PageDown — see the note in
@@ -165,9 +210,9 @@ FocusScope {
         } else if (event.key === Qt.Key_PageUp) {
             if (homeLoader.item) { homeLoader.item.cycleHostTab(-1); event.accepted = true }
         } else if (event.key === Qt.Key_F17) {
-            if (homeLoader.item) { homeLoader.item.cycleFocusedProfile(1);  event.accepted = true }
+            if (homeLoader.item) { homeLoader.item.cycleHostTab(1);  event.accepted = true }
         } else if (event.key === Qt.Key_F16) {
-            if (homeLoader.item) { homeLoader.item.cycleFocusedProfile(-1); event.accepted = true }
+            if (homeLoader.item) { homeLoader.item.cycleHostTab(-1); event.accepted = true }
         }
     }
 
@@ -192,7 +237,16 @@ FocusScope {
     }
 
     function showApps(computerIndex, computerModel, showAll, hostName, hostAddress, hostGpu, isTailscaleClone) {
-        _appsUuid             = computerModel ? computerModel.uuidAt(computerIndex) : ""
+        // A host at its lock screen has no page to open (7.0.0, #35): its card offers Unlock.
+        // Here rather than at each caller, because seven paths lead here — the end of a stream
+        // among them — and every one of them lands on Home instead.
+        var uuid = computerModel ? computerModel.uuidAt(computerIndex) : ""
+        if (homeLoader.item && homeLoader.item.isHostLocked(uuid)) {
+            console.log("[unlock] host is locked — staying on Home")
+            currentPage = 0
+            return
+        }
+        _appsUuid             = uuid
         _appsModel            = computerModel
         _appsShowAll          = showAll || false
         _appsHostName         = hostName    || ""
@@ -263,6 +317,31 @@ FocusScope {
         currentPage = 2
     }
 
+    /*
+     * A panel that takes over the status bar (7.0.0). A popup with no scrim — the Background
+     * panel, the accent palette — leaves this bar in plain sight, and the bar goes on saying what
+     * the page behind would do: X = Power, B = Exit, while in the panel X clears and B cancels.
+     * A footer of the panel's own beside it only made two rows of prompts that seemed to be two
+     * sets of controls. So the panel lends its prompts to the bar instead, for as long as it is
+     * open, and gets them back on click.
+     *
+     * The owner is any object with `barHints` (rows shaped like the bar's own) and
+     * `barAction(kind)`. Its prompts are drawn by barTakeover, a popup over the bar, because
+     * the bar sits under the overlay: a click on it would land on the open panel's "outside"
+     * and close it. Opening or closing the owner calls these two.
+     */
+    readonly property bool _scrollHint: SdlGamepadKeyNavigation.scrollAvailable && InputHints.padActive
+    property var _barOwner: null
+    function takeOverBar(owner) {
+        _barOwner = owner
+        barTakeover.open()
+    }
+    function releaseBar(owner) {
+        if (_barOwner !== owner) return
+        _barOwner = null
+        barTakeover.close()
+    }
+
     // Mouse click on a status-bar prompt → trigger the same action the pad would.
     function triggerStatusBarAction(kind) {
         switch (kind) {
@@ -278,6 +357,9 @@ FocusScope {
             break
         case "openCard":
             if (homeLoader.item) SdlGamepadKeyNavigation.simulateKey(Qt.Key_Return)
+            break
+        case "theme":
+            appShell.toggleTheme()
             break
         case "shutdownHost":
             // Open the POWER chooser for the currently-focused host card.
@@ -315,8 +397,55 @@ FocusScope {
     // (landing on Home at startup, stepping out of Settings) would be asking out of nowhere.
     property int _prevPage: 0
 
+    /*
+     * Page transitions (7.0.0). Two kinds, picked by the pair of pages:
+     *   zoom  Home ↔ host page — the host page grows out of the card's side (left) while Home
+     *         fades back, and shrinks back into it on the way out;
+     *   push  anything ↔ Settings — Settings slides in from the right while the page behind
+     *         moves a third of the way left and dims (iOS), and the reverse on B.
+     * The page leaving stays loaded until the motion ends (_outgoing), then goes as before.
+     * Off with Reduce animations, and never while the opening animation holds the screen.
+     */
+    property int  _outgoing: -1
+    property real _t: 1
+    readonly property bool _push: currentPage === 2 || _outgoing === 2
+    NumberAnimation {
+        id: pageAnim
+        target: appShell; property: "_t"
+        from: 0; to: 1
+        // Quicker since 09/10/2026 (was 380 / 340): moving around should not wait on the motion.
+        duration: appShell._push ? 260 : 240
+        easing.type: Easing.OutCubic
+        onFinished: appShell._outgoing = -1
+    }
+    function _pageOpacity(n) {
+        if (_outgoing < 0) return 1
+        if (n === currentPage) return _push ? (n === 2 ? 1 : 0.5 + 0.5 * _t) : _t
+        if (n === _outgoing)   return _push ? (n === 2 ? 1 : 1 - 0.5 * _t) : 1 - _t
+        return 1
+    }
+    function _pageShift(n) {
+        if (_outgoing < 0 || !_push) return 0
+        var w = contentArea.width
+        if (n === currentPage) return n === 2 ? (1 - _t) * w : -(1 - _t) * 0.3 * w
+        if (n === _outgoing)   return n === 2 ? _t * w : -_t * 0.3 * w
+        return 0
+    }
+    function _pageScale(n) {
+        if (_outgoing < 0 || _push) return 1
+        if (n === currentPage) return n === 1 ? 0.94 + 0.06 * _t : 1.04 - 0.04 * _t
+        if (n === _outgoing)   return n === 1 ? 1 - 0.06 * _t : 1 + 0.04 * _t
+        return 1
+    }
+
     onCurrentPageChanged: {
+        Qt.callLater(_leaveLockedHostPage)      // back from Settings onto a locked host (#35)
         var cameFromApps = (_prevPage === 1)
+        if (!Theme.reduceAnimations && !startupSplash.blocking && _prevPage !== currentPage) {
+            _outgoing = _prevPage
+            _t = 0
+            pageAnim.restart()
+        }
         _prevPage = currentPage
 
         if      (currentPage === 0 && homeLoader.item)     homeLoader.item.forceActiveFocus()
@@ -348,8 +477,9 @@ FocusScope {
     AmbientBackground {
         id: ambientBackground
         z: -1
-        // Waves on Home and Settings (6.1.0): the host page stands on the bare wash.
-        waves: currentPage === 0 || currentPage === 2
+        // Waves on Home, Settings (6.1.0) and, since 7.0.0, the host page — unless the user chose
+        // its 6.5.1 background, the focused game's cover (13/10/2026), and it is drawing.
+        waves: currentPage === 0 || currentPage === 2 || (currentPage === 1 && !appShell._appsCover)
         // The waves run twice as fast while a host is streaming (6.0.0).
         streaming: homeLoader.item ? homeLoader.item.anyStreaming : false
         // The waves rise from the bottom only as the first act of the opening animation, on its
@@ -373,8 +503,11 @@ FocusScope {
             id: homeLoader
             anchors.fill: parent
             active: true
-            visible: currentPage === 0
+            visible: currentPage === 0 || appShell._outgoing === 0
             focus: currentPage === 0
+            opacity: appShell._pageOpacity(0)
+            scale: appShell._pageScale(0)
+            transform: Translate { x: appShell._pageShift(0) }
             source: "qrc:/gui/HomeScreen.qml"
             onLoaded: {
                 item.appShell = appShell
@@ -386,9 +519,14 @@ FocusScope {
         Loader {
             id: appsLoader
             anchors.fill: parent
-            active: currentPage === 1
-            visible: currentPage === 1
+            active: currentPage === 1 || appShell._outgoing === 1
+            visible: currentPage === 1 || appShell._outgoing === 1
             focus: currentPage === 1
+            opacity: appShell._pageOpacity(1)
+            // Grows out of the card, which stands on the left of Home.
+            transformOrigin: Item.Left
+            scale: appShell._pageScale(1)
+            transform: Translate { x: appShell._pageShift(1) }
             source: "qrc:/gui/AppsScreen.qml"
             onLoaded: {
                 // The model before the host: the page builds its library when it learns the
@@ -408,9 +546,11 @@ FocusScope {
         Loader {
             id: settingsLoader
             anchors.fill: parent
-            active: currentPage === 2
-            visible: currentPage === 2
+            active: currentPage === 2 || appShell._outgoing === 2
+            visible: currentPage === 2 || appShell._outgoing === 2
             focus: currentPage === 2
+            opacity: appShell._pageOpacity(2)
+            transform: Translate { x: appShell._pageShift(2) }
             source: "qrc:/gui/SettingsScreen.qml"
             onLoaded: {
                 item.activeProfileOverride = appShell._settingsProfileOverride
@@ -419,6 +559,7 @@ FocusScope {
                 item.hostName              = appShell._settingsHostName
                 item.hostIndex             = Qt.binding(function() { return appShell._settingsHostIndex })
                 item.hostStreamTweakEnabled = appShell._settingsHostStEnabled
+                item.appShell              = appShell
                 item.forceActiveFocus()
             }
         }
@@ -461,6 +602,51 @@ FocusScope {
         opacity: startupSplash.homeOpacity
     }
 
+    // One prompt of the status bar: the button and what it does. Shared by the bar's own row
+    // and by barTakeover, so a panel's prompts are the bar's prompts, not a likeness of them.
+    component StatusHint: Item {
+        id: hint
+        property var model: ({})
+        signal triggered(string kind)
+
+        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+        implicitWidth:  promptRow.implicitWidth + Math.round(8 * Theme.uiScale)
+        implicitHeight: Math.round(30 * Theme.uiScale)
+
+        Row {
+            id: promptRow
+            anchors.centerIn: parent
+            spacing: Math.round(9 * Theme.uiScale)
+
+            // ABXY circle 26×26, LB/RB rounded rect 40×24 — the sizes ActionHint
+            // and PadGlyph now share, so a prompt here and a combo in Settings are
+            // the same button at the same size.
+            ActionHint {
+                anchors.verticalCenter: parent.verticalCenter
+                buttonKey: hint.model.btn
+                keyLabel:  hint.model.key
+                size: Math.round(26 * Theme.uiScale)
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: hint.model.act
+                color: Theme.text
+                font.pixelSize: Math.round(Theme.fontBody * Theme.uiScale)
+                font.family: Theme.family
+            }
+        }
+
+        // "none": a prompt that only informs (Scroll — the stick has no click to stand for).
+        MouseArea {
+            anchors.fill: parent
+            enabled: hint.model.kind !== "none"
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: hint.triggered(hint.model.kind)
+        }
+    }
+
     // Status bar — gamepad prompts + version. Glyphs swap by controller type.
     Rectangle {
         id: statusBar
@@ -468,13 +654,10 @@ FocusScope {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         height: Math.round(44 * Theme.uiScale)
-        // Normally transparent, so the page's own ambient gradient runs behind it unbroken.
-        //
-        // A page that paints its own floor has to say so, though: the host page ends in
-        // near-black under its blurred artwork while the shell's gradient ends accent-tinted,
-        // and where the two met there was a visible step across the foot of the screen. So
-        // the page sets this to whatever it ends in and the bar borrows it.
-        color: appShell.statusBarFloor
+        // Transparent, so the floor runs behind it unbroken — except under the host page's cover
+        // background (Host page background = Game cover), which ends in its own colour: the bar
+        // takes it, or there is a step across the foot of the screen (6.5.1's statusBarFloor).
+        color: appShell._appsCover ? appsLoader.item.coverFoot : "transparent"
         opacity: startupSplash.homeOpacity
         enabled: !startupSplash.blocking
 
@@ -512,10 +695,13 @@ FocusScope {
          */
         // btn = the controller button, key = the keyboard equivalent. Both travel together and
         // ActionHint picks; a prompt with no key stays on the glyph.
+        // 7.0.0 (13/10/2026): the theme toggle — right stick click / T — naming the theme it
+        // leads to, like every other prompt names what it does.
         readonly property var _hintsHome: [
-            { btn: "X", key: "P",   act: qsTr("Power"),    kind: "shutdownHost" },
-            { btn: "Y", key: "S",   act: qsTr("Settings"), kind: "settings" },
-            { btn: "B", key: "Esc", act: qsTr("Exit"),     kind: "back" }
+            { btn: "X",  key: "P",   act: qsTr("Power"),    kind: "shutdownHost" },
+            { btn: "Y",  key: "S",   act: qsTr("Settings"), kind: "settings" },
+            { btn: "RS", key: "T",   act: Theme.light ? qsTr("Dark theme") : qsTr("Light theme"), kind: "theme" },
+            { btn: "B",  key: "Esc", act: qsTr("Exit"),     kind: "back" }
         ]
         // Same as Home, and for the same reason: A, X and Select are drawn on the host
         // page's own buttons, next to the words for what they do, so the bar does not say it
@@ -579,46 +765,23 @@ FocusScope {
             anchors.leftMargin: Math.round(20 * Theme.uiScale)
             anchors.verticalCenter: parent.verticalCenter
             spacing: Math.round(20 * Theme.uiScale)
+            // Handed to the panel that took the bar over, which draws its own in this place.
+            visible: !appShell._barOwner
 
             Repeater {
                 model: statusBar._hints
-                delegate: Item {
-                    anchors.verticalCenter: parent.verticalCenter
-                    implicitWidth:  promptRow.implicitWidth + Math.round(8 * Theme.uiScale)
-                    implicitHeight: Math.round(30 * Theme.uiScale)
-
-                    Row {
-                        id: promptRow
-                        anchors.centerIn: parent
-                        spacing: Math.round(9 * Theme.uiScale)
-
-                        // ABXY circle 26×26, LB/RB rounded rect 40×24 — the sizes ActionHint
-                        // and PadGlyph now share, so a prompt here and a combo in Settings are
-                        // the same button at the same size.
-                        ActionHint {
-                            anchors.verticalCenter: parent.verticalCenter
-                            buttonKey: modelData.btn
-                            keyLabel:  modelData.key
-                            size: Math.round(26 * Theme.uiScale)
-                        }
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: modelData.act
-                            color: Theme.text
-                            font.pixelSize: Math.round(Theme.fontBody * Theme.uiScale)
-                            font.family: Theme.family
-                        }
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: appShell.triggerStatusBarAction(modelData.kind)
-                    }
+                delegate: StatusHint {
+                    model: modelData
+                    onTriggered: function(kind) { appShell.triggerStatusBarAction(kind) }
                 }
             }
+                // 7.0.0: the right stick scrolls the view that holds the focus, when it has room
+                // to — said here only while it would do something, and only to a pad user (the
+                // keyboard and mouse have the wheel and need no prompt).
+                StatusHint {
+                    visible: appShell._scrollHint
+                    model: ({ btn: "RSCROLL", key: "", act: qsTr("Scroll"), kind: "none" })
+                }
         }
 
         // Right cluster: optional "Update host" chip + version label, laid out by a
@@ -728,6 +891,58 @@ FocusScope {
     }
 
     /*
+     * The status bar's prompts while a panel has taken it over — see takeOverBar(). Laid exactly
+     * over the bar's own row, which hides meanwhile; the version and the update chip on the
+     * right stay the bar's.
+     *
+     * A popup, because that is the only layer above the open panel's "outside": the bar itself
+     * is under the overlay, so a click on it would close the panel. ⚠️ Non-modal, no focus and
+     * never closed by a press: it must take nothing from the panel — not the keys, not Esc —
+     * and only the panel decides when it goes. z above the panels so its clicks reach it and
+     * not the panel's press-outside.
+     */
+    Popup {
+        id: barTakeover
+        x: 0
+        y: statusBar.y
+        width: appShell.width
+        height: statusBar.height
+        padding: 0
+        modal: false
+        dim: false
+        focus: false
+        closePolicy: Popup.NoAutoClose
+        z: 100
+        background: Item {}
+        // The bar does not move; neither do its prompts.
+        enter: Transition {}
+        exit: Transition {}
+
+        contentItem: Item {
+            Row {
+                anchors.left: parent.left
+                anchors.leftMargin: Math.round(20 * Theme.uiScale)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Math.round(20 * Theme.uiScale)
+
+                Repeater {
+                    model: appShell._barOwner ? appShell._barOwner.barHints : []
+                    delegate: StatusHint {
+                        model: modelData
+                        onTriggered: function(kind) {
+                            if (appShell._barOwner) appShell._barOwner.barAction(kind)
+                        }
+                    }
+                }
+                StatusHint {
+                    visible: appShell._scrollHint
+                    model: ({ btn: "RSCROLL", key: "", act: qsTr("Scroll"), kind: "none" })
+                }
+            }
+        }
+    }
+
+    /*
      * The opening animation (6.0.0). Above the pages, the clock and the status bar, which it
      * keeps at opacity 0 and without input until its fade (see contentArea). Popups have their
      * own overlay above this.
@@ -744,6 +959,100 @@ FocusScope {
         onFinished: {
             appShell._maybePromptUpdate()
             appShell._maybeShowSteamBanner()
+        }
+    }
+
+    // The host page is standing on its cover (Settings → Interface → Host page background).
+    readonly property bool _appsCover: currentPage === 1 && appsLoader.item !== null
+                                       && appsLoader.item.coverDrawing === true
+
+    // ── The theme toggle (7.0.0, 13/10/2026) ─────────────────────────────────────
+    /*
+     * Home's right stick click / T / the prompt. Under Dark or Light it sets the other mode;
+     * under System or Auto it holds the other theme until the next change (Theme.toggleLight),
+     * and a short notice says how long — the one thing the prompt cannot say.
+     */
+    function toggleTheme() {
+        Theme.toggleLight()
+        if (Theme.mode === Theme.ModeSystem || Theme.mode === Theme.ModeAuto)
+            themeNotice.show(_themeNoticeText())
+    }
+
+    // A short line above the status bar, in the theme toggle's notice (7.0.0): used by the
+    // PyroWave Test to say where the bitrate went.
+    function notice(text) {
+        themeNotice.show(text)
+    }
+
+    function _hm(minutes) {
+        var d = new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60)
+        return Qt.formatTime(d, StreamingPreferences.clockFormat === StreamingPreferences.CF_12H
+                                ? "h:mm AP" : "HH:mm")
+    }
+
+    function _themeNoticeText() {
+        var name = Theme.light ? qsTr("Light") : qsTr("Dark")
+        if (!Theme.forced)
+            return Theme.mode === Theme.ModeSystem ? qsTr("Following Windows") : qsTr("Automatic theme")
+        if (Theme.mode === Theme.ModeSystem)
+            return qsTr("%1 until Windows changes theme").arg(name)
+        var until = Theme.forcedUntilMinutes
+        if (until < 0)
+            return name
+        // A held Light ends when the schedule turns light anyway — at sunrise; a held Dark at
+        // sunset. With set hours it is just a time.
+        if (Theme.effectiveAutoHow === 0)
+            return (Theme.light ? qsTr("Light until sunrise %1, then automatic again")
+                                : qsTr("Dark until sunset %1, then automatic again")).arg(_hm(until))
+        return qsTr("%1 until %2, then automatic again").arg(name).arg(_hm(until))
+    }
+
+    // While a stream or its launch screen is up (pushed over the shell), the automatic switch
+    // waits: no point repainting the app behind the stream, and the curtain stays as it is.
+    Binding {
+        target: Theme
+        property: "hold"
+        value: typeof stackView !== "undefined" && stackView.depth > 1
+    }
+
+    Rectangle {
+        id: themeNotice
+        z: 50
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: statusBar.top
+        anchors.bottomMargin: Math.round(14 * Theme.uiScale)
+        width: themeNoticeText.implicitWidth + Math.round(32 * Theme.uiScale)
+        height: themeNoticeText.implicitHeight + Math.round(18 * Theme.uiScale)
+        radius: Math.round(8 * Theme.uiScale)
+        color: Theme.card
+        border.color: Theme.lineHigh
+        border.width: 1
+        opacity: 0
+        visible: opacity > 0
+
+        function show(text) {
+            themeNoticeText.text = text
+            opacity = 1
+            themeNoticeTimer.restart()
+        }
+
+        Behavior on opacity {
+            enabled: !Theme.reduceAnimations
+            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+        }
+
+        Timer {
+            id: themeNoticeTimer
+            interval: 2800
+            onTriggered: themeNotice.opacity = 0
+        }
+
+        Text {
+            id: themeNoticeText
+            anchors.centerIn: parent
+            color: Theme.text
+            font.family: Theme.family
+            font.pixelSize: Math.round(Theme.fontBody * Theme.uiScale)
         }
     }
 

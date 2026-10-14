@@ -89,7 +89,16 @@ FocusScope {
     // Same reference and the same reasoning as HostStage — see the note there. Both screens
     // must use the same divisor or a host and its games would be drawn at two different
     // sizes, which is the one thing a shared grammar cannot survive.
-    readonly property real _u: Math.max(0.62, Math.min(1.60, width / 1330))
+    // Times the user's Interface scale (7.0.0), like Theme.uiScale for the dialogs.
+    readonly property real _u: Math.max(0.62, Math.min(1.60, width / 1330)) * Theme.scaleFactor
+
+    // The grey text of this page: the theme's text2/text3 on the floor and its waves. In Light
+    // on the lifted cover (Host page background = Game cover) both are one darker grey, #26323a:
+    // the cover's darkest spots there bring text2 down to ~3.1:1, and this holds 4.6:1 at worst
+    // while still reading lighter than the titles (see CoverAmbient.lifted).
+    readonly property bool  _coverGrey: Theme.light && coverDrawing
+    readonly property color _text2: _coverGrey ? "#26323a" : Theme.text2
+    readonly property color _text3: _coverGrey ? "#26323a" : Theme.text3
     function _px(n) { return Math.round(n * _u) }
 
     // ── The two columns ──────────────────────────────────────────────────────
@@ -227,6 +236,33 @@ FocusScope {
         if (Window.window) Window.window.markStreamLaunching()
         stackView.push(segue)
     }
+
+    /*
+     * A new launch (nothing running on the host): HomeScreen asks first whether the host is
+     * locked and puts the PIN pad in front of the launch if so (7.0.0, #35) — see
+     * HomeScreen.launchWhenUnlocked(). The launch may therefore run seconds from now, after a
+     * Desktop session has come and gone, so the row is found again by id at that moment.
+     *
+     * ⚠️ Built here and not in the delegate, for the reason written in launchSegue(): a closure
+     * carries the context it was written in, and the delegate can be recreated while the pad
+     * is up — the host reporting the Desktop as running re-sorts the list.
+     */
+    function launchNew(name, art, appId) {
+        var run = function () {
+            var m = appGrid.appModel
+            var i = m ? m.indexOfAppId(appId) : -1
+            if (i < 0) {
+                console.warn("[launch] " + name + " is no longer on this host")
+                return
+            }
+            appsRoot.launchSegue(name, art, m.createSessionForApp(i), false, appId)
+        }
+        if (appShell) appShell.launchWhenUnlocked(computerIndex, hostName, run, "apps")
+        else          run()
+    }
+
+    // Leaving the page while an unlock settles: the launch it was for must not follow.
+    Component.onDestruction: if (appShell) appShell.dropLaunchWhenUnlocked("apps")
 
     // ── Pad glyphs ───────────────────────────────────────────────────────────
     // Resolved exactly as the status bar does, by SDL button POSITION — Nintendo swaps A/B
@@ -602,37 +638,6 @@ FocusScope {
         return mbps + " Mbps"
     }
 
-    /*
-     * This page paints its own floor when it has artwork to paint it with — the blurred cover
-     * under a veil that reaches full opacity at the bottom — so the shell's status bar has to
-     * sit on the same near-black instead of on the shell's accent-tinted gradient, or there is
-     * a visible step across the foot of the screen.
-     *
-     * ⚠️ It has to follow whether the artwork is actually there, not just be set once. Without
-     * a cover, or with reduced animations, this page falls back to the shell's gradient and a
-     * hardcoded near-black bar produced that same step the other way round.
-     *
-     * ⚠️ On `appShellChanged`, NOT on `Component.onCompleted`: the Loader assigns `appShell`
-     * after the item is constructed, so at completion it is still null and the assignment is
-     * silently skipped — which is why the bar once kept the shell's lighter gradient.
-     *
-     * ⚠️ And restored explicitly on the way out. This was briefly a `Binding`, on the
-     * assumption that it would put the old value back when the page went away. It does not,
-     * and the shell outlives the page — so the near-black leaked onto Home and every other
-     * screen, which is the whole reason this property defaults to transparent.
-     */
-    function _syncStatusBarFloor() {
-        if (appShell) appShell.statusBarFloor = ambient.drawing ? "#05080a" : "transparent"
-    }
-
-    onAppShellChanged:       _syncStatusBarFloor()
-    Component.onDestruction: if (appShell) appShell.statusBarFloor = "transparent"
-
-    Connections {
-        target: ambient
-        function onDrawingChanged() { appsRoot._syncStatusBarFloor() }
-    }
-
     // Loader sets host properties AFTER Component.onCompleted → init here.
     onHostComputerModelChanged: _initFromHost()
     onComputerIndexChanged:    _initFromHost()
@@ -739,18 +744,41 @@ FocusScope {
         }
     }
 
-    // Ambient backdrop — the focused cover, blurred, behind everything.
-    //
-    // Lives in CoverAmbient so that the launch and quit screens can stand on the same
-    // artwork rather than on their own imitation of it. The crossfade on focus changes
-    // moved in there with it.
+    // The spotlight follows the selection with a short rise and fade (7.0.0) instead of
+    // swapping in place.
+    onFocusedBoxArtChanged: {
+        if (Theme.reduceAnimations) return
+        heroShift.y = appsRoot._px(10)
+        heroStack.opacity = 0.35
+        heroIn.restart()
+    }
+    ParallelAnimation {
+        id: heroIn
+        NumberAnimation { target: heroShift; property: "y"; to: 0; duration: 180; easing.type: Easing.OutCubic }
+        NumberAnimation { target: heroStack; property: "opacity"; to: 1; duration: 150; easing.type: Easing.OutCubic }
+    }
+
+    /*
+     * The page's background is the user's choice (13/10/2026): by default none of its own — it
+     * stands on the app's floor and its waves, as Home does (7.0.0, 09/10/2026), drawn by
+     * AppShell — or, with Settings → Interface → Host page background = Game cover, the focused
+     * game's cover blurred behind everything, as in 6.5.1 (CoverAmbient, lifted in Light).
+     * AppShell reads coverDrawing to stop the waves under it and give the status bar its foot.
+     */
     CoverAmbient {
         id: ambient
         z: -2
-        source: appsRoot.focusedBoxArt
+        visible: Theme.hostPageCovers
+        source: Theme.hostPageCovers ? appsRoot.focusedBoxArt : ""
         overscan: appsRoot._px(60)
+        lifted: Theme.light
+        // More of the picture in Light, where the lift already keeps it pale (see lifted).
+        artOpacity: Theme.light ? 0.8 : 0.5
     }
-
+    // ⚠️ Read by AppShell (waves off, status bar foot). False when the option is off, and when
+    // the cover cannot draw — no artwork, or Reduce animations — so the waves come back then.
+    readonly property bool  coverDrawing: Theme.hostPageCovers && ambient.drawing
+    readonly property color coverFoot: ambient.footColor
 
     // ═════════════════════════════════════════════════════════════════════════
     // Header
@@ -828,7 +856,7 @@ FocusScope {
                     if (appsRoot._hasProfiles)
                         c.push({ text: appsRoot.hostProfileSlot >= 0 && appsRoot.hostProfileName.length > 0
                                        ? appsRoot.hostProfileName : qsTr("Global"),
-                                 dot: Theme.accent, kind: "profile" })
+                                 dot: Theme.ink, kind: "profile" })
                     if (appsRoot.isTailscaleClone)
                         c.push({ text: qsTr("Tailscale"), dot: Theme.text2 })
                     // ⚠️ Same words as the host card on Home, in the same order of precedence.
@@ -871,6 +899,9 @@ FocusScope {
                         height: appsRoot._px(26)
                         width: chipRow.implicitWidth + appsRoot._px(26)
                         radius: appsRoot._px(6)
+                        // As the status chips on Home (HostStage's chipBox): no fill, a hairline
+                        // (14/10/2026). It stood on a Plate from 09/10, which made these the
+                        // only status chips in the app with a body.
                         color: "transparent"
                         border.color: Theme.line
                         border.width: 1
@@ -889,7 +920,7 @@ FocusScope {
                             Label {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: modelData.text.toUpperCase()
-                                color: modelData.fg !== undefined ? modelData.fg : Theme.text2
+                                color: modelData.fg !== undefined ? modelData.fg : appsRoot._text2
                                 font.family: Theme.family
                                 font.pixelSize: appsRoot._px(Theme.fontSmall)
                                 font.weight: Font.DemiBold
@@ -979,9 +1010,10 @@ FocusScope {
                 width: _isSep ? appsRoot._px(13)
                               : cfgText.implicitWidth + appsRoot._px(_isGrp ? 4 : 26)
                 radius: (_isGrp || _isSep) ? 0 : appsRoot._px(7)
-                color: (_isGrp || _isSep) ? "transparent" : "#0affffff"
-                border.width: (_isGrp || _isSep) ? 0 : 1
-                border.color: Theme.lineHigh
+                color: "transparent"
+                // On a Plate like the badges on Home (09/10/2026; the same wash since 14/10);
+                // captions and rules stay flat.
+                Plate { visible: !cfgChip._isGrp && !cfgChip._isSep; anchors.fill: parent; radius: parent.radius }
 
                 // A hairline, centred in its own slot, rather than the delegate itself being
                 // one pixel wide — that way the gap on either side comes from the rule and
@@ -999,7 +1031,7 @@ FocusScope {
                     anchors.centerIn: parent
                     visible: !cfgChip._isSep
                     text: cfgChip._isGrp ? String(modelData.text).toUpperCase() : String(modelData.text)
-                    color: cfgChip._isGrp ? Theme.text3 : Theme.text
+                    color: cfgChip._isGrp ? appsRoot._text3 : Theme.text
                     font.family: Theme.family
                     font.pixelSize: appsRoot._px(Theme.fontSmall)
                     font.weight: cfgChip._isGrp ? Font.Normal : Font.DemiBold
@@ -1039,6 +1071,8 @@ FocusScope {
         // the library leaves, so everything in it is laid out from the centre outwards.
         Column {
             id: heroStack
+            // The spotlight changes game with a small rise and fade (7.0.0) — see heroIn.
+            transform: Translate { id: heroShift }
             anchors.centerIn: parent
             width: parent.width
             spacing: 0
@@ -1078,7 +1112,9 @@ FocusScope {
                     if (appsRoot.focusedOverridden)   parts.push(qsTr("custom settings"))
                     return parts.join("  ·  ")
                 }
-                metaColor: appsRoot.focusedAppIsRunning ? Theme.online : Theme.text2
+                metaColor: appsRoot.focusedAppIsRunning ? Theme.online : appsRoot._text2
+                tone2: appsRoot._text2
+                tone3: appsRoot._text3
                 played: appsRoot.focusedPlaytime
                 sessions: appsRoot.focusedSessions
             }
@@ -1145,17 +1181,13 @@ FocusScope {
                             width: heroBtnRow.implicitWidth + appsRoot._px(26)
                             radius: appsRoot._px(9)
 
-                            color: _hovered ? "#1fffffff" : "#0dffffff"
-                            border.width: 1
-                            border.color: _hovered ? Theme.accent : Theme.lineHigh
-
-                            Behavior on color {
-                                enabled: !Theme.reduceAnimations
-                                ColorAnimation { duration: 140 }
-                            }
-                            Behavior on border.color {
-                                enabled: !Theme.reduceAnimations
-                                ColorAnimation { duration: 140 }
+                            // On a Plate like the card's buttons on Home (09/10/2026; the same
+                            // wash since 14/10); the pointer gives it the ink outline.
+                            color: "transparent"
+                            Plate {
+                                anchors.fill: parent; radius: parent.radius
+                                button: true
+                                outline: heroBtn._hovered ? Theme.ink : "transparent"
                             }
 
                             Row {
@@ -1253,7 +1285,7 @@ FocusScope {
 
                     Label {
                         text: modelData.label
-                        color: tabItem._on ? Theme.text : Theme.text3
+                        color: tabItem._on ? Theme.text : appsRoot._text3
                         font.family: Theme.family
                         font.pixelSize: appsRoot._px(Theme.fontBody)
                         font.weight: tabItem._on ? Font.DemiBold : Font.Normal
@@ -1270,7 +1302,7 @@ FocusScope {
                     anchors.bottom: parent.bottom
                     height: appsRoot._px(2)
                     radius: height / 2
-                    color: Theme.accent
+                    color: Theme.ink
                     visible: tabItem._on
                 }
 
@@ -1295,6 +1327,8 @@ FocusScope {
         }
     }
 
+    // The right stick scrolls this view (7.0.0) — see PadScroll.
+    PadScroll { flick: appGrid }
     ListView {
         id: appGrid
         // Straight under the tabs: the column's caption is the list's own first section
@@ -1321,7 +1355,61 @@ FocusScope {
                             ? ListView.ApplyRange : ListView.NoHighlightRange
         preferredHighlightBegin: appsRoot._px(60)
         preferredHighlightEnd: height - appsRoot._px(60)
-        highlightMoveDuration: Theme.reduceAnimations ? 0 : 160
+        /*
+         * The focus glides (7.0.0): while the pad or the keyboard drives the list, the lit row
+         * is ONE shape that slides from game to game, instead of one row going dark as the
+         * next lights up. The rows then draw no light of their own (_glide). The mouse keeps
+         * the per-row light: the pointer is already where it is.
+         *
+         * ⚠️ Moved by the ListView itself (highlightFollowsCurrentItem), not by a Behavior of
+         * its own (09/10/2026). It had one — a 260 ms spring on y — while the view scrolled
+         * to keep the row in range over 160 ms: two clocks for one movement, so walking the
+         * list looked unsure, and the spring also fired whenever the rows were rebuilt under
+         * it — a pin moving the game to PINNED, a tab switch — swinging across the list for
+         * no step at all. Now the view moves the shape and the scroll together, and only for
+         * a step the user took (_stepping); anything else puts it in place at once.
+         */
+        property bool _stepping: false
+        Timer { id: stepWindow; interval: 350; onTriggered: appGrid._stepping = false }
+        function _noteStep() { appGrid._stepping = true; stepWindow.restart() }
+        highlightFollowsCurrentItem: true
+        highlightMoveVelocity: -1
+        highlightMoveDuration: Theme.reduceAnimations || !appGrid._stepping ? 0 : 110
+        highlightResizeDuration: 0
+
+        readonly property bool _glide: appGrid.activeFocus && SdlGamepadKeyNavigation.inputMode === "key"
+                                       && !Theme.reduceAnimations
+        // The rows arrive one after another when the list fills (7.0.0): each rises 8 px and
+        // fades in, 18 ms after the one before; past the eighth they come together, so a long
+        // library never makes anyone wait for it.
+        populate: Transition {
+            id: rowsIn
+            enabled: !Theme.reduceAnimations
+            SequentialAnimation {
+                PropertyAction { property: "opacity"; value: 0 }
+                PauseAnimation { duration: Math.min(rowsIn.ViewTransition.index, 8) * 18 }
+                ParallelAnimation {
+                    NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                    NumberAnimation { property: "y"; from: rowsIn.ViewTransition.destination.y + appsRoot._px(8)
+                                      to: rowsIn.ViewTransition.destination.y; duration: 170
+                                      easing.type: Easing.OutCubic }
+                }
+            }
+        }
+        // An Item the view moves and sizes to the row; the shape inside keeps the row's
+        // visible height, short of the gap below it.
+        highlight: Item {
+            z: 0
+            Rectangle {
+                visible: appGrid._glide && appGrid.currentItem !== null
+                width: parent.width
+                height: appGrid._rowH - appGrid._gap
+                radius: appsRoot._px(10)
+                color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16)
+                border.width: 2
+                border.color: Theme.ink
+            }
+        }
 
         property AppModel appModel: createModel()
         property bool activated
@@ -1383,7 +1471,7 @@ FocusScope {
                     : section === "pinned" ? qsTr("PINNED")
                     : appsRoot.libraryTab === "apps" ? qsTr("ALL APPS")
                     : appsRoot.libraryTab === "games" ? qsTr("ALL GAMES") : qsTr("ALL")
-                color: parent._isContinue ? Theme.accent : Theme.text3
+                color: parent._isContinue ? Theme.inkText : appsRoot._text3
                 font.family: Theme.family
                 font.pixelSize: appsRoot._px(Theme.fontSmall)
                 font.letterSpacing: appsRoot._u * 1.6
@@ -1458,6 +1546,23 @@ FocusScope {
             if (appsRoot.appShell) appsRoot.appShell.showHome()
         }
 
+        // Pressing past either end of the list gives a little and springs back (7.0.0): the
+        // list says it has ended without a sound or a notice. The key is not taken — whatever
+        // else listens for it still hears it.
+        transform: Translate { id: edgeShift }
+        SequentialAnimation {
+            id: edgeBounce
+            property real dir: 1
+            NumberAnimation { target: edgeShift; property: "y"; to: edgeBounce.dir * appsRoot._px(12); duration: 90; easing.type: Easing.OutQuad }
+            NumberAnimation { target: edgeShift; property: "y"; to: 0; duration: 260; easing.type: Easing.OutBack; easing.overshoot: 2.0 }
+        }
+        function _bounce(dir) {
+            if (Theme.reduceAnimations || edgeBounce.running) return
+            edgeBounce.dir = dir
+            edgeBounce.start()
+        }
+        Keys.onDownPressed: function(event) { _noteStep(); if (count > 0 && currentIndex === count - 1) _bounce(-1); event.accepted = false }
+        Keys.onUpPressed:   function(event) { _noteStep(); if (count > 0 && currentIndex === 0) _bounce(1); event.accepted = false }
         Keys.onReturnPressed: function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
         Keys.onEnterPressed:  function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
         Keys.onSpacePressed:  function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
@@ -1523,11 +1628,12 @@ FocusScope {
                 anchors.bottomMargin: appGrid._gap
                 radius: appsRoot._px(10)
 
-                color: appDelegate._lit     ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16)
-                     : appDelegate._selected ? "#14ffffff"
+                color: (appDelegate._lit && appGrid._glide) ? "transparent"
+                     : appDelegate._lit     ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16)
+                     : appDelegate._selected ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
                      :                         "transparent"
-                border.width: appDelegate._lit ? 2 : (appDelegate._selected ? 1 : 0)
-                border.color: appDelegate._lit ? Theme.accent : Theme.line
+                border.width: (appDelegate._lit && appGrid._glide) ? 0 : appDelegate._lit ? 2 : (appDelegate._selected ? 1 : 0)
+                border.color: appDelegate._lit ? Theme.ink : Theme.line
 
                 // Both, not just the fill: the border used to snap to the accent while the
                 // fill faded in behind it, so the outline arrived before the light did.
@@ -1563,7 +1669,7 @@ FocusScope {
                     Rectangle {
                         anchors.fill: parent
                         visible: cover.status !== Image.Ready
-                        color: "#18ffffff"
+                        color: Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.09)
                         radius: appsRoot._px(4)
                     }
                 }
@@ -1581,7 +1687,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     width: appsRoot._px(18)
                     height: width
-                    source: "qrc:/res/pin.svg"
+                    source: Theme.light ? "qrc:/res/pin_dark.svg" : "qrc:/res/pin.svg"
                     sourceSize.width: width * Screen.devicePixelRatio
                     sourceSize.height: height * Screen.devicePixelRatio
                     smooth: true
@@ -1625,7 +1731,7 @@ FocusScope {
                             if (model.overridden)   parts.push(qsTr("custom settings"))
                             return parts.join("  ·  ")
                         }
-                        color: Theme.text3
+                        color: appsRoot._text3
                         // The same body as the store line in the spotlight: one size for the
                         // page's secondary text instead of a 15 here and a 17 there.
                         font.pixelSize: appsRoot._px(Theme.fontBody)
@@ -1648,7 +1754,7 @@ FocusScope {
                     width: runTagLabel.implicitWidth + appsRoot._px(22)
                     height: appsRoot._px(26)
                     radius: appsRoot._px(6)
-                    color: Theme.accent
+                    color: Theme.accentFill
 
                     SequentialAnimation on opacity {
                         running: runTag.visible && !Theme.reduceAnimations
@@ -1715,6 +1821,14 @@ FocusScope {
                 // The curtain wants the box art, and this delegate is the only place that has
                 // it: it comes from the app model, while NvApp carries no artwork at all.
                 // Plain values only — the segue is built by the page, see launchSegue().
+                //
+                // A new launch goes through the lock check first (7.0.0, #35). A rejoin and a
+                // host control do not: a session is already up, and the PIN pad's Desktop
+                // session would have to replace it — see HomeScreen.launchWhenUnlocked().
+                if (runningId === 0 && model.control === "") {
+                    appsRoot.launchNew(model.name, model.boxart, model.appid)
+                    return
+                }
                 appsRoot.launchSegue(model.name,
                                      model.boxart,
                                      m.createSessionForApp(index),
@@ -1789,7 +1903,7 @@ FocusScope {
               : appsRoot.libraryTab === "apps"
               ? qsTr("No apps to show — some may be hidden on the host")
               : qsTr("Nothing to show — some entries may be hidden on the host")
-        color: Theme.text2
+        color: appsRoot._text2
         font.family: Theme.family
         font.pixelSize: appsRoot._px(Theme.fontTitle)
         horizontalAlignment: Text.AlignHCenter
@@ -1828,6 +1942,7 @@ FocusScope {
             var params = {
                 "appName": appName,
                 "boxArt": boxArt,
+                "hostName": appsRoot.hostName,
                 "quitRunningAppFn": function() { appGrid.appModel.quitRunningApp() },
                 // A deliberate stop no longer puts the link back by itself — the question is
                 // put once, on returning to the host list.

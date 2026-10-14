@@ -12,6 +12,10 @@ import ShortcutManager 1.0
 Popup {
     id: pop
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    enter: PopEnter {}
+    exit: PopExit {}
+
     property int action: -1
     property string actionName: ""
 
@@ -59,6 +63,10 @@ Popup {
     modal: true
     Overlay.modal: Item {}
     focus: true
+    // Placed in the window, not in whatever opened it (7.0.0): x and y are worked out on the
+    // overlay, and a popup positions itself in its PARENT's coordinates — opened from inside
+    // a dialog, it landed off to the right by the dialog's own offset.
+    parent: Overlay.overlay
     x: (Overlay.overlay ? (Overlay.overlay.width  - width)  / 2 : 0)
     y: (Overlay.overlay ? Math.max(40, Overlay.overlay.height * 0.12) : 40)
     closePolicy: Popup.CloseOnEscape
@@ -72,7 +80,7 @@ Popup {
     padding: _px(32)
 
     background: Rectangle {
-        color: Theme.card; border.color: Theme.line; border.width: 1; radius: pop._px(12)
+        color: Theme.card; border.color: Theme.lineHigh; border.width: 1; radius: pop._px(12)
     }
 
     component ModToggle: Button {
@@ -90,12 +98,12 @@ Popup {
         background: Rectangle {
             radius: Math.round(8 * Theme.uiScale)
             color: mt.on ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16) : Theme.card
-            border.color: mt.activeFocus ? Theme.accent : mt.on ? Qt.darker(Theme.accent, 1.55) : Theme.line
+            border.color: mt.activeFocus ? Theme.ink : mt.on ? Qt.darker(Theme.accent, 1.55) : Theme.line
             border.width: (mt.activeFocus || mt.on) ? 2 : 1
         }
         contentItem: Label {
             text: mt.lbl
-            color: mt.on ? Theme.accent : Theme.text2
+            color: mt.on ? Theme.inkText : Theme.text2
             font.family: Theme.family; font.pixelSize: Math.round(Theme.fontBody * Theme.uiScale); font.bold: mt.on
             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
         }
@@ -173,7 +181,7 @@ Popup {
             background: Rectangle {
                 radius: pop._px(10)
                 color: pop._keyListening ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12) : Theme.ground
-                border.color: (pop._keyListening || keyBtn.activeFocus) ? Theme.accent : Theme.line
+                border.color: (pop._keyListening || keyBtn.activeFocus) ? Theme.ink : Theme.line
                 border.width: (pop._keyListening || keyBtn.activeFocus) ? 2 : 1
             }
             contentItem: Item {
@@ -181,7 +189,7 @@ Popup {
                     visible: pop._keyListening
                     anchors.centerIn: parent
                     text: qsTr("Press the key…")
-                    color: Theme.accent; font.family: Theme.family; font.pixelSize: pop._px(Theme.fontBody); font.bold: true
+                    color: Theme.inkText; font.family: Theme.family; font.pixelSize: pop._px(Theme.fontBody); font.bold: true
                 }
                 Label {
                     visible: !pop._keyListening

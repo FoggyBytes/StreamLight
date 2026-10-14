@@ -28,9 +28,12 @@
 #define SER_TAILSCALEADDR "tailscaleaddress"
 #define SER_TAILSCALEPORT "tailscaleport"
 #define SER_STAGEIMAGE "stageimage"
-#define SER_STAGESEED "stageseed"
-#define SER_STAGEFROM "stagefrom"
-#define SER_STAGETO "stageto"
+#define SER_STAGEIMAGE_LIGHT "stageimagelight"
+// Written by 7.0.0's development builds, no longer read: removed from each host on its next save.
+#define SER_STAGEPICOPACITY_OLD "stagepictureopacity"
+#define SER_STAGESEED_OLD "stageseed"
+#define SER_STAGEFROM_OLD "stagefrom"
+#define SER_STAGETO_OLD "stageto"
 #define SER_STAGEOPACITY "stageopacity"
 #define SER_STENABLED "streamtweakenabled"
 #define SER_HELDASLEEP "heldasleep"
@@ -56,9 +59,9 @@ NvComputer::NvComputer(QSettings& settings)
     this->aliasSuffix = settings.value(SER_ALIASSUFFIX).toString();
     this->isAddressPinned = settings.value(SER_ADDRESSPINNED, false).toBool();
     this->stageImagePath = settings.value(SER_STAGEIMAGE).toString();
-    this->stageSeedColor = settings.value(SER_STAGESEED).toString();
-    this->stageColorFrom = settings.value(SER_STAGEFROM).toString();
-    this->stageColorTo   = settings.value(SER_STAGETO).toString();
+    // Absent until the Light theme gets a picture of its own: present-but-empty means "none".
+    this->stageImageLightSet = settings.contains(SER_STAGEIMAGE_LIGHT);
+    this->stageImagePathLight = settings.value(SER_STAGEIMAGE_LIGHT).toString();
     // Absent on every host saved before 6.0.0: 0, which means "use the default".
     this->stageOpacity   = settings.value(SER_STAGEOPACITY, 0).toInt();
     this->heldAsleep     = settings.value(SER_HELDASLEEP, false).toBool();
@@ -179,9 +182,16 @@ void NvComputer::serialize(QSettings& settings, bool serializeApps) const
     settings.setValue(SER_ALIASSUFFIX, aliasSuffix);
     settings.setValue(SER_ADDRESSPINNED, isAddressPinned);
     settings.setValue(SER_STAGEIMAGE, stageImagePath);
-    settings.setValue(SER_STAGESEED, stageSeedColor);
-    settings.setValue(SER_STAGEFROM, stageColorFrom);
-    settings.setValue(SER_STAGETO, stageColorTo);
+    if (stageImageLightSet) {
+        settings.setValue(SER_STAGEIMAGE_LIGHT, stageImagePathLight);
+    }
+    else {
+        settings.remove(SER_STAGEIMAGE_LIGHT);
+    }
+    settings.remove(SER_STAGEPICOPACITY_OLD);
+    settings.remove(SER_STAGESEED_OLD);
+    settings.remove(SER_STAGEFROM_OLD);
+    settings.remove(SER_STAGETO_OLD);
     settings.setValue(SER_STAGEOPACITY, stageOpacity);
     settings.setValue(SER_STENABLED, streamTweakEnabled);
     settings.setValue(SER_HELDASLEEP, heldAsleep);
@@ -214,9 +224,8 @@ bool NvComputer::isEqualSerialized(const NvComputer &that) const
            this->aliasSuffix == that.aliasSuffix &&
            this->isAddressPinned == that.isAddressPinned &&
            this->stageImagePath == that.stageImagePath &&
-           this->stageSeedColor == that.stageSeedColor &&
-           this->stageColorFrom == that.stageColorFrom &&
-           this->stageColorTo == that.stageColorTo &&
+           this->stageImagePathLight == that.stageImagePathLight &&
+           this->stageImageLightSet == that.stageImageLightSet &&
            this->stageOpacity == that.stageOpacity &&
            this->streamTweakEnabled == that.streamTweakEnabled &&
            this->heldAsleep == that.heldAsleep &&
@@ -278,6 +287,9 @@ NvComputer::NvComputer(NvHTTP& http, QString serverInfo)
     bool validLink = false;
     const auto hostLink = NvHTTP::getXmlString(serverInfo, "PyroWaveHostLinkMbps").toUInt(&validLink);
     this->pyrowaveHostLinkMbps = validLink && hostLink <= 400000 ? hostLink : 0;
+    // PyroWave Test (7.0.0): Vibeshine/Vibepollo 2.0.1 announce their paired UDP probe here.
+    this->pyrowaveTestable = NvHTTP::getXmlString(serverInfo, "PyroWaveUdpProbeVersion") == "1" &&
+                             NvHTTP::getXmlString(serverInfo, "PyroWaveUdpProbeBurstVersion") == "1";
 
     QString maxLumaPixelsHEVC = NvHTTP::getXmlString(serverInfo, "MaxLumaPixelsHEVC");
     if (!maxLumaPixelsHEVC.isEmpty()) {
@@ -749,6 +761,7 @@ bool NvComputer::update(const NvComputer& that)
     ASSIGN_IF_CHANGED(pairState);
     ASSIGN_IF_CHANGED(serverCodecModeSupport);
     ASSIGN_IF_CHANGED(pyrowaveHostLinkMbps);
+    ASSIGN_IF_CHANGED(pyrowaveTestable);
     ASSIGN_IF_CHANGED(currentGameId);
     ASSIGN_IF_CHANGED(activeAddress);
     ASSIGN_IF_CHANGED(state);

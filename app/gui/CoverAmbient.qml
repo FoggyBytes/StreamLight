@@ -6,7 +6,12 @@ import Theme 1.0
  * The blurred box art behind a screen, under the veil that keeps text readable on it.
  *
  * Extracted from AppsScreen so that the host page, the launch screen and the quit screen
- * stand on the same artwork instead of on three drawings that merely resemble each other.
+ * stood on the same artwork instead of on three drawings that merely resembled each other.
+ * Since 7.0.0 the host page stands on the app's floor and waves by default (09/10/2026); the
+ * launch and quit screens — dark in both themes — always use this, and the host page does
+ * again when Settings → Interface → Host page background is "Game cover" (13/10/2026). For
+ * that page in Light there is the "lifted" variant: the cover lightened toward the floor
+ * instead of veiled in near-black, so the theme's dark text reads on it (§89.9, §89.25).
  * The launch screen used to build a gradient out of two colours sampled from the cover,
  * which is a different picture of the same game: crossing from one screen to the next the
  * background changed under you at the exact moment nothing else should move.
@@ -28,11 +33,21 @@ Item {
 
     property real artOpacity: 0.5
 
-    // Whether anything is actually being drawn. A caller needs this to match its own chrome:
-    // the host page paints the status bar to the veil's near-black, which is right under the
-    // artwork and wrong without it — with reduced animations that left the bar dark against
-    // the accent gradient, the same step the floor exists to remove, inverted.
-    readonly property alias drawing: ambientLayer.visible
+    // Light theme on the host page: MultiEffect contrast −0.65, brightness +0.22, saturation
+    // +0.4 (it computes (in − 0.5)·(1 + contrast) + 0.5 + brightness, so covers land at
+    // 0.55–0.90), drawn at 80 % (the host page sets artOpacity) under a thin veil of the floor.
+    // Darkened twice on 13/10/2026 at Marcello's request («si vede appena», «ancora un po' più
+    // scura»): it was −0.8 / +0.28 (0.68–0.88) at 50 % under a veil of 30/10/40 %.
+    // ⚠️ At this depth the theme's text2 drops to ~3.1:1 on the darkest spots, so the host page
+    // draws its grey text in a darker grey over this (AppsScreen._text2/_text3, 4.6:1 at worst).
+    // Darken it further and that grey has to follow. Off — 6.5.1's dark veil — everywhere
+    // else, the launch and quit screens included.
+    property bool lifted: false
+
+    // Something is on screen (artwork, not reduced animations), and the colour this ends in at
+    // its foot — for the status bar under it, which must not show a step.
+    readonly property bool drawing: ambientLayer.visible
+    readonly property color footColor: lifted ? Theme.floor : "#05080a"
 
     // Clipped here rather than relying on an ancestor to do it, so the overscan cannot
     // spill onto a screen that happens not to clip.
@@ -67,6 +82,9 @@ Item {
         NumberAnimation { target: ambientLayer; property: "opacity"; to: 0; duration: 140 }
         ScriptAction { script: root._current = root._pending }
         NumberAnimation { target: ambientLayer; property: "opacity"; to: root.artOpacity; duration: 260 }
+        // The animation wrote a number over the binding: put it back, so a change of theme
+        // (artOpacity is 0.7 in Light on the host page, 0.5 otherwise) still reaches the layer.
+        ScriptAction { script: ambientLayer.opacity = Qt.binding(function() { return root.artOpacity }) }
     }
 
     Item {
@@ -97,7 +115,9 @@ Item {
             blurEnabled: true
             blur: 1.0
             blurMax: 48
-            saturation: 0.25
+            saturation: root.lifted ? 0.4 : 0.25
+            contrast: root.lifted ? -0.65 : 0.0
+            brightness: root.lifted ? 0.22 : 0.0
             autoPaddingEnabled: false
         }
     }
@@ -120,11 +140,16 @@ Item {
         // area while the page background continues behind the status bar, so any residual
         // transparency here left the blurred image ending on a hard horizontal line — read
         // on screen as a solid band across the foot of the page.
-        stops: [
-            { pos: 0.0,  color: "#d005080a" },
-            { pos: 0.44, color: "#bb05080a" },
-            { pos: 0.88, color: "#f205080a" },
-            { pos: 1.0,  color: "#ff05080a" }
-        ]
+        // Lifted: the floor at 15 / 0 / 25 / 100 % — the lightened cover needs little veil, and
+        // the foot still ends in the floor, where the status bar starts.
+        stops: root.lifted
+               ? [ { pos: 0.0,  color: Qt.rgba(Theme.floor.r, Theme.floor.g, Theme.floor.b, 0.15) },
+                   { pos: 0.44, color: Qt.rgba(Theme.floor.r, Theme.floor.g, Theme.floor.b, 0.0) },
+                   { pos: 0.88, color: Qt.rgba(Theme.floor.r, Theme.floor.g, Theme.floor.b, 0.25) },
+                   { pos: 1.0,  color: Theme.floor } ]
+               : [ { pos: 0.0,  color: "#d005080a" },
+                   { pos: 0.44, color: "#bb05080a" },
+                   { pos: 0.88, color: "#f205080a" },
+                   { pos: 1.0,  color: "#ff05080a" } ]
     }
 }

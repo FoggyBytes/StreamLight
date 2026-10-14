@@ -9,7 +9,7 @@ import SdlGamepadKeyNavigation 1.0
 Item {
     id: glyph
 
-    property string buttonKey: ""   // "A","B","X","Y","LB","RB","LT","RT","START","SELECT","RS" (right stick click)
+    property string buttonKey: ""   // "A","B","X","Y","LB","RB","LT","RT","START","SELECT","RS" (right stick click), "RSCROLL" (right stick up/down)
     property string label: ""        // text fallback
     property string glyphSet: SdlGamepadKeyNavigation.controllerType // "xbox"/"ps"/"switch"/"steam"/...
     // Height of a face button. Shoulders and the Select/Start pills are wider than they are
@@ -47,8 +47,10 @@ Item {
         : buttonKey === "LT"     ? (_ps ? "qrc:/res/pad_ps_l2.svg"       : _sw ? "qrc:/res/pad_switch_zl.svg"    : _st ? "qrc:/res/pad_steam_l2.svg"   : "qrc:/res/pad_xbox_lt.svg")
         : buttonKey === "RT"     ? (_ps ? "qrc:/res/pad_ps_r2.svg"       : _sw ? "qrc:/res/pad_switch_zr.svg"    : _st ? "qrc:/res/pad_steam_r2.svg"   : "qrc:/res/pad_xbox_rt.svg")
         : buttonKey === "SELECT" ? (_ps ? "qrc:/res/pad_ps_create.svg"   : _sw ? "qrc:/res/pad_switch_minus.svg" : _st ? "qrc:/res/pad_steam_view.svg" : "qrc:/res/pad_xbox_view.svg")
-        : buttonKey === "START"  ? (_ps ? "qrc:/res/pad_ps_options.svg"  : _sw ? "qrc:/res/pad_switch_plus.svg"  : _st ? "qrc:/res/pad_steam_menu.svg" : "qrc:/res/pad_xbox_start.svg")
+        : buttonKey === "START"  ? (_ps ? "qrc:/res/pad_ps_options.svg"  : _sw ? (Theme.light ? "qrc:/res/pad_switch_plus_dark.svg" : "qrc:/res/pad_switch_plus.svg")  : _st ? "qrc:/res/pad_steam_menu.svg" : "qrc:/res/pad_xbox_start.svg")
         : buttonKey === "RS"     ? (_ps ? "qrc:/res/pad_ps_r3.svg"       : _sw ? "qrc:/res/pad_switch_rs.svg"    : _st ? "qrc:/res/pad_steam_r3.svg"   : "qrc:/res/pad_xbox_rs.svg")
+        // 7.0.0: the right stick held up or down, not clicked — the "Scroll" prompt.
+        : buttonKey === "RSCROLL" ? (_ps ? "qrc:/res/pad_ps_r_scroll.svg" : _sw ? "qrc:/res/pad_switch_rs_scroll.svg" : _st ? "qrc:/res/pad_steam_rs_scroll.svg" : "qrc:/res/pad_xbox_rs_scroll.svg")
         : ""
 
     Image {

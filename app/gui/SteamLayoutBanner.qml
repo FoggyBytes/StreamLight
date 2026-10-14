@@ -47,8 +47,16 @@ Item {
         width: parent.width
         height: content.implicitHeight + banner._px(18) * 2
         // Drops in from just above its place as it fades in.
-        y: banner._shown ? 0 : -banner._px(16)
-        Behavior on y { NumberAnimation { duration: banner._fadeMs; easing.type: Easing.OutCubic } }
+        // 7.0.0: it drops from above the top edge with a small spring, and goes back up
+        // without one — arriving is the event, leaving should just get out of the way.
+        y: banner._shown ? 0 : -banner._px(48)
+        Behavior on y {
+            NumberAnimation {
+                duration: banner._shown ? banner._fadeMs + 120 : banner._fadeMs
+                easing.type: banner._shown ? Easing.OutBack : Easing.InCubic
+                easing.overshoot: 1.3
+            }
+        }
         radius: banner._px(10)
         color: Theme.cardHigh
         border.color: Theme.lineHigh

@@ -28,6 +28,12 @@ import QtQuick.Layouts 1.3
 Popup {
     id: pop
 
+    // 7.0.0: the shared spring in and quick out (PopEnter/PopExit), off with Reduce animations.
+    // Grows up out of the Options grid it is opened from (7.0.0).
+    transformOrigin: Popup.Bottom
+    enter: PopEnter { fromScale: 0.6 }
+    exit: PopExit {}
+
     // Shared dialog measurements — see Theme.uiScale.
     readonly property real _u: Theme.uiScale
     function _px(n) { return Math.round(n * _u) }
@@ -380,16 +386,16 @@ Popup {
                     radius: pop._px(8)
                     opacity: confirmBtn.enabled ? 1.0 : 0.4
                     color: confirmBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
-                         : confirmBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
+                         : confirmBtn.hovered     ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.05)
                          :                          Theme.card
-                    border.color: confirmBtn.activeFocus ? Theme.accent
+                    border.color: confirmBtn.activeFocus ? Theme.ink
                                 : confirmBtn.hovered     ? Theme.lineHigh
                                 :                          Theme.line
                     border.width: confirmBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
                     text: confirmBtn.text
-                    color: Theme.accent
+                    color: Theme.inkText
                     opacity: confirmBtn.enabled ? 1.0 : 0.4
                     font.family: Theme.family
                     font.pixelSize: pop._px(Theme.fontBody)
@@ -415,9 +421,9 @@ Popup {
                     implicitHeight: pop._px(42)
                     radius: pop._px(8)
                     color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
-                         : cancelBtn.hovered     ? Qt.rgba(1, 1, 1, 0.05)
+                         : cancelBtn.hovered     ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.05)
                          :                         Theme.card
-                    border.color: cancelBtn.activeFocus ? Theme.accent
+                    border.color: cancelBtn.activeFocus ? Theme.ink
                                 : cancelBtn.hovered     ? Theme.lineHigh
                                 :                         Theme.line
                     border.width: cancelBtn.activeFocus ? 2 : 1

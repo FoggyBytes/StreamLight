@@ -58,6 +58,8 @@ void LaunchCurtain::begin(const QString& gameName)
     m_Warning.clear();
     m_StartedMs = nowMs();
     m_Progress  = 0.0;
+    m_Stage     = 0;
+    m_Stalled   = false;
 
     // No steps yet, on purpose. Each one appears when there is something real behind it:
     // the link step only if a renegotiation actually happens, the launch steps only once
@@ -151,6 +153,7 @@ void LaunchCurtain::onLaunchPhase(int phase, const QString& foreground, qint64 e
         // place. Nothing creates them before this: a Desktop session never gets here.
         ensureLaunchSteps();
         setStepActive(m_LaunchIdx);
+        advanceTo(1);
         m_Title  = QStringLiteral("Launching on host");
         m_Detail.clear();
         break;
@@ -159,6 +162,7 @@ void LaunchCurtain::onLaunchPhase(int phase, const QString& foreground, qint64 e
         ensureLaunchSteps();
         completeStep(m_LaunchIdx, StepDone);
         setStepActive(m_WindowIdx);
+        advanceTo(2);
         m_Title  = QStringLiteral("Loading");
         // The title already says what is happening; naming the window as well was
         // the same thing in more words.
@@ -172,6 +176,7 @@ void LaunchCurtain::onLaunchPhase(int phase, const QString& foreground, qint64 e
         ensureLaunchSteps();
         completeStep(m_LaunchIdx, StepDone);
         completeStep(m_WindowIdx, StepDone);
+        advanceTo(3);
         m_Title  = QStringLiteral("Ready");
         m_Detail.clear();
         break;
@@ -190,6 +195,7 @@ void LaunchCurtain::onLaunchPhase(int phase, const QString& foreground, qint64 e
         // ever moves, this figure has to move with it — it is the one number here that can
         // silently start lying.
         m_Detail = QStringLiteral("no answer after 90s");
+        m_Stalled = true;
         break;
 
     default:
@@ -197,6 +203,30 @@ void LaunchCurtain::onLaunchPhase(int phase, const QString& foreground, qint64 e
     }
 
     recompute();
+}
+
+void LaunchCurtain::onLaunchRequested(bool resume)
+{
+    advanceTo(1);
+    // Only a new launch gets a new title. A resume rejoins what is already running, and its
+    // own word is the screen's heading ("Resuming"); the detail is left alone either way, so
+    // "link ready — 1 Gbps" stays until something has a newer fact to say.
+    if (!resume) {
+        m_Title = QStringLiteral("Launching on host");
+    }
+    recompute();
+}
+
+void LaunchCurtain::onStreamStarted(bool waitsForGame)
+{
+    if (waitsForGame) return;
+    advanceTo(2);
+    recompute();
+}
+
+void LaunchCurtain::advanceTo(int stage)
+{
+    if (stage > m_Stage) m_Stage = stage;
 }
 
 void LaunchCurtain::finish()

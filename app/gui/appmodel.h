@@ -86,9 +86,9 @@ public:
 
     Q_INVOKABLE void quitRunningApp();
 
-    Q_INVOKABLE void setAppHidden(int appIndex, bool hidden);
-
-    Q_INVOKABLE void setAppDirectLaunch(int appIndex, bool directLaunch);
+    // setAppHidden() and setAppDirectLaunch() were removed in 7.0.0: Moonlight's, with no caller
+    // left in StreamLight. The two flags they set are still read from the store, so a game hidden
+    // or marked for direct launch by an old build keeps behaving as it did.
 
     // Per-game settings overrides (see AppSettingsManager). The map keys are a
     // subset of: width, height, fps, bitrate, hdr, codec, framepacing, audio.

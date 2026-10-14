@@ -19,14 +19,21 @@
 
 // After the final data packet of an unprotected PyroWave block arrives, give
 // interior holes a short reorder interval before delivering the usable frame.
-// An absent tail must wait for completion or a successor boundary: a gap
-// between host send batches is not evidence that the remaining packets are lost.
 #define PYROWAVE_PACKET_SILENCE_US 1000
 
 // Once the block's final data packet has arrived and the client's on-time
 // deadline has passed, shorten the reorder allowance for interior holes.
-// This must never authorize completion while the final data packet is absent.
 #define PYROWAVE_LATE_PACKET_SILENCE_US 250
+
+// PyroWave loss must cost detail, not timing. A receiver that drops whole USB
+// transfers loses runs of 12-16 packets, often including the frame's final
+// packets; waiting for the next frame then delivers this one 5+ ms late and
+// stutters. Without the final packet, silence is the only evidence the host has
+// finished, so the allowance must exceed a host pacing gap: Vibeshine sends 1 ms
+// groups, with timer overshoot measured up to ~1.1 ms. Release after this much
+// silence, or at the on-time deadline but never sooner than the late allowance.
+#define PYROWAVE_TAIL_SILENCE_US 3000
+#define PYROWAVE_LATE_TAIL_SILENCE_US 1200
 
 static LiVideoReassemblyDeadlineCallback reassemblyDeadlineCallback;
 
@@ -749,15 +756,16 @@ bool RtpvExpirePendingFrame(PRTP_VIDEO_QUEUE queue, uint64_t nowUs) {
     queue->pendingFrameDeadlineUs = 0;
     if (!(NegotiatedVideoFormat & VIDEO_FORMAT_MASK_PYROWAVE) ||
             queue->pendingFecBlockList.count == 0 || queue->bufferParityPackets != 0 ||
-            queue->receivedHighestSequenceNumber != queue->bufferHighestSequenceNumber ||
             queue->multiFecCurrentBlockNumber != queue->multiFecLastBlockNumber ||
             !hasCompletePyroWaveCriticalData(queue)) {
         return false;
     }
 
+    bool tailLost = queue->receivedHighestSequenceNumber != queue->bufferHighestSequenceNumber;
     reportFinalFrameFecStatus(queue);
     if (!completeBlockWithLostPackets(queue, queue->pendingFrameDeadlinePrecise ?
-                                      "on-time deadline" : "packet silence")) {
+                                      (tailLost ? "on-time deadline, tail lost" : "on-time deadline") :
+                                      (tailLost ? "tail silence" : "packet silence"))) {
         return false;
     }
     submitCompletedFrame(queue);
@@ -1024,25 +1032,28 @@ int RtpvAddPacket(PRTP_VIDEO_QUEUE queue, PRTP_PACKET packet, int length, PRTPV_
         }
 
         if ((NegotiatedVideoFormat & VIDEO_FORMAT_MASK_PYROWAVE) && queue->bufferParityPackets == 0 &&
-                queue->multiFecCurrentBlockNumber == queue->multiFecLastBlockNumber &&
-                queue->receivedHighestSequenceNumber == queue->bufferHighestSequenceNumber) {
+                queue->multiFecCurrentBlockNumber == queue->multiFecLastBlockNumber) {
             // With no parity, the highest valid sequence is the last data packet.
-            // Require that actual packet, not just an EOF flag or a quiet socket,
-            // before deciding that interior detail was lost. This also handles
-            // reordering and 16-bit sequence wrap without another state flag.
-            // Only accepted unique packets extend the grace. Do not expire it
-            // here: a paused receive thread may still have reordered data in
-            // the kernel socket queue, which must be drained first.
+            // Once that actual packet (not just an EOF flag) has arrived, any
+            // hole is interior and gets a short reorder interval. Until then
+            // the tail may still be in flight, so wait out a host pacing gap.
+            // This also handles reordering and 16-bit sequence wrap without
+            // another state flag. Only accepted unique packets extend the
+            // grace. Do not expire it here: a paused receive thread may still
+            // have reordered data in the kernel socket queue to drain first.
+            bool finalArrived = queue->receivedHighestSequenceNumber == queue->bufferHighestSequenceNumber;
             uint64_t nowUs = PltGetMicroseconds();
             if (!queue->onTimeDeadlineQueried) {
                 queue->onTimeDeadlineQueried = true;
                 queue->onTimeDeadlineUs = reassemblyDeadlineCallback != NULL ?
                     reassemblyDeadlineCallback(packet->timestamp) : 0;
             }
-            queue->pendingFrameDeadlineUs = nowUs + PYROWAVE_PACKET_SILENCE_US;
+            queue->pendingFrameDeadlineUs = nowUs +
+                (finalArrived ? PYROWAVE_PACKET_SILENCE_US : PYROWAVE_TAIL_SILENCE_US);
             queue->pendingFrameDeadlinePrecise = false;
             if (queue->onTimeDeadlineUs != 0) {
-                uint64_t lateDeadlineUs = nowUs + PYROWAVE_LATE_PACKET_SILENCE_US;
+                uint64_t lateDeadlineUs = nowUs +
+                    (finalArrived ? PYROWAVE_LATE_PACKET_SILENCE_US : PYROWAVE_LATE_TAIL_SILENCE_US);
                 if (lateDeadlineUs < queue->onTimeDeadlineUs) {
                     lateDeadlineUs = queue->onTimeDeadlineUs;
                 }

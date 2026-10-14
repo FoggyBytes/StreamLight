@@ -1,0 +1,17 @@
+SAxense, as vendored by Nonary/moonlight-qt for DualSense waveform haptics (StreamLight 7.0.0).
+
+Copied from:  Nonary/moonlight-qt, branch master at f96b05248bc9d458855eef5a265e2a5ed6f2d82e
+              (14/10/2026), directory third-party/saxense/
+SAxense:      https://github.com/egormanga/SAxense at 6fd1648e0b2168bfe270f26b766fc897562091ab
+              Original research and implementation by Sdore (Egor Vorontsov), 2025.
+
+LICENSE, PROVENANCE.md, README.md, SAxense.c and packet.h are byte-identical to Nonary's copies
+(line endings aside). Only packet.h is compiled, from app/streaming/input/dualsensehaptics.cpp and
+dualsensehid.cpp. SAxense.c is kept for reference and is not built.
+
+Licence: MPL-2.0, also distributed under GPL-3.0-or-later per MPL section 3.3 (see PROVENANCE.md).
+The Source Code Form of these files is this directory of the StreamLight repository
+(https://github.com/FoggyBytes/StreamLight); the README credits it.
+
+Differs from Nonary's distribution: StreamLight does NOT embed these files in the executable and
+has no --haptics-license option. PROVENANCE.md still describes Nonary's packaging; read it as theirs.
