@@ -153,7 +153,7 @@ test('Interface controls bind to persisted preferences with Medium and titles-on
     const theme = read('app/settings/theme.cpp');
     const header = read('app/settings/theme.h');
     assert.ok(settings.indexOf('qsTr("Date format")') < settings.indexOf('qsTr("Grid cover size")'));
-    assert.ok(settings.indexOf('qsTr("Show grid titles")') < settings.indexOf('qsTr("Accent colour")'));
+    assert.ok(settings.indexOf('qsTr("Show grid titles")') < settings.indexOf('qsTr("Hide host IP addresses")'));
     assert.match(settings, /Binding on currentIndex \{ value: Theme\.libraryCoverSize \}/);
     assert.match(settings, /onActivated: function\(idx\) \{ Theme\.libraryCoverSize = idx \}/);
     assert.match(settings, /checked: Theme\.libraryShowTitles/);
@@ -286,6 +286,7 @@ test('LS and V switch layout while X, pin, move, tabs and profiles keep their ac
 
 function launchFixture(layout, runningId = 0, control = '') {
     const launches = [];
+    const newLaunches = [];
     const sessions = [];
     let confirmations = 0;
     const globals = {
@@ -301,11 +302,14 @@ function launchFixture(layout, runningId = 0, control = '') {
                 createSessionForApp(index) { sessions.push(index); return 'session'; },
             },
         },
-        appsRoot: { launchSegue(...args) { launches.push(args); } },
+        appsRoot: {
+            launchSegue(...args) { launches.push(args); },
+            launchNew(...args) { newLaunches.push(args); },
+        },
         quitAppDialog: { open() { confirmations++; } },
     };
     return {
-        globals, launches, sessions,
+        globals, launches, newLaunches, sessions,
         get confirmations() { return confirmations; },
         launch: qmlFunction('launchOrResumeSelectedApp', globals),
     };
@@ -315,8 +319,10 @@ for (const layout of ['grid', 'list']) {
     test(`${layout}: launch uses the selected model entry`, () => {
         const f = launchFixture(layout);
         f.launch(true);
-        assert.deepEqual(f.sessions, [5]);
-        assert.deepEqual(f.launches, [['Test game', 'test.png', 'session', false, 42]]);
+        // 7.0.0: a new launch goes through the host-lock check, which finds the row again by id.
+        assert.deepEqual(f.newLaunches, [['Test game', 'test.png', 42]]);
+        assert.deepEqual(f.sessions, []);
+        assert.deepEqual(f.launches, []);
     });
 
     test(`${layout}: the selected running app resumes`, () => {
