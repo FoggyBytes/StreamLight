@@ -5,6 +5,31 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 ---------------------------------------
+Version 7.0.1 - Clean Exit (16/10/2026)
+---------------------------------------
+
+No StreamTweak update required — 7.0.1 is client-side and works with any host. The installer now brings the Microsoft Visual C++ Runtime StreamLight needs and clears plugins left by older versions, Quit session now really ends the game, and launches from the command line follow your profiles.
+
+✨ NEW FEATURES:
+• Pause session — LB + RB + Y, or Ctrl+Alt+Shift+P, ends the stream and leaves the game running on the host, to resume it later. Rebindable in Settings → Shortcuts, listed under Quit session
+
+✨ IMPROVEMENTS:
+• Quit session closes the game — LB + RB + A and Ctrl+Alt+Shift+Q now end the stream and quit the game on the host, as their name says; until now they left it running, which is what Pause session does. Settings → Video → While streaming → Quit app when the stream window closes now covers only closing the stream window or cancelling a launch
+• Command-line launches follow your profiles — StreamLight.exe stream applies the host's active profile and the game's own settings, as a launch from the app does; options given on the command line still win
+• Command-line launches end the game with the stream — so nothing is left running on the host with no page to stop it from; --no-quit-after keeps it running
+• Command-line launch screen with the cover — the game's cover and its blurred background, as from the host page, and Resuming when the game was already running
+
+🐛 FIXES:
+• Microsoft Visual C++ Runtime installed when it is older — 7.0.0 needs a newer one than some PCs have, and without it StreamLight could close as soon as it opened. The installer now adds it only when the one on the PC is older, and asks to restart if Windows was using it
+• StreamLight opens again on PCs updated since 2024 — a network plugin left behind by an old version kept 7.0.0 from loading the one it uses, and it closed as soon as it opened. The installer now empties Qt's plugin folders before copying the new ones
+• PyroWave bitrate from the command line — --video-codec PyroWave, or a resolution or frame rate with PyroWave, now gets PyroWave's own default bitrate when the bitrate is automatic, instead of one sized for the other codecs
+• One log per launch — opening StreamLight while it is already running no longer leaves a one-line log as the newest file in the folder, nor deletes an older one
+
+🙏 THANKS:
+• Thanks to @ludipraxa (https://github.com/FoggyBytes/StreamLight/issues/39) for the command-line report and for spotting that the profile was ignored
+• Thanks to @markmghali (https://github.com/FoggyBytes/StreamLight/issues/40) for the logs and the folder listing that showed the leftover plugin
+
+---------------------------------------
 Version 7.0.0 - In a New Light (14/10/2026)
 ---------------------------------------
 

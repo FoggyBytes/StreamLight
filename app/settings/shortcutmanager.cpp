@@ -37,6 +37,23 @@ static const KbDefault s_KbDefaults[ShortcutManager::KB_COUNT] = {
     { "Paste clipboard text to host",     DEF_MODS, SDLK_v, SDL_SCANCODE_V, "V" },
     { "Lock pointer to window region",    DEF_MODS, SDLK_l, SDL_SCANCODE_L, "L" },
     { "Open stream settings",             DEF_MODS, SDLK_o, SDL_SCANCODE_O, "O" },
+    { "Pause session",                    DEF_MODS, SDLK_p, SDL_SCANCODE_P, "P" },
+};
+
+// The order the Settings list shows them in: Pause right under Quit, since the two are the
+// two ways out of a stream. The ids themselves cannot move (they key the stored bindings).
+static const int s_KbOrder[ShortcutManager::KB_COUNT] = {
+    ShortcutManager::KB_QUIT,
+    ShortcutManager::KB_PAUSE,
+    ShortcutManager::KB_UNGRAB,
+    ShortcutManager::KB_FULLSCREEN,
+    ShortcutManager::KB_STATS,
+    ShortcutManager::KB_MOUSEMODE,
+    ShortcutManager::KB_CURSORHIDE,
+    ShortcutManager::KB_MINIMIZE,
+    ShortcutManager::KB_PASTE,
+    ShortcutManager::KB_POINTERLOCK,
+    ShortcutManager::KB_STREAM_SETTINGS,
 };
 
 struct PadDefault {
@@ -58,6 +75,14 @@ static const PadDefault s_PadDefaults[ShortcutManager::PAD_COUNT] = {
     { "Quit session",              LB_FLAG | RB_FLAG | A_FLAG },
     { "Cycle performance overlay", LB_FLAG | RB_FLAG | X_FLAG },
     { "Open stream settings",      LB_FLAG | RB_FLAG | B_FLAG },
+    { "Pause session",             LB_FLAG | RB_FLAG | Y_FLAG },
+};
+
+static const int s_PadOrder[ShortcutManager::PAD_COUNT] = {
+    ShortcutManager::PAD_QUIT,
+    ShortcutManager::PAD_PAUSE,
+    ShortcutManager::PAD_STATS,
+    ShortcutManager::PAD_STREAM_SETTINGS,
 };
 
 // Digital buttons that can take part in a pad combo (analog triggers L2/R2 are
@@ -160,8 +185,11 @@ QString ShortcutManager::modifierLabel(int modifiers)
 
 QVariantList ShortcutManager::keyboardModel()
 {
+    // Rows in display order (s_KbOrder), each carrying its own id in "action": a row's
+    // position in this list is NOT its action id — look rows up by "action".
     QVariantList list;
-    for (int i = 0; i < KB_COUNT; i++) {
+    for (int k = 0; k < KB_COUNT; k++) {
+        const int i = s_KbOrder[k];
         KbBinding b = loadKb(i);
         // Recover a display label for the key. Stored bindings keep the label;
         // fall back to the default's label if absent (older builds).
@@ -187,7 +215,8 @@ QVariantList ShortcutManager::keyboardModel()
 QVariantList ShortcutManager::gamepadModel()
 {
     QVariantList list;
-    for (int i = 0; i < PAD_COUNT; i++) {
+    for (int k = 0; k < PAD_COUNT; k++) {
+        const int i = s_PadOrder[k];
         PadBinding b = loadPad(i);
         QVariantMap row;
         row["action"]  = i;

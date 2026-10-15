@@ -330,6 +330,25 @@ StreamCommandLineParser::~StreamCommandLineParser()
 
 void StreamCommandLineParser::parse(const QStringList &args, StreamingPreferences *preferences)
 {
+    const QStringList posArgs = resolve(args, preferences, true);
+    m_Args = args;
+    m_Host = posArgs.at(1);
+    m_AppName = posArgs.at(2);
+}
+
+void StreamCommandLineParser::applyTo(StreamingPreferences *preferences) const
+{
+    // Same arguments, already validated by parse(): nothing here can fail or print.
+    resolve(m_Args, preferences, false);
+}
+
+QStringList StreamCommandLineParser::resolve(const QStringList &args, StreamingPreferences *preferences,
+                                             bool report) const
+{
+    // What the bitrate is measured against below: crossing in or out of PyroWave moves its
+    // default, as in Settings. Read before any option is applied.
+    const bool wasPyroWave = preferences->videoCodecConfig == StreamingPreferences::VCC_FORCE_PYROWAVE;
+
     CommandLineParser parser;
     parser.setupCommonOptions();
     parser.setApplicationDescription(
@@ -409,19 +428,12 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     // Resolve --fps option
     if (parser.isSet("fps")) {
         preferences->fps = parser.getIntOption("fps");
-        if (!inRange(preferences->fps, 10, 480)) {
+        if (report && !inRange(preferences->fps, 10, 480)) {
             fprintf(stderr, "Warning: FPS is out of the supported range (10 - 480 FPS). Performance may suffer!\n");
         }
     }
 
-    // Resolve --bitrate option
-    if (parser.isSet("bitrate")) {
-        preferences->bitrateKbps = parser.getIntOption("bitrate");
-        // Range checked below, once --video-codec is resolved: PyroWave's ceiling is higher.
-    } else if (displaySet || parser.isSet("fps")) {
-        preferences->bitrateKbps = preferences->getDefaultBitrate(
-            preferences->width, preferences->height, preferences->fps, preferences->enableYUV444);
-    }
+    // --bitrate is resolved last, below: its default depends on the codec, HDR and 4:4:4.
 
     // Resolve --packet-size option
     if (parser.isSet("packet-size")) {
@@ -454,8 +466,11 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     // Resolve --multi-controller and --no-multi-controller options
     preferences->multiController = parser.getToggleOptionValue("multi-controller", preferences->multiController);
 
-    // Resolve --quit-after and --no-quit-after options
-    preferences->quitAppAfter = parser.getToggleOptionValue("quit-after", preferences->quitAppAfter);
+    // Resolve --quit-after and --no-quit-after options. On unless --no-quit-after, whatever
+    // Settings says: a stream started from here ends with this process, so there is no host
+    // page to come back to and stop the app from — leaving the session open on the host only
+    // meant opening StreamLight again to close it (issue #39).
+    preferences->quitAppAfter = parser.getToggleOptionValue("quit-after", true);
 
     // Resolve --absolute-mouse and --no-absolute-mouse options
     preferences->absoluteMouseMode = parser.getToggleOptionValue("absolute-mouse", preferences->absoluteMouseMode);
@@ -518,11 +533,32 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
         preferences->videoCodecConfig = mapValue(m_VideoCodecMap, parser.getChoiceOptionValue("video-codec"));
     }
 
+    // Resolve --bitrate option. Last, because every default depends on what is above it:
+    // it used to be computed before --yuv444, --hdr and --video-codec were read, so
+    // `--4K --video-codec PyroWave` streamed PyroWave at an AV1-sized bitrate.
+    const bool isPyroWave = preferences->videoCodecConfig == StreamingPreferences::VCC_FORCE_PYROWAVE;
+    const int maxKbps = StreamingPreferences::getMaxBitrate(preferences->videoCodecConfig);
+    const auto defaultBitrate = [&]() {
+        return isPyroWave
+            ? StreamingPreferences::getDefaultPyroWaveBitrate(preferences->width, preferences->height,
+                                                              preferences->fps, preferences->enableYUV444,
+                                                              preferences->enableHdr)
+            : StreamingPreferences::getDefaultBitrate(preferences->width, preferences->height,
+                                                      preferences->fps, preferences->enableYUV444);
+    };
     if (parser.isSet("bitrate")) {
-        const int maxKbps = StreamingPreferences::getMaxBitrate(preferences->videoCodecConfig);
-        if (!inRange(preferences->bitrateKbps, 500, maxKbps)) {
+        preferences->bitrateKbps = parser.getIntOption("bitrate");
+        if (report && !inRange(preferences->bitrateKbps, 500, maxKbps)) {
             fprintf(stderr, "Warning: Bitrate is out of the supported range (500 - %d Kbps). Performance may suffer!\n", maxKbps);
         }
+    } else if (displaySet || parser.isSet("fps")) {
+        preferences->bitrateKbps = defaultBitrate();
+    } else if (isPyroWave != wasPyroWave && preferences->autoAdjustBitrate) {
+        // As the codec row in Settings does: crossing in or out of PyroWave swaps the default
+        // when the bitrate follows the stream, and a bitrate above the new ceiling comes down.
+        preferences->bitrateKbps = defaultBitrate();
+    } else if (preferences->bitrateKbps > maxKbps) {
+        preferences->bitrateKbps = maxKbps;
     }
 
     // Resolve --video-decoder option
@@ -530,21 +566,21 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
         preferences->videoDecoderSelection = mapValue(m_VideoDecoderMap, parser.getChoiceOptionValue("video-decoder"));
     }
 
-    // This method will not return and terminates the process if --version or
-    // --help is specified
-    parser.handleHelpAndVersionOptions();
+    if (report) {
+        // This method will not return and terminates the process if --version or
+        // --help is specified
+        parser.handleHelpAndVersionOptions();
 
-    // Verify that both host and app has been provided
-    auto posArgs = parser.positionalArguments();
-    if (posArgs.length() < 2) {
-        parser.showError("Host not provided");
+        // Verify that both host and app has been provided
+        auto posArgs = parser.positionalArguments();
+        if (posArgs.length() < 2) {
+            parser.showError("Host not provided");
+        }
+        if (posArgs.length() < 3) {
+            parser.showError("App not provided");
+        }
     }
-    m_Host = parser.positionalArguments().at(1);
-
-    if (posArgs.length() < 3) {
-        parser.showError("App not provided");
-    }
-    m_AppName = parser.positionalArguments().at(2);
+    return parser.positionalArguments();
 }
 
 QString StreamCommandLineParser::getHost() const

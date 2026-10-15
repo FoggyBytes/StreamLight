@@ -613,15 +613,6 @@ int main(int argc, char *argv[])
     SetUnhandledExceptionFilter(UnhandledExceptionHandler);
 #endif
 
-#ifdef LOG_TO_FILE
-    // Prune the oldest existing logs if there are more than 10
-    QStringList existingLogNames = tempDir.entryList(QStringList("StreamLight-*.log"), QDir::NoFilter, QDir::SortFlag::Time);
-    for (int i = 10; i < existingLogNames.size(); i++) {
-        qInfo() << "Removing old log file:" << existingLogNames.at(i);
-        QFile(tempDir.filePath(existingLogNames.at(i))).remove();
-    }
-#endif
-
 #if defined(Q_OS_WIN32)
     // Force AntiHooking.dll to be statically imported and loaded
     // by ntdll on Win32 platforms by calling a dummy function.
@@ -926,6 +917,32 @@ int main(int argc, char *argv[])
         if (!singleInstance->attach()) {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                         "Another StreamLight instance is already running; raising it and exiting.");
+
+#ifdef LOG_TO_FILE
+            // This launch only raised the running instance, and its log is that one line. Kept,
+            // it would be the newest file in the folder — the one a user is told to attach —
+            // while the log that matters is the running instance's (issue #39 was answered
+            // with exactly this file). So it goes, after the same teardown as the end of
+            // main(): our handlers out, the queue drained, then the file closed and removed.
+#if SDL_VERSION_ATLEAST(3, 0, 0)
+            SDL_SetLogOutputFunction(SDL_GetDefaultLogOutputFunction(), nullptr);
+#else
+            SDL_LogSetOutputFunction(oldSdlLogFn, oldSdlLogUserdata);
+#endif
+            qInstallMessageHandler(nullptr);
+#ifdef HAVE_FFMPEG
+            av_log_set_callback(av_log_default_callback);
+#endif
+            s_LoggerThread.waitForDone();
+            if (s_LoggerFile != nullptr) {
+                QMutexLocker locker(&s_SyncLoggerMutex);
+                s_LoggerStream.flush();
+                s_LoggerStream.setDevice(nullptr);
+                s_LoggerFile->remove();
+                delete s_LoggerFile;
+                s_LoggerFile = nullptr;
+            }
+#endif
             return 0;
         }
 
@@ -954,6 +971,17 @@ int main(int argc, char *argv[])
             }
         }
     }
+
+#ifdef LOG_TO_FILE
+    // Prune the oldest existing logs if there are more than 10. After the single-instance
+    // check, not before: a launch that only raises the running instance discards its own
+    // log above, and it must not cost an older one on the way out.
+    QStringList existingLogNames = tempDir.entryList(QStringList("StreamLight-*.log"), QDir::NoFilter, QDir::SortFlag::Time);
+    for (int i = 10; i < existingLogNames.size(); i++) {
+        qInfo() << "Removing old log file:" << existingLogNames.at(i);
+        QFile(tempDir.filePath(existingLogNames.at(i))).remove();
+    }
+#endif
 
     SDL_version compileVersion;
     SDL_VERSION(&compileVersion);
@@ -1170,10 +1198,19 @@ int main(int argc, char *argv[])
             initialView = "qrc:/gui/CliStartStreamSegue.qml";
             StreamingPreferences* preferences = StreamingPreferences::get();
             StreamCommandLineParser streamParser;
-            streamParser.parse(app.arguments(), preferences);
+            // Validated against a throwaway copy, never the global object. The options
+            // are applied for real by the launcher, on top of the host's active profile and the
+            // game's own settings, exactly as a launch from the GUI builds them — before, they
+            // went into the global object and the profile and per-game overrides were never read.
+            // It also keeps them out of anything that saves the global object mid-stream.
+            StreamingPreferences* validated = preferences->clone(nullptr);
+            streamParser.parse(app.arguments(), validated);
+            delete validated;
             QString host    = streamParser.getHost();
             QString appName = streamParser.getAppName();
-            auto launcher   = new CliStartStream::Launcher(host, appName, preferences, &app);
+            auto launcher   = new CliStartStream::Launcher(
+                host, appName, preferences,
+                [streamParser](StreamingPreferences* p) { streamParser.applyTo(p); }, &app);
             engine.rootContext()->setContextProperty("launcher", launcher);
             break;
         }

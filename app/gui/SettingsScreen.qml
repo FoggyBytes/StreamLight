@@ -2061,7 +2061,10 @@ FocusScope {
                         }
                         RowSeparator { }
 
-                        // ── Quit app on host after closing the stream ─────────
+                        // ── Quit app when the stream window closes ────────────
+                        // Not every way out any more: Quit session and Pause session say for
+                        // themselves (Session::requestEnd). What is left is closing the window,
+                        // cancelling a launch from the curtain, and a stop asked from outside.
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeightTall
@@ -2073,14 +2076,14 @@ FocusScope {
                                 spacing: settingsScreen._px(3)
 
                                 Label {
-                                    text: qsTr("Quit app on host after closing the stream")
+                                    text: qsTr("Quit app when the stream window closes")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._px(Theme.fontBody)
                                     font.bold: true
                                     color: settingsScreen._text
                                 }
                                 Label {
-                                    text: qsTr("Closes the game when the stream ends. Unsaved progress will be lost.")
+                                    text: qsTr("Also when a launch is cancelled. Quit session always closes the game, Pause session never does.")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim

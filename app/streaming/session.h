@@ -268,6 +268,13 @@ public:
 
     void setShouldExit(bool quitHostApp = false);
 
+    // The two ways out a user asks for from inside the stream (Quit session / Pause session
+    // shortcuts): end the stream, and close the app on the host — or leave it running to be
+    // resumed. Either answer overrides "Quit app on host after closing the stream", which is
+    // left to decide every other way a stream ends (closing the window, a signal, a CLI
+    // launch's default).
+    void requestEnd(bool quitHostApp);
+
     // True if the last connection terminated because no video traffic ever
     // arrived from the host (ML_ERROR_NO_VIDEO_TRAFFIC). This is usually a
     // transient host warm-up race (virtual display / HDR / AV1 encoder not yet
@@ -591,6 +598,11 @@ private:
     int m_FlushingWindowEventsRef;
     QStringList m_LaunchWarnings;
     bool m_ShouldExit;
+
+    // What requestEnd() asked for: -1 = nothing (the preference decides), 0 = keep the host
+    // app running, 1 = quit it. Written on the main thread before the SDL_QUIT that ends the
+    // loop, read by the cleanup task that the loop's end starts.
+    int m_HostAppOnEnd = -1;
 
     bool m_AsyncConnectionSuccess;
     int m_PortTestResults;

@@ -31,11 +31,16 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Detected quit key combo");
 
-        // Push a quit event to the main loop
-        SDL_Event event;
-        event.type = SDL_QUIT;
-        event.quit.timestamp = SDL_GetTicks();
-        SDL_PushEvent(&event);
+        // Ends the stream and closes the app on the host
+        Session::get()->requestEnd(true);
+        break;
+
+    case KeyComboPause:
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Detected pause key combo");
+
+        // Ends the stream and leaves the app running on the host, to be resumed
+        Session::get()->requestEnd(false);
         break;
 
     case KeyComboUngrabInput:

@@ -111,6 +111,7 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
 
     // User-configurable gamepad combos.
     m_PadQuitMask = ShortcutManager::loadPad(ShortcutManager::PAD_QUIT).buttonMask;
+    m_PadPauseMask = ShortcutManager::loadPad(ShortcutManager::PAD_PAUSE).buttonMask;
     m_PadStatsMask = ShortcutManager::loadPad(ShortcutManager::PAD_STATS).buttonMask;
     m_PadStreamSettingsMask = ShortcutManager::loadPad(ShortcutManager::PAD_STREAM_SETTINGS).buttonMask;
 

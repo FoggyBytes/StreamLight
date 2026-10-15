@@ -12,11 +12,14 @@ Item {
         stageLabel.text = qsTr("Loading the app list…")
     }
 
-    function onSessionCreated(appName, session) {
+    function onSessionCreated(appName, session, boxArt, isResume) {
         var component = Qt.createComponent("StreamSegue.qml")
         var segue = component.createObject(stackView, {
             "appName": appName,
             "session": session,
+            // The cover and its blurred background, as a launch from the host page has them.
+            "boxArt": boxArt,
+            "isResume": isResume,
             "quitAfter": true
         })
         stackView.push(segue)

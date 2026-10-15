@@ -172,6 +172,7 @@ private:
         KeyComboPasteText,
         KeyComboTogglePointerRegionLock,
         KeyComboStreamSettings,
+        KeyComboPause,          // = ShortcutManager::KB_PAUSE, appended there too
         KeyComboMax
     };
 
@@ -252,6 +253,7 @@ private:
 
     // User-configurable gamepad combos (held-button masks). 0 = disabled.
     int m_PadQuitMask;
+    int m_PadPauseMask;
     int m_PadStatsMask;
     int m_PadStreamSettingsMask;
 

@@ -2,6 +2,8 @@
 #include "backend/computermanager.h"
 #include "backend/computerseeker.h"
 #include "streaming/session.h"
+#include "settings/appsettings.h"
+#include "backend/boxartmanager.h"
 
 #include <QCoreApplication>
 #include <QTimer>
@@ -102,8 +104,21 @@ public:
                     m_TimeoutTimer->stop();
                     if (isNotStreaming() || isStreamingApp(app)) {
                         m_State = StateStartSession;
-                        session = new Session(m_Computer, app, m_Preferences);
-                        emit q->sessionCreated(app.name, session);
+                        // Global ← host's active profile ← this game's overrides, as a launch
+                        // from the GUI builds it, then the command-line options on top. The
+                        // clone is owned by the Session.
+                        StreamingPreferences* prefs = AppSettingsManager::get()->buildPrefs(
+                            m_Preferences, m_Computer->uuid, app.id);
+                        if (m_CommandLineOptions) {
+                            m_CommandLineOptions(prefs);
+                        }
+                        session = new Session(m_Computer, app, prefs);
+                        prefs->setParent(session);
+                        // Only a cover already on disk: nothing here waits for a download,
+                        // and without one the curtain simply has no picture, as before.
+                        emit q->sessionCreated(app.name, session,
+                                               BoxArtManager::cachedBoxArt(m_Computer, app.id),
+                                               isStreamingApp(app));
                     } else {
                         emit q->appQuitRequired(getCurrentAppName());
                     }
@@ -174,6 +189,7 @@ public:
     QString m_ComputerName;
     QString m_AppName;
     StreamingPreferences *m_Preferences;
+    std::function<void(StreamingPreferences*)> m_CommandLineOptions;
     ComputerManager *m_ComputerManager;
     ComputerSeeker *m_ComputerSeeker;
     NvComputer *m_Computer;
@@ -182,7 +198,9 @@ public:
 };
 
 Launcher::Launcher(QString computer, QString app,
-                   StreamingPreferences* preferences, QObject *parent)
+                   StreamingPreferences* preferences,
+                   std::function<void(StreamingPreferences*)> commandLineOptions,
+                   QObject *parent)
     : QObject(parent),
       m_DPtr(new LauncherPrivate(this))
 {
@@ -190,6 +208,7 @@ Launcher::Launcher(QString computer, QString app,
     d->m_ComputerName = computer;
     d->m_AppName = app;
     d->m_Preferences = preferences;
+    d->m_CommandLineOptions = std::move(commandLineOptions);
     d->m_State = StateInit;
     d->m_TimeoutTimer = new QTimer(this);
     d->m_TimeoutTimer->setSingleShot(true);

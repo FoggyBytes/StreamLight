@@ -1,4 +1,4 @@
-; StreamLight 7.0.0 — Moonlight fork with StreamTweak integration.
+; StreamLight 7.0.1 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
@@ -11,11 +11,31 @@
 ; Reading version.txt from here was considered and left alone: that file carries a UTF-8
 ; BOM and no trailing newline, so an ISPP FileRead would have to skip three bytes by
 ; position, which is a more fragile thing than one line to remember at release time.
-#define AppVersion "7.0.0"
+#define AppVersion "7.0.1"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
 #define SourceDir "build\deploy-x64-release"
+
+; ── Microsoft Visual C++ Runtime (msvcp140/vcruntime140) ─────────────────────────────────
+; The app and Qt are built /MD and the deploy directory carries no runtime
+; (build-arch.bat runs windeployqt --no-compiler-runtime), so StreamLight runs on whatever
+; msvcp140.dll the machine has. That stopped being safe with 7.0.0: Qt 6.12 is built with
+; MSVC 14.44 and uses the constexpr std::mutex constructor from 14.40 (its DLLs no longer
+; import _Mtx_init_in_situ; Qt 6.8.3's did), and an older msvcp140.dll dereferences null in
+; _Mtx_lock. The exe itself is built with 14.51. Microsoft's rule is that the runtime must be
+; at least as new as the newest toolset in the process. Upstream's WiX bundle ships VC_redist
+; for the same reason (wix/MoonlightSetup/Bundle.wxs); this installer never did.
+;
+; The redistributable is taken from the toolset that builds the exe, never from a copy kept in
+; the repo: when Visual Studio moves to a new toolset this folder goes away and the compile
+; stops here, instead of shipping a runtime older than the code. Update the path then — the
+; minimum version follows by itself, read from the file below.
+#define VCRedist "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.51.36231\vc_redist.x64.exe"
+#if !FileExists(VCRedist)
+  #error VC_redist not found: point VCRedist at the Redist folder of the toolset that builds StreamLight.exe
+#endif
+#define VCRedistVersion GetVersionNumbersString(VCRedist)
 
 [Setup]
 AppId={{B7A2C3D4-E5F6-7890-ABCD-EF1234567890}
@@ -63,6 +83,21 @@ WelcomeLabel2=
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "xboxtile"; Description: "Add an icon to the Xbox app's 'My apps' section"; GroupDescription: "{cm:AdditionalIcons}"
 
+[InstallDelete]
+; 7.0.1 (issue #40): the Qt plugin folders are emptied before [Files] copies them again.
+; Without this a plugin a release no longer ships stays behind forever, and a stale one
+; can break a Qt upgrade: a 2024 tls\qopensslbackend.dll, left by an old install, does not
+; load under Qt 6.12 (it imports QTlsBackend::addTustedRoot, no longer exported), Qt stops
+; loading TLS plugins at the first one that fails, so qschannelbackend.dll is never reached
+; and StreamLight dies at startup on the "cert-only" backend. Every folder below is rebuilt
+; in full from the deploy directory; settings and cache live outside {app}.
+Type: filesandordirs; Name: "{app}\tls"
+Type: filesandordirs; Name: "{app}\platforms"
+Type: filesandordirs; Name: "{app}\imageformats"
+Type: filesandordirs; Name: "{app}\iconengines"
+Type: filesandordirs; Name: "{app}\networkinformation"
+Type: filesandordirs; Name: "{app}\qml"
+
 [Files]
 ; portable.dat excluded: it would force Qt to write settings/cache to {app}
 ; (= Program Files), where standard users can't write. Default Qt storage
@@ -79,6 +114,8 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceDir}\gamecontrollerdb.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "installer\resources\streamlight.png"; Flags: dontcopy
+; Extracted and run by InstallVCRedist in [Code], only when the machine's runtime is older.
+Source: "{#VCRedist}"; Flags: dontcopy
 Source: "changelog.txt"; DestDir: "{app}"; Flags: ignoreversion
 ; 7.0.0 (issue #38): the four pictures for StreamLight's non-Steam shortcut, for anyone who
 ; assigns them by hand in Steam. Settings → Interface → Steam artwork writes the same ones
@@ -316,4 +353,103 @@ begin
   StreamTweakLinkLabel.Font.Style := [fsUnderline];
   StreamTweakLinkLabel.OnClick := @StreamTweakLinkClick;
   StreamTweakLinkLabel.AutoSize := True;
+end;
+
+// ── Microsoft Visual C++ Runtime ─────────────────────────────────────────────
+// Why and which version: VCRedist at the top. Installed only when the machine's runtime is
+// older than the one bundled, and before any file is copied: the first thing [Run] does is
+// start StreamLight.exe (--register-xbox-tile), which needs it. Never uninstalled — it is
+// shared by every program on the machine.
+const
+  VCRedistKey = 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64';
+  ERROR_SUCCESS_REBOOT_REQUIRED = 3010;
+  ERROR_PRODUCT_VERSION = 1638;   // a newer runtime is already installed: fine
+
+var
+  VCRedistRestart: Boolean;
+
+// The version VC_redist's own setup records. The x64 runtime registers itself in both
+// registry views; the native one is read first.
+function InstalledVCRedist(RootKey: Integer; var Version: Int64): Boolean;
+var
+  Installed, Major, Minor, Bld, Rbld: Cardinal;
+begin
+  Result := RegQueryDWordValue(RootKey, VCRedistKey, 'Installed', Installed) and (Installed = 1) and
+            RegQueryDWordValue(RootKey, VCRedistKey, 'Major', Major) and
+            RegQueryDWordValue(RootKey, VCRedistKey, 'Minor', Minor) and
+            RegQueryDWordValue(RootKey, VCRedistKey, 'Bld', Bld);
+  if Result then begin
+    if not RegQueryDWordValue(RootKey, VCRedistKey, 'Rbld', Rbld) then
+      Rbld := 0;
+    Version := PackVersionComponents(Word(Major), Word(Minor), Word(Bld), Word(Rbld));
+  end;
+end;
+
+function VCRedistNeeded: Boolean;
+var
+  Bundled, Present: Int64;
+begin
+  // Unreadable bundled version or no runtime recorded: run it. At worst VC_redist answers
+  // 1638 and changes nothing.
+  Result := True;
+  if not StrToVersion('{#VCRedistVersion}', Bundled) then
+    Exit;
+  if InstalledVCRedist(HKLM64, Present) or InstalledVCRedist(HKLM32, Present) then begin
+    Log('VC++ runtime: found ' + VersionToStr(Present) + ', bundled {#VCRedistVersion}');
+    Result := ComparePackedVersion(Present, Bundled) < 0;
+  end else
+    Log('VC++ runtime: none recorded, bundled {#VCRedistVersion}');
+end;
+
+procedure InstallVCRedist;
+var
+  Started: Boolean;
+  ResultCode: Integer;
+begin
+  if not VCRedistNeeded then
+    Exit;
+
+  Started := False;
+  WizardForm.StatusLabel.Caption := 'Installing Microsoft Visual C++ Runtime...';
+  WizardForm.ProgressGauge.Style := npbstMarquee;
+  try
+    ExtractTemporaryFile('vc_redist.x64.exe');
+    Started := Exec(ExpandConstant('{tmp}\vc_redist.x64.exe'), '/install /quiet /norestart', '',
+                    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  finally
+    WizardForm.ProgressGauge.Style := npbstNormal;
+  end;
+
+  if not Started then
+    Log('VC++ runtime: VC_redist could not be started, error ' + IntToStr(ResultCode))
+  else
+    Log('VC++ runtime: VC_redist exit code ' + IntToStr(ResultCode));
+
+  if Started and ((ResultCode = 0) or (ResultCode = ERROR_PRODUCT_VERSION)) then
+    Exit;
+  if Started and (ResultCode = ERROR_SUCCESS_REBOOT_REQUIRED) then begin
+    // A runtime DLL was in use and is replaced at the next boot: until then a new StreamLight
+    // would still load the old one, so the last page asks for the restart (Setup then hides
+    // the Launch box by itself).
+    VCRedistRestart := True;
+    Exit;
+  end;
+
+  // Not fatal for the setup, but StreamLight may not start: say so instead of leaving a
+  // program that closes on launch with nothing to explain it.
+  SuppressibleMsgBox('The Microsoft Visual C++ Runtime could not be installed (code ' +
+    IntToStr(ResultCode) + ').' + #13#10#13#10 +
+    'StreamLight needs it to start. Install the latest Microsoft Visual C++ ' +
+    'Redistributable (x64), then open StreamLight again.', mbError, MB_OK, IDOK);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+    InstallVCRedist;
+end;
+
+function NeedRestart: Boolean;
+begin
+  Result := VCRedistRestart;
 end;

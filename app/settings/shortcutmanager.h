@@ -31,6 +31,9 @@ public:
         KB_PASTE,
         KB_POINTERLOCK,
         KB_STREAM_SETTINGS,
+        // Appended, never inserted: stored bindings are keyed by this number ("kb<N>_").
+        // The Settings list shows it right under Quit session — see s_KbOrder.
+        KB_PAUSE,
         KB_COUNT
     };
     Q_ENUM(KbAction)
@@ -51,6 +54,7 @@ public:
         PAD_QUIT,
         PAD_STATS,
         PAD_STREAM_SETTINGS,
+        PAD_PAUSE,          // appended for the same reason as KB_PAUSE
         PAD_COUNT
     };
     Q_ENUM(PadAction)

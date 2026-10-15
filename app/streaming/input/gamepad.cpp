@@ -427,11 +427,22 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Detected quit gamepad button combo");
 
-        // Push a quit event to the main loop
-        SDL_Event event;
-        event.type = SDL_QUIT;
-        event.quit.timestamp = SDL_GetTicks();
-        SDL_PushEvent(&event);
+        // Ends the stream and closes the app on the host
+        Session::get()->requestEnd(true);
+
+        // Clear buttons down on this gamepad
+        LiSendMultiControllerEvent(state->index, m_GamepadMask,
+                                   0, 0, 0, 0, 0, 0, 0);
+        return;
+    }
+
+    // Handle the configurable pause combo (default LB+RB+Y): same way out, app left running.
+    // NO_GAMEPAD_QUIT silences it too — it exists to keep the pad from ending a stream at all.
+    if (m_PadPauseMask != 0 && state->buttons == m_PadPauseMask && qgetenv("NO_GAMEPAD_QUIT") != "1") {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Detected pause gamepad button combo");
+
+        Session::get()->requestEnd(false);
 
         // Clear buttons down on this gamepad
         LiSendMultiControllerEvent(state->index, m_GamepadMask,

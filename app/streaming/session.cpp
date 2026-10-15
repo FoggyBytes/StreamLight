@@ -1777,10 +1777,14 @@ private:
 
     void run() override
     {
-        // Only quit the running app if our session terminated gracefully
+        // Only quit the running app if our session terminated gracefully. Quit session and
+        // Pause session say what they want themselves; anything else follows the preference.
+        const bool quitHostApp = m_Session->m_HostAppOnEnd >= 0
+                ? m_Session->m_HostAppOnEnd == 1
+                : m_Session->m_Preferences->quitAppAfter;
         bool shouldQuit =
                 !m_Session->m_UnexpectedTermination &&
-                m_Session->m_Preferences->quitAppAfter;
+                quitHostApp;
 
         // ⚠️ There are two senders of /cancel: this one, and the UI's PendingQuitTask
         // behind the "Are you sure you want to quit X?" dialog. They are indistinguishable
@@ -2590,6 +2594,18 @@ void Session::setShouldExit(bool quitHostApp)
     }
 
     m_ShouldExit = true;
+}
+
+void Session::requestEnd(bool quitHostApp)
+{
+    m_HostAppOnEnd = quitHostApp ? 1 : 0;
+
+    // The same SDL_QUIT the shortcuts always pushed: the loop's orderly stop is unchanged,
+    // only what happens to the host app afterwards is now decided here.
+    SDL_Event event;
+    event.type = SDL_QUIT;
+    event.quit.timestamp = SDL_GetTicks();
+    SDL_PushEvent(&event);
 }
 
 void Session::start()

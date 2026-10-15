@@ -48,9 +48,19 @@ Popup {
             || k === Qt.Key_Meta || k === Qt.Key_AltGr
             || k === Qt.Key_Super_L || k === Qt.Key_Super_R
     }
+    // ⚠️ By id, never by position: the model lists rows in display order (Pause sits under
+    // Quit), so keyboardModel()[id] is some other action's row.
+    function _rowFor(id) {
+        var rows = ShortcutManager.keyboardModel()
+        for (var i = 0; i < rows.length; i++) {
+            if (rows[i].action === id) return rows[i]
+        }
+        return null
+    }
     function _recheck() {
         pop._conflict = pop._haveKey ? ShortcutManager.keyboardConflict(pop.action, pop._mods, pop._key, pop._scan) : -1
-        pop._conflictName = pop._conflict >= 0 ? ShortcutManager.keyboardModel()[pop._conflict].name : ""
+        var other = pop._conflict >= 0 ? pop._rowFor(pop._conflict) : null
+        pop._conflictName = other ? other.name : ""
     }
     // Turning a modifier off is blocked when it would drop below two.
     function _toggle(which) {
@@ -281,7 +291,7 @@ Popup {
 
     onOpened: {
         // Pre-fill from the current binding.
-        var row = ShortcutManager.keyboardModel()[action]
+        var row = _rowFor(action)
         if (row) {
             _ctrl  = (row.modifiers & ShortcutManager.SMOD_CTRL)  !== 0
             _alt   = (row.modifiers & ShortcutManager.SMOD_ALT)   !== 0

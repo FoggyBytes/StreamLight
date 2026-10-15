@@ -59,12 +59,21 @@ public:
     StreamCommandLineParser();
     virtual ~StreamCommandLineParser();
 
+    // Validates the arguments (exiting on an error, --help or --version), prints the
+    // warnings once, and applies the options to `preferences`.
     void parse(const QStringList &args, StreamingPreferences *preferences);
+
+    // Applies the same options again, silently, to another preferences object — the
+    // session's, once the host profile and the game's overrides are in.
+    void applyTo(StreamingPreferences *preferences) const;
 
     QString getHost() const;
     QString getAppName() const;
 
 private:
+    QStringList resolve(const QStringList &args, StreamingPreferences *preferences, bool report) const;
+
+    QStringList m_Args;
     QString m_Host;
     QString m_AppName;
     QMap<QString, StreamingPreferences::WindowMode> m_WindowModeMap;
