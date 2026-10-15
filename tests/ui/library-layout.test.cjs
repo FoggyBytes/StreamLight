@@ -89,6 +89,9 @@ test('grid badges are inset on the artwork, use status-specific colours and add 
     assert.match(badge, /color: appDelegate\._gridBadgeKind === "streaming" \? Theme\.onAccent : Theme\.text/);
     assert.match(badge, /qsTr\("STREAMING"\)/);
     assert.match(badge, /qsTr\("LAST PLAYED"\)/);
+    assert.match(badge, /fontSizeMode: Text\.HorizontalFit\s+minimumPixelSize: appsRoot\._px\(8\)/);
+    assert.match(badge, /width: Math\.min\(Math\.ceil\(gridStatusMetrics\.advanceWidth\)/);
+    assert.doesNotMatch(badge, /gridStatusLabel\.implicitWidth/);
     assert.doesNotMatch(badge, /MouseArea|TapHandler|onClicked|libraryShowTitles|_lit/);
     assert.match(source, /Accessible\.description: _gridBadgeKind === "streaming"/);
 });

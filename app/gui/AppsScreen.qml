@@ -1944,12 +1944,20 @@ FocusScope {
                         anchors.topMargin: appsRoot._px(8)
                         anchors.rightMargin: appsRoot._px(8)
                         visible: appDelegate._gridBadgeKind !== ""
-                        width: Math.min(gridStatusLabel.implicitWidth + appsRoot._px(16),
+                        width: Math.min(Math.ceil(gridStatusMetrics.advanceWidth) + appsRoot._px(16),
                                         Math.max(0, tileArt.width - appsRoot._px(16)))
                         height: appsRoot._px(24)
                         radius: appsRoot._px(6)
                         color: appDelegate._gridBadgeKind === "streaming" ? Theme.accent
                                : Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, 0.92)
+
+                        TextMetrics {
+                            id: gridStatusMetrics
+                            text: gridStatusLabel.text
+                            font.family: Theme.family
+                            font.pixelSize: appsRoot._px(Theme.fontCaption)
+                            font.bold: true
+                        }
 
                         Label {
                             id: gridStatusLabel
@@ -1964,6 +1972,8 @@ FocusScope {
                             font.family: Theme.family
                             font.pixelSize: appsRoot._px(Theme.fontCaption)
                             font.bold: true
+                            fontSizeMode: Text.HorizontalFit
+                            minimumPixelSize: appsRoot._px(8)
                             horizontalAlignment: Text.AlignHCenter
                             elide: Text.ElideRight
                             maximumLineCount: 1
