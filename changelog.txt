@@ -4,6 +4,25 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-----------------------------------------
+Version 7.0.3 - Soft Landing (17/10/2026)
+-----------------------------------------
+
+No StreamTweak update required — 7.0.3 is client-side and works with any host. Navigation sounds that are heard every time, with a mouse too, a volume, and a gentler sound for going back.
+
+✨ IMPROVEMENTS:
+• Navigation sounds for the mouse — a click on a button, a tile or a prompt plays Confirm, and Back on Cancel, Close and Back; never on hover
+• Navigation sounds volume — a slider beside the switch in Settings → Interface → Navigation sounds, from 0 to 100%, 100% by default
+
+🐛 FIXES:
+• Navigation sounds heard every time — the sound engine went to sleep after four quiet seconds, and on outputs that wake slowly, such as a TV over HDMI, the next sound was lost while it woke up: with the keyboard almost none was heard. It now stays ready while no stream is running and lets the device go for the stream
+
+🎨 UI:
+• A friendlier Back sound — backing out of a menu with B or Esc now plays a short rising note, softer than before, instead of a falling pair that sounded like a mistake
+
+🙏 THANKS:
+• Thanks to @markmghali (https://github.com/FoggyBytes/StreamLight/issues/40) for pointing out that the Back sound felt like an error
+
 ------------------------------------------
 Version 7.0.2 - Trusted Parts (16/10/2026)
 ------------------------------------------

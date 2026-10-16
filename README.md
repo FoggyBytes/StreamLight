@@ -36,7 +36,7 @@ Everything below is in the current release, whichever version first introduced i
 - Every action is reachable from the pad: D-pad across host tabs, library, settings tabs and dialogs, with a clickable prompt bar along the bottom
 - **Prompts follow the device in your hands** — touch the keyboard and each glyph becomes the key to press; pick the pad back up and they return to that controller's own icons (Xbox / PlayStation / Nintendo / Steam, auto-detected or forced; Steam *(6.5.1+)*). *Settings → Interface* can pin them to the controller or to the keyboard *(6.3.0+)*, for Steam Input and the Steam Deck, where one pad also sends clicks and keys — and on the controller a trackpad mapped to the mouse points without taking the focus away from the pad *(6.4.1+)*
 - **Rebindable shortcuts** — every in-stream keyboard hotkey and all four controller combos, in *Settings → Shortcuts*. Defaults are **LB + RB + A** quit (closes the game on the host), **+ Y** pause (leaves it running, to resume), **+ X** performance overlay, **+ B** stream settings, chosen to stay clear of Steam's overlay
-- **Navigation sounds** *(7.0.0+)* — soft sounds for move, confirm and back from the controller and the keyboard, never from the mouse; off in *Settings → Interface*
+- **Navigation sounds** *(7.0.0+)* — soft sounds for move, confirm and back from the controller and the keyboard, and *(7.0.3+)* from mouse clicks, never a hover; volume and switch in *Settings → Interface*
 - **DualSense haptics** *(7.0.0+)* — the fine vibration games play through the DualSense's actuators reaches the controller in your hands, over USB or Bluetooth, from a Vibeshine or Vibepollo 2.0.1+ host with its *DualSense USB audio and haptics* component
 
 **🏠 Home and the host page**
@@ -105,6 +105,14 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in *Settings → StreamTweak*; the host has its own switch
+
+## ✨ What's New in 7.0.3 — Soft Landing
+
+Client-side, any host.
+
+- **Navigation sounds heard every time** — they were often lost with a keyboard, on outputs that wake slowly such as a TV over HDMI
+- **Sounds for mouse clicks and a volume** — a click plays Confirm, or Back on Cancel and Close; the volume sits beside the switch in *Settings → Interface*
+- **A friendlier Back sound** — backing out of a menu now plays a short rising note, softer than before, instead of a falling pair that sounded like a mistake
 
 ## ✨ What's New in 7.0.2 — Trusted Parts
 

@@ -3548,8 +3548,9 @@ FocusScope {
                         RowSeparator { }
 
                         // ── Navigation sounds (7.0.0, 14/10/2026) ─────────────
-                        // Move, confirm and back, from the controller and the keyboard; never the
-                        // mouse. Saved and applied at once (UiSound).
+                        // Move, confirm and back, from the controller, the keyboard and (7.0.3)
+                        // mouse clicks, never a hover. 7.0.3: the volume on the same row, 0–100,
+                        // left of the switch. Saved and applied at once (UiSound).
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeightTall
@@ -3569,14 +3570,70 @@ FocusScope {
                                         font.bold: true
                                         color: settingsScreen._text
                                     }
-                                    NewBadge { since: "7.0.0"; anchors.verticalCenter: parent.verticalCenter }
+                                    NewBadge { since: "7.0.3"; anchors.verticalCenter: parent.verticalCenter }
                                 }
                                 Label {
-                                    text: qsTr("Move, confirm and back, with a controller or the keyboard")
+                                    text: qsTr("Move, confirm and back, with a controller, the keyboard or the mouse")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._px(Theme.fontSmall)
                                     color: settingsScreen._textDim
                                 }
+                            }
+
+                            FocusFrame { anchors.fill: navSoundsVolume; anchors.margins: -6; target: navSoundsVolume }
+
+                            // The pad and the keyboard step it by 5 and hear the step itself, as a
+                            // Move at the new volume; a drag with the mouse plays Confirm on release.
+                            Slider {
+                                id: navSoundsVolume
+                                anchors.right: navSoundsVolumeLabel.left
+                                anchors.rightMargin: settingsScreen._px(12)
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: settingsScreen._px(160)
+                                enabled: UiSound.enabled
+                                from: 0
+                                to: 100
+                                stepSize: 5
+                                snapMode: Slider.SnapAlways
+                                value: UiSound.volume
+                                onMoved: UiSound.volume = Math.round(value)
+                                onPressedChanged: if (!pressed) UiSound.play(UiSound.Confirm)
+
+                                background: Rectangle {
+                                    x: navSoundsVolume.leftPadding
+                                    y: navSoundsVolume.topPadding + navSoundsVolume.availableHeight / 2 - height / 2
+                                    width: navSoundsVolume.availableWidth
+                                    height: settingsScreen._px(3)
+                                    radius: settingsScreen._px(2)
+                                    color: navSoundsVolume.enabled ? Theme.text : Theme.offline
+                                }
+                                handle: Rectangle {
+                                    x: navSoundsVolume.leftPadding + navSoundsVolume.visualPosition * (navSoundsVolume.availableWidth - width)
+                                    y: navSoundsVolume.topPadding + navSoundsVolume.availableHeight / 2 - height / 2
+                                    implicitWidth: settingsScreen._px(14)
+                                    implicitHeight: settingsScreen._px(14)
+                                    radius: settingsScreen._px(7)
+                                    color: !navSoundsVolume.enabled ? Theme.offline
+                                         : navSoundsVolume.pressed ? Qt.lighter(Theme.ink, 1.2)
+                                         : navSoundsVolume.hovered ? Qt.lighter(Theme.ink, 1.1)
+                                         :                           Theme.ink
+                                    border.color: navSoundsVolume.enabled ? Theme.ink : Theme.offline
+                                    border.width: 1
+                                }
+                            }
+
+                            Label {
+                                id: navSoundsVolumeLabel
+                                anchors.right: navSoundsSwitch.left
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: settingsScreen._px(44)
+                                horizontalAlignment: Text.AlignRight
+                                text: UiSound.volume + "%"
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._px(Theme.fontSmall)
+                                font.bold: true
+                                color: UiSound.enabled ? Theme.inkText : Theme.text3
                             }
 
                             OnOffSelector {

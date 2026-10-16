@@ -9,6 +9,7 @@
 #include "backend/richpresencemanager.h"
 #include "backend/networkbuffers.h"
 #include "backend/pyrowavetest.h"
+#include "backend/uisound.h"
 #include "streaming/input/dualsensehaptics.h"
 
 #include <Limelight.h>
@@ -2859,6 +2860,15 @@ void Session::exec()
         QThreadPool::globalInstance()->start(new DeferredSessionCleanupTask(this));
         return;
     }
+
+    // 7.0.3: the interface sounds let the audio device go for the stream and take it back on
+    // every way out of this function. Not for an unlock: its PIN pad is the interface, and
+    // keeps its sounds.
+    struct UiSoundHold {
+        bool on;
+        explicit UiSoundHold(bool hold) : on(hold) { if (on) UiSound::get()->setStreaming(true); }
+        ~UiSoundHold() { if (on) UiSound::get()->setStreaming(false); }
+    } uiSoundHold(!m_UnlockMode);
 
     // Launch Hue Sync minimized on the client if the feature is enabled.
     //
