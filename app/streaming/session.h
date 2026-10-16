@@ -178,6 +178,10 @@ public:
     // 7.0.2: the stream ended with Quit, the host accepted it, and the game is still running
     // there (quitApp()'s 599). Read by the launch screen in sessionFinished(), after it is set.
     Q_INVOKABLE bool hostAppStillRunning() const { return m_HostAppStillRunning; }
+    // 7.0.2: the stream ended by quitting the app on the host (Quit session, or the
+    // preference), not by pausing or a disconnect — the case worth asking GAMEALIVE about.
+    Q_INVOKABLE bool endedWithQuit() const { return m_EndedWithQuit; }
+    Q_INVOKABLE QString hostUuid() const { return m_Computer ? m_Computer->uuid : QString(); }
 
     explicit Session(NvComputer* computer, NvApp& app, StreamingPreferences *preferences = nullptr);
     virtual ~Session();
@@ -646,6 +650,7 @@ private:
     qint64                   m_GateReadyMs            = 0;
     // Set by the cleanup task before it emits sessionFinished (see hostAppStillRunning()).
     bool                     m_HostAppStillRunning    = false;
+    bool                     m_EndedWithQuit          = false;
     LaunchCurtain            m_Curtain;
     SessionTelemetrySampler* m_TelemetrySampler       = nullptr;
     HueSyncManager*          m_HueSyncManager         = nullptr;

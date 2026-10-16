@@ -336,7 +336,7 @@ begin
     // NB: this label has no WordWrap, so every bullet must stay on one line —
     // keep them at or under ~76 characters or they get clipped on the right.
     '•  Link-speed matching — the host follows this device, no bufferbloat' + #13#10 +
-    '•  Seamless launch — optionally wait for the game to appear' + #13#10 +
+    '•  Seamless launch — waits for the game, flags it if Quit leaves it open' + #13#10 +
     '•  Wake the host and sign in with its PIN, from the sofa, on the pad' + #13#10 +
     '•  Live host metrics overlay (GPU, encoder, VRAM, temperature, CPU, network)' + #13#10 +
     '•  NVIDIA Sentinel — protects your driver profile from NVIDIA App resets' + #13#10 +

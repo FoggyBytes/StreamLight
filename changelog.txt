@@ -8,7 +8,7 @@ https://github.com/FoggyBytes/StreamLight
 Version 7.0.2 - Trusted Parts (16/10/2026)
 ------------------------------------------
 
-No StreamTweak update required — 7.0.2 is client-side and works with any host. A first step towards a signed StreamLight for Windows Smart App Control: the libraries StreamLight loads now carry their publishers' signatures, and the release is built on GitHub from the public source. The launch screen also learns how long each game takes to start.
+Works with any host; StreamTweak 9.2.3 adds the warning when a Quit leaves an Xbox app game open. A first step towards a signed StreamLight for Windows Smart App Control: the libraries StreamLight loads now carry their publishers' signatures, and the release is built on GitHub from the public source. The launch screen also learns how long each game takes to start.
 
 ✨ IMPROVEMENTS:
 • Signed libraries — FFmpeg, SDL, OpenSSL, opus, dav1d, libplacebo and Discord RPC now ship as the copies signed in the official Moonlight 6.2.0 release, the same code as before; Qt's were already signed by The Qt Company
@@ -17,7 +17,7 @@ No StreamTweak update required — 7.0.2 is client-side and works with any host.
 • The launch screen learns each game — "Taking longer than usual" now comes after the slowest of a game's last five launches on that host plus a quarter, so a title with a long start such as Gears of War: E-Day is no longer late every time it starts. Games never launched there keep the 20 seconds
 
 🐛 FIXES:
-• Quit session says when the game stays open — some games, such as those of the Xbox app, cannot be closed by the host; StreamLight now says the game is still running instead of leaving the host page to show it as if the quit never happened, and quitting from the host page no longer blames another device for it
+• Quit session says when the game stays open — some games cannot be closed by the host, and StreamLight now says the game is still running instead of leaving it to be found there. Xbox app games are reported closed by the streaming server while they keep running: StreamTweak 9.2.3 sees them, and StreamLight asks it a few seconds after the Quit. Quitting from the host page no longer blames another device for a game it could not close
 
 🙏 THANKS:
 • Thanks to @IsaacGHall (https://github.com/FoggyBytes/StreamLight/issues/41) for reporting that Smart App Control blocks StreamLight

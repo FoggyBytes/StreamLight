@@ -15,6 +15,7 @@
 #include <QFileInfo>
 #include <QSettings>
 #include <QThreadPool>
+#include <QTimer>
 #include <QUrl>
 
 ComputerModel::ComputerModel(QObject* object)
@@ -918,6 +919,43 @@ void ComputerModel::requestLockState(int computerIndex)
             bool locked    = response.contains(QLatin1String("\"locked\":true"));
             emit lockStateReceived(computerIndex, supported, locked);
         });
+}
+
+void ComputerModel::checkGameAfterQuit(const QString& hostUuid, const QString& appName)
+{
+    // Eight seconds: a host that CAN close the game needs a moment — Sunshine and its forks ask
+    // the game to exit and wait up to five seconds by default before forcing it — and asking
+    // sooner would report a game that was about to go.
+    constexpr int SettleMs = 8000;
+
+    QTimer::singleShot(SettleMs, this, [this, hostUuid, appName]() {
+        const int computerIndex = indexOfUuid(hostUuid);
+        if (computerIndex < 0 || !bridgeAllowed(computerIndex))   // see requestHostNetInfo()
+            return;
+
+        NvComputer* computer = m_Computers[computerIndex];
+        QString address;
+        {
+            QReadLocker lock(&computer->lock);
+            address = computer->activeAddress.address();
+        }
+        if (address.isEmpty())
+            return;
+
+        m_streamTweakBridge.requestGameAlive(address,
+            [this, hostUuid, appName](const QString& response) {
+                // Empty or ERR is a host before 9.2.3: nothing to say, as before.
+                const QJsonObject o = QJsonDocument::fromJson(response.toUtf8()).object();
+                if (!o.value(QStringLiteral("known")).toBool() ||
+                    !o.value(QStringLiteral("running")).toBool())
+                    return;
+
+                const QString game = o.value(QStringLiteral("game")).toString();
+                qInfo() << "GAMEALIVE after Quit:" << (game.isEmpty() ? appName : game)
+                        << "is still running on the host";
+                emit gameStillRunningAfterQuit(hostUuid, game.isEmpty() ? appName : game);
+            });
+    });
 }
 
 void ComputerModel::matchHostLinkSpeed(int computerIndex)

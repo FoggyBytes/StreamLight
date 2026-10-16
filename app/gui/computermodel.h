@@ -137,6 +137,17 @@ public:
      * the host keeps it out of its history and skips its session-start side effects.
      */
     Q_INVOKABLE void requestLockState(int computerIndex);
+
+    /*
+     * 7.0.2: after a Quit session, wait for the host to close the game, then ask StreamTweak
+     * (GAMEALIVE, 9.2.3+) whether the game it launched is still running. The streaming server
+     * can say the app has ended while the game lives on — Vibeshine cannot terminate an Xbox
+     * app game it started through explorer.exe, and its serverinfo then shows nothing — so this
+     * is the only question that sees it. Emits gameStillRunningAfterQuit only on a clear yes;
+     * an older host, the integration off, or "known":false say nothing. By uuid, never by row:
+     * the answer comes seconds later (§80.2).
+     */
+    Q_INVOKABLE void checkGameAfterQuit(const QString& hostUuid, const QString& appName);
     Q_INVOKABLE void markUnlockSession(int computerIndex, bool begin);
 
     /**
@@ -355,6 +366,7 @@ signals:
     void powerHostResult(int computerIndex, QString mode, bool ok);
     /** supported=false means the host does not know LOCKSTATE — not that it is unlocked. */
     void lockStateReceived(int computerIndex, bool supported, bool locked);
+    void gameStillRunningAfterQuit(QString hostUuid, QString gameName);
     /** detail is the change being made ("2.5 Gbps → 1 Gbps"), empty once finished. */
     void linkMatchProgress(int computerIndex, bool running, QString detail);
     void updateProgressReceived(int computerIndex, QVariantMap state);

@@ -93,6 +93,7 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 
 - **Host link matching** *(8.1.0+)* — before each launch StreamLight measures the wired link that actually reaches that host, asks the host to come down to it, and starts the stream only once the host confirms. A host running faster than the client sends each frame as a burst the slower link cannot drain, and the packets that die first are the few carrying audio: the symptom is sound cutting out while the picture stays perfect. The client decides the speed because only the client knows its own connection; the host keeps the permission and the restore
 - **Seamless launch** *(8.1.0+, opt-in)* — with **Wait for the game to appear** on, the stream window stays hidden until the host reports the game is really on screen, so you watch the game's cover art instead of the host's desktop rearranging itself. **B** or **Esc** reveals the host at any moment. A resume never waits: the game is already there
+- **A game left open after Quit** *(9.2.3+)* — a few seconds after a **Quit session**, StreamLight asks StreamTweak whether the game is still running and says so when the streaming server could not close it, as with Xbox app games
 - **Remote PIN unlock** *(8.1.0+)* — after a **Wake**, or *(7.0.0+)* from the **Unlock** button of any host sitting at its lock screen and before any launch on it, a controller-navigable number pad takes its Windows PIN. The session carrying the PIN is never shown and never recorded on the host; wrong attempts stop at three, since Windows suspends the PIN after a few failures
 - **Host metrics in the overlay** *(4.4.0+)* — GPU %, encoder %, GPU temperature, VRAM, CPU and network TX, hidden entirely when StreamTweak is unreachable
 - **Store badges** *(5.0.0+)* — which store the selected game comes from, its mark beside its name on the host page: Steam, Epic, GOG, Ubisoft, Xbox, Battle.net and EA App
@@ -107,12 +108,12 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 
 ## ✨ What's New in 7.0.2 — Trusted Parts
 
-Client-side, any host.
+Any host; StreamTweak 9.2.3 for the Xbox app case below.
 
 - **Signed libraries** — FFmpeg, SDL, OpenSSL and the other third-party libraries now ship with their publishers' signatures, a first step towards a fully signed StreamLight for Windows Smart App Control
 - **The launch screen learns each game** — "Taking longer than usual" waits as long as that game usually takes on that host, so a slow-starting title is not flagged every time
 - **Built on GitHub** — the release is built by GitHub Actions from the public source, as signing StreamLight itself will require
-- **A quit that the host can't carry out is reported** — when a game stays open on the host (Xbox app games, for one), StreamLight says so
+- **A quit that the host can't carry out is reported** — when a game stays open on the host, StreamLight says so; for Xbox app games, which the streaming server reports closed, it needs StreamTweak 9.2.3
 
 ## ✨ What's New in 7.0.1 — Clean Exit
 

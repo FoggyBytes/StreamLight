@@ -216,6 +216,11 @@ void StreamTweakBridge::requestGameState(const QString& hostAddress, ResponseCal
     sendRequest(hostAddress, QStringLiteral("GAMESTATE"), std::move(onResult));
 }
 
+void StreamTweakBridge::requestGameAlive(const QString& hostAddress, ResponseCallback onResult)
+{
+    sendRequest(hostAddress, QStringLiteral("GAMEALIVE"), std::move(onResult));
+}
+
 // requestSessionId() (SESSIONID) was removed in 4.6.0: like sendRestore(), it had no
 // callers in any version. Telemetry carries its own session id in the SESSIONDATA batch,
 // so the client never had to ask for one.

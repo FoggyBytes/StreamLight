@@ -1800,6 +1800,10 @@ private:
         // the dialog. If the question ever comes back, log which side fired rather than
         // reasoning about it.
 
+        // 7.0.2: read by the launch screen in sessionFinished(), to ask StreamTweak afterwards
+        // whether the game really went (Session::endedWithQuit()).
+        m_Session->m_EndedWithQuit = shouldQuit;
+
         // Notify the UI
         if (shouldQuit) {
             emit m_Session->quitStarting();

@@ -140,6 +140,20 @@ FocusScope {
         function onCurrentItemChanged() { Qt.callLater(appShell._leaveLockedHostPage) }
     }
 
+    // 7.0.2: after a Quit the host reported done, ask StreamTweak a few seconds later whether
+    // the game really went (ComputerModel.checkGameAfterQuit); the answer lands below.
+    function checkGameAfterQuit(hostUuid, appName) {
+        var mdl = homeLoader.item ? homeLoader.item.computerModel : null
+        if (mdl && hostUuid) mdl.checkGameAfterQuit(hostUuid, appName)
+    }
+    Connections {
+        target: homeLoader.item ? homeLoader.item.computerModel : null
+        ignoreUnknownSignals: true
+        function onGameStillRunningAfterQuit(hostUuid, gameName) {
+            appShell.notice(qsTr("%1 is still running on the host").arg(gameName), 6000)
+        }
+    }
+
     function launchWhenUnlocked(idx, hostName, launchFn, owner) {
         if (homeLoader.item) homeLoader.item.launchWhenUnlocked(idx, hostName, launchFn, owner)
         else if (launchFn)   launchFn()

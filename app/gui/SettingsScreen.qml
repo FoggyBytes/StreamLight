@@ -5774,7 +5774,7 @@ FocusScope {
 
                                     [ { group: qsTr("On screen") },
                                       { name: qsTr("Host GPU, CPU and network in the overlay") },
-                                      { name: qsTr("How your last session went, on its card") },
+                                      { name: qsTr("A game left open after Quit, flagged") },
                                       { name: qsTr("Which store each game comes from") },
                                       { group: qsTr("History") },
                                       { name: qsTr("Sessions graded and charted in StreamTweak") } ]

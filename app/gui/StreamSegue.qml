@@ -419,10 +419,17 @@ Item {
         // `session` is still ours. Shown by AppShell, the base of the stack, and raised before
         // the pop so nothing runs on this screen after it has been taken down; it outlasts the
         // curtain coming off.
-        if (!quitAfter && session && session.hostAppStillRunning()) {
+        if (!quitAfter && session && session.endedWithQuit()) {
             var shell = stackView.get(0)
-            if (shell && shell.notice)
-                shell.notice(qsTr("%1 is still running on the host").arg(appName), 6000)
+            if (shell && shell.notice) {
+                if (session.hostAppStillRunning())
+                    shell.notice(qsTr("%1 is still running on the host").arg(appName), 6000)
+                // The host said the game ended. The streaming server can be wrong about that
+                // (an Xbox app game it could not terminate): StreamTweak is asked a few seconds
+                // from now, and AppShell says so if the game is still there.
+                else if (shell.checkGameAfterQuit)
+                    shell.checkGameAfterQuit(session.hostUuid(), appName)
+            }
         }
 
         // Pop the StreamSegue off the stack if this is a GUI-based app launch

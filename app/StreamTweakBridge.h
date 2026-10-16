@@ -119,6 +119,9 @@ public:
      *    know why we opened it. Fire-and-forget.
      */
     void requestLockState(const QString& hostAddress, ResponseCallback onResult);
+    // GAMEALIVE (StreamTweak 9.2.3+): {v,known,game,running} — whether the last game the host
+    // launched still has a process running. Older hosts answer ERR or nothing.
+    void requestGameAlive(const QString& hostAddress, ResponseCallback onResult);
     void sendUnlockBegin(const QString& hostAddress);
     void sendUnlockEnd(const QString& hostAddress);
 
