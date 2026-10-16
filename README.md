@@ -4,7 +4,7 @@
 
 > ⚠️ **Windows SmartScreen and Smart App Control.** StreamLight is not code-signed yet.
 > - **SmartScreen** may warn you when you run the installer: choose *More info → Run anyway*.
-> - **Smart App Control**, on the Windows 11 PCs where it is turned on, blocks StreamLight outright and offers no per-app exception. The only way to run it there is to turn Smart App Control off (*Windows Security → App & browser control → Smart App Control settings*).
+> - **Smart App Control**, on the Windows 11 PCs where it is turned on, may blocks StreamLight outright and offers no per-app exception. The only way to run it there is to turn Smart App Control off (*Windows Security → App & browser control → Smart App Control settings*).
 >
 > Keeping Smart App Control on is a perfectly reasonable choice. Code signing is being looked into, and this note will be updated if that changes. The full source is in this repository.
 
