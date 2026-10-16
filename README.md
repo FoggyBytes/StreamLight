@@ -2,12 +2,6 @@
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue.svg)](https://github.com/FoggyBytes/StreamLight) [![Framework](https://img.shields.io/badge/Framework-Qt%206-brightgreen.svg)](https://www.qt.io/) [![Downloads](.badges/downloads.svg)](https://github.com/FoggyBytes/StreamLight/releases) [![Built on Moonlight](https://img.shields.io/badge/built%20on-Moonlight-blue?&logo=github)](https://github.com/moonlight-stream/moonlight-qt) [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-brightgreen.svg)](https://claude.ai/code)
 
-> ⚠️ **Windows SmartScreen and Smart App Control.** StreamLight is not code-signed yet.
-> - **SmartScreen** may warn you when you run the installer: choose *More info → Run anyway*.
-> - **Smart App Control**, on the Windows 11 PCs where it is turned on, may blocks StreamLight outright and offers no per-app exception. The only way to run it there is to turn Smart App Control off (*Windows Security → App & browser control → Smart App Control settings*).
->
-> Keeping Smart App Control on is a perfectly reasonable choice. Code signing is being looked into, and this note will be updated if that changes. The full source is in this repository.
-
 <div align="center">
   <img width="3840" height="2160" alt="StreamLight in the light theme" src=".github/images/streamlight.png" />
 </div>
@@ -25,6 +19,12 @@ The streaming engine is upstream Moonlight's — FFmpeg, D3D11VA, DXVA2, libplac
 Windows 10 and 11. Works as an ordinary Moonlight-compatible client against any **Sunshine / Apollo / Vibeshine / Vibepollo** host, and unlocks its paired feature set when [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) is running on the host.
 
 > 🔐 **The bridge is authenticated.** Every command StreamLight sends is signed with its existing Moonlight identity certificate; the host approves each client once, via a 4-digit PIN shown on both screens. **Streaming never depends on it** — without approval you stream normally and simply lose the paired features. Each host card shows its state as a badge (AUTHORIZED / PENDING / DENIED).
+
+> ⚠️ **Windows SmartScreen and Smart App Control.** StreamLight is not code-signed yet.
+> - **SmartScreen** may warn you when you run the installer: choose *More info → Run anyway*.
+> - **Smart App Control**, on the Windows 11 PCs where it is turned on, may blocks StreamLight outright and offers no per-app exception. The only way to run it there is to turn Smart App Control off (*Windows Security → App & browser control → Smart App Control settings*).
+>
+> Keeping Smart App Control on is a perfectly reasonable choice. Code signing is being looked into, and this note will be updated if that changes. The full source is in this repository.
 
 > ⚠️ **Not affiliated with or endorsed by the Moonlight project.** StreamLight is an independent fork. For upstream Moonlight support, use the [official client](https://github.com/moonlight-stream/moonlight-qt).
 
