@@ -1,23 +1,41 @@
-name: Build Windows (unsigned)
+name: Build Windows
 
 # Builds StreamLight and its installer on GitHub's runner, the way the local release build does:
-# scripts\build-arch.bat release, then ISCC on StreamLight.iss. Nothing is signed and nothing is
-# published - the outputs are workflow artifacts. This is the first half of code signing through
-# SignPath: SignPath only signs files that a GitHub Actions run produced, so the release build
-# has to come from here before any signing step is added.
+# scripts\build-arch.bat release, then ISCC on StreamLight.iss. Nothing is published - the
+# outputs are workflow artifacts.
+#
+# Code signing through the SignPath Foundation (SignPath signs only files a GitHub Actions run
+# produced). It switches itself on when the repository has the secret SIGNPATH_API_TOKEN, and
+# also needs the variable SIGNPATH_ORGANIZATION_ID (Settings -> Secrets and variables ->
+# Actions). Without the secret the run is the unsigned build it was before. With it, two
+# signing requests, each one approved by hand in the SignPath portal when the policy asks:
+#   1. StreamLight.exe, AntiHooking.dll and the Inno Setup uninstaller - which is also the Setup
+#      program the installer unpacks to %TEMP% and runs (see StreamLight.iss, SignedUninstaller);
+#   2. the finished installer, compiled again around the signed uninstaller.
+# The artifact configurations they refer to are kept for review in docs/signpath/.
 #
 # Differences from the local build, on purpose:
-#  - Visual Studio is whatever the runner image carries (logged below), not the local VS 2026;
-#    the VC_redist bundled by the installer is taken from that same toolset.
+#  - Visual Studio is whatever the runner image carries (logged below); the VC_redist bundled by
+#    the installer is taken from that same toolset.
 #  - build-arch.bat runs with STREAMLIGHT_DEPLOY_ONLY, so it stops once the deploy folder is
 #    complete instead of failing on the WiX step (the local build fails there, then the exe is
 #    copied by hand: same folder, same contents).
 
 on:
   workflow_dispatch:
+    inputs:
+      signing_policy:
+        description: SignPath signing policy (used only when SIGNPATH_API_TOKEN is set)
+        type: choice
+        options:
+          - test-signing
+          - release-signing
+        default: test-signing
 
 permissions:
   contents: read
+  # The SignPath action reads this run's job details and artifacts with the GITHUB_TOKEN.
+  actions: read
 
 concurrency:
   group: build-windows-${{ github.ref }}
@@ -32,7 +50,14 @@ env:
 jobs:
   build:
     runs-on: windows-2025
-    timeout-minutes: 90
+    # Room for a release-signing request to wait for its manual approval.
+    timeout-minutes: 240
+    env:
+      SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG || 'StreamLight' }}
+      SIGNPATH_POLICY: ${{ inputs.signing_policy || 'test-signing' }}
+      SIGNPATH_WAIT_SECONDS: ${{ inputs.signing_policy == 'release-signing' && '7200' || '900' }}
 
     steps:
       - name: Checkout
@@ -49,7 +74,9 @@ jobs:
             throw "app\version.txt says $app but StreamLight.iss says $iss - bump both (CLAUDE.md section 3)"
           }
           "version=$app" >> $env:GITHUB_OUTPUT
-          Write-Host "StreamLight $app"
+          $state = if ($env:SIGNPATH_ENABLED -eq 'true') { "signed-$env:SIGNPATH_POLICY" } else { 'unsigned' }
+          "state=$state" >> $env:GITHUB_OUTPUT
+          Write-Host "StreamLight $app ($state)"
 
       - name: Install Qt ${{ env.QT_VERSION }}
         uses: jurplel/install-qt-action@v4
@@ -92,7 +119,8 @@ jobs:
           set PATH=C:\Program Files\7-Zip;%PATH%
           call scripts\build-arch.bat release
 
-      - name: Build installer (StreamLight.iss)
+      - name: Find VC_redist
+        id: vcredist
         shell: pwsh
         run: |
           # The VC_redist of the toolset that just built the exe, as the local build does.
@@ -103,8 +131,144 @@ jobs:
             Select-Object -First 1
           if (-not $redist) { throw 'vc_redist.x64.exe not found in the runner''s Visual Studio' }
           Write-Host "VC_redist: $redist"
-          & C:\InnoSetup7\ISCC.exe "/DVCRedist=$redist" StreamLight.iss
+          "path=$redist" >> $env:GITHUB_OUTPUT
+
+      - name: Build installer (StreamLight.iss)
+        if: env.SIGNPATH_ENABLED != 'true'
+        shell: pwsh
+        env:
+          VCREDIST: ${{ steps.vcredist.outputs.path }}
+        run: |
+          & C:\InnoSetup7\ISCC.exe "/DVCRedist=$env:VCREDIST" StreamLight.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+
+      # ── Code signing (only with SIGNPATH_API_TOKEN) ───────────────────────────────────────────
+
+      - name: Prepare the first signing request
+        id: tosign
+        if: env.SIGNPATH_ENABLED == 'true'
+        shell: pwsh
+        env:
+          VCREDIST: ${{ steps.vcredist.outputs.path }}
+        run: |
+          # First ISCC pass: with SignUninstaller defined it writes uninst-<inno>-<hash>.e64 and stops
+          # on purpose, asking for that file to be signed. Its name follows a hash of the binary, so
+          # it changes with every release.
+          $uninstDir = Join-Path $PWD 'build\signing\uninstaller'
+          New-Item -ItemType Directory -Force $uninstDir | Out-Null
+          & C:\InnoSetup7\ISCC.exe "/DVCRedist=$env:VCREDIST" /DSignUninstaller "/DSignedUninstallerDir=$uninstDir" StreamLight.iss
+          Write-Host "First pass ended with $LASTEXITCODE (expected: non-zero, asking for the signature)"
+          $uninst = @(Get-ChildItem $uninstDir -Filter 'uninst-*.e64')
+          if ($uninst.Count -ne 1) { throw "Expected one uninst-*.e64 in $uninstDir, found $($uninst.Count)" }
+
+          # The three files go to SignPath in one zip. The uninstaller travels as Uninstaller.exe,
+          # the name the artifact configuration names; it goes back under its own name afterwards.
+          $stage = Join-Path $PWD 'build\signing\to-sign'
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item build\deploy-x64-release\StreamLight.exe, build\deploy-x64-release\AntiHooking.dll $stage
+          Copy-Item $uninst[0].FullName (Join-Path $stage 'Uninstaller.exe')
+          "uninstaller=$($uninst[0].Name)" >> $env:GITHUB_OUTPUT
+          "uninstaller_dir=$uninstDir" >> $env:GITHUB_OUTPUT
+          # GitHub's pwsh wrapper ends the step with `exit $LASTEXITCODE`, which would turn the
+          # first pass's deliberate failure into a failed step.
+          $global:LASTEXITCODE = 0
+
+      - name: Upload files for the first signing request
+        id: upload-to-sign
+        if: env.SIGNPATH_ENABLED == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: StreamLight-${{ steps.version.outputs.version }}-binaries-to-sign
+          path: build/signing/to-sign/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign StreamLight.exe, AntiHooking.dll and the uninstaller (SignPath)
+        if: env.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627  # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: binaries
+          github-artifact-id: ${{ steps.upload-to-sign.outputs.artifact-id }}
+          parameters: |
+            productVersion: "${{ steps.version.outputs.version }}.0"
+          wait-for-completion-timeout-in-seconds: ${{ env.SIGNPATH_WAIT_SECONDS }}
+          output-artifact-directory: build/signing/signed
+
+      - name: Put the signed files in place
+        if: env.SIGNPATH_ENABLED == 'true'
+        shell: pwsh
+        env:
+          UNINSTALLER: ${{ steps.tosign.outputs.uninstaller }}
+          UNINSTALLER_DIR: ${{ steps.tosign.outputs.uninstaller_dir }}
+        run: |
+          $signed = 'build\signing\signed'
+          foreach ($name in 'StreamLight.exe', 'AntiHooking.dll', 'Uninstaller.exe') {
+            $sig = Get-AuthenticodeSignature (Join-Path $signed $name)
+            if ($null -eq $sig.SignerCertificate) { throw "$name came back without a signature" }
+            # A test-signing certificate is not trusted by Windows; only release-signing must be Valid.
+            if ($env:SIGNPATH_POLICY -eq 'release-signing' -and $sig.Status -ne 'Valid') { throw "$name signature is $($sig.Status)" }
+            Write-Host "$name signed by $($sig.SignerCertificate.Subject) ($($sig.Status))"
+          }
+          Copy-Item "$signed\StreamLight.exe", "$signed\AntiHooking.dll" build\deploy-x64-release -Force
+          Copy-Item "$signed\Uninstaller.exe" (Join-Path $env:UNINSTALLER_DIR $env:UNINSTALLER) -Force
+
+      - name: Build installer around the signed uninstaller (StreamLight.iss, second pass)
+        if: env.SIGNPATH_ENABLED == 'true'
+        shell: pwsh
+        env:
+          VCREDIST: ${{ steps.vcredist.outputs.path }}
+          UNINSTALLER_DIR: ${{ steps.tosign.outputs.uninstaller_dir }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          & C:\InnoSetup7\ISCC.exe "/DVCRedist=$env:VCREDIST" /DSignUninstaller "/DSignedUninstallerDir=$env:UNINSTALLER_DIR" StreamLight.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC second pass failed ($LASTEXITCODE)" }
+          $stage = 'build\signing\installer-to-sign'
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item "build\installer\StreamLight_${env:VERSION}_Installer.exe" $stage
+
+      - name: Upload the installer for the second signing request
+        id: upload-installer-to-sign
+        if: env.SIGNPATH_ENABLED == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: StreamLight-${{ steps.version.outputs.version }}-installer-to-sign
+          path: build/signing/installer-to-sign/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign the installer (SignPath)
+        if: env.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627  # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.upload-installer-to-sign.outputs.artifact-id }}
+          parameters: |
+            productVersion: "${{ steps.version.outputs.version }}.0"
+          wait-for-completion-timeout-in-seconds: ${{ env.SIGNPATH_WAIT_SECONDS }}
+          output-artifact-directory: build/signing/signed-installer
+
+      - name: Put the signed installer in place
+        if: env.SIGNPATH_ENABLED == 'true'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $name = "StreamLight_${env:VERSION}_Installer.exe"
+          $sig = Get-AuthenticodeSignature "build\signing\signed-installer\$name"
+          if ($null -eq $sig.SignerCertificate) { throw "$name came back without a signature" }
+          if ($env:SIGNPATH_POLICY -eq 'release-signing' -and $sig.Status -ne 'Valid') { throw "$name signature is $($sig.Status)" }
+          Write-Host "$name signed by $($sig.SignerCertificate.Subject) ($($sig.Status))"
+          Copy-Item "build\signing\signed-installer\$name" build\installer -Force
+
+      # ── Results ───────────────────────────────────────────────────────────────────────────────
 
       - name: Summary
         shell: pwsh
@@ -116,13 +280,16 @@ jobs:
           $unsigned = Get-ChildItem $deploy -Recurse -Include *.exe, *.dll |
             Where-Object { (Get-AuthenticodeSignature $_.FullName).Status -ne 'Valid' } |
             ForEach-Object { $_.FullName.Substring((Resolve-Path $deploy).Path.Length + 1) }
+          $setupSig = Get-AuthenticodeSignature $setup.FullName
+          $setupSigner = if ($setupSig.SignerCertificate) { "$($setupSig.SignerCertificate.Subject -replace ',.*', '') ($($setupSig.Status))" } else { 'not signed' }
           @(
-            "### StreamLight $ver (unsigned)"
+            "### StreamLight $ver (${{ steps.version.outputs.state }})"
             ''
             "- Deploy folder: $($files.Count) files, $([math]::Round(($files | Measure-Object Length -Sum).Sum / 1MB, 1)) MB"
             "- Installer: ``$($setup.Name)``, $([math]::Round($setup.Length / 1MB, 1)) MB, SHA-256 ``$((Get-FileHash $setup.FullName).Hash.ToLowerInvariant())``"
+            "- Installer signature: $setupSigner"
             ''
-            "Executables and DLLs without a valid signature ($($unsigned.Count)):"
+            "Executables and DLLs in the deploy folder without a valid signature ($($unsigned.Count)):"
             ''
             ($unsigned | ForEach-Object { "- ``$_``" })
           ) -join "`n" >> $env:GITHUB_STEP_SUMMARY
@@ -130,7 +297,7 @@ jobs:
       - name: Upload deploy folder
         uses: actions/upload-artifact@v7
         with:
-          name: StreamLight-${{ steps.version.outputs.version }}-deploy-unsigned
+          name: StreamLight-${{ steps.version.outputs.version }}-deploy-${{ steps.version.outputs.state }}
           path: build/deploy-x64-release/
           if-no-files-found: error
 
@@ -138,8 +305,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           # archive: false uploads the .exe as it is, not inside a zip: the artifact downloads as
-          # StreamLight_X.Y.Z_Installer.exe (the action names it after the file and ignores `name`),
-          # and it is the form SignPath will take it in.
+          # StreamLight_X.Y.Z_Installer.exe (the action names it after the file and ignores `name`).
           path: build/installer/StreamLight_${{ steps.version.outputs.version }}_Installer.exe
           archive: false
           if-no-files-found: error

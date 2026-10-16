@@ -4,6 +4,20 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+------------------------------------------
+Version 7.0.2 - Trusted Parts (16/10/2026)
+------------------------------------------
+
+No StreamTweak update required — 7.0.2 is client-side and works with any host. A first step towards a signed StreamLight for Windows Smart App Control: the libraries StreamLight loads now carry their publishers' signatures, and the release is built on GitHub from the public source.
+
+✨ IMPROVEMENTS:
+• Signed libraries — FFmpeg, SDL, OpenSSL, opus, dav1d, libplacebo and Discord RPC now ship as the copies signed in the official Moonlight 6.2.0 release, the same code as before; Qt's were already signed by The Qt Company
+• Built on GitHub — this release is built by GitHub Actions from the public repository, the first requirement for signing StreamLight itself
+• Name and version on every file — the installer and AntiHooking.dll now carry StreamLight's name and version, as StreamLight.exe does
+
+🙏 THANKS:
+• Thanks to @IsaacGHall (https://github.com/FoggyBytes/StreamLight/issues/41) for reporting that Smart App Control blocks StreamLight
+
 ---------------------------------------
 Version 7.0.1 - Clean Exit (16/10/2026)
 ---------------------------------------

@@ -1,4 +1,4 @@
-; StreamLight 7.0.1 — Moonlight fork with StreamTweak integration.
+; StreamLight 7.0.2 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
@@ -11,7 +11,7 @@
 ; Reading version.txt from here was considered and left alone: that file carries a UTF-8
 ; BOM and no trailing newline, so an ISPP FileRead would have to skip three bytes by
 ; position, which is a more fragile thing than one line to remember at release time.
-#define AppVersion "7.0.1"
+#define AppVersion "7.0.2"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -74,6 +74,25 @@ SetupArchitecture=x64
 ; running it under x64 emulation is a plausible scenario.
 ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
+; Product version "7.0.1.0", as StreamLight.exe and AntiHooking.dll carry it (qmake writes four
+; parts): SignPath requires the same product name and version on every file it signs, and
+; without these lines Setup said "7.0.1" and had no file version at all.
+VersionInfoVersion={#AppVersion}.0
+VersionInfoProductTextVersion={#AppVersion}.0
+; Signed uninstaller, switched on only by the GitHub Actions build when it signs
+; (/DSignUninstaller). The uninstaller is not only unins000.exe: it is the same binary as the
+; Setup program the loader unpacks to %TEMP% and runs during the install, so an unsigned one
+; leaves Smart App Control something unsigned to stop even with a signed Setup.exe. With no
+; SignTool, Inno works in two passes: the first compile writes uninst-<version>-<hash>.e64 into
+; SignedUninstallerDir and stops; once that file is signed, the second compile copies the
+; signature in. Local builds never define SignUninstaller and compile as before.
+#ifdef SignUninstaller
+  #ifndef SignedUninstallerDir
+    #define SignedUninstallerDir "build\signing\uninstaller"
+  #endif
+SignedUninstaller=yes
+SignedUninstallerDir={#SignedUninstallerDir}
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

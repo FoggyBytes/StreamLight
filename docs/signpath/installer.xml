@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  REVIEW COPY of the SignPath artifact configuration with slug "installer".
+  The SignPath portal is the source of truth: editing this file does not change signing.
+
+  Used by: .github/workflows/build-windows.yml, second signing request ("Sign the installer").
+  Input:   a zip (the GitHub Actions artifact StreamLight-X.Y.Z-installer-to-sign) holding the one
+           StreamLight_X.Y.Z_Installer.exe, compiled around the uninstaller signed by the first
+           request. Only the outer Setup.exe is signed here: everything inside it was signed before.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="productVersion" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="StreamLight_*_Installer.exe" product-name="StreamLight" product-version="${productVersion}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

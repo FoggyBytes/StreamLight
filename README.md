@@ -105,6 +105,13 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in *Settings → StreamTweak*; the host has its own switch
 
+## ✨ What's New in 7.0.2 — Trusted Parts
+
+Client-side, any host.
+
+- **Signed libraries** — FFmpeg, SDL, OpenSSL and the other third-party libraries now ship with their publishers' signatures, a first step towards a fully signed StreamLight for Windows Smart App Control
+- **Built on GitHub** — the release is built by GitHub Actions from the public source, as signing StreamLight itself will require
+
 ## ✨ What's New in 7.0.1 — Clean Exit
 
 Client-side, any host.
