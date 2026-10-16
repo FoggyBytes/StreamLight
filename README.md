@@ -110,7 +110,9 @@ All of them are switched on **per host**, in **Settings → StreamTweak** — a 
 Client-side, any host.
 
 - **Signed libraries** — FFmpeg, SDL, OpenSSL and the other third-party libraries now ship with their publishers' signatures, a first step towards a fully signed StreamLight for Windows Smart App Control
+- **The launch screen learns each game** — "Taking longer than usual" waits as long as that game usually takes on that host, so a slow-starting title is not flagged every time
 - **Built on GitHub** — the release is built by GitHub Actions from the public source, as signing StreamLight itself will require
+- **A quit that the host can't carry out is reported** — when a game stays open on the host (Xbox app games, for one), StreamLight says so
 
 ## ✨ What's New in 7.0.1 — Clean Exit
 

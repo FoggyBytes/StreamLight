@@ -855,9 +855,12 @@ private:
                 m_Computer->pendingQuit = false;
             }
             if (e.getStatusCode() == 599) {
-                // 599 is a special code we make a custom message for
-                emit quitAppFailed(tr("The running game wasn't started by this PC. "
-                                      "You must quit the game on the host PC manually or use the device that originally started the game."));
+                // 599 is quitApp() finding the game still running after the host accepted the
+                // quit. Upstream's text blamed another device for starting it; on 16/10/2026 it
+                // was this PC's own Xbox app game, which the host cannot close (see session.cpp,
+                // the same case at the end of a stream), so the message says only what is known.
+                emit quitAppFailed(tr("The host couldn't close the game, and it is still running. "
+                                      "Quit it on the host PC."));
             }
             else {
                 emit quitAppFailed(e.toQString());

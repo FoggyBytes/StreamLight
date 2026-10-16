@@ -980,8 +980,9 @@ FocusScope {
 
     // A short line above the status bar, in the theme toggle's notice (7.0.0): used by the
     // PyroWave Test to say where the bitrate went.
-    function notice(text) {
-        themeNotice.show(text)
+    // `ms` (7.0.2) for a message that needs longer than a theme name: how long it stays up.
+    function notice(text, ms) {
+        themeNotice.show(text, ms)
     }
 
     function _hm(minutes) {
@@ -1030,8 +1031,9 @@ FocusScope {
         opacity: 0
         visible: opacity > 0
 
-        function show(text) {
+        function show(text, ms) {
             themeNoticeText.text = text
+            themeNoticeTimer.interval = ms ? ms : 2800
             opacity = 1
             themeNoticeTimer.restart()
         }

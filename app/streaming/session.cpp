@@ -697,6 +697,12 @@ QString Session::hostName() const
     return m_Computer ? m_Computer->name : QString();
 }
 
+int Session::slowLaunchAfterMs() const
+{
+    const QString uuid = m_Computer ? m_Computer->uuid : QString();
+    return static_cast<int>(PlaytimeManager::get()->slowLaunchAfterMs(uuid, m_App.name));
+}
+
 QStringList Session::streamBadges() const
 {
     // The Home card's wording (HostStage._resLabel/_codecLabel), so a host reads the same on
@@ -1817,7 +1823,16 @@ private:
             // Logging is already done inside NvHTTP
             try {
                 http.quitApp();
-            } catch (const GfeHttpResponseException&) {
+            } catch (const GfeHttpResponseException& e) {
+                // 7.0.2: 599 is quitApp() reading the host back after /cancel and finding the
+                // game still there — the host accepted the quit and could not carry it out.
+                // Seen on 16/10/2026 with an Xbox app game (Gears of War: E-Day): Vibeshine
+                // starts those through explorer.exe, cannot terminate the game's own process,
+                // and the host page then rightly shows it as still running. Until now that was
+                // swallowed here and the user was left to guess; the launch screen reads it in
+                // sessionFinished() and says so.
+                if (e.getStatusCode() == 599)
+                    m_Session->m_HostAppStillRunning = true;
             } catch (const QtNetworkReplyException&) {
             }
 
@@ -2473,11 +2488,19 @@ bool Session::startConnectionAsync()
                 m_LaunchGate = new LaunchGate(this);
                 connect(m_LaunchGate, &LaunchGate::phaseChanged, this,
                         [this](LaunchPhase p, QString fg, qint64 ms) {
+                            if (p == LaunchPhase::Ready)
+                                m_GateReadyMs = ms;
                             m_Curtain.onLaunchPhase(static_cast<int>(p), fg, ms);
                             emit launchPhaseChanged(static_cast<int>(p), fg, ms);
                         });
                 connect(m_LaunchGate, &LaunchGate::finished, this,
                         [this](LaunchPhase p) {
+                            // 7.0.2: a launch that reached the game teaches the launch screen
+                            // how long this one takes. Only Ready counts — a timeout, a game
+                            // that needs attention or a host that never answered says nothing
+                            // about how long the game normally takes.
+                            if (p == LaunchPhase::Ready && m_GateReadyMs > 0)
+                                PlaytimeManager::get()->recordLaunchTime(m_Computer->uuid, m_App.name, m_GateReadyMs);
                             m_Curtain.finish();
                             // The window has been waiting behind the curtain for this. It
                             // goes up first and the curtain comes down after it, in that

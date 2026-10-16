@@ -136,6 +136,14 @@ class Session : public QObject
     Q_PROPERTY(QString hostName READ hostName CONSTANT)
     Q_PROPERTY(QStringList streamBadges READ streamBadges CONSTANT)
 
+    /**
+     * When the launch screen calls this game late, in ms from the moment the host starts
+     * opening it (7.0.2). Learnt per host and game from the launches that reached the game —
+     * see PlaytimeManager::slowLaunchAfterMs — so a title with a slow start is not "taking
+     * longer than usual" every time. 20 s for a game never launched here.
+     */
+    Q_PROPERTY(int slowLaunchAfterMs READ slowLaunchAfterMs CONSTANT)
+
     friend class SdlInputHandler;
     friend class DeferredSessionCleanupTask;
     friend class AsyncConnectionStartThread;
@@ -165,6 +173,11 @@ public:
 
     QString hostName() const;
     QStringList streamBadges() const;
+    int slowLaunchAfterMs() const;
+
+    // 7.0.2: the stream ended with Quit, the host accepted it, and the game is still running
+    // there (quitApp()'s 599). Read by the launch screen in sessionFinished(), after it is set.
+    Q_INVOKABLE bool hostAppStillRunning() const { return m_HostAppStillRunning; }
 
     explicit Session(NvComputer* computer, NvApp& app, StreamingPreferences *preferences = nullptr);
     virtual ~Session();
@@ -628,6 +641,11 @@ private:
     bool                     m_EventLoopDone          = false;   // exec()'s loop has returned
     LinkMatcher*             m_LinkMatcher            = nullptr;
     LaunchGate*              m_LaunchGate             = nullptr;
+    // The host's elapsed_ms when it reported this game ready (7.0.2): what a launch that
+    // reached the game took, kept for PlaytimeManager::recordLaunchTime. 0 = never ready.
+    qint64                   m_GateReadyMs            = 0;
+    // Set by the cleanup task before it emits sessionFinished (see hostAppStillRunning()).
+    bool                     m_HostAppStillRunning    = false;
     LaunchCurtain            m_Curtain;
     SessionTelemetrySampler* m_TelemetrySampler       = nullptr;
     HueSyncManager*          m_HueSyncManager         = nullptr;

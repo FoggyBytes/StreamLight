@@ -413,6 +413,18 @@ Item {
             Window.window.markStreamJustEnded()
         }
 
+        // 7.0.2: Quit was accepted but the game is still running on the host (an Xbox app game
+        // Vibeshine cannot close, for one). Without this the host page shows it as running
+        // again and it looks like the quit never happened. Read before the pop, while
+        // `session` is still ours. Shown by AppShell, the base of the stack, and raised before
+        // the pop so nothing runs on this screen after it has been taken down; it outlasts the
+        // curtain coming off.
+        if (!quitAfter && session && session.hostAppStillRunning()) {
+            var shell = stackView.get(0)
+            if (shell && shell.notice)
+                shell.notice(qsTr("%1 is still running on the host").arg(appName), 6000)
+        }
+
         // Pop the StreamSegue off the stack if this is a GUI-based app launch
         if (!quitAfter) {
             stackView.pop()
@@ -709,7 +721,14 @@ Item {
         // reaches the host's "ready" between 9 and 27 s and reveals itself, and the host
         // gives up at 90 s, so this lands after a normal launch is already gone and long
         // before the wait ends on its own.
-        interval: 20000
+        //
+        // 7.0.2: 20 s is now only the bar for a game never launched on this host. Each launch
+        // that reaches the game records how long the host took, and the bar becomes the
+        // slowest recent one plus a quarter (Session.slowLaunchAfterMs) — Gears of War: E-Day's
+        // anti-cheat takes ~71 s, and was "taking longer than usual" on every good launch.
+        // Counted from here, a second or two after the host's own clock started: late, never
+        // early.
+        interval: streamSegue.session ? streamSegue.session.slowLaunchAfterMs : 20000
         onTriggered: streamSegue._launchSlow = true
     }
 

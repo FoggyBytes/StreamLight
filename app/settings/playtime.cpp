@@ -38,6 +38,10 @@
 // The host page's tab the user last chose (6.3.0).
 #define SER_LASTTAB     "lastTab"
 
+// How long each game took to come on screen (7.0.2), in its own group per game ('l' prefix):
+// reset() clears a game's HOURS by removing its 'g' group, and a start-up time is not hours.
+#define SER_LAUNCHMS    "launchMs"
+
 PlaytimeManager* PlaytimeManager::get()
 {
     static PlaytimeManager instance;
@@ -361,6 +365,45 @@ void PlaytimeManager::setLastTab(const QString& hostUuid, const QString& tab)
 
     QSettings settings;
     settings.setValue(hostGroup(hostUuid) + QStringLiteral("/" SER_LASTTAB), tab);
+}
+
+QString PlaytimeManager::launchGroup(const QString& hostUuid, const QString& appName)
+{
+    return hostGroup(hostUuid) + QStringLiteral("/l") + digest(normalise(appName));
+}
+
+void PlaytimeManager::recordLaunchTime(const QString& hostUuid, const QString& appName, qint64 ms)
+{
+    // Zero or less is a host that never said how long it took; past the host's own ceiling it
+    // is a launch that timed out rather than one that worked, and neither may set the bar.
+    if (hostUuid.isEmpty() || appName.isEmpty() || ms <= 0 || ms > kLaunchCeilingMs)
+        return;
+
+    QSettings settings;
+    const QString key = launchGroup(hostUuid, appName) + QStringLiteral("/" SER_LAUNCHMS);
+    QStringList times = settings.value(key).toStringList();
+    times.append(QString::number(ms));
+    while (times.size() > kLaunchesKept)
+        times.removeFirst();
+    settings.setValue(key, times);
+}
+
+qint64 PlaytimeManager::slowLaunchAfterMs(const QString& hostUuid, const QString& appName) const
+{
+    qint64 longest = 0;
+    if (!hostUuid.isEmpty() && !appName.isEmpty()) {
+        QSettings settings;
+        const QStringList times =
+                settings.value(launchGroup(hostUuid, appName) + QStringLiteral("/" SER_LAUNCHMS)).toStringList();
+        for (const QString& t : times)
+            longest = qMax(longest, t.toLongLong());
+    }
+
+    // The slowest of the recent launches that worked, plus a quarter: a game that always
+    // takes a minute and ten is not "taking longer than usual" at a minute and five. The
+    // longest rather than an average, because one warm-cache launch must not make the next
+    // cold one look like trouble. Never earlier than the bar every game had before 7.0.2.
+    return qMax(kDefaultSlowLaunchMs, longest + longest / 4);
 }
 
 void PlaytimeManager::forgetHost(const QString& hostUuid)
