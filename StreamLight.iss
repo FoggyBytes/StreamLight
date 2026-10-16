@@ -31,7 +31,10 @@
 ; the repo: when Visual Studio moves to a new toolset this folder goes away and the compile
 ; stops here, instead of shipping a runtime older than the code. Update the path then — the
 ; minimum version follows by itself, read from the file below.
-#define VCRedist "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.51.36231\vc_redist.x64.exe"
+; The GitHub Actions build passes its own with /DVCRedist=…, the runner's toolset being another.
+#ifndef VCRedist
+  #define VCRedist "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.51.36231\vc_redist.x64.exe"
+#endif
 #if !FileExists(VCRedist)
   #error VC_redist not found: point VCRedist at the Redist folder of the toolset that builds StreamLight.exe
 #endif

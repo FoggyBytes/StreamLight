@@ -1,0 +1,145 @@
+name: Build Windows (unsigned)
+
+# Builds StreamLight and its installer on GitHub's runner, the way the local release build does:
+# scripts\build-arch.bat release, then ISCC on StreamLight.iss. Nothing is signed and nothing is
+# published - the outputs are workflow artifacts. This is the first half of code signing through
+# SignPath: SignPath only signs files that a GitHub Actions run produced, so the release build
+# has to come from here before any signing step is added.
+#
+# Differences from the local build, on purpose:
+#  - Visual Studio is whatever the runner image carries (logged below), not the local VS 2026;
+#    the VC_redist bundled by the installer is taken from that same toolset.
+#  - build-arch.bat runs with STREAMLIGHT_DEPLOY_ONLY, so it stops once the deploy folder is
+#    complete instead of failing on the WiX step (the local build fails there, then the exe is
+#    copied by hand: same folder, same contents).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: 6.12.0
+  INNO_VERSION: 7.0.2
+  # SHA-256 of innosetup-7.0.2-x64.exe as published on jrsoftware/issrc's GitHub release is-7_0_2
+  INNO_SHA256: 5ad54ca3def786f8f4212552e54cc6d8d61329e2d24a1cfee0571d42c2684ff1
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          # version.txt carries a UTF-8 BOM and no newline; ReadAllText drops the BOM.
+          $app = [IO.File]::ReadAllText("$PWD\app\version.txt").Trim()
+          $iss = (Select-String -Path StreamLight.iss -Pattern '^#define AppVersion "(.+)"').Matches[0].Groups[1].Value
+          if ($app -ne $iss) {
+            throw "app\version.txt says $app but StreamLight.iss says $iss - bump both (CLAUDE.md section 3)"
+          }
+          "version=$app" >> $env:GITHUB_OUTPUT
+          Write-Host "StreamLight $app"
+
+      - name: Install Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Install Inno Setup ${{ env.INNO_VERSION }}
+        shell: pwsh
+        run: |
+          $tag = 'is-' + ($env:INNO_VERSION -replace '\.', '_')
+          $exe = "$env:RUNNER_TEMP\innosetup-$env:INNO_VERSION-x64.exe"
+          Invoke-WebRequest "https://github.com/jrsoftware/issrc/releases/download/$tag/innosetup-$env:INNO_VERSION-x64.exe" -OutFile $exe
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $env:INNO_SHA256) { throw "Inno Setup download does not match the pinned SHA-256 ($hash)" }
+          Start-Process $exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/DIR=C:\InnoSetup7' -Wait
+          if (-not (Test-Path 'C:\InnoSetup7\ISCC.exe')) { throw 'ISCC.exe not found after installing Inno Setup' }
+
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          $vs = & scripts\vswhere.exe -latest -property installationPath
+          Write-Host "Visual Studio: $(& scripts\vswhere.exe -latest -property catalog_productDisplayVersion) at $vs"
+          Write-Host "MSVC toolsets: $((Get-ChildItem "$vs\VC\Tools\MSVC" -Directory).Name -join ', ')"
+          Write-Host "qmake: $((Get-Command qmake.exe).Source)"
+
+      - name: Build (scripts\build-arch.bat release)
+        shell: cmd
+        env:
+          STREAMLIGHT_DEPLOY_ONLY: '1'
+        run: |
+          set PATH=C:\Program Files\7-Zip;%PATH%
+          call scripts\build-arch.bat release
+
+      - name: Build installer (StreamLight.iss)
+        shell: pwsh
+        run: |
+          # The VC_redist of the toolset that just built the exe, as the local build does.
+          # vswhere also lists a vNNN alias folder: keep the numbered one, highest first.
+          $redist = & scripts\vswhere.exe -latest -find 'VC\Redist\MSVC\*\vc_redist.x64.exe' |
+            Where-Object { (Split-Path (Split-Path $_ -Parent) -Leaf) -match '^\d+\.\d+\.\d+$' } |
+            Sort-Object { [version](Split-Path (Split-Path $_ -Parent) -Leaf) } -Descending |
+            Select-Object -First 1
+          if (-not $redist) { throw 'vc_redist.x64.exe not found in the runner''s Visual Studio' }
+          Write-Host "VC_redist: $redist"
+          & C:\InnoSetup7\ISCC.exe "/DVCRedist=$redist" StreamLight.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+
+      - name: Summary
+        shell: pwsh
+        run: |
+          $ver = '${{ steps.version.outputs.version }}'
+          $deploy = 'build\deploy-x64-release'
+          $files = Get-ChildItem $deploy -Recurse -File
+          $setup = Get-Item "build\installer\StreamLight_${ver}_Installer.exe"
+          $unsigned = Get-ChildItem $deploy -Recurse -Include *.exe, *.dll |
+            Where-Object { (Get-AuthenticodeSignature $_.FullName).Status -ne 'Valid' } |
+            ForEach-Object { $_.FullName.Substring((Resolve-Path $deploy).Path.Length + 1) }
+          @(
+            "### StreamLight $ver (unsigned)"
+            ''
+            "- Deploy folder: $($files.Count) files, $([math]::Round(($files | Measure-Object Length -Sum).Sum / 1MB, 1)) MB"
+            "- Installer: ``$($setup.Name)``, $([math]::Round($setup.Length / 1MB, 1)) MB, SHA-256 ``$((Get-FileHash $setup.FullName).Hash.ToLowerInvariant())``"
+            ''
+            "Executables and DLLs without a valid signature ($($unsigned.Count)):"
+            ''
+            ($unsigned | ForEach-Object { "- ``$_``" })
+          ) -join "`n" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload deploy folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamLight-${{ steps.version.outputs.version }}-deploy-unsigned
+          path: build/deploy-x64-release/
+          if-no-files-found: error
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamLight-${{ steps.version.outputs.version }}-installer-unsigned
+          path: build/installer/StreamLight_${{ steps.version.outputs.version }}_Installer.exe
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload debugging symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamLight-${{ steps.version.outputs.version }}-symbols
+          path: build/symbols-x64-release/*.zip
+          if-no-files-found: warn

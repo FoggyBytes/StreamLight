@@ -246,6 +246,20 @@ rmdir /s /q %DEPLOY_FOLDER%\qml\QtQuick\NativeStyle
 rem icuuc.dll ships with all supported OSes (and Qt incorrectly deploys the x64 version on ARM64)
 del %DEPLOY_FOLDER%\icuuc.dll
 
+rem StreamLight ships through StreamLight.iss, never through the MSI or the portable zip below.
+rem With STREAMLIGHT_DEPLOY_ONLY set (the GitHub Actions build does), the script stops here
+rem with the deploy folder complete: the exe is copied in and nothing after this point runs -
+rem not the WiX step, which fails on Moonlight's own Product.wxs, and not the portable package,
+rem which would add the VC runtime DLLs and portable.dat to the folder the installer sweeps.
+rem Unset, the script runs on exactly as before.
+if defined STREAMLIGHT_DEPLOY_ONLY (
+    echo Copying application binary to deployment directory
+    copy %BUILD_FOLDER%\app\%BUILD_CONFIG%\StreamLight.exe %DEPLOY_FOLDER%
+    if !ERRORLEVEL! NEQ 0 goto Error
+    echo Deploy folder ready for StreamLight v%VERSION% %ARCH%
+    exit /b 0
+)
+
 if "%SIGN%"=="1" (
     echo Signing deployed binaries
     set FILES_TO_SIGN=%BUILD_FOLDER%\app\%BUILD_CONFIG%\StreamLight.exe
