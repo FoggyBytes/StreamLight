@@ -59,6 +59,11 @@ jobs:
           target: desktop
           arch: win64_msvc2022_64
           cache: true
+          # aqtinstall 3.3.0 (the last release, June 2025) looks for Qt 6.12 under qt6_6120/qt6_6120/,
+          # but since 6.11 Qt publishes one folder per arch (qt6_6120_msvc2022_64/) and the install
+          # fails with "Failed to locate XML data". The fix (miurahr/aqtinstall#1000) is on master
+          # since 24/03/2026 but in no release: pinned to master's head of 11/09/2026 until 3.4.0.
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
 
       - name: Install Inno Setup ${{ env.INNO_VERSION }}
         shell: pwsh
