@@ -128,22 +128,24 @@ jobs:
           ) -join "`n" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Upload deploy folder
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: StreamLight-${{ steps.version.outputs.version }}-deploy-unsigned
           path: build/deploy-x64-release/
           if-no-files-found: error
 
       - name: Upload installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: StreamLight-${{ steps.version.outputs.version }}-installer-unsigned
+          # archive: false uploads the .exe as it is, not inside a zip: the artifact downloads as
+          # StreamLight_X.Y.Z_Installer.exe (the action names it after the file and ignores `name`),
+          # and it is the form SignPath will take it in.
           path: build/installer/StreamLight_${{ steps.version.outputs.version }}_Installer.exe
+          archive: false
           if-no-files-found: error
-          compression-level: 0
 
       - name: Upload debugging symbols
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: StreamLight-${{ steps.version.outputs.version }}-symbols
           path: build/symbols-x64-release/*.zip
