@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StreamTweak 10 host window</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#4ade80}a:hover{color:#86efac}
+.st{position:relative;width:1280px;height:800px;overflow:hidden;background:#161618;color:#F2F5F3;font-family:'DM Sans',system-ui,sans-serif;font-size:14px;border-radius:10px;border:1px solid #2a2724;box-sizing:border-box}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+.title{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.08)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600}
+.logo{width:20px;height:20px;border-radius:6px;background:#4ade80}
+.addr{display:flex;gap:16px;color:#929A96;font-size:13px}
+.addr b{color:#C8CFCB;font-weight:500}
+.wctl{display:flex;gap:18px;color:#929A96;margin-left:24px}
+.main{position:absolute;top:44px;left:0;right:0;bottom:0;display:flex}
+.nav{width:232px;padding:14px 10px;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;border-right:1px solid rgba(255,255,255,.06)}
+.ni{appearance:none;border:0;background:transparent;color:#C8CFCB;font:500 14px 'DM Sans',sans-serif;text-align:left;padding:10px 12px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;min-height:40px}
+.ni:hover{background:rgba(255,255,255,.04)}
+.ni.on{background:rgba(74,222,128,.13);color:#F2F5F3}
+.ni .cnt{background:#fbbf24;color:#052e16;border-radius:999px;font-size:11px;font-weight:600;padding:2px 7px}
+.navfoot{margin-top:auto;color:#646B67;font-size:12px;padding:10px 12px}
+.page{flex:1;overflow:auto;padding:26px 32px;box-sizing:border-box}
+.page h1{margin:0 0 4px;font-size:26px;font-weight:600}
+.lead{color:#929A96;margin:0 0 20px;font-size:14px}
+.card{background:#0C0C0E;border:1px solid #2a2724;border-radius:12px;padding:18px 20px;box-sizing:border-box}
+.card h3{margin:0 0 4px;font-size:15px;font-weight:600}
+.sub{color:#929A96;font-size:13px;line-height:1.45}
+.sect{color:#929A96;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin:22px 0 10px}
+.todo{border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.06);display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:10px}
+.todo.bad{border-color:rgba(248,113,113,.35);background:rgba(248,113,113,.06)}
+.pin{display:inline-flex;gap:6px;margin-left:6px}
+.pin span{width:26px;height:32px;border-radius:6px;background:#1c1c20;border:1px solid #3a3734;display:inline-flex;align-items:center;justify-content:center;font:500 17px 'JetBrains Mono',monospace}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btn{appearance:none;border:1px solid rgba(255,255,255,.14);background:#1c1c20;color:#F2F5F3;font:500 13px 'DM Sans',sans-serif;padding:8px 14px;border-radius:8px;cursor:pointer;min-height:34px}
+.btn:hover{border-color:rgba(255,255,255,.3)}
+.btn.pri{background:#4ade80;border-color:#4ade80;color:#052e16;font-weight:600}
+.btn.dng{color:#fca5a5;border-color:rgba(248,113,113,.35)}
+.checklist{display:flex;flex-direction:column}
+.crow{appearance:none;border:0;border-top:1px solid rgba(255,255,255,.06);background:transparent;color:#F2F5F3;font:400 14px 'DM Sans',sans-serif;display:grid;grid-template-columns:18px 190px minmax(0,1fr) 16px;gap:12px;align-items:center;padding:13px 6px;text-align:left;cursor:pointer;width:100%}
+.crow:first-child{border-top:0}
+.crow:hover{background:rgba(255,255,255,.03)}
+.crow .v{color:#C8CFCB}
+.crow .chev{color:#646B67}
+.dot{width:9px;height:9px;border-radius:50%;background:#4ade80;display:inline-block}
+.dot.warn{background:#fbbf24}.dot.bad{background:#f87171}.dot.off{background:#646B67}
+.live{display:flex;justify-content:space-between;align-items:center;gap:16px;border-color:rgba(56,189,248,.35);background:rgba(56,189,248,.06);margin-bottom:10px}
+.note{margin-top:18px;color:#929A96;font-size:13px;display:flex;gap:10px;align-items:flex-start}
+.note b{color:#C8CFCB;font-weight:500}
+.setup{display:flex;flex-direction:column;gap:8px}
+.sstep{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-radius:10px;background:#0C0C0E;border:1px solid #2a2724}
+.num{width:26px;height:26px;border-radius:50%;border:1px solid #3a3734;display:flex;align-items:center;justify-content:center;font-size:12px;color:#929A96}
+.num.done{background:#4ade80;border-color:#4ade80;color:#052e16;font-weight:600}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;color:#646B67;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08)}
+.tbl td{padding:12px 10px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle}
+.sw{appearance:none;width:42px;height:22px;border-radius:11px;border:1px solid rgba(255,255,255,.25);background:transparent;position:relative;cursor:pointer;flex:0 0 auto}
+.sw::after{content:'';position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#C8CFCB;transition:left .15s}
+.sw.on{background:#4ade80;border-color:#4ade80}
+.sw.on::after{left:23px;background:#052e16}
+.set{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:14px 0;border-top:1px solid rgba(255,255,255,.06)}
+.set:first-child{border-top:0;padding-top:4px}
+.radio{appearance:none;display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;border:1px solid #2a2724;background:#0C0C0E;color:#F2F5F3;font:400 14px 'DM Sans',sans-serif;border-radius:10px;padding:12px 14px;cursor:pointer;margin-bottom:8px}
+.radio.on{border-color:#4ade80;background:rgba(74,222,128,.07)}
+.seg{display:inline-flex;border:1px solid #2a2724;border-radius:9px;overflow:hidden}
+.seg button{appearance:none;border:0;background:transparent;color:#C8CFCB;font:500 13px 'DM Sans',sans-serif;padding:9px 16px;cursor:pointer}
+.seg button.on{background:#4ade80;color:#052e16;font-weight:600}
+.tag{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;border-radius:5px;padding:3px 7px;border:1px solid rgba(255,255,255,.14);color:#929A96}
+.tag.ok{color:#4ade80;border-color:rgba(74,222,128,.35)}
+.tag.amb{color:#fbbf24;border-color:rgba(251,191,36,.35)}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.grow{display:grid;grid-template-columns:36px minmax(0,1fr) 150px 90px 190px;gap:14px;align-items:center;padding:10px 0;border-top:1px solid rgba(255,255,255,.06)}
+.grow:first-child{border-top:0}
+.cov{width:36px;height:48px;border-radius:5px;display:flex;align-items:center;justify-content:center;font:600 12px 'DM Sans',sans-serif;color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.1)}
+.cv0{background:#3b2a4a}.cv1{background:#4a3424}.cv2{background:#1f3b4a}.cv3{background:#2c4a2a}.cv4{background:#4a2430}.cv5{background:#33363d}
+.cmd{font-size:11.5px;color:#929A96;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.storec{display:flex;align-items:center;gap:8px;color:#C8CFCB;font-size:13px}
+.sbadge{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font:700 9px 'DM Sans',sans-serif;color:#fff;flex:0 0 auto}
+.s-steam{background:#1b2838}.s-epic{background:#2a2a2a}.s-gog{background:#6c2bb0}.s-ubi{background:#0070ff}.s-xbox{background:#107c10}.s-bnet{background:#0e86ca}.s-ea{background:#e8401c}
+.toast{position:absolute;right:24px;bottom:24px;width:460px;background:#121214;border:1px solid rgba(74,222,128,.45);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;z-index:4}
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:5}
+.dlg{width:520px;background:#121214;border:1px solid #3a3734;border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:14px}
+.dlg h2{margin:0;font-size:18px;font-weight:600}
+.proc{appearance:none;display:flex;justify-content:space-between;width:100%;text-align:left;border:1px solid #2a2724;background:#0C0C0E;color:#F2F5F3;font:400 14px 'DM Sans',sans-serif;border-radius:8px;padding:10px 12px;cursor:pointer}
+.proc.on{border-color:#4ade80}
+</style>
+</helmet>
+<div class="st">
+<div class="title">
+<div class="brand"><span class="logo"></span>StreamTweak</div>
+<div style="display: flex; align-items: center">
+<div class="addr"><span>LAN <b class="mono">192.168.1.20</b></span><span>Tailscale <b class="mono">100.101.7.12</b></span></div>
+<div class="wctl" aria-hidden="true"><span>—</span><span>☐</span><span>✕</span></div>
+</div>
+</div>
+<div class="main">
+<nav class="nav" aria-label="StreamTweak">
+<sc-for list="{{nav}}" as="n" hint-placeholder-count="7">
+<button class="ni {{n.cls}}" onClick="{{n.pick}}">{{n.label}}<sc-if value="{{n.hasCount}}" hint-placeholder-val="{{ false }}"><span class="cnt">{{n.count}}</span></sc-if></button>
+</sc-for>
+<div class="navfoot">StreamTweak 10.0 · service running</div>
+</nav>
+
+<div class="page">
+
+<!-- STATUS -->
+<sc-if value="{{pStatus}}" hint-placeholder-val="{{ true }}">
+<h1>Status</h1>
+<p class="lead">How this host is set up for streaming. Sessions, statistics and everyday controls are in StreamLight, under the Host button of each device.</p>
+
+<sc-if value="{{firstRun}}" hint-placeholder-val="{{ false }}">
+<div class="sect">Getting started · {{setupDone}} of 4 done</div>
+<div class="setup">
+<sc-for list="{{setup}}" as="su" hint-placeholder-count="4">
+<div class="sstep">
+<span class="num {{su.cls}}">{{su.n}}</span>
+<div><div style="font-weight: 600">{{su.title}}</div><div class="sub">{{su.desc}}</div></div>
+<sc-if value="{{su.todo}}" hint-placeholder-val="{{ true }}"><button class="btn pri" onClick="{{su.act}}">{{su.btn}}</button></sc-if>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{hasTodo}}" hint-placeholder-val="{{ true }}">
+<div class="sect">Needs you</div>
+<sc-if value="{{showPending}}" hint-placeholder-val="{{ true }}">
+<div class="card todo">
+<div>
+<h3>STEAM-DECK asks to be approved</h3>
+<div class="sub" style="display: flex; align-items: center; flex-wrap: wrap">Check that the device shows the same PIN<span class="pin"><span>4</span><span>8</span><span>2</span><span>1</span></span></div>
+</div>
+<div class="btns">
+<button class="btn" onClick="{{deny}}">Deny</button>
+<button class="btn" onClick="{{approveStream}}">Approve</button>
+<button class="btn pri" onClick="{{approveManage}}">Approve with host management</button>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{showFirewall}}" hint-placeholder-val="{{ false }}">
+<div class="card todo bad">
+<div><h3>The bridge port is closed in Windows Firewall</h3><div class="sub">StreamLight cannot reach StreamTweak on port 47998. Streaming itself is not affected.</div></div>
+<button class="btn pri" onClick="{{fixFirewall}}">Open port 47998</button>
+</div>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{showLive}}" hint-placeholder-val="{{ false }}">
+<div class="sect">Streaming now</div>
+<div class="card live">
+<div><h3>Steam Deck · Hades II</h3><div class="sub">For 23 min · 1280×800 · 90 FPS · HEVC</div></div>
+<button class="btn" onClick="{{returnToClient}}">Return to client</button>
+</div>
+</sc-if>
+<sc-if value="{{showEnded}}" hint-placeholder-val="{{ false }}">
+<div class="sect">Streaming now</div>
+<div class="card"><div class="sub">The stream to Steam Deck was ended. The game is still running here, ready to resume.</div></div>
+</sc-if>
+
+<div class="sect">This host</div>
+<div class="card checklist" style="padding: 6px 14px">
+<sc-for list="{{checks}}" as="c" hint-placeholder-count="8">
+<button class="crow" onClick="{{c.go}}"><span class="dot {{c.dot}}"></span><span>{{c.label}}</span><span class="v">{{c.value}}</span><span class="chev">›</span></button>
+</sc-for>
+</div>
+<div class="note"><span class="dot off" style="margin-top: 5px"></span><span><b>Looking for the Dashboard or Sessions?</b> They moved to StreamLight 8: open a host's card and choose Host. The session history is still recorded here, on this PC.</span></div>
+</sc-if>
+
+<!-- CLIENTS -->
+<sc-if value="{{pClients}}" hint-placeholder-val="{{ false }}">
+<h1>Clients</h1>
+<p class="lead">StreamLight devices allowed to use the bridge. Host management lets a device change this host's settings from its Host section; without it the device keeps every paired feature but only looks.</p>
+<sc-if value="{{showPending}}" hint-placeholder-val="{{ true }}">
+<div class="card todo">
+<div><h3>STEAM-DECK · waiting</h3><div class="sub" style="display: flex; align-items: center">PIN<span class="pin"><span>4</span><span>8</span><span>2</span><span>1</span></span></div></div>
+<div class="btns"><button class="btn" onClick="{{deny}}">Deny</button><button class="btn" onClick="{{approveStream}}">Approve</button><button class="btn pri" onClick="{{approveManage}}">Approve with host management</button></div>
+</div>
+</sc-if>
+<div class="card" style="padding: 6px 14px">
+<table class="tbl">
+<thead><tr><th>Device</th><th>Approved</th><th>Last seen</th><th>Host management</th><th></th></tr></thead>
+<tbody>
+<sc-for list="{{clients}}" as="cl" hint-placeholder-count="2">
+<tr><td style="font-weight: 600">{{cl.name}}</td><td class="sub">{{cl.approved}}</td><td class="sub">{{cl.seen}}</td><td><button class="sw {{cl.cls}}" onClick="{{cl.toggle}}" aria-label="Host management for {{cl.name}}"></button></td><td style="text-align: right"><button class="btn dng" onClick="{{cl.revoke}}">Revoke</button></td></tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</sc-if>
+
+<!-- APPS -->
+<sc-if value="{{pApps}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; justify-content: space-between; align-items: flex-start">
+<div><h1>Apps</h1><p class="lead">The apps that may be closed when a session starts and reopened when it ends. Add them here; each StreamLight device with host management chooses which of them are managed.</p></div>
+<button class="btn pri" onClick="{{openAdd}}">Add app</button>
+</div>
+<div class="card" style="padding: 6px 14px">
+<table class="tbl">
+<thead><tr><th>App</th><th>Path</th><th>Managed</th><th></th></tr></thead>
+<tbody>
+<sc-for list="{{apps}}" as="ap" hint-placeholder-count="4">
+<tr><td style="font-weight: 600">{{ap.name}}</td><td class="sub mono" style="font-size: 12px">{{ap.path}}</td><td><span class="tag {{ap.tagCls}}">{{ap.state}}</span></td><td style="text-align: right"><button class="btn dng" onClick="{{ap.remove}}">Remove</button></td></tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<p class="sub">Managed or not is switched from StreamLight, in the Host section's Apps tab.</p>
+</sc-if>
+
+<!-- LIBRARY -->
+<sc-if value="{{pLib}}" hint-placeholder-val="{{ false }}">
+<h1>Library</h1>
+<p class="lead">{{syncedCount}} games from 7 stores, synced into Vibepollo's app list. A device can also sync from StreamLight; Vibepollo is restarted after a sync so the list is applied.</p>
+<div class="grid2">
+<div class="card">
+<h3>Sync</h3>
+<div class="sub">Last sync 2 hours ago · from LIVINGROOM-PC</div>
+<div class="set" style="margin-top: 10px"><div><div>Restart Vibepollo after a sync</div><div class="sub">Not while a stream is running</div></div><button class="sw on" aria-label="Restart after sync"></button></div>
+<div class="btns" style="margin-top: 6px"><button class="btn pri">Sync now</button></div>
+</div>
+<div class="card">
+<h3>Host tiles</h3>
+<div class="sub">Vibepollo's Desktop and Steam tiles replaced with StreamTweak's artwork, put back after a server update.</div>
+<div class="set" style="margin-top: 10px"><div>Replace the host tiles</div><button class="sw {{tilesCls}}" onClick="{{toggleTiles}}" aria-label="Replace the host tiles"></button></div>
+</div>
+</div>
+<div style="display: flex; justify-content: space-between; align-items: center; margin: 22px 0 10px">
+<div class="seg"><sc-for list="{{libTabs}}" as="lt" hint-placeholder-count="3"><button class="{{lt.cls}}" onClick="{{lt.pick}}">{{lt.label}}</button></sc-for></div>
+<span class="sub">Play runs the very command written to Vibepollo</span>
+</div>
+
+<sc-if value="{{libSynced}}" hint-placeholder-val="{{ true }}">
+<div class="card" style="padding: 4px 14px">
+<sc-for list="{{syncedGames}}" as="gm" hint-placeholder-count="8">
+<div class="grow">
+<span class="cov {{gm.covCls}}">{{gm.ini}}</span>
+<div style="min-width: 0"><div style="font-weight: 600">{{gm.name}}</div><div class="cmd mono">{{gm.cmd}}</div></div>
+<span class="storec"><span class="sbadge {{gm.sCls}}">{{gm.sAbbr}}</span>{{gm.store}}</span>
+<span class="sub">{{gm.added}}</span>
+<div class="btns" style="justify-content: flex-end"><button class="btn" onClick="{{gm.play}}">Play</button><button class="btn" onClick="{{gm.exclude}}">Exclude</button></div>
+</div>
+</sc-for>
+<div class="sub" style="padding: 12px 0">… and {{hiddenCount}} more</div>
+</div>
+</sc-if>
+
+<sc-if value="{{libExcl}}" hint-placeholder-val="{{ false }}">
+<div class="card" style="padding: 4px 14px">
+<sc-for list="{{excludedGames}}" as="gm" hint-placeholder-count="3">
+<div class="grow">
+<span class="cov {{gm.covCls}}">{{gm.ini}}</span>
+<div style="min-width: 0"><div style="font-weight: 600">{{gm.name}}</div><div class="cmd mono">{{gm.cmd}}</div></div>
+<span class="storec"><span class="sbadge {{gm.sCls}}">{{gm.sAbbr}}</span>{{gm.store}}</span>
+<span class="sub">Excluded {{gm.added}}</span>
+<div class="btns" style="justify-content: flex-end"><button class="btn" onClick="{{gm.play}}">Play</button><button class="btn pri" onClick="{{gm.include}}">Include again</button></div>
+</div>
+</sc-for>
+<sc-if value="{{noExcluded}}" hint-placeholder-val="{{ false }}"><div class="sub" style="padding: 14px 0">Nothing excluded. Every game found is in Vibepollo's list.</div></sc-if>
+<div class="sub" style="padding: 12px 0; border-top: 1px solid rgba(255,255,255,.06)">An excluded game stays out of Vibepollo's list on every sync, whoever starts it.</div>
+</div>
+</sc-if>
+
+<sc-if value="{{libManual}}" hint-placeholder-val="{{ false }}">
+<div class="card" style="padding: 6px 14px">
+<table class="tbl"><tbody>
+<tr><td style="font-weight: 600">RetroArch</td><td class="sub mono" style="font-size: 12px">D:\Emulation\RetroArch\retroarch.exe</td><td style="text-align: right"><button class="btn dng">Remove</button></td></tr>
+<tr><td style="font-weight: 600">Playnite</td><td class="sub mono" style="font-size: 12px">C:\Tools\Playnite\Playnite.FullscreenApp.exe</td><td style="text-align: right"><button class="btn dng">Remove</button></td></tr>
+</tbody></table>
+<div style="padding: 10px 0"><button class="btn">Add an executable…</button></div>
+</div>
+</sc-if>
+</sc-if>
+
+<!-- AUDIO -->
+<sc-if value="{{pAudio}}" hint-placeholder-val="{{ false }}">
+<h1>Spatial audio</h1>
+<p class="lead">Switched on shortly after a session starts, on the output the streaming server captures. Turning it on or off is also in StreamLight's Dashboard.</p>
+<div class="card" style="margin-bottom: 14px">
+<div class="set"><div><h3>Turn on when a session starts</h3><div class="sub">Applies from the next session</div></div><button class="sw {{spatialCls}}" onClick="{{toggleSpatial}}" aria-label="Spatial audio"></button></div>
+<div class="set"><div><div>Format</div><div class="sub">Dolby Atmos for Headphones needs its licence from the Dolby Access app</div></div>
+<div class="seg"><sc-for list="{{formats}}" as="fm" hint-placeholder-count="2"><button class="{{fm.cls}}" onClick="{{fm.pick}}">{{fm.label}}</button></sc-for></div></div>
+</div>
+<div class="sect">Output device</div>
+<sc-for list="{{devices}}" as="dv" hint-placeholder-count="3">
+<button class="radio {{dv.cls}}" onClick="{{dv.pick}}"><span>{{dv.name}}</span><span class="tag {{dv.tagCls}}">{{dv.avail}}</span></button>
+</sc-for>
+</sc-if>
+
+<!-- NVIDIA -->
+<sc-if value="{{pNv}}" hint-placeholder-val="{{ false }}">
+<h1>NVIDIA Sentinel</h1>
+<p class="lead">GeForce RTX 4080 SUPER · driver 581.57, released 2 Oct 2026. Devices see the saved profile and can arm or disarm Sentinel; everything else is done here.</p>
+<div class="grid2">
+<div class="card">
+<h3>Saved profile</h3>
+<div class="sub">{{nvProfile}}</div>
+<div class="btns" style="margin-top: 14px">
+<button class="btn pri" onClick="{{snapshot}}">Snapshot now</button>
+<button class="btn">Restore</button>
+<button class="btn dng" onClick="{{clearProfile}}">Clear</button>
+</div>
+</div>
+<div class="card">
+<div class="set"><div><h3>Auto-restore</h3><div class="sub">Re-apply the saved profile whenever NVIDIA App resets it</div></div><button class="sw {{sentinelCls}}" onClick="{{toggleSentinel}}" aria-label="Auto-restore"></button></div>
+<div class="sub">{{sentinelState}}</div>
+</div>
+</div>
+<div class="sect">Restore log</div>
+<div class="card" style="padding: 6px 14px">
+<table class="tbl"><tbody>
+<tr><td class="sub" style="width: 160px">14 Oct, 21:32</td><td>3 settings restored after an NVIDIA App update</td></tr>
+<tr><td class="sub">2 Oct, 18:05</td><td>8 settings restored after driver 581.57 was installed</td></tr>
+<tr><td class="sub">27 Sep, 09:40</td><td>1 setting restored (Low Latency Mode)</td></tr>
+</tbody></table>
+</div>
+</sc-if>
+
+<!-- SETTINGS -->
+<sc-if value="{{pSet}}" hint-placeholder-val="{{ false }}">
+<h1>Settings</h1>
+<p class="lead">StreamTweak runs in the background from Windows start-up. This window is only for setting it up.</p>
+<div class="card">
+<div class="set"><div><div>Start with Windows</div><div class="sub">In the background, with a tray icon</div></div><button class="sw on" aria-label="Start with Windows"></button></div>
+<div class="set"><div><div>Let clients change the link speed</div><div class="sub">Also switchable from StreamLight's Dashboard</div></div><button class="sw {{linkCls}}" onClick="{{toggleLink}}" aria-label="Let clients change the link speed"></button></div>
+<div class="set"><div><div>Shared clipboard</div><div class="sub">Text copied on either side pastes on the other while a stream runs</div></div><button class="sw on" aria-label="Shared clipboard"></button></div>
+<div class="set"><div><div>Keep only sessions that launched a game</div><div class="sub">A session that only showed the desktop is not recorded</div></div><button class="sw" aria-label="Keep only sessions that launched a game"></button></div>
+<div class="set"><div><div>Streaming server</div><div class="sub">Detected: Vibepollo 2.0.3, running as a service</div></div><span class="tag ok">Found</span></div>
+<div class="set"><div><div>Bridge</div><div class="sub mono">TCP 47998 · LAN only</div></div><button class="btn">Open logs folder</button></div>
+</div>
+</sc-if>
+
+</div>
+</div>
+
+<sc-if value="{{hasToast}}" hint-placeholder-val="{{ false }}">
+<div class="toast"><div style="font-weight: 600">Launching {{toast.name}}</div><div class="cmd mono" style="color: #C8CFCB">{{toast.cmd}}</div><div class="sub">The same command Vibepollo runs when a device starts it</div></div>
+</sc-if>
+
+<sc-if value="{{dlgAdd}}" hint-placeholder-val="{{ false }}">
+<div class="scrim"><div class="dlg">
+<h2>Add an app</h2>
+<div class="sub">Pick a program that is running now. It is closed when a session starts and reopened, from the same path, when it ends.</div>
+<sc-for list="{{procs}}" as="pr" hint-placeholder-count="4">
+<button class="proc {{pr.cls}}" onClick="{{pr.pick}}"><span>{{pr.name}}</span><span class="sub mono" style="font-size: 12px">{{pr.exe}}</span></button>
+</sc-for>
+<div class="btns" style="justify-content: flex-end"><button class="btn" onClick="{{closeAdd}}">Cancel</button><button class="btn pri" onClick="{{confirmAdd}}">Add</button></div>
+</div></div>
+</sc-if>
+
+<sc-if value="{{dlgReturn}}" hint-placeholder-val="{{ false }}">
+<div class="scrim"><div class="dlg">
+<h2>Return Steam Deck to its own screen?</h2>
+<div class="sub">The stream ends on the device. The game keeps running here, so it can be resumed.</div>
+<div class="btns" style="justify-content: flex-end"><button class="btn" onClick="{{cancelReturn}}">Cancel</button><button class="btn pri" onClick="{{confirmReturn}}">Return to client</button></div>
+</div></div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"firstRun":{"editor":"boolean","default":false},"pendingClient":{"editor":"boolean","default":true},"hostActivity":{"editor":"enum","options":["idle","streaming"],"default":"streaming"},"firewallIssue":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      page: 'status', pendingDone: false, firewallFixed: false, returned: false, dialog: null,
+      clients: [
+        { name: 'LIVINGROOM-PC', approved: '3 Mar 2026', seen: 'now', manage: true },
+        { name: 'OFFICE-LAPTOP', approved: '18 Jun 2026', seen: '4 days ago', manage: false }
+      ],
+      apps: [
+        { name: 'Philips Hue Sync', path: 'C:\\Program Files\\Philips Hue Sync\\HueSync.exe', managed: true },
+        { name: 'Corsair iCUE', path: 'C:\\Program Files\\Corsair\\iCUE\\iCUE.exe', managed: true },
+        { name: 'Wallpaper Engine', path: 'D:\\Steam\\steamapps\\common\\wallpaper_engine\\wallpaper64.exe', managed: false },
+        { name: 'Armoury Crate', path: 'C:\\Program Files\\ASUS\\ArmouryCrate\\ArmouryCrate.exe', managed: true }
+      ],
+      pick: 0, libTab: 'synced', toast: null,
+      lib: [
+        { name: 'Cyberpunk 2077', store: 'Steam', cmd: 'steam://rungameid/1091500', added: '3 Mar', excl: false },
+        { name: 'Elden Ring', store: 'Steam', cmd: 'steam://rungameid/1245620', added: '3 Mar', excl: false },
+        { name: 'Hades II', store: 'Steam', cmd: 'steam://rungameid/1145350', added: '25 Sep', excl: false },
+        { name: 'Alan Wake 2', store: 'Epic Games', cmd: 'com.epicgames.launcher://apps/[launch id]?action=launch&silent=true', added: '12 Apr', excl: false },
+        { name: 'Forza Horizon 5', store: 'Xbox', cmd: 'explorer.exe shell:appsFolder\\[PackageFamilyName]!App', added: '5 Mar', excl: false },
+        { name: 'Baldur\u2019s Gate 3', store: 'GOG', cmd: '"D:\\GOG Games\\Baldurs Gate 3\\bin\\bg3.exe"', added: '3 Mar', excl: false },
+        { name: 'Assassin\u2019s Creed Shadows', store: 'Ubisoft Connect', cmd: '"C:\\Program Files (x86)\\Ubisoft\\Ubisoft Game Launcher\\games\\Assassins Creed Shadows\\ACShadows.exe"', added: '20 Mar', excl: false },
+        { name: 'Diablo IV', store: 'Battle.net', cmd: '"C:\\Program Files (x86)\\Diablo IV\\Diablo IV Launcher.exe"', added: '3 Mar', excl: false },
+        { name: '3DMark', store: 'Steam', cmd: 'steam://rungameid/223850', added: '4 Mar', excl: true },
+        { name: 'Steamworks Common Redistributables', store: 'Steam', cmd: 'steam://rungameid/228980', added: '3 Mar', excl: true },
+        { name: 'EA Desktop Updater', store: 'EA App', cmd: '"C:\\Program Files\\Electronic Arts\\EA Desktop\\EA Desktop\\EADesktop.exe"', added: '3 Mar', excl: true }
+      ],
+      tiles: true, spatial: true, format: 0, device: 0, sentinel: true, profile: true, link: true,
+      setup: [true, false, false, false]
+    };
+  }
+  go(p) { this.setState(p); }
+  renderVals() {
+    const S = this.state;
+    const firstRun = this.props.firstRun ?? false;
+    const pendingProp = this.props.pendingClient ?? true;
+    const streaming = (this.props.hostActivity ?? 'streaming') === 'streaming';
+    const fwProp = this.props.firewallIssue ?? false;
+
+    const showPending = pendingProp && !S.pendingDone;
+    const showFirewall = fwProp && !S.firewallFixed;
+    const todoCount = (showPending ? 1 : 0) + (showFirewall ? 1 : 0);
+
+    const pages = [['status', 'Status'], ['clients', 'Clients'], ['apps', 'Apps'], ['library', 'Library'], ['audio', 'Spatial audio'], ['nvidia', 'NVIDIA Sentinel'], ['settings', 'Settings']];
+    const nav = pages.map((p) => ({
+      label: p[1], cls: S.page === p[0] ? 'on' : '',
+      hasCount: (p[0] === 'status' && todoCount > 0) || (p[0] === 'clients' && showPending),
+      count: p[0] === 'status' ? String(todoCount) : '1',
+      pick: () => this.go({ page: p[0] })
+    }));
+    const to = (pg) => () => this.go({ page: pg });
+
+    const addClient = (manage) => {
+      const c = S.clients.slice();
+      c.push({ name: 'STEAM-DECK', approved: 'today', seen: 'now', manage: manage });
+      this.go({ pendingDone: true, clients: c });
+    };
+    const clients = S.clients.map((c, i) => ({
+      name: c.name, approved: c.approved, seen: c.seen, cls: c.manage ? 'on' : '',
+      toggle: () => { const n = S.clients.slice(); n[i] = Object.assign({}, c, { manage: !c.manage }); this.go({ clients: n }); },
+      revoke: () => { const n = S.clients.slice(); n.splice(i, 1); this.go({ clients: n }); }
+    }));
+
+    const managedCount = S.apps.filter((a) => a.managed).length;
+    const apps = S.apps.map((a, i) => ({
+      name: a.name, path: a.path, state: a.managed ? 'Managed' : 'Not managed', tagCls: a.managed ? 'ok' : '',
+      remove: () => { const n = S.apps.slice(); n.splice(i, 1); this.go({ apps: n }); }
+    }));
+    const procList = [['Discord', 'Discord.exe'], ['SignalRGB', 'SignalRgb.exe'], ['Logitech G HUB', 'lghub.exe'], ['OBS Studio', 'obs64.exe']];
+    const procs = procList.map((p, i) => ({ name: p[0], exe: p[1], cls: S.pick === i ? 'on' : '', pick: () => this.go({ pick: i }) }));
+    const confirmAdd = () => {
+      const p = procList[S.pick];
+      const n = S.apps.slice();
+      n.push({ name: p[0], path: 'C:\\Program Files\\' + p[0] + '\\' + p[1], managed: false });
+      this.go({ apps: n, dialog: null });
+    };
+
+    const storeMeta = { 'Steam': ['s-steam', 'ST'], 'Epic Games': ['s-epic', 'EG'], 'GOG': ['s-gog', 'GOG'], 'Ubisoft Connect': ['s-ubi', 'UB'], 'Xbox': ['s-xbox', 'XB'], 'Battle.net': ['s-bnet', 'BN'], 'EA App': ['s-ea', 'EA'] };
+    const setExcl = (i, v) => { const n = S.lib.slice(); n[i] = Object.assign({}, n[i], { excl: v }); this.go({ lib: n }); };
+    const play = (g) => { clearTimeout(this.tt); this.go({ toast: { name: g.name, cmd: g.cmd } }); this.tt = setTimeout(() => this.go({ toast: null }), 4500); };
+    const gameRow = (g, i) => {
+      const ini = g.name.replace(/[^A-Za-z0-9 ]/g, '').split(' ').filter((w) => w).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+      const m = storeMeta[g.store] || ['', '?'];
+      return {
+        name: g.name, store: g.store, cmd: g.cmd, added: g.added, ini: ini, covCls: 'cv' + (i % 6), sCls: m[0], sAbbr: m[1],
+        play: () => play(g), exclude: () => setExcl(i, true), include: () => setExcl(i, false)
+      };
+    };
+    const rows = S.lib.map(gameRow);
+    const syncedGames = rows.filter((r, i) => !S.lib[i].excl);
+    const excludedGames = rows.filter((r, i) => S.lib[i].excl);
+    const hiddenCount = 76;
+    const syncedCount = hiddenCount + syncedGames.length;
+    const libTabs = [['synced', 'In Vibepollo (' + syncedCount + ')'], ['excluded', 'Excluded (' + excludedGames.length + ')'], ['manual', 'Added by hand (2)']]
+      .map((t) => ({ label: t[1], cls: S.libTab === t[0] ? 'on' : '', pick: () => this.go({ libTab: t[0] }) }));
+
+    const formatsL = ['Dolby Atmos for Headphones', 'Windows Sonic'];
+    const formats = formatsL.map((f, i) => ({ label: f, cls: S.format === i ? 'on' : '', pick: () => this.go({ format: i }) }));
+    const devL = [['Headphones (USB Audio)', 'Available'], ['Steam Streaming Speakers', 'Available'], ['LG TV (NVIDIA High Definition Audio)', 'Not supported']];
+    const devices = devL.map((d, i) => ({ name: d[0], avail: d[1], tagCls: d[1] === 'Available' ? 'ok' : 'amb', cls: S.device === i ? 'on' : '', pick: () => this.go({ device: i }) }));
+
+    const showLive = streaming && !S.returned;
+    const checks = [
+      { label: 'StreamTweak service', value: 'Running · LocalSystem', dot: '', go: to('settings') },
+      { label: 'Bridge', value: showFirewall ? 'Port 47998 closed in the firewall' : 'Listening on 47998 · ' + S.clients.length + ' clients approved', dot: showFirewall ? 'bad' : '', go: to('clients') },
+      { label: 'Streaming server', value: 'Vibepollo 2.0.3 · running', dot: '', go: to('settings') },
+      { label: 'Library', value: syncedCount + ' games · ' + excludedGames.length + ' excluded · last sync 2 hours ago', dot: '', go: to('library') },
+      { label: 'Apps', value: managedCount + ' of ' + S.apps.length + ' managed', dot: '', go: to('apps') },
+      { label: 'Spatial audio', value: S.spatial ? formatsL[S.format] + ' · ' + devL[S.device][0] : 'Off', dot: S.spatial ? (devL[S.device][1] === 'Available' ? '' : 'warn') : 'off', go: to('audio') },
+      { label: 'Network', value: 'Ethernet at 1 Gbps, matched to LIVINGROOM-PC · clients ' + (S.link ? 'may' : 'may not') + ' change it', dot: '', go: to('settings') },
+      { label: 'NVIDIA Sentinel', value: !S.profile ? 'No profile saved' : S.sentinel ? 'Armed · profile saved 12 Oct' : 'Off · profile saved 12 Oct', dot: !S.profile ? 'warn' : S.sentinel ? '' : 'off', go: to('nvidia') }
+    ];
+
+    const setupDefs = [
+      ['Streaming server found', 'Vibepollo 2.0.3 is installed and running', 'Find it'],
+      ['Bridge port open', 'StreamLight devices can reach StreamTweak on port 47998', 'Open the port'],
+      ['First device approved', 'Open StreamLight on the device and choose Host on this PC\u2019s card', 'Show pending'],
+      ['Apps to close chosen', 'Optional: Hue Sync, RGB suites, anything that fights with the stream', 'Choose apps']
+    ];
+    const setup = setupDefs.map((d, i) => ({
+      n: S.setup[i] ? '✓' : String(i + 1), cls: S.setup[i] ? 'done' : '', title: d[0], desc: d[1], todo: !S.setup[i], btn: d[2],
+      act: () => { const n = S.setup.slice(); n[i] = true; this.go({ setup: n }); }
+    }));
+    const setupDone = String(S.setup.filter((x) => x).length);
+
+    return {
+      nav, firstRun, setup, setupDone,
+      pStatus: S.page === 'status', pClients: S.page === 'clients', pApps: S.page === 'apps', pLib: S.page === 'library',
+      pAudio: S.page === 'audio', pNv: S.page === 'nvidia', pSet: S.page === 'settings',
+      hasTodo: todoCount > 0, showPending, showFirewall,
+      deny: () => this.go({ pendingDone: true }),
+      approveStream: () => addClient(false), approveManage: () => addClient(true),
+      fixFirewall: () => this.go({ firewallFixed: true }),
+      showLive, showEnded: streaming && S.returned,
+      returnToClient: () => this.go({ dialog: 'return' }),
+      cancelReturn: () => this.go({ dialog: null }), confirmReturn: () => this.go({ dialog: null, returned: true }),
+      checks, clients, apps, procs, openAdd: () => this.go({ dialog: 'add', pick: 0 }), closeAdd: () => this.go({ dialog: null }), confirmAdd,
+      syncedGames, excludedGames, hiddenCount, syncedCount, libTabs, noExcluded: excludedGames.length === 0,
+      libSynced: S.libTab === 'synced', libExcl: S.libTab === 'excluded', libManual: S.libTab === 'manual',
+      hasToast: !!S.toast, toast: S.toast || { name: '', cmd: '' },
+      tilesCls: S.tiles ? 'on' : '', toggleTiles: () => this.go({ tiles: !S.tiles }),
+      spatialCls: S.spatial ? 'on' : '', toggleSpatial: () => this.go({ spatial: !S.spatial }), formats, devices,
+      nvProfile: S.profile ? '8 custom settings · saved 12 Oct 2026, 18:44 · GamingProfile.nip' : 'No profile saved. Take a snapshot to arm Sentinel.',
+      snapshot: () => this.go({ profile: true }), clearProfile: () => this.go({ profile: false, sentinel: false }),
+      sentinelCls: S.sentinel ? 'on' : '', toggleSentinel: () => { if (S.profile) this.go({ sentinel: !S.sentinel }); },
+      sentinelState: !S.profile ? 'Needs a saved profile' : S.sentinel ? 'Armed · watching the driver settings database' : 'Off',
+      linkCls: S.link ? 'on' : '', toggleLink: () => this.go({ link: !S.link }),
+      dlgAdd: S.dialog === 'add', dlgReturn: S.dialog === 'return'
+    };
+  }
+}
+</script>
+</body>
+</html>

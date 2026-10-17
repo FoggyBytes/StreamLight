@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StreamLight 8 Host section</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#00d3f2}a:hover{color:#5fe6f8}
+.sl{position:relative;width:1600px;height:900px;overflow:hidden;background:#151515;color:#f3f7f8;font-family:'DM Sans',system-ui,sans-serif;font-size:16px}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+.waves{position:absolute;left:0;right:0;bottom:0;height:520px;pointer-events:none}
+.wv1{fill:var(--ac);opacity:.07}.wv2{fill:var(--ac);opacity:.11}
+.top{position:absolute;left:56px;right:56px;top:32px;display:flex;justify-content:space-between;align-items:flex-start}
+.wordmark{font-size:22px;font-weight:600;letter-spacing:.42em;color:#f3f7f8}
+.clock{text-align:right;color:#a2b2ba;font-size:15px}
+.clock b{display:block;color:#f3f7f8;font-size:22px;font-weight:500}
+.htabs{display:flex;gap:8px;margin-top:18px}
+.htab{appearance:none;border:1px solid rgba(255,255,255,.08);background:transparent;color:#a2b2ba;font:500 15px 'DM Sans',sans-serif;padding:8px 18px;border-radius:999px;cursor:pointer;display:flex;align-items:center;gap:8px}
+.htab.on{background:#f3f7f8;color:#06080a;border-color:#f3f7f8}
+.dot{width:8px;height:8px;border-radius:50%;background:#4ade80;display:inline-block}
+.dot.off{background:#758790}.dot.warn{background:#f5a623}.dot.bad{background:#f87171}
+.stage{position:absolute;left:56px;right:56px;top:170px;bottom:96px;display:flex;gap:28px}
+.card{background:rgba(15,21,25,.92);border:1px solid rgba(255,255,255,.08);border-radius:22px}
+.hostcard{flex:0 0 760px;padding:40px;display:flex;flex-direction:column;gap:22px;box-sizing:border-box}
+.hname{font-size:44px;font-weight:600;letter-spacing:-.01em;margin:0}
+.state{display:flex;align-items:center;gap:10px;color:#4ade80;font-weight:500}
+.kv{display:grid;grid-template-columns:150px 1fr;row-gap:10px;column-gap:16px;font-size:16px}
+.kv .k{color:#758790}.kv .v{color:#f3f7f8}
+.actions{display:flex;gap:12px;margin-top:auto}
+.act{appearance:none;position:relative;border:1px solid rgba(255,255,255,.19);background:#161f25;color:#f3f7f8;font:600 17px 'DM Sans',sans-serif;padding:14px 26px;border-radius:14px;cursor:pointer;min-height:52px}
+.act.focus{background:var(--ac);color:#06080a;border-color:var(--ac);box-shadow:0 0 0 4px rgba(255,255,255,.12)}
+.act.dis{opacity:.42;cursor:default}
+.newb{position:absolute;top:-10px;right:-8px;background:#f5a623;color:#06080a;font:600 11px 'DM Sans',sans-serif;letter-spacing:.08em;padding:3px 7px;border-radius:6px}
+.reason{color:#a2b2ba;font-size:14px;min-height:20px}
+.gamepanel{flex:1;padding:40px;display:flex;flex-direction:column;gap:18px;box-sizing:border-box}
+.eyebrow{font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:#758790;font-weight:600}
+.cover{flex:1;border-radius:16px;background:#0b1013;border:1px solid rgba(255,255,255,.08);position:relative;overflow:hidden;display:flex;align-items:flex-end;padding:28px;box-sizing:border-box}
+.cover .band{position:absolute;inset:0;background:repeating-linear-gradient(135deg,rgba(255,255,255,.025) 0 18px,transparent 18px 36px)}
+.cover .ttl{position:relative;font-size:40px;font-weight:600;line-height:1.05}
+.cover .ph{position:absolute;top:22px;right:24px;color:#758790;font-size:13px}
+.prompt{position:absolute;left:0;right:0;bottom:0;height:64px;display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:0 48px;border-top:1px solid rgba(255,255,255,.08);background:rgba(6,8,10,.72)}
+.pi{appearance:none;border:0;background:transparent;color:#a2b2ba;font:500 15px 'DM Sans',sans-serif;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;cursor:pointer;min-height:44px}
+.pi:hover{background:rgba(255,255,255,.06);color:#f3f7f8}
+.pl{position:absolute;left:48px;color:#758790;font-size:14px}
+.g{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;border-radius:13px;font:600 13px 'DM Sans',sans-serif;color:#06080a;background:#a2b2ba;padding:0 7px;box-sizing:border-box}
+.g.A{background:#4ade80}.g.B{background:#f87171}.g.X{background:#60a5fa}.g.Y{background:#fbbf24}
+button.g{border:0;cursor:pointer}
+.g.sh{border-radius:7px;background:#d6dee2;min-width:34px}
+.g.dp{border-radius:7px;background:#d6dee2}
+/* host section */
+.sec{position:absolute;inset:0}
+.sechead{position:absolute;left:56px;right:56px;top:32px;display:flex;justify-content:space-between;align-items:flex-end}
+.sechead h1{margin:6px 0 0;font-size:34px;font-weight:600}
+.stchip{display:flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:8px 16px;color:#a2b2ba;font-size:14px;background:rgba(15,21,25,.8)}
+.tabbar{position:absolute;left:56px;right:56px;top:124px;display:flex;align-items:center;gap:6px;border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:12px}
+.tab{appearance:none;border:0;background:transparent;color:#a2b2ba;font:600 17px 'DM Sans',sans-serif;padding:10px 22px;border-radius:999px;cursor:pointer;min-height:44px}
+.tab.on{background:var(--ac);color:#06080a}
+.tabbar .g{margin:0 8px;cursor:pointer}
+.body{position:absolute;left:56px;right:56px;top:196px;bottom:84px;overflow:auto}
+.row{display:flex;gap:20px}
+.box{background:rgba(15,21,25,.92);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:24px 26px;box-sizing:border-box}
+.box h3{margin:0 0 4px;font-size:19px;font-weight:600}
+.sub{color:#a2b2ba;font-size:14px;line-height:1.45}
+.muted{color:#758790;font-size:14px}
+.metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px}
+.metric{background:rgba(15,21,25,.92);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:18px 18px 12px}
+.metric .lab{color:#758790;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.metric .val{font-size:34px;font-weight:500;margin-top:6px;font-family:'JetBrains Mono',monospace}
+.metric .unit{font-size:15px;color:#a2b2ba;margin-left:4px;font-family:'DM Sans',sans-serif}
+.spk{display:block;margin-top:8px}
+.spk polyline{fill:none;stroke:var(--ac);stroke-width:2}
+.banner{display:flex;align-items:center;gap:14px;border:1px solid rgba(245,166,35,.45);background:rgba(245,166,35,.1);border-radius:14px;padding:14px 20px;margin-bottom:16px;color:#f3f7f8}
+.set{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:14px 0;border-top:1px solid rgba(255,255,255,.08)}
+.set:first-of-type{border-top:0}
+.sw{appearance:none;flex:0 0 auto;width:64px;height:34px;border-radius:17px;border:1px solid rgba(255,255,255,.19);background:#161f25;position:relative;cursor:pointer}
+.sw::after{content:'';position:absolute;top:4px;left:4px;width:24px;height:24px;border-radius:50%;background:#a2b2ba;transition:left .15s}
+.sw.on{background:var(--ac);border-color:var(--ac)}
+.sw.on::after{left:34px;background:#06080a}
+.btn{appearance:none;border:1px solid rgba(255,255,255,.19);background:#161f25;color:#f3f7f8;font:600 15px 'DM Sans',sans-serif;padding:11px 20px;border-radius:12px;cursor:pointer;min-height:44px}
+.btn.pri{background:var(--ac);border-color:var(--ac);color:#06080a}
+.btn.dis{opacity:.4;cursor:default}
+.pill{appearance:none;border:1px solid rgba(255,255,255,.12);background:transparent;color:#a2b2ba;font:500 14px 'DM Sans',sans-serif;padding:7px 14px;border-radius:999px;cursor:pointer;min-height:36px}
+.pill.on{background:#f3f7f8;color:#06080a;border-color:#f3f7f8}
+.list{display:flex;flex-direction:column;gap:8px}
+.swrap{display:flex;align-items:center;gap:12px}
+.srow{flex:1;display:grid;grid-template-columns:170px 170px minmax(0,1fr) 120px 110px;align-items:center;gap:14px;padding:14px 18px;border-radius:14px;background:rgba(15,21,25,.92);border:1px solid rgba(255,255,255,.08);cursor:pointer;text-align:left;color:#f3f7f8;font:400 15px 'DM Sans',sans-serif;appearance:none;width:100%}
+.srow:hover{border-color:rgba(255,255,255,.25)}
+.mark{appearance:none;width:30px;height:30px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:transparent;color:#06080a;cursor:pointer;font:600 14px 'DM Sans',sans-serif}
+.mark.on{background:var(--ac);border-color:var(--ac)}
+.chip{display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;padding:5px 12px;border-radius:999px}
+.g-ex{background:rgba(74,222,128,.14);color:#4ade80}
+.g-good{background:rgba(245,166,35,.14);color:#f5a623}
+.g-poor{background:rgba(248,113,113,.14);color:#f87171}
+.checks{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.check{border-radius:14px;border:1px solid rgba(255,255,255,.08);padding:14px 16px;background:rgba(22,31,37,.8)}
+.check .cv{font-size:24px;font-family:'JetBrains Mono',monospace;margin-top:4px}
+.lanes{display:flex;gap:8px;flex-wrap:wrap}
+.chart{position:relative}
+.chart .ln{fill:none;stroke:var(--ac);stroke-width:2}
+.chart .grid{stroke:rgba(255,255,255,.08);stroke-width:1}
+.chart .cur{stroke:#f3f7f8;stroke-width:1.5;stroke-dasharray:4 4}
+.chart .dotc{fill:#f3f7f8}
+.chart .lim{stroke:#f5a623;stroke-width:1;stroke-dasharray:6 6}
+.read{display:flex;gap:28px;align-items:baseline}
+.read b{font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:500}
+.cmp{width:100%;border-collapse:collapse;font-size:16px}
+.cmp th{color:#758790;text-align:left;font-weight:600;font-size:13px;letter-spacing:.06em;text-transform:uppercase;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08)}
+.cmp td{padding:14px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
+.cmp td.n{font-family:'JetBrains Mono',monospace}
+.better{color:#4ade80}.worse{color:#f87171}.same{color:#a2b2ba}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.tile .big{font-size:38px;font-weight:500;font-family:'JetBrains Mono',monospace;margin-top:6px}
+.stores{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.store{border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:6px 12px;font-size:14px;color:#a2b2ba}
+.store b{color:#f3f7f8;margin-left:6px;font-family:'JetBrains Mono',monospace;font-weight:500}
+.grow{display:grid;grid-template-columns:minmax(0,1fr) 140px 140px;gap:14px;padding:12px 18px;border-top:1px solid rgba(255,255,255,.06);font-size:15px}
+.badge{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#a2b2ba;border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:3px 8px;justify-self:start}
+.arow{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 24px;border-radius:16px;background:rgba(15,21,25,.92);border:1px solid rgba(255,255,255,.08)}
+.nvrow{display:grid;grid-template-columns:minmax(0,1fr) 260px;padding:12px 4px;border-top:1px solid rgba(255,255,255,.06);font-size:15px}
+.nvrow .v{color:#a2b2ba}
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:5}
+.dlg{width:640px;background:#0f1519;border:1px solid rgba(255,255,255,.19);border-radius:22px;padding:32px;box-sizing:border-box;display:flex;flex-direction:column;gap:18px}
+.dlg h2{margin:0;font-size:26px;font-weight:600}
+.steps{display:flex;flex-direction:column;gap:12px}
+.step{display:flex;gap:12px;align-items:center;color:#758790}
+.step.on{color:#f3f7f8}.step.done{color:#4ade80}
+.access{max-width:720px;margin:40px auto 0;text-align:center;display:flex;flex-direction:column;gap:18px;align-items:center}
+.pin{display:flex;gap:14px}
+.pin span{width:64px;height:78px;border-radius:14px;background:#161f25;border:1px solid rgba(255,255,255,.19);display:flex;align-items:center;justify-content:center;font:500 38px 'JetBrains Mono',monospace}
+</style>
+</helmet>
+<div class="sl" style="--ac: {{accent}}">
+<svg class="waves" viewBox="0 0 1600 520" preserveAspectRatio="none" aria-hidden="true"><path class="wv1" d="M0 230 C 260 170 520 300 800 240 C 1080 180 1340 290 1600 220 L1600 520 L0 520 Z"></path><path class="wv2" d="M0 330 C 300 280 560 380 860 330 C 1160 280 1380 360 1600 320 L1600 520 L0 520 Z"></path></svg>
+
+<sc-if value="{{isHome}}" hint-placeholder-val="{{ true }}">
+<div class="top">
+<div>
+<div class="wordmark">STREAMLIGHT</div>
+<div class="htabs">
+<sc-for list="{{hostTabs}}" as="h" hint-placeholder-count="2">
+<button class="htab {{h.cls}}" onClick="{{h.pick}}"><span class="dot {{h.dotCls}}"></span>{{h.name}}</button>
+</sc-for>
+</div>
+</div>
+<div class="clock"><b>21:47</b>Fri 17 Oct</div>
+</div>
+<div class="stage">
+<div class="card hostcard">
+<div>
+<div class="state"><span class="dot {{host.dotCls}}"></span>{{host.stateText}}</div>
+<h2 class="hname">{{host.name}}</h2>
+</div>
+<div class="kv">
+<span class="k">LAN</span><span class="v mono">{{host.lan}}</span>
+<span class="k">Tailscale</span><span class="v mono">{{host.ts}}</span>
+<span class="k">Stream</span><span class="v">{{host.settings}}</span>
+<span class="k">Profile</span><span class="v">{{host.profile}}</span>
+</div>
+<div class="actions">
+<sc-for list="{{homeActions}}" as="a" hint-placeholder-count="4">
+<button class="act {{a.cls}}" onClick="{{a.pick}}" onMouseEnter="{{a.hover}}">{{a.label}}<sc-if value="{{a.isNew}}" hint-placeholder-val="{{ false }}"><span class="newb">NEW</span></sc-if></button>
+</sc-for>
+</div>
+<div class="reason">{{homeReason}}</div>
+</div>
+<div class="card gamepanel">
+<div class="eyebrow">Last played</div>
+<div class="cover"><div class="band"></div><span class="ph">[cover art]</span><div class="ttl">{{host.game}}</div></div>
+<div style="display: flex; justify-content: space-between; align-items: center">
+<span class="sub">{{host.ago}} · {{host.hours}} played</span>
+<button class="btn pri">Play again</button>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isHost}}" hint-placeholder-val="{{ false }}">
+<div class="sec">
+<div class="sechead">
+<div>
+<div class="eyebrow">Host</div>
+<h1>{{host.name}}</h1>
+</div>
+<div class="stchip"><span class="dot {{accessDot}}"></span>StreamTweak 10.0 · {{accessText}}</div>
+</div>
+
+<sc-if value="{{showAccessPage}}" hint-placeholder-val="{{ false }}">
+<div class="body" style="top: 140px">
+<div class="access">
+<sc-if value="{{isPending}}" hint-placeholder-val="{{ true }}">
+<div class="eyebrow">Waiting for approval</div>
+<h2 style="margin: 0; font-size: 32px; font-weight: 600">Approve this device on {{host.name}}</h2>
+<p class="sub" style="margin: 0; font-size: 17px">StreamTweak on the host is showing a request with this PIN. Approve it there, and the Host section opens here with its tabs.</p>
+<div class="pin"><span>4</span><span>8</span><span>2</span><span>1</span></div>
+<p class="muted" style="margin: 0">Streaming is never affected: only the host's management waits for the approval.</p>
+</sc-if>
+<sc-if value="{{isDenied}}" hint-placeholder-val="{{ false }}">
+<div class="eyebrow">Access denied</div>
+<h2 style="margin: 0; font-size: 32px; font-weight: 600">{{host.name}} refused this device</h2>
+<p class="sub" style="margin: 0; font-size: 17px">You can still stream. To manage the host from here, ask again and approve the request in StreamTweak on the host.</p>
+<button class="btn pri" onClick="{{requestAgain}}">{{requestLabel}}</button>
+</sc-if>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{showTabs}}" hint-placeholder-val="{{ true }}">
+<sc-if value="{{showTabBar}}" hint-placeholder-val="{{ true }}">
+<div class="tabbar">
+<button class="g sh" onClick="{{prevTab}}" aria-label="Previous tab">LB</button>
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="5">
+<button class="tab {{t.cls}}" onClick="{{t.pick}}">{{t.label}}</button>
+</sc-for>
+<button class="g sh" onClick="{{nextTab}}" aria-label="Next tab">RB</button>
+</div>
+</sc-if>
+
+<!-- DASHBOARD -->
+<sc-if value="{{tabDash}}" hint-placeholder-val="{{ true }}">
+<div class="body">
+<sc-if value="{{streaming}}" hint-placeholder-val="{{ false }}">
+<div class="banner"><span class="dot warn"></span><span><b>Streaming to Steam Deck</b> · Hades II · for 23 min. The numbers below include that stream.</span></div>
+</sc-if>
+<div class="metrics">
+<sc-for list="{{metrics}}" as="m" hint-placeholder-count="6">
+<div class="metric">
+<div class="lab">{{m.label}}</div>
+<div class="val">{{m.value}}<span class="unit">{{m.unit}}</span></div>
+<sc-if value="{{spark}}" hint-placeholder-val="{{ true }}">
+<svg class="spk" width="100%" height="34" viewBox="0 0 160 34" preserveAspectRatio="none" aria-hidden="true"><polyline points="{{m.points}}"></polyline></svg>
+</sc-if>
+</div>
+</sc-for>
+</div>
+<div class="row" style="margin-top: 20px">
+<div class="box" style="flex: 1">
+<h3>Network</h3>
+<div class="sub">Intel Ethernet I226-V · {{linkText}}</div>
+<div class="set" style="margin-top: 10px">
+<div><div>Let clients change the link speed</div><div class="muted">A client may bring the host down to its own speed before a stream</div></div>
+<button class="sw {{linkPermCls}}" onClick="{{toggleLinkPerm}}" aria-label="Let clients change the link speed"></button>
+</div>
+<div class="set">
+<div><div>Restore the original speed</div><div class="muted">{{restoreReason}}</div></div>
+<button class="btn {{restoreCls}}" onClick="{{restore}}">Restore 2.5 Gbps</button>
+</div>
+</div>
+<div class="box" style="flex: 1">
+<h3>Spatial audio</h3>
+<div class="sub">Dolby Atmos for Headphones · Headphones (USB Audio) · {{spatialState}}</div>
+<div class="set" style="margin-top: 10px">
+<div><div>Turn on when a session starts</div><div class="muted">Applies from the next session</div></div>
+<button class="sw {{spatialCls}}" onClick="{{toggleSpatial}}" aria-label="Spatial audio"></button>
+</div>
+<div class="set">
+<div class="muted">Device and format are chosen in StreamTweak, on the host.</div>
+</div>
+</div>
+</div>
+<div class="arow" style="margin-top: 20px">
+<div><div style="font-weight: 600; font-size: 17px">Windows Update</div><div class="sub">3 updates available · checked 40 min ago</div></div>
+<button class="btn" onClick="{{openUpdate}}">Open</button>
+</div>
+</div>
+</sc-if>
+
+<!-- SESSIONS LIST -->
+<sc-if value="{{tabSessList}}" hint-placeholder-val="{{ false }}">
+<div class="body">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px">
+<div style="display: flex; gap: 8px">
+<sc-for list="{{filters}}" as="f" hint-placeholder-count="2">
+<button class="pill {{f.cls}}" onClick="{{f.pick}}">{{f.label}}</button>
+</sc-for>
+</div>
+<div style="display: flex; gap: 12px; align-items: center">
+<span class="muted">{{markHint}}</span>
+<button class="btn {{compareCls}}" onClick="{{openCompare}}">Compare</button>
+</div>
+</div>
+<div class="list">
+<sc-for list="{{sessions}}" as="s" hint-placeholder-count="5">
+<div class="swrap">
+<button class="mark {{s.markCls}}" onClick="{{s.mark}}" aria-label="Mark for compare">{{s.markText}}</button>
+<button class="srow" onClick="{{s.open}}">
+<span>{{s.date}}</span>
+<span class="sub">{{s.client}}</span>
+<span>{{s.games}}</span>
+<span class="sub">{{s.durText}}</span>
+<span class="chip {{s.gradeCls}}">{{s.grade}}</span>
+</button>
+</div>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+<!-- SESSION REPORT -->
+<sc-if value="{{tabReport}}" hint-placeholder-val="{{ false }}">
+<div class="body" style="top: 124px">
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px">
+<div>
+<div class="eyebrow">Session report · {{rep.client}}</div>
+<h2 style="margin: 6px 0 0; font-size: 28px; font-weight: 600">{{rep.games}}</h2>
+<div class="sub">{{rep.date}} · {{rep.durText}} · {{rep.res}} · {{rep.codec}}</div>
+</div>
+<span class="chip {{rep.gradeCls}}" style="font-size: 18px; padding: 8px 18px">{{rep.grade}}</span>
+</div>
+<div class="checks">
+<sc-for list="{{rep.checks}}" as="c" hint-placeholder-count="4">
+<div class="check"><div class="muted"><span class="dot {{c.dot}}"></span> {{c.label}}</div><div class="cv">{{c.value}}</div></div>
+</sc-for>
+</div>
+<div class="box" style="margin-top: 16px">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 16px">
+<div class="lanes">
+<button class="g sh" onClick="{{prevLane}}" aria-label="Previous lane">LB</button>
+<sc-for list="{{laneList}}" as="l" hint-placeholder-count="6">
+<button class="pill {{l.cls}}" onClick="{{l.pick}}">{{l.name}}</button>
+</sc-for>
+<button class="g sh" onClick="{{nextLane}}" aria-label="Next lane">RB</button>
+</div>
+<div style="display: flex; gap: 8px">
+<button class="btn" onClick="{{zoomOut}}" aria-label="Zoom out">LT −</button>
+<span class="muted" style="align-self: center">{{chart.zoomText}}</span>
+<button class="btn" onClick="{{zoomIn}}" aria-label="Zoom in">RT +</button>
+</div>
+</div>
+<div class="read" style="margin: 16px 0 8px">
+<span class="muted">{{chart.time}}</span>
+<b>{{chart.readout}}</b>
+<span class="muted">{{chart.unit}} · {{chart.lane}}</span>
+</div>
+<div class="chart">
+<svg width="100%" height="230" viewBox="0 0 1000 230" preserveAspectRatio="none" role="img" aria-label="{{chart.lane}} over the session">
+<line class="grid" x1="0" y1="10" x2="1000" y2="10"></line>
+<line class="grid" x1="0" y1="115" x2="1000" y2="115"></line>
+<line class="grid" x1="0" y1="220" x2="1000" y2="220"></line>
+<sc-if value="{{chart.hasLimit}}" hint-placeholder-val="{{ false }}"><line class="lim" x1="0" y1="{{chart.limY}}" x2="1000" y2="{{chart.limY}}"></line></sc-if>
+<polyline class="ln" points="{{chart.points}}"></polyline>
+<line class="cur" x1="{{chart.cx}}" y1="0" x2="{{chart.cx}}" y2="230"></line>
+<circle class="dotc" cx="{{chart.cx}}" cy="{{chart.cy}}" r="5"></circle>
+</svg>
+<div style="display: flex; justify-content: space-between" class="muted"><span>{{chart.t0}}</span><span>max {{chart.maxText}}</span><span>{{chart.t1}}</span></div>
+</div>
+<div style="display: flex; gap: 8px; margin-top: 12px">
+<button class="btn" onClick="{{curLeft}}" aria-label="Move cursor left">◀</button>
+<button class="btn" onClick="{{curRight}}" aria-label="Move cursor right">▶</button>
+<span class="muted" style="align-self: center">The D-pad moves the cursor; one lane at a time keeps it readable on a TV.</span>
+</div>
+</div>
+</div>
+</sc-if>
+
+<!-- COMPARE -->
+<sc-if value="{{tabCompare}}" hint-placeholder-val="{{ false }}">
+<div class="body" style="top: 124px">
+<div class="eyebrow">Compare sessions</div>
+<h2 style="margin: 6px 0 18px; font-size: 28px; font-weight: 600">{{cmpA.games}} vs {{cmpB.games}}</h2>
+<div class="box">
+<table class="cmp">
+<thead><tr><th>Metric</th><th>{{cmpA.date}} · {{cmpA.client}}</th><th>{{cmpB.date}} · {{cmpB.client}}</th><th>Difference</th></tr></thead>
+<tbody>
+<sc-for list="{{cmpRows}}" as="r" hint-placeholder-count="7">
+<tr><td>{{r.label}}</td><td class="n">{{r.a}}</td><td class="n">{{r.b}}</td><td class="n {{r.cls}}">{{r.d}}</td></tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</div>
+</sc-if>
+
+<!-- LIBRARY -->
+<sc-if value="{{tabLib}}" hint-placeholder-val="{{ false }}">
+<div class="body">
+<div class="tiles">
+<div class="box tile"><div class="eyebrow">Games</div><div class="big">{{lib.games}}</div></div>
+<div class="box tile"><div class="eyebrow">Added by hand</div><div class="big">2</div></div>
+<div class="box tile"><div class="eyebrow">Excluded</div><div class="big">3</div></div>
+<div class="box tile"><div class="eyebrow">Last sync</div><div class="big" style="font-size: 26px; margin-top: 14px">{{lib.last}}</div></div>
+</div>
+<div class="row" style="margin-top: 16px; align-items: stretch">
+<div class="box" style="flex: 1">
+<h3>Stores</h3>
+<div class="stores">
+<sc-for list="{{stores}}" as="st" hint-placeholder-count="7">
+<span class="store">{{st.name}}<b>{{st.n}}</b></span>
+</sc-for>
+</div>
+</div>
+<div class="box" style="flex: 0 0 520px; display: flex; flex-direction: column; gap: 10px">
+<h3>Sync now</h3>
+<div class="sub">Scans the stores and updates Vibepollo's app list, then restarts Vibepollo so the changes show on every client. Games you excluded on the host stay excluded.</div>
+<div style="display: flex; gap: 12px; align-items: center; margin-top: 4px">
+<button class="btn {{syncCls}}" onClick="{{openSync}}">Sync and restart Vibepollo</button>
+<span class="muted">{{syncReason}}</span>
+</div>
+</div>
+</div>
+<div class="box" style="margin-top: 16px; padding: 8px 0">
+<div class="grow muted" style="border-top: 0"><span>Game</span><span>Store</span><span>Added</span></div>
+<sc-for list="{{games}}" as="gm" hint-placeholder-count="8">
+<div class="grow"><span>{{gm.name}}</span><span class="badge">{{gm.store}}</span><span class="sub">{{gm.added}}</span></div>
+</sc-for>
+</div>
+<p class="muted">Games added by hand, exclusions and the host's tile artwork are managed in StreamTweak, on the host.</p>
+</div>
+</sc-if>
+
+<!-- APPS -->
+<sc-if value="{{tabApps}}" hint-placeholder-val="{{ false }}">
+<div class="body">
+<p class="sub" style="margin: 0 0 16px; font-size: 16px">The apps StreamTweak closes when a session starts and reopens when it ends. The list is made on the host; here you choose which of them it manages.</p>
+<div class="list">
+<sc-for list="{{apps}}" as="ap" hint-placeholder-count="4">
+<div class="arow">
+<div><div style="font-weight: 600; font-size: 17px">{{ap.name}}</div><div class="sub">{{ap.desc}}</div></div>
+<button class="sw {{ap.cls}}" onClick="{{ap.toggle}}" aria-label="Manage {{ap.name}}"></button>
+</div>
+</sc-for>
+</div>
+<p class="muted">To add an app, open StreamTweak on the host: Apps, then Add.</p>
+</div>
+</sc-if>
+
+<!-- NVIDIA -->
+<sc-if value="{{tabNv}}" hint-placeholder-val="{{ false }}">
+<div class="body">
+<div class="row">
+<div class="box" style="flex: 1">
+<div class="eyebrow">GPU and driver</div>
+<h3 style="margin-top: 8px">GeForce RTX 4080 SUPER</h3>
+<div class="sub">Driver 581.57 · released 2 Oct 2026</div>
+<div class="stores">
+<span class="store">DLSS Super Resolution<b>310.4</b></span>
+<span class="store">Ray Reconstruction<b>310.4</b></span>
+<span class="store">Frame Generation<b>310.4</b></span>
+</div>
+</div>
+<div class="box" style="flex: 1">
+<div class="set" style="padding-top: 0">
+<div><h3>NVIDIA Sentinel</h3><div class="sub">Re-applies your saved driver profile whenever NVIDIA App resets it</div></div>
+<button class="sw {{sentinelCls}}" onClick="{{toggleSentinel}}" aria-label="NVIDIA Sentinel"></button>
+</div>
+<div class="set"><div class="sub">{{sentinelState}}</div></div>
+</div>
+</div>
+<div class="box" style="margin-top: 16px">
+<h3>Saved profile · 8 custom settings</h3>
+<div class="muted" style="margin-bottom: 8px">Saved on 12 Oct. Snapshot, restore and clear are done in StreamTweak, on the host.</div>
+<sc-for list="{{nvSettings}}" as="nv" hint-placeholder-count="8">
+<div class="nvrow"><span>{{nv.k}}</span><span class="v">{{nv.v}}</span></div>
+</sc-for>
+</div>
+</div>
+</sc-if>
+</sc-if>
+</div>
+</sc-if>
+
+<!-- DIALOGS -->
+<sc-if value="{{dlgUpdate}}" hint-placeholder-val="{{ false }}">
+<div class="scrim"><div class="dlg">
+<div class="eyebrow">Windows Update · {{host.name}}</div>
+<h2>{{upd.title}}</h2>
+<sc-if value="{{upd.list}}" hint-placeholder-val="{{ true }}">
+<div class="steps">
+<div class="step on"><span class="dot"></span>2026-10 Cumulative Update for Windows 11 · restart required</div>
+<div class="step on"><span class="dot"></span>Security Intelligence Update for Microsoft Defender</div>
+<div class="step on"><span class="dot"></span>.NET 8.0 Runtime update</div>
+</div>
+<div style="display: flex; gap: 12px; justify-content: flex-end">
+<button class="btn" onClick="{{closeDlg}}">Close</button>
+<button class="btn" onClick="{{installUpd}}">Install</button>
+<button class="btn pri" onClick="{{installUpd}}">Install and restart</button>
+</div>
+</sc-if>
+<sc-if value="{{upd.running}}" hint-placeholder-val="{{ false }}">
+<div class="sub">Installing on the host. You can leave this screen: it keeps going in the background, as it does today.</div>
+<div style="display: flex; justify-content: flex-end"><button class="btn pri" onClick="{{closeDlg}}">Continue in background</button></div>
+</sc-if>
+</div></div>
+</sc-if>
+
+<sc-if value="{{dlgSync}}" hint-placeholder-val="{{ false }}">
+<div class="scrim"><div class="dlg">
+<div class="eyebrow">Library · {{host.name}}</div>
+<h2>{{sync.title}}</h2>
+<sc-if value="{{sync.confirm}}" hint-placeholder-val="{{ true }}">
+<div class="sub">StreamTweak scans the stores, updates Vibepollo's app list and restarts Vibepollo. No stream is running, so nobody is disconnected. The host is unreachable for a few seconds.</div>
+<div style="display: flex; gap: 12px; justify-content: flex-end">
+<button class="btn" onClick="{{closeDlg}}">Cancel</button>
+<button class="btn pri" onClick="{{startSync}}">Sync and restart</button>
+</div>
+</sc-if>
+<sc-if value="{{sync.progress}}" hint-placeholder-val="{{ false }}">
+<div class="steps">
+<sc-for list="{{sync.steps}}" as="sp" hint-placeholder-count="3">
+<div class="step {{sp.cls}}"><span class="dot {{sp.dot}}"></span>{{sp.label}}</div>
+</sc-for>
+</div>
+<sc-if value="{{sync.done}}" hint-placeholder-val="{{ false }}">
+<div class="sub">2 games added (Indiana Jones and the Great Circle, Clair Obscur: Expedition 33), 1 removed. {{host.name}} is back online.</div>
+<div style="display: flex; justify-content: flex-end"><button class="btn pri" onClick="{{closeDlg}}">Done</button></div>
+</sc-if>
+</sc-if>
+</div></div>
+</sc-if>
+
+<div class="prompt">
+<span class="pl">Mockup · the prompt bar is clickable, as in StreamLight</span>
+<sc-for list="{{prompts}}" as="p" hint-placeholder-count="3">
+<button class="pi" onClick="{{p.act}}"><sc-for list="{{p.glyphs}}" as="gl" hint-placeholder-count="1"><span class="g {{gl.cls}}">{{gl.t}}</span></sc-for>{{p.label}}</button>
+</sc-for>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#00d3f2","options":["#00d3f2","#00e676","#f5a623","#a78bfa"]},"hostActivity":{"editor":"enum","options":["idle","streaming elsewhere"],"default":"idle"},"access":{"editor":"enum","options":["authorized","pending","denied"],"default":"authorized"},"sparklines":{"editor":"boolean","default":true},"$preview":{"width":1600,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      screen: 'home', hostIdx: 0, homeFocus: 0, tab: 0,
+      tick: 0, linkPerm: true, linkChanged: true, spatial: true, sentinel: true,
+      apps: { hue: true, icue: true, wall: false, armoury: true },
+      filter: 'mine', marked: [], report: null, compare: false,
+      lane: 0, cursor: 90, zoom: 1,
+      dialog: null, updPhase: 0, syncPhase: 0, synced: false, requested: false
+    };
+  }
+  componentDidMount() {
+    this.timer = setInterval(() => this.setState((s) => ({ tick: s.tick + 1 })), 1000);
+  }
+  componentWillUnmount() {
+    clearInterval(this.timer);
+    clearTimeout(this.t1); clearTimeout(this.t2); clearTimeout(this.t3);
+  }
+  go(patch) { this.setState(patch); }
+
+  renderVals() {
+    const S = this.state;
+    const accent = this.props.accent ?? '#00d3f2';
+    const streaming = (this.props.hostActivity ?? 'idle') === 'streaming elsewhere';
+    const access = this.props.access ?? 'authorized';
+    const spark = this.props.sparklines ?? true;
+
+    const hostsData = [
+      { name: 'GAMING-PC', hasST: true, lan: '192.168.1.20', ts: '100.101.7.12', settings: '2560 × 1440 · 120 FPS · 80 Mbps · HDR', profile: 'Default', game: 'Cyberpunk 2077', ago: '2 hours ago', hours: '46 h' },
+      { name: 'SALOTTO-PC', hasST: false, lan: '192.168.1.34', ts: 'not connected', settings: '1920 × 1080 · 60 FPS · 40 Mbps', profile: 'Couch', game: 'Balatro', ago: '3 days ago', hours: '12 h' }
+    ];
+    const h = hostsData[S.hostIdx];
+    const host = Object.assign({}, h, {
+      dotCls: streaming && S.hostIdx === 0 ? 'warn' : '',
+      stateText: streaming && S.hostIdx === 0 ? 'Online · streaming to another device' : 'Online'
+    });
+    const hostTabs = hostsData.map((x, i) => ({
+      name: x.name, cls: i === S.hostIdx ? 'on' : '', dotCls: '',
+      pick: () => this.go({ hostIdx: i, homeFocus: 0 })
+    }));
+
+    const hostEnabled = h.hasST;
+    const openHost = () => this.go({ screen: 'host', tab: 0, report: null, compare: false });
+    const acts = [
+      { label: 'Open' }, { label: 'Profiles' }, { label: 'Options' },
+      { label: 'Host', isNew: true, disabled: !hostEnabled }
+    ];
+    const homeActions = acts.map((a, i) => ({
+      label: a.label, isNew: !!a.isNew,
+      cls: (S.homeFocus === i ? 'focus ' : '') + (a.disabled ? 'dis' : ''),
+      hover: () => this.go({ homeFocus: i }),
+      pick: () => { this.go({ homeFocus: i }); if (i === 3 && !a.disabled) openHost(); }
+    }));
+    let homeReason = '';
+    if (!hostEnabled) homeReason = 'Host · StreamTweak was not found on this host. Install it there to manage the host from here.';
+    else if (S.homeFocus === 3) homeReason = 'Host · dashboard, sessions, library, apps and NVIDIA, through StreamTweak.';
+
+    // access
+    const accessText = access === 'authorized' ? 'Authorized' : access === 'pending' ? 'Pending' : (S.requested ? 'Pending' : 'Denied');
+    const accessDot = access === 'authorized' ? '' : (access === 'pending' || S.requested) ? 'warn' : 'bad';
+    const showAccessPage = access !== 'authorized';
+
+    // tabs
+    const tabNames = ['Dashboard', 'Sessions', 'Library', 'Apps', 'NVIDIA'];
+    const tabs = tabNames.map((t, i) => ({ label: t, cls: i === S.tab ? 'on' : '', pick: () => this.go({ tab: i, report: null, compare: false }) }));
+    const prevTab = () => this.go({ tab: Math.max(0, S.tab - 1), report: null, compare: false });
+    const nextTab = () => this.go({ tab: Math.min(tabNames.length - 1, S.tab + 1), report: null, compare: false });
+
+    // dashboard metrics
+    const wv = (t, lo, hi, f, ph) => lo + (hi - lo) * (0.5 + 0.35 * Math.sin(t * f + ph) + 0.15 * Math.sin(t * f * 3.7 + ph * 2));
+    const defs = streaming
+      ? [['GPU', '%', 61, 72, 0], ['GPU temp', '°C', 63, 67, 0], ['Encoder', '%', 28, 36, 0], ['VRAM', 'of 16 GB', 7.2, 7.5, 1], ['CPU', '%', 18, 26, 0], ['Network TX', 'Mb/s', 38, 46, 0]]
+      : [['GPU', '%', 3, 9, 0], ['GPU temp', '°C', 42, 45, 0], ['Encoder', '%', 0, 0, 0], ['VRAM', 'of 16 GB', 1.8, 2.0, 1], ['CPU', '%', 3, 7, 0], ['Network TX', 'Mb/s', 0.2, 0.6, 1]];
+    const metrics = defs.map((d, k) => {
+      const f = 0.45 + k * 0.13, ph = k * 1.3;
+      const val = wv(S.tick, d[2], d[3], f, ph);
+      const pts = [];
+      for (let j = 0; j < 30; j++) {
+        const v = wv(S.tick - 29 + j, d[2], d[3], f, ph);
+        const span = Math.max(0.0001, d[3] - d[2]);
+        const y = 30 - ((v - d[2]) / span) * 26;
+        pts.push((j * 160 / 29).toFixed(1) + ',' + (d[3] === d[2] ? 30 : y).toFixed(1));
+      }
+      return { label: d[0], unit: d[1], value: d[4] ? val.toFixed(1) : String(Math.round(val)), points: pts.join(' ') };
+    });
+    const linkText = S.linkChanged ? 'running at 1 Gbps, matched to this device · original 2.5 Gbps' : 'running at 2.5 Gbps, its original speed';
+    let restoreReason = 'The host keeps the matched speed until it is asked to put it back';
+    let restoreOk = S.linkChanged && !streaming;
+    if (!S.linkChanged) restoreReason = 'Already at its original speed';
+    else if (streaming) restoreReason = 'Not while a session is running';
+
+    // sessions
+    const all = [
+      { id: 's1', date: 'Today, 21:14', client: 'This device', mine: true, games: 'Cyberpunk 2077', dur: 112, grade: 'Excellent', drop: 0.1, rtt: 2.1, hostLat: 5.2, late: 0.2, decode: 1.3, bitrate: 77.6, target: 80, power: 265, res: '2560×1440 · 120 FPS', codec: 'HEVC 10-bit · HDR', seed: 1 },
+      { id: 's2', date: 'Yesterday, 22:40', client: 'Steam Deck', mine: false, games: 'Hades II', dur: 48, grade: 'Good', drop: 0.6, rtt: 6.8, hostLat: 5.9, late: 1.1, decode: 2.4, bitrate: 38.9, target: 40, power: 190, res: '1280×800 · 90 FPS', codec: 'HEVC', seed: 2 },
+      { id: 's3', date: '15 Oct, 20:05', client: 'This device', mine: true, games: 'Forza Horizon 5 · Desktop', dur: 130, grade: 'Excellent', drop: 0.2, rtt: 2.3, hostLat: 6.1, late: 0.4, decode: 1.4, bitrate: 78.8, target: 80, power: 280, res: '2560×1440 · 120 FPS', codec: 'AV1 · HDR', seed: 3 },
+      { id: 's4', date: '12 Oct, 18:30', client: 'Unknown client', mine: false, games: 'Balatro', dur: 25, grade: 'Good', drop: 0.9, rtt: 11.4, hostLat: 4.8, late: 0.9, decode: 3.1, bitrate: 19.2, target: 20, power: 120, res: '1920×1080 · 60 FPS', codec: 'H.264', seed: 4 },
+      { id: 's5', date: '11 Oct, 21:00', client: 'This device', mine: true, games: 'Elden Ring', dur: 182, grade: 'Poor', drop: 2.8, rtt: 3.9, hostLat: 8.7, late: 3.6, decode: 1.5, bitrate: 61.2, target: 80, power: 305, res: '2560×1440 · 120 FPS', codec: 'HEVC 10-bit · HDR', seed: 5 },
+      { id: 's6', date: '9 Oct, 19:12', client: 'Steam Deck', mine: false, games: 'Hollow Knight', dur: 65, grade: 'Excellent', drop: 0.1, rtt: 5.1, hostLat: 4.6, late: 0.3, decode: 2.2, bitrate: 39.5, target: 40, power: 150, res: '1280×800 · 90 FPS', codec: 'HEVC', seed: 6 }
+    ];
+    const fmtDur = (m) => m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min';
+    const gradeCls = (g) => g === 'Excellent' ? 'g-ex' : g === 'Good' ? 'g-good' : 'g-poor';
+    const byId = (id) => all.find((x) => x.id === id);
+    const list = all.filter((x) => S.filter === 'all' || x.mine);
+    const sessions = list.map((x) => {
+      const mi = S.marked.indexOf(x.id);
+      return {
+        date: x.date, client: x.client, games: x.games, durText: fmtDur(x.dur), grade: x.grade, gradeCls: gradeCls(x.grade),
+        markCls: mi >= 0 ? 'on' : '', markText: mi >= 0 ? String(mi + 1) : '',
+        open: () => this.go({ report: x.id, lane: 0, cursor: 90, zoom: 1 }),
+        mark: () => {
+          let m = S.marked.slice();
+          if (mi >= 0) m.splice(mi, 1); else { m.push(x.id); if (m.length > 2) m.shift(); }
+          this.go({ marked: m });
+        }
+      };
+    });
+    const filters = [
+      { label: 'This device', cls: S.filter === 'mine' ? 'on' : '', pick: () => this.go({ filter: 'mine' }) },
+      { label: 'All devices', cls: S.filter === 'all' ? 'on' : '', pick: () => this.go({ filter: 'all' }) }
+    ];
+    const canCompare = S.marked.length === 2;
+    const markHint = canCompare ? 'Two sessions marked' : 'X marks a session · mark two to compare';
+    const openCompare = () => { if (canCompare) this.go({ compare: true, report: null }); };
+
+    // report
+    const N = 180;
+    const lanes = [
+      { key: 'rtt', name: 'Round-trip time', unit: 'ms', dec: 1 },
+      { key: 'drop', name: 'Dropped frames', unit: '%', dec: 2 },
+      { key: 'hostLat', name: 'Host frame latency', unit: 'ms', dec: 1 },
+      { key: 'bitrate', name: 'Bitrate', unit: 'Mb/s', dec: 1 },
+      { key: 'decode', name: 'Decode latency', unit: 'ms', dec: 2 },
+      { key: 'power', name: 'GPU board power', unit: 'W', dec: 0 }
+    ];
+    const series = (x, key) => {
+      const out = [];
+      for (let i = 0; i < N; i++) {
+        let v = x[key] * (1 + 0.12 * Math.sin(i * 0.21 + x.seed) + 0.07 * Math.sin(i * 0.77 + x.seed * 2) + 0.04 * Math.sin(i * 2.3 + x.seed));
+        if (x.grade === 'Poor' && i > 58 && i < 70 && (key === 'drop' || key === 'hostLat')) v *= 2.6;
+        if (x.grade === 'Poor' && i > 58 && i < 70 && key === 'bitrate') v *= 0.6;
+        if (key === 'bitrate') v = Math.min(v, x.target);
+        if (key === 'power') v = Math.min(v, 320);
+        out.push(Math.max(0, v));
+      }
+      return out;
+    };
+    let rep = null, chart = null;
+    const tabReport = S.tab === 1 && !!S.report;
+    if (tabReport) {
+      const x = byId(S.report);
+      const lane = lanes[S.lane];
+      const data = series(x, lane.key);
+      const len = Math.round(N / S.zoom);
+      const start = Math.max(0, Math.min(N - len, S.cursor - Math.floor(len / 2)));
+      let mx = 0; data.forEach((v) => { if (v > mx) mx = v; });
+      const top = lane.key === 'power' ? 360 : mx * 1.15;
+      const yOf = (v) => 220 - (v / top) * 210;
+      const pts = [];
+      for (let i = start; i < start + len; i++) pts.push((((i - start) / (len - 1)) * 1000).toFixed(1) + ',' + yOf(data[i]).toFixed(1));
+      const cx = ((S.cursor - start) / (len - 1)) * 1000;
+      const tOf = (i) => { const m = Math.round((i / (N - 1)) * x.dur); return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); };
+      chart = {
+        points: pts.join(' '), cx: cx.toFixed(1), cy: yOf(data[S.cursor]).toFixed(1),
+        readout: data[S.cursor].toFixed(lane.dec), unit: lane.unit, lane: lane.name,
+        time: tOf(S.cursor), t0: tOf(start), t1: tOf(start + len - 1),
+        maxText: mx.toFixed(lane.dec) + ' ' + lane.unit, zoomText: S.zoom + '×',
+        hasLimit: lane.key === 'power', limY: yOf(320).toFixed(1)
+      };
+      const chk = (label, v, unit, ok, warn, dec) => ({ label: label, value: v.toFixed(dec) + ' ' + unit, dot: v < ok ? '' : v <= warn ? 'warn' : 'bad' });
+      rep = Object.assign({}, x, {
+        durText: fmtDur(x.dur), gradeCls: gradeCls(x.grade),
+        checks: [chk('Dropped frames', x.drop, '%', 1, 2, 1), chk('Round-trip time', x.rtt, 'ms', 5, 10, 1), chk('Host frame latency', x.hostLat, 'ms', 7, 8.4, 1), chk('Late frames', x.late, '%', 1, 3, 1)]
+      });
+    }
+    const laneList = lanes.map((l, i) => ({ name: l.name, cls: i === S.lane ? 'on' : '', pick: () => this.go({ lane: i }) }));
+    const step = Math.max(1, Math.round(N / S.zoom / 24));
+    const curLeft = () => this.go({ cursor: Math.max(0, S.cursor - step) });
+    const curRight = () => this.go({ cursor: Math.min(N - 1, S.cursor + step) });
+    const zoomIn = () => this.go({ zoom: Math.min(4, S.zoom * 2) });
+    const zoomOut = () => this.go({ zoom: Math.max(1, S.zoom / 2) });
+    const prevLane = () => this.go({ lane: Math.max(0, S.lane - 1) });
+    const nextLane = () => this.go({ lane: Math.min(lanes.length - 1, S.lane + 1) });
+
+    // compare
+    const tabCompare = S.tab === 1 && S.compare && canCompare;
+    let cmpA = { games: '', date: '', client: '' }, cmpB = cmpA, cmpRows = [];
+    if (tabCompare) {
+      cmpA = byId(S.marked[0]); cmpB = byId(S.marked[1]);
+      const row = (label, k, unit, dec, lowerBetter) => {
+        const a = cmpA[k], b = cmpB[k], d = b - a;
+        let cls = 'same';
+        if (Math.abs(d) > 0.0001 && lowerBetter !== null) cls = (d < 0) === lowerBetter ? 'better' : 'worse';
+        return { label: label, a: a.toFixed(dec) + ' ' + unit, b: b.toFixed(dec) + ' ' + unit, d: (d > 0 ? '+' : '') + d.toFixed(dec) + ' ' + unit, cls: cls };
+      };
+      cmpRows = [
+        { label: 'Grade', a: cmpA.grade, b: cmpB.grade, d: '', cls: 'same' },
+        row('Duration', 'dur', 'min', 0, null),
+        row('Dropped frames', 'drop', '%', 1, true),
+        row('Round-trip time', 'rtt', 'ms', 1, true),
+        row('Host frame latency', 'hostLat', 'ms', 1, true),
+        row('Decode latency', 'decode', 'ms', 1, true),
+        row('Bitrate delivered', 'bitrate', 'Mb/s', 1, false)
+      ];
+    }
+
+    // library
+    const lib = { games: S.synced ? 85 : 84, last: S.synced ? 'just now' : '2 hours ago' };
+    const stores = [['Steam', 41], ['Epic', 18], ['Xbox', 9], ['GOG', 7], ['Ubisoft', 4], ['EA App', 3], ['Battle.net', 2]].map((s) => ({ name: s[0], n: S.synced && s[0] === 'Steam' ? 42 : s[1] }));
+    const games = [
+      ['Cyberpunk 2077', 'Steam', '3 Mar'], ['Elden Ring', 'Steam', '3 Mar'], ['Forza Horizon 5', 'Xbox', '5 Mar'],
+      ['Hades II', 'Steam', '25 Sep'], ['Alan Wake 2', 'Epic', '12 Apr'], ['Baldur’s Gate 3', 'GOG', '3 Mar'],
+      ['Assassin’s Creed Shadows', 'Ubisoft', '20 Mar'], ['Diablo IV', 'Battle.net', '3 Mar']
+    ].map((g) => ({ name: g[0], store: g[1], added: g[2] }));
+    const syncOk = !streaming;
+    const syncReason = streaming ? 'Not while the host is streaming: the restart would end that stream' : '';
+
+    // apps
+    const appDefs = [
+      ['hue', 'Philips Hue Sync', 'Closed when a session starts, reopened when it ends'],
+      ['icue', 'Corsair iCUE', 'Closed when a session starts, reopened when it ends'],
+      ['wall', 'Wallpaper Engine', 'Not managed: stays as it is during sessions'],
+      ['armoury', 'Armoury Crate', 'Closed when a session starts, reopened when it ends']
+    ];
+    const apps = appDefs.map((a) => ({
+      name: a[1], desc: S.apps[a[0]] ? 'Closed when a session starts, reopened when it ends' : 'Not managed: stays as it is during sessions',
+      cls: S.apps[a[0]] ? 'on' : '',
+      toggle: () => { const n = Object.assign({}, S.apps); n[a[0]] = !n[a[0]]; this.go({ apps: n }); }
+    }));
+
+    const nvSettings = [
+      ['Low Latency Mode', 'Ultra'], ['Vertical sync', 'Off'], ['Power management mode', 'Prefer maximum performance'],
+      ['Max Frame Rate', '118 FPS'], ['Texture filtering · quality', 'High performance'], ['Shader Cache Size', 'Unlimited'],
+      ['DLSS SR · preset override', 'Preset K'], ['Smooth Motion', 'Off']
+    ].map((n) => ({ k: n[0], v: n[1] }));
+    const sentinelState = S.sentinel ? 'Armed · last restore 14 Oct, 21:32, after NVIDIA App reset 3 settings' : 'Off · NVIDIA App changes are left as they are';
+
+    // dialogs
+    const closeDlg = () => { clearTimeout(this.t1); clearTimeout(this.t2); this.go({ dialog: null }); };
+    const openUpdate = () => this.go({ dialog: 'update', updPhase: 0 });
+    const installUpd = () => this.go({ updPhase: 1 });
+    const upd = { list: S.updPhase === 0, running: S.updPhase === 1, title: S.updPhase === 0 ? '3 updates available' : 'Installing 3 updates' };
+    const openSync = () => { if (syncOk) this.go({ dialog: 'sync', syncPhase: 0 }); };
+    const startSync = () => {
+      this.go({ syncPhase: 1 });
+      this.t1 = setTimeout(() => this.go({ syncPhase: 2 }), 1600);
+      this.t2 = setTimeout(() => this.go({ syncPhase: 3, synced: true }), 3600);
+    };
+    const sp = S.syncPhase;
+    const stepCls = (n) => sp > n ? 'done' : sp === n ? 'on' : '';
+    const stepDot = (n) => sp > n ? '' : sp === n ? 'warn' : 'off';
+    const sync = {
+      confirm: sp === 0, progress: sp > 0, done: sp === 3,
+      title: sp === 0 ? 'Sync the library and restart Vibepollo?' : sp === 3 ? 'Library updated' : 'Updating the library',
+      steps: [
+        { label: 'Scanning Steam, Epic, Xbox, GOG, Ubisoft, EA App and Battle.net', cls: stepCls(1), dot: stepDot(1) },
+        { label: 'Restarting Vibepollo', cls: stepCls(2), dot: stepDot(2) },
+        { label: 'Waiting for the host to answer again', cls: sp === 3 ? 'done' : '', dot: sp === 3 ? '' : 'off' }
+      ]
+    };
+
+    // screens
+    const isHome = S.screen === 'home';
+    const isHost = S.screen === 'host';
+    const showTabs = isHost && !showAccessPage;
+    const back = () => {
+      if (S.dialog) return closeDlg();
+      if (S.report || S.compare) return this.go({ report: null, compare: false });
+      this.go({ screen: 'home' });
+    };
+
+    // prompt bar
+    const P = (glyphs, label, act) => ({ glyphs: glyphs.map((g) => ({ t: g[0], cls: g[1] })), label: label, act: act || (() => {}) });
+    let prompts;
+    if (S.dialog) prompts = [P([['A', 'A']], 'Confirm'), P([['B', 'B']], 'Close', closeDlg)];
+    else if (isHome) prompts = [
+      P([['LB', 'sh'], ['RB', 'sh']], 'Host', () => this.go({ hostIdx: 1 - S.hostIdx, homeFocus: 0 })),
+      P([['A', 'A']], S.homeFocus === 3 ? 'Open Host' : 'Select', () => { if (S.homeFocus === 3 && hostEnabled) openHost(); }),
+      P([['X', 'X']], 'Power')
+    ];
+    else if (tabReport) prompts = [
+      P([['LB', 'sh'], ['RB', 'sh']], 'Lane', nextLane),
+      P([['◀', 'dp'], ['▶', 'dp']], 'Cursor', curRight),
+      P([['LT', 'sh'], ['RT', 'sh']], 'Zoom', zoomIn),
+      P([['B', 'B']], 'Back', back)
+    ];
+    else if (tabCompare) prompts = [P([['B', 'B']], 'Back', back)];
+    else if (showTabs && S.tab === 1) prompts = [
+      P([['LB', 'sh'], ['RB', 'sh']], 'Tab', nextTab),
+      P([['X', 'X']], 'Mark'),
+      canCompare ? P([['Y', 'Y']], 'Compare', openCompare) : P([['Y', 'Y']], 'Compare (mark two)'),
+      P([['A', 'A']], 'Open report'),
+      P([['B', 'B']], 'Back', back)
+    ];
+    else if (showTabs) prompts = [
+      P([['LB', 'sh'], ['RB', 'sh']], 'Tab', nextTab),
+      P([['A', 'A']], 'Select'),
+      P([['B', 'B']], 'Back', back)
+    ];
+    else prompts = [P([['B', 'B']], 'Back', back)];
+
+    return {
+      accent, spark, streaming, isHome, isHost, host, hostTabs, homeActions, homeReason,
+      accessText, accessDot, showAccessPage, isPending: access === 'pending' || (access === 'denied' && S.requested), isDenied: access === 'denied' && !S.requested,
+      requestAgain: () => this.go({ requested: true }), requestLabel: 'Request access again',
+      showTabs, showTabBar: showTabs && !tabReport && !tabCompare, tabs, prevTab, nextTab,
+      tabDash: showTabs && S.tab === 0, tabSessList: showTabs && S.tab === 1 && !tabReport && !tabCompare,
+      tabReport: showTabs && tabReport, tabCompare: showTabs && tabCompare,
+      tabLib: showTabs && S.tab === 2, tabApps: showTabs && S.tab === 3, tabNv: showTabs && S.tab === 4,
+      metrics, linkText, linkPermCls: S.linkPerm ? 'on' : '', toggleLinkPerm: () => this.go({ linkPerm: !S.linkPerm }),
+      restoreReason, restoreCls: restoreOk ? '' : 'dis', restore: () => { if (restoreOk) this.go({ linkChanged: false }); },
+      spatialCls: S.spatial ? 'on' : '', toggleSpatial: () => this.go({ spatial: !S.spatial }),
+      spatialState: streaming ? (S.spatial ? 'active now' : 'off for the next session') : 'available',
+      openUpdate, filters, sessions, markHint, compareCls: canCompare ? 'pri' : 'dis', openCompare,
+      rep: rep || {}, chart: chart || {}, laneList, curLeft, curRight, zoomIn, zoomOut, prevLane, nextLane,
+      cmpA, cmpB, cmpRows,
+      lib, stores, games, syncCls: syncOk ? 'pri' : 'dis', syncReason, openSync,
+      apps, nvSettings, sentinelCls: S.sentinel ? 'on' : '', toggleSentinel: () => this.go({ sentinel: !S.sentinel }), sentinelState,
+      dlgUpdate: S.dialog === 'update', dlgSync: S.dialog === 'sync', upd, sync, closeDlg, installUpd, startSync,
+      prompts
+    };
+  }
+}
+</script>
+</body>
+</html>
