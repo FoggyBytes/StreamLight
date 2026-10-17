@@ -79,7 +79,9 @@ jobs:
           Write-Host "StreamLight $app ($state)"
 
       - name: Install Qt ${{ env.QT_VERSION }}
-        uses: jurplel/install-qt-action@v4
+        # Pinned to a commit, not the moving v4 branch: a third-party action runs inside the
+        # build whose output gets signed. a9c63c7 = tag v4.4.1, the commit v4 resolved to on 17/10/2026.
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125  # v4.4.1
         with:
           version: ${{ env.QT_VERSION }}
           host: windows
