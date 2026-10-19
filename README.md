@@ -183,6 +183,14 @@ Settings — paired hosts, video / audio / input preferences, client certificate
 
 Up to 5.3.0 both lived under `Moonlight Game Streaming Project\Moonlight` — upstream Moonlight's own store, shared with it. 5.4.0 moved out of it and does not migrate anything, so the upgrade to 5.4.0 resets settings and pairing once. The old store is left untouched: an older StreamLight, or a Moonlight installation, still finds its data there.
 
+## 🔏 Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- **What is signed** — `StreamLight.exe`, `AntiHooking.dll`, the installer and its uninstaller. They are built from this repository by GitHub Actions ([`build-windows.yml`](.github/workflows/build-windows.yml)) and signed through SignPath; nothing built elsewhere is signed. The other DLLs ship with their own publishers' signatures: Qt's by The Qt Company, the libraries from Moonlight's official release by its maintainer (see [`libs/README.md`](libs/README.md))
+- **Team roles** — Authors, reviewers and approvers: [@FoggyBytes](https://github.com/FoggyBytes). Changes from other contributors are reviewed before they are merged, and every release is approved by hand before it is signed
+- **Privacy** — StreamLight sends nothing to FoggyBytes. Every connection it makes on its own, and how to turn off the ones that can be, is listed in [PRIVACY.md](PRIVACY.md)
+
 ## 🙏 Support the Project
 [![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://paypal.me/foggypunk)
 

@@ -279,9 +279,16 @@ jobs:
           $deploy = 'build\deploy-x64-release'
           $files = Get-ChildItem $deploy -Recurse -File
           $setup = Get-Item "build\installer\StreamLight_${ver}_Installer.exe"
-          $unsigned = Get-ChildItem $deploy -Recurse -Include *.exe, *.dll |
-            Where-Object { (Get-AuthenticodeSignature $_.FullName).Status -ne 'Valid' } |
-            ForEach-Object { $_.FullName.Substring((Resolve-Path $deploy).Path.Length + 1) }
+          # Not 'Valid' is not the same as unsigned: under test-signing our own files carry the
+          # SignPath test certificate, which Windows does not trust (UnknownError). Say which.
+          $untrusted = Get-ChildItem $deploy -Recurse -Include *.exe, *.dll | ForEach-Object {
+              $sig = Get-AuthenticodeSignature $_.FullName
+              if ($sig.Status -ne 'Valid') {
+                $path = $_.FullName.Substring((Resolve-Path $deploy).Path.Length + 1)
+                $by = if ($sig.SignerCertificate) { "$($sig.SignerCertificate.Subject -replace ',.*', '') ($($sig.Status))" } else { 'not signed' }
+                "- ``$path`` — $by"
+              }
+            }
           $setupSig = Get-AuthenticodeSignature $setup.FullName
           $setupSigner = if ($setupSig.SignerCertificate) { "$($setupSig.SignerCertificate.Subject -replace ',.*', '') ($($setupSig.Status))" } else { 'not signed' }
           @(
@@ -291,9 +298,9 @@ jobs:
             "- Installer: ``$($setup.Name)``, $([math]::Round($setup.Length / 1MB, 1)) MB, SHA-256 ``$((Get-FileHash $setup.FullName).Hash.ToLowerInvariant())``"
             "- Installer signature: $setupSigner"
             ''
-            "Executables and DLLs in the deploy folder without a valid signature ($($unsigned.Count)):"
+            "Executables and DLLs in the deploy folder that Windows does not trust ($(@($untrusted).Count)):"
             ''
-            ($unsigned | ForEach-Object { "- ``$_``" })
+            $untrusted
           ) -join "`n" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Upload deploy folder
