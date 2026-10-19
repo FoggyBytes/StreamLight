@@ -11,6 +11,13 @@
              both unins000.exe and the Setup program the installer runs from %TEMP%.
   Every file must say product name "StreamLight" and the product version the workflow passes
   (X.Y.Z.0), as the SignPath Foundation requires for every signed file.
+
+  The spaces after StreamLight and ${productVersion} on Uninstaller.exe are on purpose. Inno
+  Setup writes those two strings over fixed placeholders of spaces in its version resource
+  (60 characters for ProductName, 50 for ProductVersion: Projects\Res\Setup.version.rc and
+  Compiler.ExeUpdateFunc.pas UpdateStringValue in jrsoftware/issrc) and leaves the rest as
+  padding, and SignPath compares the whole string. 43 spaces fit a 7-character version
+  (7.0.3.0); a version of another length (7.0.10.0) needs 50 minus its length.
 -->
 <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
   <parameters>
@@ -23,7 +30,7 @@
     <pe-file path="AntiHooking.dll" product-name="StreamLight" product-version="${productVersion}">
       <authenticode-sign />
     </pe-file>
-    <pe-file path="Uninstaller.exe" product-name="StreamLight" product-version="${productVersion}">
+    <pe-file path="Uninstaller.exe" product-name="StreamLight                                                 " product-version="${productVersion}                                           ">
       <authenticode-sign />
     </pe-file>
   </zip-file>

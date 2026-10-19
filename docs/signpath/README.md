@@ -47,4 +47,5 @@ Each request waits for its approval in the SignPath portal when the signing poli
 
 Every signed file must carry product name `StreamLight` and product version `X.Y.Z.0`: `app.pro`
 and `AntiHooking/AntiHooking.pro` set them for the exe and the DLL, `StreamLight.iss` for the installer
-and its uninstaller.
+and its uninstaller. Inno Setup pads both strings with spaces in the uninstaller and the installer
+(see the comment in [`binaries.xml`](binaries.xml)), so their entries carry the same padding.

@@ -7,13 +7,16 @@
   Input:   a zip (the GitHub Actions artifact StreamLight-X.Y.Z-installer-to-sign) holding the one
            StreamLight_X.Y.Z_Installer.exe, compiled around the uninstaller signed by the first
            request. Only the outer Setup.exe is signed here: everything inside it was signed before.
+  The spaces after StreamLight and ${productVersion} are Inno Setup's padding, as for
+  Uninstaller.exe in binaries.xml, which explains them (SetupLdr.version.rc has the same
+  60- and 50-character placeholders).
 -->
 <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
   <parameters>
     <parameter name="productVersion" required="true" />
   </parameters>
   <zip-file>
-    <pe-file path="StreamLight_*_Installer.exe" product-name="StreamLight" product-version="${productVersion}">
+    <pe-file path="StreamLight_*_Installer.exe" product-name="StreamLight                                                 " product-version="${productVersion}                                           ">
       <authenticode-sign />
     </pe-file>
   </zip-file>
