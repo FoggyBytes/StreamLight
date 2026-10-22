@@ -34,7 +34,17 @@ jobs:
               -H "Authorization: Bearer $GH_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100&page=$page")
+            # A 200 can still carry an empty or wrong body (22/10/2026: an empty
+            # list drew "0"). Stop without touching the badge rather than publish it.
+            if ! echo "$resp" | jq -e 'type == "array"' > /dev/null; then
+              echo "::error::Releases page $page is not a list; badge left as it is"
+              exit 1
+            fi
             count=$(echo "$resp" | jq 'length')
+            if [ "$count" -eq 0 ] && [ "$page" -eq 1 ]; then
+              echo "::error::The API returned no releases; badge left as it is"
+              exit 1
+            fi
             [ "$count" -eq 0 ] && break
             sum=$(echo "$resp" | jq '[.[].assets[]?.download_count] | add // 0')
             total=$((total + sum))
@@ -42,6 +52,10 @@ jobs:
             page=$((page + 1))
           done
           echo "Total downloads: $total"
+          if [ "$total" -le 0 ]; then
+            echo "::error::Total downloads came out as $total; badge left as it is"
+            exit 1
+          fi
           mkdir -p .badges
           curl -fsSL "https://img.shields.io/badge/Downloads-${total}-FA8142" -o .badges/downloads.svg
 
