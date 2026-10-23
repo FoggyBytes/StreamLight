@@ -1,8 +1,10 @@
 #include "backend/computermanager.h"
 #include "streaming/session.h"
 #include "../StreamTweakBridge.h"
+#include "backend/boxartmanager.h"
 
 #include <QAbstractListModel>
+#include <QTimer>
 #include <QHash>
 #include <QVariantMap>
 
@@ -58,7 +60,8 @@ class ComputerModel : public QAbstractListModel
         StageOpacityRole,
         StreamTweakEnabledRole,
         AsleepRole,         // put to sleep by this client, not polled until Wake (6.2.0)
-        PyroWaveTestRole    // 0 no PyroWave · 1 PyroWave, host too old for the test · 2 testable (7.0.0)
+        PyroWaveTestRole,   // 0 no PyroWave · 1 PyroWave, host too old for the test · 2 testable (7.0.0)
+        ServerRestartRole   // the streaming server's name while a Library Sync and restart restarts it, else "" (8.0.0)
     };
 
 public:
@@ -271,6 +274,24 @@ public:
     /// Options tile.
     Q_INVOKABLE void restoreHostLink(int computerIndex);
 
+    /**
+     * StreamLight 8.0's host section (StreamTweak 10.0.0) — HostSectionScreen.qml.
+     *
+     * requestHostSection asks one read: "DASHBOARD", "APPS", "NVIDIA", "STATS" for the
+     * Dashboard's numbers, or "UPDATESTATE" for updates waiting for a restart — or one of the
+     * Sessions tab's, in their fixed shapes: "SESSIONS <offset> <count> ALL|MINE",
+     * "SESSION <id>", "SERIES <id> <track>", "COVER <id> <n>". The signal carries the command
+     * as sent. Emits hostSectionReceived with the parsed JSON, an EMPTY map when
+     * the host did not answer or predates the verb.
+     *
+     * setHostSetting sends one write. Only the three shapes the host accepts get through —
+     * "SETAUDIO ON|OFF", "SETAPP <16 hex digits> ON|OFF", "SETSENTINEL ON|OFF" — so nothing
+     * from QML can put a path or a free command on the wire. Emits hostSettingResult with the
+     * host's reply ("" on timeout, "ERR" when refused here).
+     */
+    Q_INVOKABLE void requestHostSection(int computerIndex, const QString& verb);
+    Q_INVOKABLE void setHostSetting(int computerIndex, const QString& command);
+
     /** True if Tailscale is installed on THIS (client) PC (so the host's Tailscale
      *  endpoint is actually usable from here). Drives the greyed "Tailscale" option. */
     Q_INVOKABLE bool clientHasTailscale() const;
@@ -334,6 +355,10 @@ public:
      * find what to resume.
      */
     Q_INVOKABLE QVariantMap runningAppFor(int computerIndex) const;
+    // The Library tab's cover for the host's app of that name (8.0.0): this client's own box
+    // art, the host page's picture, fetched from the server when it is not on disk yet ("" until
+    // then; libraryCoverReady says when to ask again). "" for a name the server does not list.
+    Q_INVOKABLE QString libraryCover(int computerIndex, const QString& name);
 
     /// "2 h ago", "yesterday", "3 days ago" — the wording the host used to send with its own
     /// last-session reply, kept identical now that the client works it out for itself.
@@ -371,6 +396,14 @@ signals:
     void linkMatchProgress(int computerIndex, bool running, QString detail);
     void updateProgressReceived(int computerIndex, QVariantMap state);
 
+    // StreamLight 8.0's host section.
+    void hostSectionReceived(int computerIndex, QString verb, QVariantMap data);
+    void hostSettingResult(int computerIndex, QString command, QString reply);
+    void libraryCoverReady(int computerIndex);
+    // From the CAPS reply that starts every authorisation check: whether the host has the
+    // host-section verbs ("host=1", StreamTweak 10.0.0) and its version ("ver=", "" before it).
+    void streamTweakCapsReceived(int computerIndex, bool hostSection, QString version);
+
     void layoutRevisionChanged();
 
 private slots:
@@ -379,8 +412,18 @@ private slots:
     void handlePairingCompleted(NvComputer* computer, QString error);
 
 private:
+    BoxArtManager m_BoxArtManager;      // the Library tab's covers (libraryCover)
     static void rememberStreamTweakSeen(const QString& uuid);
     void bumpLayoutRevision();
+
+    // A Library Sync and restart in progress on a host (8.0.0), followed from here and not
+    // from the section, so Home keeps saying "Restarting" after the section is left: for the
+    // minute the server is down, Moonlight's polls see the host offline. Keyed by uuid.
+    struct LibraryJob { QString server; QString phase; qint64 sinceMs = 0; };
+    QHash<QString, LibraryJob> m_LibraryJobs;
+    QTimer m_LibraryJobTimer;
+    void noteLibraryState(const QString& uuid, const QVariantMap& state);
+    void pollLibraryJobs();
 
     QVector<NvComputer*> m_Computers;
     int m_LayoutRevision = 0;

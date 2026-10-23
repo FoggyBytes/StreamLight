@@ -1,4 +1,4 @@
-; StreamLight 7.0.3 — Moonlight fork with StreamTweak integration.
+; StreamLight 8.0.0 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
@@ -11,7 +11,7 @@
 ; Reading version.txt from here was considered and left alone: that file carries a UTF-8
 ; BOM and no trailing newline, so an ISPP FileRead would have to skip three bytes by
 ; position, which is a more fragile thing than one line to remember at release time.
-#define AppVersion "7.0.3"
+#define AppVersion "8.0.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -340,7 +340,7 @@ begin
     '•  Wake the host and sign in with its PIN, from the sofa, on the pad' + #13#10 +
     '•  Live host metrics overlay (GPU, encoder, VRAM, temperature, CPU, network)' + #13#10 +
     '•  NVIDIA Sentinel — protects your driver profile from NVIDIA App resets' + #13#10 +
-    '•  Auto HDR toggle + spatial audio (Dolby Atmos / Windows Sonic)' + #13#10 +
+    '•  The host from the sofa — dashboard, sessions, library, apps, Sentinel' + #13#10 +
     '•  Game library sync with store badges (Steam, Epic, GOG, Xbox, …)' + #13#10 +
     '•  Session quality grading and charts, bitrate against your set target' + #13#10 +
     '•  Shared clipboard while you stream — encrypted, passwords cleared' + #13#10 +

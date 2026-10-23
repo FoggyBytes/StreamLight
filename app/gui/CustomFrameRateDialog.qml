@@ -115,8 +115,10 @@ Popup {
                     border.color: parent.activeFocus ? Theme.ink : Theme.line
                     border.width: parent.activeFocus ? 2 : 1
                 }
-                Keys.onReturnPressed: pop._commit()
-                Keys.onEnterPressed:  pop._commit()
+                // The pad's A opens the on-screen keyboard (8.0.0); Enter on a keyboard applies.
+                Keys.onReturnPressed: function(event) { if (!fpsKeyboard.offer(event)) pop._commit() }
+                Keys.onEnterPressed:  function(event) { if (!fpsKeyboard.offer(event)) pop._commit() }
+                Keys.onSpacePressed:  function(event) { event.accepted = fpsKeyboard.offer(event) }
                 // Shift+Tab (the pad's up in Settings arrives as Tab + Shift) keeps going back.
                 Keys.onTabPressed:    function(event) { if ((event.modifiers & Qt.ShiftModifier)) { event.accepted = false; return } applyBtn.forceActiveFocus() }
                 Keys.onDownPressed:   applyBtn.forceActiveFocus()
@@ -227,6 +229,13 @@ Popup {
         if (!_valid) return
         pop.accepted(_fps)
         pop.close()
+    }
+
+    VirtualKeyboard {
+        id: fpsKeyboard
+        target: fpsField
+        mode: "number"
+        onAccepted: { close(); pop._commit() }
     }
 
     onOpened: {

@@ -32,9 +32,17 @@ FocusScope {
      * a dialog is drawn to a different scale than the page it is covering — which is the
      * whole defect this exists to close.
      */
-    onWidthChanged: Theme.uiScale = width / 1330
+    // ⚠️ 8.0.0 (#43): the height counts too. By width alone a 3840 × 1200 screen scaled to the
+    // ceiling while its height held about 1.53 of it, and the host card spilled over itself. 748
+    // is the height of a 16:9 window 1330 wide; on 16:9, 16:10 and 21:9 nothing changes.
+    function _fit() {
+        Theme.heightFit = height / 748
+        Theme.uiScale = Math.min(width / 1330, height / 748)
+    }
+    onWidthChanged: _fit()
+    onHeightChanged: _fit()
     Component.onCompleted: {
-        Theme.uiScale = width / 1330
+        _fit()
         // The opening animation (6.0.0) — decided here, once. See StartupSplash.
         _splashOnLaunch = Theme.startupAnimation && !Theme.reduceAnimations
                           && !(typeof initialView !== "undefined" && initialView && initialView.length > 0)
@@ -62,8 +70,22 @@ FocusScope {
     // next launch, never this one.
     property bool _splashOnLaunch: false
 
-    // 0 = Home, 1 = Apps, 2 = Settings
+    // 0 = Home, 1 = Apps, 2 = Settings, 3 = the host section (8.0.0)
     property int currentPage: 0
+
+    // 8.0.0: the host section — StreamTweak's mark on the host card. The host by uuid, its row
+    // read back when needed, for the same reason as _appsUuid below.
+    property string _hsUuid:  ""
+    property var    _hsModel: null
+    property string _hsName:  ""
+    readonly property int _hsIdx: _rowOf(_hsModel, _hsUuid)
+
+    function openHostSection(uuid, computerModel, hostName) {
+        _hsUuid  = uuid
+        _hsModel = computerModel
+        _hsName  = hostName || ""
+        currentPage = 3
+    }
 
     // Passed from HomeScreen when navigating to Apps. The host by uuid, its row read back when
     // needed: the page can stay up for a whole evening, and the host list moves under it
@@ -189,6 +211,10 @@ FocusScope {
             currentPage = _settingsReturnPage
             return true
         }
+        if (currentPage === 3) {
+            currentPage = 0
+            return true
+        }
         if (currentPage === 1) {
             currentPage = 0
             return true
@@ -291,7 +317,7 @@ FocusScope {
     readonly property int _settingsHostIndex: _rowOf(_settingsHostModel, _settingsHostUuid)
     property bool   _settingsHostStEnabled: true
 
-    // Also called by main.qml Keys.onMenuPressed.
+    // Also called by main.qml on Y (Keys.onHangupPressed) and the Preferences shortcut.
     function openSettings() {
         if (currentPage !== 2) {
             _settingsReturnPage = currentPage
@@ -300,6 +326,9 @@ FocusScope {
             var mdl = null, idx = -1
             if (currentPage === 1 && _appsModel && _appsIdx >= 0) {
                 mdl = _appsModel; idx = _appsIdx
+            } else if (currentPage === 3 && _hsModel && _hsIdx >= 0) {
+                // From the host section: that host, like from its host page.
+                mdl = _hsModel; idx = _hsIdx
             } else if (currentPage === 0 && homeLoader.item
                        && homeLoader.item.computerModel
                        && homeLoader.item.currentHostIndex >= 0) {
@@ -311,8 +340,8 @@ FocusScope {
                 _settingsProfileName     = mdl.hostActiveProfileName(idx)
                 _settingsHostStEnabled   = mdl.streamTweakEnabled(idx)
                 _settingsHostUuid        = mdl.uuidAt(idx)
-                _settingsHostName        = currentPage === 1
-                    ? _appsHostName
+                _settingsHostName        = currentPage === 1 ? _appsHostName
+                    : currentPage === 3 ? _hsName
                     : (homeLoader.item.currentHost ? homeLoader.item.currentHost.name : "")
             } else {
                 _settingsProfileOverride = ({})
@@ -403,6 +432,11 @@ FocusScope {
                 settingsLoader.item.resetBitrateToDefault()
             }
             break
+        default:
+            // "section:<action>": a prompt the StreamTweak section lent the bar (its Sessions tab).
+            if (kind.indexOf("section:") === 0 && hostSectionLoader.item && hostSectionLoader.item.barAction)
+                hostSectionLoader.item.barAction(kind.substring(8))
+            break
         }
     }
 
@@ -422,7 +456,18 @@ FocusScope {
      */
     property int  _outgoing: -1
     property real _t: 1
-    readonly property bool _push: currentPage === 2 || _outgoing === 2
+    // Settings and the host section both slide in from the right (8.0.0: the section is a page
+    // of settings for the host, and it is entered and left like one).
+    function _isPush(n) { return n === 2 || n === 3 }
+
+    // Settings and the StreamTweak section draw their text a size smaller, in one proportion
+    // (21/10/2026). Held through the page's own slide, so it does not change size on the way out.
+    Binding {
+        target: Theme
+        property: "textScale"
+        value: (appShell._isPush(appShell.currentPage) || appShell._isPush(appShell._outgoing)) ? 0.88 : 1.0
+    }
+    readonly property bool _push: _isPush(currentPage) || _isPush(_outgoing)
     NumberAnimation {
         id: pageAnim
         target: appShell; property: "_t"
@@ -434,15 +479,15 @@ FocusScope {
     }
     function _pageOpacity(n) {
         if (_outgoing < 0) return 1
-        if (n === currentPage) return _push ? (n === 2 ? 1 : 0.5 + 0.5 * _t) : _t
-        if (n === _outgoing)   return _push ? (n === 2 ? 1 : 1 - 0.5 * _t) : 1 - _t
+        if (n === currentPage) return _push ? (_isPush(n) ? 1 : 0.5 + 0.5 * _t) : _t
+        if (n === _outgoing)   return _push ? (_isPush(n) ? 1 : 1 - 0.5 * _t) : 1 - _t
         return 1
     }
     function _pageShift(n) {
         if (_outgoing < 0 || !_push) return 0
         var w = contentArea.width
-        if (n === currentPage) return n === 2 ? (1 - _t) * w : -(1 - _t) * 0.3 * w
-        if (n === _outgoing)   return n === 2 ? _t * w : -_t * 0.3 * w
+        if (n === currentPage) return _isPush(n) ? (1 - _t) * w : -(1 - _t) * 0.3 * w
+        if (n === _outgoing)   return _isPush(n) ? _t * w : -_t * 0.3 * w
         return 0
     }
     function _pageScale(n) {
@@ -465,6 +510,7 @@ FocusScope {
         if      (currentPage === 0 && homeLoader.item)     homeLoader.item.forceActiveFocus()
         else if (currentPage === 1 && appsLoader.item)     appsLoader.item.forceActiveFocus()
         else if (currentPage === 2 && settingsLoader.item) settingsLoader.item.forceActiveFocus()
+        else if (currentPage === 3 && hostSectionLoader.item) hostSectionLoader.item.forceActiveFocus()
 
         // Back on the host list: drop any "force Tailscale" session pin, and ask the host for
         // its last session again — the most likely reason we are landing here is that one just
@@ -493,7 +539,8 @@ FocusScope {
         z: -1
         // Waves on Home, Settings (6.1.0) and, since 7.0.0, the host page — unless the user chose
         // its 6.5.1 background, the focused game's cover (13/10/2026), and it is drawing.
-        waves: currentPage === 0 || currentPage === 2 || (currentPage === 1 && !appShell._appsCover)
+        waves: currentPage === 0 || currentPage === 2 || currentPage === 3
+               || (currentPage === 1 && !appShell._appsCover)
         // The waves run twice as fast while a host is streaming (6.0.0).
         streaming: homeLoader.item ? homeLoader.item.anyStreaming : false
         // The waves rise from the bottom only as the first act of the opening animation, on its
@@ -574,6 +621,26 @@ FocusScope {
                 item.hostIndex             = Qt.binding(function() { return appShell._settingsHostIndex })
                 item.hostStreamTweakEnabled = appShell._settingsHostStEnabled
                 item.appShell              = appShell
+                item.forceActiveFocus()
+            }
+        }
+
+        // 8.0.0: the host section.
+        Loader {
+            id: hostSectionLoader
+            anchors.fill: parent
+            active: currentPage === 3 || appShell._outgoing === 3
+            visible: currentPage === 3 || appShell._outgoing === 3
+            focus: currentPage === 3
+            opacity: appShell._pageOpacity(3)
+            transform: Translate { x: appShell._pageShift(3) }
+            source: "qrc:/gui/HostSectionScreen.qml"
+            onLoaded: {
+                item.computerModel = appShell._hsModel
+                item.hostUuid      = appShell._hsUuid
+                item.hostName      = appShell._hsName
+                item.home          = homeLoader.item
+                item.appShell      = appShell
                 item.forceActiveFocus()
             }
         }
@@ -767,10 +834,23 @@ FocusScope {
             return base
         }
 
+        // 8.0.0: the host section — the tabs on the shoulders like Settings, B back to the hosts.
+        // Y opens Settings from here too, and B in Settings comes back here — so it is said.
+        readonly property var _hintsHostSection: [
+            { btn: "A",  key: "Enter", act: qsTr("Change"),   kind: "change" },
+            { btn: "LB", key: "PgUp",  act: qsTr("Prev tab"), kind: "prevTab" },
+            { btn: "RB", key: "PgDn",  act: qsTr("Next tab"), kind: "nextTab" },
+            { btn: "Y",  key: "S",     act: qsTr("Settings"), kind: "settings" },
+            { btn: "B",  key: "Esc",   act: qsTr("Hosts"),    kind: "back" }
+        ]
+
         property var _hints:
               currentPage === 0 ? _hintsHome
             : currentPage === 1 ? _hintsApps
             : currentPage === 2 ? _hintsSettings
+            // The section's Sessions tab lends its own (they change with where the pad is in it).
+            : currentPage === 3 ? (hostSectionLoader.item && hostSectionLoader.item.barHints
+                                   ? hostSectionLoader.item.barHints : _hintsHostSection)
             : []
 
         Row {

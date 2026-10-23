@@ -82,8 +82,10 @@ Popup {
                 border.width: ipField.activeFocus ? 2 : 1
             }
 
-            Keys.onReturnPressed: pop._commit()
-            Keys.onEnterPressed:  pop._commit()
+            // The pad's A opens the on-screen keyboard (8.0.0); Enter on a keyboard adds.
+            Keys.onReturnPressed: function(event) { if (!ipKeyboard.offer(event)) pop._commit() }
+            Keys.onEnterPressed:  function(event) { if (!ipKeyboard.offer(event)) pop._commit() }
+            Keys.onSpacePressed:  function(event) { event.accepted = ipKeyboard.offer(event) }
             Keys.onDownPressed:   okBtn.forceActiveFocus()
             // Shift+Tab (the pad's up in Settings arrives as Tab + Shift) keeps going back.
             Keys.onTabPressed:    function(event) { if ((event.modifiers & Qt.ShiftModifier)) { event.accepted = false; return } okBtn.forceActiveFocus() }
@@ -169,6 +171,13 @@ Popup {
         if (t.length === 0) return
         pop.accepted(t)
         pop.close()
+    }
+
+    VirtualKeyboard {
+        id: ipKeyboard
+        target: ipField
+        mode: "address"
+        onAccepted: { close(); pop._commit() }
     }
 
     onOpened: ipField.forceActiveFocus()

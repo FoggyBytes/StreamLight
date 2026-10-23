@@ -68,7 +68,6 @@ Popup {
     readonly property int   _promptH: _px(32)
     readonly property int   _chromeH: _px(44) + _chipsH + _promptH + _px(52) + _px(48)
                                       + (_editing ? _px(48) : 0)
-    readonly property int   _maxProfiles: 3
     readonly property int   _maxNameLen: 14
 
     // Currently-edited slot (== active slot). -1 means OFF (no profile active):
@@ -92,6 +91,13 @@ Popup {
      * the cursor can be, and a stale pointer would keep offering Y for an invisible row.
      */
     property Item _focusedRow: null
+    // The cursor is in a row now (not just "was, last"): there Y gives the row back instead
+    // of removing the profile.
+    readonly property bool _inRow: _focusedRow !== null && _focusedRow.visible && _focusedRow.focused
+    // The profile X renames and Y removes (8.0.0): on the chips, the chip under the cursor —
+    // active or not — and anywhere else the active profile.
+    readonly property int _profileTarget: profileTabs.activeFocus ? profileTabs.currentIndex
+                                                                  : (_editing ? editingSlot : -1)
     // True when a profile is selected for editing (not OFF and at least one exists).
     readonly property bool _editing: profileCount > 0 && editingSlot >= 0
 
@@ -378,6 +384,58 @@ Popup {
      * accepted here whatever the state, exactly like LB/RB, so they never reach the page
      * underneath this popup.
      */
+    // ── The profile strip (8.0.0, #42) ─────────────────────────────────────────────────────
+    // Scrolls the strip so `item` (a chip, Off or + Add) is in view, with a little room around it.
+    function _revealChip(item) {
+        if (!item || !chipFlick.overflows) return
+        var r = item.mapToItem(chipFlick.contentItem, 0, 0, item.width, item.height)
+        var m = _px(16)
+        var x = chipFlick.contentX
+        if (r.x - m < x) x = r.x - m
+        else if (r.x + r.width + m > x + chipFlick.width) x = r.x + r.width + m - chipFlick.width
+        chipFlick.contentX = Math.max(0, Math.min(chipFlick.contentWidth - chipFlick.width, x))
+    }
+    // A profile chosen with LT/RT · Q/E, or by a click, is brought into view.
+    onEditingSlotChanged: Qt.callLater(function() {
+        dlg._revealChip(dlg.editingSlot < 0 ? offBtn : chipRepeater.itemAt(dlg.editingSlot))
+    })
+
+    // Chips wholly out of sight on either side, for the counts at the two edges.
+    function _chipsHidden(left) {
+        var n = 0
+        for (var i = 0; i < chipRepeater.count; i++) {
+            var it = chipRepeater.itemAt(i)
+            if (!it) continue
+            var x = profileTabs.x + it.x
+            if (left ? (x + it.width <= chipFlick.contentX)
+                     : (x >= chipFlick.contentX + chipFlick.width)) n++
+        }
+        return n
+    }
+    readonly property int _chipsHiddenLeft:  { chipFlick.contentX; chipFlick.width; chipRow.width; return _chipsHidden(true) }
+    readonly property int _chipsHiddenRight: { chipFlick.contentX; chipFlick.width; chipRow.width; return _chipsHidden(false) }
+
+    // The right stick, sideways, moves the strip without moving the focus — as up/down scrolls
+    // the lists (PadScroll). A timer and not a FrameAnimation: this file imports QtQuick 2.15.
+    Timer {
+        id: chipStick
+        interval: 16
+        repeat: true
+        // Only with the focus on the strip (8.0.0): with the name dialog's keyboard up, or with
+        // the cursor down in the rows, the stick belongs to them.
+        running: dlg.opened && chipBar.focusIn && chipFlick.overflows
+                 && SdlGamepadKeyNavigation.scrollVelocityX !== 0
+        property double _last: 0
+        onRunningChanged: _last = Date.now()
+        onTriggered: {
+            var now = Date.now()
+            var dt = Math.min(0.05, (now - _last) / 1000)
+            _last = now
+            chipFlick.contentX = Math.max(0, Math.min(chipFlick.contentWidth - chipFlick.width,
+                chipFlick.contentX + SdlGamepadKeyNavigation.scrollVelocityX * dt))
+        }
+    }
+
     function _cycleProfile(dir) {
         if (profileCount <= 0) return
         // -1 == Off, then one slot per profile.
@@ -629,8 +687,17 @@ Popup {
         Qt.callLater(function() { profileTabs.forceActiveFocus() })
     }
 
-    function removeProfile() {
-        if (editingSlot < 0) return
+    // Y and the footer's Y prompt: confirm first — one button away, it must not be one press.
+    function askRemoveProfile(slot) {
+        if (slot < 0 || slot >= profileCount) return
+        removeConfirm.slot = slot
+        removeConfirm.pcName = computerModel.hostProfileName(pcIndex, slot)
+        removeConfirm.open()
+    }
+
+    function removeProfile(slot) {
+        if (slot < 0 || slot >= profileCount) return
+        if (slot !== editingSlot) selectSlot(slot)
         computerModel.removeHostProfile(pcIndex, editingSlot)
         _focusedRow = null
         reload()
@@ -832,9 +899,10 @@ Popup {
          *   X                  rename the active profile. Key_Menu on the pad, the letter on
          *                      a keyboard. A chip under the cursor renames that one instead —
          *                      it handles the key first and never lets it get here.
-         *   Y                  the last stop for Key_Hangup. A row consumes it to reset
-         *                      itself; anywhere else it would reach main.qml, which opens
-         *                      SETTINGS on it. Swallowed here so it cannot.
+         *   Y                  remove the profile X would rename, after a confirmation
+         *                      (8.0.0 — it was a button). A row consumes Y first to reset
+         *                      itself. Always swallowed: it would reach main.qml, which
+         *                      opens SETTINGS on it.
          */
         Keys.onPressed: function(event) {
             if (event.key === Qt.Key_F16 || event.key === Qt.Key_PageUp) {
@@ -852,7 +920,10 @@ Popup {
             } else if (event.key === Qt.Key_Menu || event.key === Qt.Key_X) {
                 if (dlg._editing) dlg.renameProfile(dlg.editingSlot)
                 event.accepted = true
-            } else if (event.key === Qt.Key_Hangup) {
+            } else if (event.key === Qt.Key_Hangup || event.key === Qt.Key_Y) {
+                // A row takes Y first, to give itself back; anywhere else Y removes the
+                // profile X would rename (8.0.0, it was the Remove profile button).
+                dlg.askRemoveProfile(dlg._profileTarget)
                 event.accepted = true
             }
         }
@@ -897,30 +968,84 @@ Popup {
             Layout.fillWidth: true
             Layout.preferredHeight: dlg._chipsH
             Label {
+                id: profileLabel
                 anchors.left: parent.left; anchors.leftMargin: dlg._padX
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("Profile")
                 font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontBody); font.bold: true
                 color: dlg._text
             }
-            Row {
-                anchors.right: parent.right; anchors.rightMargin: dlg._padX
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: dlg._px(10)
+            /*
+             * 8.0.0 (#42): as many profiles as the user wants, so the chips are a strip that scrolls
+             * sideways between LT and RT, which stay put at its two ends. It follows the cursor
+             * (◀/▶) and the profile chosen with LT/RT · Q/E; the right stick moves it without
+             * moving the focus; a fade and a count say how many chips are out of sight.
+             * While everything fits, the chips sit at the right end, as they always did.
+             */
+            Item {
+                id: chipBar
+                // The focus is on a chip, Off or + Add.
+                readonly property bool focusIn: {
+                    for (var p = chipBar.Window.activeFocusItem; p; p = p.parent)
+                        if (p === chipBar) return true
+                    return false
+                }
+                anchors.left: profileLabel.right
+                anchors.leftMargin: dlg._px(20)
+                anchors.right: parent.right
+                anchors.rightMargin: dlg._padX
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
 
                 // LT at the left end, RT at the right one: the triggers cycle the profile from
                 // anywhere in the dialog (_cycleProfile), and this is where they are printed —
-                // beside the thing they move, the way SectionTabBar prints LB/RB beside the
-                // tabs. They were in the footer's prompt bar first, which put them as far from
-                // the chips as the dialog allows. Not focusable: the D-pad never lands on them.
+                // beside the thing they move. Not focusable: the D-pad never lands on them.
                 // Q/E on a keyboard, the same pair Home uses to cycle a host's profile.
                 ProfileShoulder {
+                    id: ltShoulder
                     visible: dlg._hasProfiles
+                    // Beside the first visible chip: at the bar's left end once the strip fills it.
+                    anchors.right: chipFlick.left
+                    anchors.rightMargin: dlg._px(10)
                     anchors.verticalCenter: parent.verticalCenter
                     buttonKey: "LT"; keyLabel: "Q"
                     size: dlg._px(26)
                     onTriggered: dlg._cycleProfile(-1)
                 }
+                ProfileShoulder {
+                    id: rtShoulder
+                    visible: dlg._hasProfiles
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    buttonKey: "RT"; keyLabel: "E"
+                    size: dlg._px(26)
+                    onTriggered: dlg._cycleProfile(1)
+                }
+
+                Flickable {
+                    id: chipFlick
+                    anchors.right: rtShoulder.visible ? rtShoulder.left : parent.right
+                    anchors.rightMargin: dlg._px(10)
+                    // As wide as the chips while they fit, the whole bar (less the shoulders) once
+                    // they do not — so LT stays beside them either way.
+                    width: Math.min(chipRow.width,
+                                    parent.width - (ltShoulder.visible ? ltShoulder.width + dlg._px(10) : 0)
+                                                 - (rtShoulder.visible ? rtShoulder.width + dlg._px(10) : 0))
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    clip: true
+                    flickableDirection: Flickable.HorizontalFlick
+                    boundsBehavior: Flickable.StopAtBounds
+                    contentWidth: Math.max(width, chipRow.width)
+                    contentHeight: height
+
+                    readonly property bool overflows: chipRow.width > width + 1
+
+            Row {
+                id: chipRow
+                x: 0
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: dlg._px(10)
 
                 // "OFF" pill — leftmost. Selecting it deactivates all profiles
                 // (host falls back to the global settings). Styled like one
@@ -971,6 +1096,7 @@ Popup {
                     Keys.onReturnPressed: dlg.selectOff()
                     Keys.onEnterPressed:  dlg.selectOff()
                     Keys.onSpacePressed:  dlg.selectOff()
+                    onActiveFocusChanged: if (activeFocus) dlg._revealChip(offBtn)
                     KeyNavigation.right: dlg._hasProfiles ? profileTabs : addBtn
                     KeyNavigation.down: dlg._editing ? dlg._firstOfSection(sectionBar.currentIndex)
                                                      : addBtn
@@ -995,6 +1121,7 @@ Popup {
                         id: tabsRow
                         spacing: dlg._px(10)
                         Repeater {
+                            id: chipRepeater
                             model: profileTabs.labels
                             delegate: Rectangle {
                                 id: ptTile
@@ -1070,6 +1197,8 @@ Popup {
                     }
 
                     onActivated: dlg.selectSlot(currentIndex)
+                    onCurrentIndexChanged: if (activeFocus) dlg._revealChip(chipRepeater.itemAt(currentIndex))
+                    onActiveFocusChanged: if (activeFocus) dlg._revealChip(chipRepeater.itemAt(currentIndex))
                     // X renames the chip under the cursor. Key_Menu is what the pad's X
                     // sends; the letter is for a keyboard, and ActionHint prints whichever
                     // of the two the user is actually holding.
@@ -1102,8 +1231,6 @@ Popup {
                 FocusScope {
                     id: addBtn
                     activeFocusOnTab: true
-                    enabled: dlg.profileCount < dlg._maxProfiles
-                    opacity: enabled ? 1.0 : 0.4
                     anchors.verticalCenter: parent.verticalCenter
                     implicitHeight: dlg._px(52)
                     implicitWidth: addPill.implicitWidth + dlg._px(12)
@@ -1139,17 +1266,55 @@ Popup {
                     Keys.onReturnPressed: dlg.addProfile()
                     Keys.onEnterPressed:  dlg.addProfile()
                     Keys.onSpacePressed:  dlg.addProfile()
+                    onActiveFocusChanged: if (activeFocus) dlg._revealChip(addBtn)
                     KeyNavigation.left: dlg._hasProfiles ? profileTabs : offBtn
                     KeyNavigation.down: dlg._editing ? dlg._firstOfSection(sectionBar.currentIndex)
                                                      : doneBtn
                 }
+            }
+                }
 
-                ProfileShoulder {
-                    visible: dlg._hasProfiles
-                    anchors.verticalCenter: parent.verticalCenter
-                    buttonKey: "RT"; keyLabel: "E"
-                    size: dlg._px(26)
-                    onTriggered: dlg._cycleProfile(1)
+                // How many chips are out of sight on each side, over a fade at that edge.
+                Repeater {
+                    model: [ { left: true }, { left: false } ]
+                    Item {
+                        readonly property int _n: modelData.left ? dlg._chipsHiddenLeft : dlg._chipsHiddenRight
+                        readonly property bool _cut: modelData.left
+                            ? chipFlick.contentX > 1
+                            : chipFlick.contentX < chipFlick.contentWidth - chipFlick.width - 1
+                        visible: chipFlick.overflows && _cut
+                        x: modelData.left ? chipFlick.x : chipFlick.x + chipFlick.width - width
+                        y: chipFlick.y
+                        width: dlg._px(56)
+                        height: chipFlick.height
+                        Rectangle {
+                            anchors.fill: parent
+                            gradient: Gradient {
+                                orientation: Gradient.Horizontal
+                                GradientStop { position: 0.0; color: modelData.left ? Theme.card : Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, 0) }
+                                GradientStop { position: 1.0; color: modelData.left ? Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, 0) : Theme.card }
+                            }
+                        }
+                        Rectangle {
+                            visible: parent._n > 0
+                            anchors.verticalCenter: parent.verticalCenter
+                            x: modelData.left ? 0 : parent.width - width
+                            width: countLabel.implicitWidth + dlg._px(12)
+                            height: dlg._px(22)
+                            radius: height / 2
+                            color: Theme.cardHigh
+                            border.color: Theme.lineHigh
+                            Label {
+                                id: countLabel
+                                anchors.centerIn: parent
+                                text: modelData.left ? "◂ " + parent.parent._n : parent.parent._n + " ▸"
+                                color: Theme.text2
+                                font.family: Theme.family
+                                font.pixelSize: dlg._px(Theme.fontCaption)
+                                font.bold: true
+                            }
+                        }
+                    }
                 }
             }
             Rectangle {
@@ -1699,7 +1864,7 @@ Popup {
                             inheritStrip: true
                             inheritIndex: dlg._inheritIdx(dlg._hueLabels, "hue")
                             KeyNavigation.up: vrrSel
-                            KeyNavigation.down: removeBtn
+                            KeyNavigation.down: doneBtn
                             onActivated: dlg.saveOverride()
                         }
                     }
@@ -1719,7 +1884,7 @@ Popup {
                             inheritStrip: true
                             inheritIndex: dlg._inheritIdx(dlg._audLabels, "audio")
                             KeyNavigation.up: profileTabs
-                            KeyNavigation.down: removeBtn
+                            KeyNavigation.down: doneBtn
                             onActivated: dlg.saveOverride()
                         }
                     }
@@ -1742,7 +1907,7 @@ Popup {
                             inheritStrip: true
                             inheritIndex: dlg._inheritIdx(dlg._linkLabels, "matchlink")
                             KeyNavigation.up: profileTabs
-                            KeyNavigation.down: removeBtn
+                            KeyNavigation.down: doneBtn
                             onActivated: dlg.saveOverride()
                         }
                     }
@@ -1767,7 +1932,7 @@ Popup {
                             inheritStrip: true
                             inheritIndex: dlg._inheritIdx(dlg._waitLabels, "waitgame")
                             KeyNavigation.up: profileTabs
-                            KeyNavigation.down: removeBtn
+                            KeyNavigation.down: doneBtn
                             onActivated: dlg.saveOverride()
                         }
                     }
@@ -1803,17 +1968,22 @@ Popup {
                     // what X does wherever the cursor is: on the chips, the chip under the
                     // cursor — whether or not it is the active one — and elsewhere the active
                     // profile. A click does the same.
-                    readonly property int _target: profileTabs.activeFocus ? profileTabs.currentIndex
-                                                                           : (dlg._editing ? dlg.editingSlot : -1)
-                    visible: _target >= 0
+                    visible: dlg._profileTarget >= 0
                     buttonKey: "X"; keyLabel: "X"; action: qsTr("Rename")
                     clickable: true
-                    onClicked: dlg.renameProfile(_target)
+                    onClicked: dlg.renameProfile(dlg._profileTarget)
+                }
+                Prompt {
+                    // 8.0.0: Y removes the same profile X renames — outside the rows, where Y
+                    // gives the row back. The Remove profile button is gone.
+                    visible: dlg._profileTarget >= 0 && !dlg._inRow
+                    buttonKey: "Y"; keyLabel: "Y"; action: qsTr("Remove")
+                    clickable: true
+                    onClicked: dlg.askRemoveProfile(dlg._profileTarget)
                 }
                 Prompt {
                     // Only with a row under the cursor that has something to give back.
-                    visible: dlg._focusedRow !== null && dlg._focusedRow.visible
-                             && dlg._focusedRow.overridden
+                    visible: dlg._inRow && dlg._focusedRow.overridden
                     buttonKey: "Y"; keyLabel: "Y"; action: qsTr("Reset row")
                     // The mouse's way to the same action. It used to be a second Y drawn on
                     // the row itself, which showed the prompt twice at once; the row keeps the
@@ -1826,7 +1996,14 @@ Popup {
                 // Here and not in the status bar, which this dialog's scrim covers.
                 Prompt {
                     visible: SdlGamepadKeyNavigation.scrollAvailable && InputHints.padActive
+                             && !chipBar.focusIn
                     buttonKey: "RSCROLL"; keyLabel: ""; action: qsTr("Scroll")
+                }
+                // 8.0.0: on the profiles the stick scrolls the strip sideways, when it is longer
+                // than the dialog.
+                Prompt {
+                    visible: chipBar.focusIn && chipFlick.overflows && InputHints.padActive
+                    buttonKey: "RSCROLLX"; keyLabel: ""; action: qsTr("Scroll")
                 }
                 // LT/RT are not here: they are drawn beside the profile chips they cycle.
             }
@@ -1846,7 +2023,8 @@ Popup {
             }
         }
 
-        // ── Footer: Remove profile (left) · Reset all + Done (right) ────────
+        // ── Footer: Reset all + Done (right) ────────────────────────────────
+        // 8.0.0: Remove profile is Y now, printed in the prompt line above.
         //
         // ⚠️ Done is the rightmost button now, and it is the one B closes the dialog with.
         // It used to sit to the LEFT of "Reset to Global", which put the destructive-ish
@@ -1854,20 +2032,6 @@ Popup {
         Item {
             Layout.fillWidth: true
             Layout.preferredHeight: dlg._px(52)
-
-            DialogButton {
-                id: removeBtn
-                visible: dlg._editing
-                anchors.left: parent.left; anchors.leftMargin: dlg._padX
-                anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("Remove profile")
-                danger: true
-                fontSize: 13
-                width: dlg._px(140); height: dlg._tabH
-                onActivated: dlg.removeProfile()
-                KeyNavigation.up: dlg._editing ? dlg._lastOfSection(sectionBar.currentIndex) : addBtn
-                KeyNavigation.right: dlg._editing ? resetBtn : doneBtn
-            }
 
             Row {
                 anchors.right: parent.right; anchors.rightMargin: dlg._padX
@@ -1887,7 +2051,6 @@ Popup {
                     width: dlg._px(104); height: dlg._tabH
                     onActivated: dlg.resetAll()
                     KeyNavigation.up: dlg._lastOfSection(sectionBar.currentIndex)
-                    KeyNavigation.left: removeBtn
                     KeyNavigation.right: doneBtn
                 }
                 DialogButton {
@@ -1919,11 +2082,42 @@ Popup {
     // a keyboard — see ProfileNameDialog for why the field could not be the only way.
     ProfileNameDialog {
         id: nameDialog
+        property bool _saved: false
         onAccepted: function(name) {
             dlg.saveName(name)
-            // Back to the chips: X was pressed there, or on the profile they describe.
-            Qt.callLater(function() { profileTabs.forceActiveFocus() })
+            _saved = true
         }
+        // Back to the chips after a name: X was pressed there, or on the profile they describe.
+        // ⚠️ In onClosed, not after accepted: Qt hands the focus over at the end of this
+        // dialog's exit and emits closed() after that, so this is the last word. Done from
+        // accepted with a callLater, it raced the exit: the profile dialog already had the
+        // focus when Qt looked for a popup to give it to, and Qt gave it to Home instead.
+        // Cancelled, Qt's hand-over alone brings back the row or chip X was pressed on.
+        onClosed: {
+            if (_saved && dlg.opened) profileTabs.forceActiveFocus()
+            _saved = false
+        }
+    }
+
+    // Y on a profile (8.0.0): asked once, Yes removes it.
+    NavigableMessageDialog {
+        id: removeConfirm
+        parent: Overlay.overlay
+        property int slot: -1
+        property string pcName: ""
+        headerText: qsTr("REMOVE PROFILE")
+        text: qsTr("Remove the profile '%1'?").arg(pcName)
+        standardButtons: Dialog.Yes | Dialog.No
+        onAccepted: dlg.removeProfile(slot)
+        // The focus is placed here, not by NavigableDialog: after a removal the chip it came
+        // from may be gone, so it goes to what is left.
+        restoreFocus: false
+        onClosed: Qt.callLater(function() {
+            if (!dlg.opened) return
+            if (dlg._editing)          profileTabs.forceActiveFocus()
+            else if (dlg._hasProfiles) offBtn.forceActiveFocus()
+            else                       addBtn.forceActiveFocus()
+        })
     }
 
     // Manual frame-rate entry for the edited profile slot (5.5.0).

@@ -122,8 +122,10 @@ Popup {
 
             DimField {
                 id: wField
-                Keys.onReturnPressed: pop._commit()
-                Keys.onEnterPressed:  pop._commit()
+                // The pad's A opens the on-screen keyboard (8.0.0); Enter on a keyboard applies.
+                Keys.onReturnPressed: function(event) { if (!wKeyboard.offer(event)) pop._commit() }
+                Keys.onEnterPressed:  function(event) { if (!wKeyboard.offer(event)) pop._commit() }
+                Keys.onSpacePressed:  function(event) { event.accepted = wKeyboard.offer(event) }
                 Keys.onRightPressed:  hField.forceActiveFocus()
                 // Shift+Tab (the pad's up in Settings arrives as Tab + Shift) keeps going back.
                 Keys.onTabPressed:    function(event) { if ((event.modifiers & Qt.ShiftModifier)) { event.accepted = false; return } hField.forceActiveFocus() }
@@ -138,8 +140,9 @@ Popup {
             }
             DimField {
                 id: hField
-                Keys.onReturnPressed: pop._commit()
-                Keys.onEnterPressed:  pop._commit()
+                Keys.onReturnPressed: function(event) { if (!hKeyboard.offer(event)) pop._commit() }
+                Keys.onEnterPressed:  function(event) { if (!hKeyboard.offer(event)) pop._commit() }
+                Keys.onSpacePressed:  function(event) { event.accepted = hKeyboard.offer(event) }
                 Keys.onLeftPressed:   wField.forceActiveFocus()
                 Keys.onTabPressed:    function(event) { if ((event.modifiers & Qt.ShiftModifier)) wField.forceActiveFocus(); else applyBtn.forceActiveFocus() }
                 Keys.onDownPressed:   applyBtn.forceActiveFocus()
@@ -250,6 +253,21 @@ Popup {
         var h = _h - (_h % 2)
         pop.accepted(w, h)
         pop.close()
+    }
+
+    // Done on the width goes on to the height (whose keyboard opens with its focus); Done on
+    // the height applies.
+    VirtualKeyboard {
+        id: wKeyboard
+        target: wField
+        mode: "number"
+        onAccepted: { close(); hField.forceActiveFocus() }
+    }
+    VirtualKeyboard {
+        id: hKeyboard
+        target: hField
+        mode: "number"
+        onAccepted: { close(); pop._commit() }
     }
 
     onOpened: {

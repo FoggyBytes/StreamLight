@@ -56,7 +56,7 @@ Item {
     // 1450 when that reference changed, so the pad came out about 9% smaller than the page it
     // opens from — scaling, but to a scale of its own.
     // Times the user's Interface scale (7.0.0), like Theme.uiScale for the dialogs.
-    readonly property real _u : Math.max(0.62, Math.min(1.6, width / 1330)) * Theme.scaleFactor
+    readonly property real _u : Math.max(0.62, Math.min(1.6, width / 1330, Theme.heightFit)) * Theme.scaleFactor
 
     function _press(index) {
         if (_busy) return

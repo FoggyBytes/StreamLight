@@ -4,6 +4,39 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+------------------------------------
+Version 8.0.0 - At Hand (23/10/2026)
+------------------------------------
+
+Needs StreamTweak 10.0.0 on the host for the new StreamTweak section; everything else works with any host. The host's everyday controls move to the device you play from, and a controller can now type.
+
+✨ NEW FEATURES:
+• StreamTweak section — StreamTweak's logo on the host card, between Profiles and Options, opens the host's own pages: Dashboard, Sessions, Library, Apps and NVIDIA Sentinel, with LB/RB for the tabs as in Settings
+• Dashboard — the host at rest: GPU, GPU temperature, VRAM, CPU and RAM with the last minute charted, which device is streaming from it, link speed with Match and Restore, spatial audio on or off, and Windows Update
+• Sessions — the host's streaming history, every device's or only this one's: each session's verdict and the four checks behind it, its figures, and its timeline one track at a time, with a cursor on the right stick and zoom on LT/RT; mark two sessions with X and compare them with Start
+• Library — the games the streaming server lists, with their covers and a count per store, and Sync and restart: with Host management, X syncs the host's library and restarts the server so new games show up, step by step, in about a minute
+• Apps and NVIDIA Sentinel — turn the host's managed apps on or off, shown with their icons, and Sentinel's auto-restore; the GPU, the driver and the saved NVIDIA profile are listed. Changing anything needs Host management for this device on the host, otherwise the pages are read-only
+• On-screen keyboard — with a controller, the fields that need typing (profile name, host name and address, accent colour, custom frame rate and resolution) open a keyboard at the bottom of the screen: A types, X deletes, Y adds a space, LT is shift, RT symbols, Start is Done, B closes, the right stick moves it out of the way
+• As many host profiles as you like — the limit of three is gone; the profiles scroll sideways with LT/RT or Q/E, the D-pad or the right stick
+• Unlock frame rate — Settings → Interface: the interface's animations follow the display's refresh rate instead of 60 fps
+
+🎨 UI:
+• Settings → StreamTweak is now the Setup tab of the StreamTweak section; from Options, Request Access moved to Setup, Windows Update and Match / Restore link speed to the Dashboard
+• Without StreamTweak at work for a host, the section opens on Setup and its other tabs stay visible, greyed, with the reason on top and a button back to Setup
+• Settings and the StreamTweak section use a smaller text size, so more fits on screen
+• The suggested profile names line up in an even grid
+• Settings → About → Donate now opens the FoggyBytes page on Ko-fi
+
+🐛 FIXES:
+• Very wide, short screens such as 3840 × 1200 — the interface now scales by height too, and the host card no longer runs over itself
+• Status dots and the NEW badge over a host picture were too dark in the light theme
+
+🙏 THANKS:
+• Thanks to @kayti for asking for more streaming profiles (https://github.com/FoggyBytes/StreamLight/issues/42) and for reporting the glitches at 3840 × 1200 (https://github.com/FoggyBytes/StreamLight/issues/43)
+
+⚠️ COMPATIBILITY:
+• The StreamTweak section needs StreamTweak 10.0.0 on the host; with an older StreamTweak only its Setup tab works
+
 -----------------------------------------
 Version 7.0.3 - Soft Landing (17/10/2026)
 -----------------------------------------

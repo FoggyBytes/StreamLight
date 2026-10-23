@@ -88,7 +88,7 @@ FocusScope {
                 text: btn.text
                 color: btn.selected ? Theme.onAccent
                      : btn._hasSwatch ? Theme.text : Theme.text2
-                font.family: Theme.family; font.pixelSize: btn._px(Theme.fontSmall)
+                font.family: Theme.family; font.pixelSize: btn._px(Theme.fontSmall * Theme.textScale)
                 font.bold: btn.selected || btn._hasSwatch
             }
             Label {
@@ -96,7 +96,7 @@ FocusScope {
                 anchors.verticalCenter: parent.verticalCenter
                 text: "›"
                 color: Theme.text3
-                font.family: Theme.family; font.pixelSize: btn._px(Theme.fontTitle)
+                font.family: Theme.family; font.pixelSize: btn._px(Theme.fontTitle * Theme.textScale)
             }
         }
     }

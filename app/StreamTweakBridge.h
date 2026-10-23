@@ -180,6 +180,19 @@ public:
     void requestTailscale(const QString& hostAddress, ResponseCallback onResult);
 
     /**
+     * StreamLight 8.0's host section (StreamTweak 10.0.0), both authenticated.
+     *
+     *  - requestHostSection: one of the reads — DASHBOARD, APPS, NVIDIA, or STATS for the
+     *    Dashboard's numbers. A JSON line, or "" / "ERR" on a host older than 10.0.0.
+     *  - sendHostSetting: one of the writes, already validated by the caller —
+     *    "SETAUDIO ON|OFF", "SETAPP <16 hex> ON|OFF", "SETSENTINEL ON|OFF". Replies OK,
+     *    ERR_NO_MANAGEMENT (this device lacks Host management), ERR_UNKNOWN_APP,
+     *    ERR_NO_PROFILE, ERR_UNSUPPORTED, ERR, or "" on timeout.
+     */
+    void requestHostSection(const QString& hostAddress, const QString& verb, ResponseCallback onResult);
+    void sendHostSetting(const QString& hostAddress, const QString& command, ResponseCallback onResult);
+
+    /**
      * Queries the host's bridge capabilities (unauthenticated). Invokes onResult
      * with e.g. "CAPS1 auth=required" / "CAPS1 auth=optional", or "" on legacy
      * hosts (which don't understand CAPS) and on unreachable hosts.

@@ -295,7 +295,7 @@ FocusScope {
                          : pill._selected  ? selector._textOn
                          :                   selector._textOff
                     font.family: Theme.family
-                    font.pixelSize: selector._px(Theme.fontSmall)
+                    font.pixelSize: selector._px(Theme.fontSmall * Theme.textScale)
                     font.bold: pill._selected
                 }
                 // The one control in the app whose hover is a wash rather than a border: the

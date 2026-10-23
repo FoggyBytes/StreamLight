@@ -352,6 +352,18 @@ QString StreamTweakBridge::requestSync(const QString& hostAddress, const QString
 
 // ── Capability negotiation / enrollment (unauthenticated bootstrap) ─────────
 
+void StreamTweakBridge::requestHostSection(const QString& hostAddress, const QString& verb,
+                                           ResponseCallback onResult)
+{
+    sendRequest(hostAddress, verb, std::move(onResult));
+}
+
+void StreamTweakBridge::sendHostSetting(const QString& hostAddress, const QString& command,
+                                        ResponseCallback onResult)
+{
+    sendRequest(hostAddress, command, std::move(onResult));
+}
+
 void StreamTweakBridge::requestCaps(const QString& hostAddress, ResponseCallback onResult)
 {
     sendRawRequest(hostAddress, QStringList{ QStringLiteral("CAPS") }, std::move(onResult));

@@ -12,7 +12,8 @@ import Theme 1.0
  * rather than by three copies kept in step by hand, which is how a UI starts to disagree
  * with itself.
  *
- * `tabs` is a list of { label } or { icon }. `counts` is a parallel list of integers: a number
+ * `tabs` is a list of { label } or { icon }, with `dim: true` for a tab that can be visited but
+ * has nothing to show yet (8.0.0, the host section). `counts` is a parallel list of integers: a number
  * above zero draws a small accent badge after that label. The dialogs use it for "this section
  * holds this many values of its own", because splitting the rows into tabs hides where a
  * profile's overrides are.
@@ -133,7 +134,7 @@ Item {
                 text: modelData.label !== undefined ? modelData.label : ""
                 focusPolicy: Qt.NoFocus
                 font.family: Theme.family
-                font.pixelSize: root._px(Theme.fontSmall)
+                font.pixelSize: root._px(Theme.fontSmall * Theme.textScale)
                 font.bold: true
                 font.capitalization: Font.AllUppercase
                 font.letterSpacing: 0.8
@@ -164,6 +165,8 @@ Item {
                     Row {
                         anchors.centerIn: parent
                         spacing: root._px(6)
+                        // A tab with nothing to show yet (`dim`): greyed, still reachable.
+                        opacity: modelData.dim === true ? (tabButton._current ? 0.6 : 0.4) : 1
 
                         Text {
                             id: tabLabel
@@ -204,7 +207,7 @@ Item {
                                 text: tabButton._count
                                 color: Theme.onAccent
                                 font.family: Theme.family
-                                font.pixelSize: root._px(Theme.fontCaption)
+                                font.pixelSize: root._px(Theme.fontCaption * Theme.textScale)
                                 font.bold: true
                             }
                         }

@@ -25,9 +25,10 @@ on:
   workflow_dispatch:
     inputs:
       signing_policy:
-        description: SignPath signing policy (used only when SIGNPATH_API_TOKEN is set)
+        description: SignPath signing policy (used only when SIGNPATH_API_TOKEN is set; "none" builds unsigned even when it is)
         type: choice
         options:
+          - none
           - test-signing
           - release-signing
         default: test-signing
@@ -53,7 +54,7 @@ jobs:
     # Room for a release-signing request to wait for its manual approval.
     timeout-minutes: 240
     env:
-      SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+      SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && inputs.signing_policy != 'none' }}
       SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
       SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG || 'StreamLight' }}
       SIGNPATH_POLICY: ${{ inputs.signing_policy || 'test-signing' }}

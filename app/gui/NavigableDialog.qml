@@ -111,11 +111,35 @@ Dialog {
         }
     }
 
-    onClosed: {
-        // Restore focus to the stack so gamepad / keyboard navigation keeps
-        // working after the dialog disappears.
-        if (typeof stackView !== "undefined" && stackView) {
-            stackView.forceActiveFocus()
+    /*
+     * The focus goes back to where it was when the dialog opened (8.0.0), and only failing that
+     * to the stack. It used to go to the stack always: a confirmation opened over another popup
+     * (Remove profile in Host profiles) handed the focus to the page BEHIND that popup, and the
+     * D-pad drove Home while the profile dialog stayed on screen — B on the page went back, or
+     * offered to quit.
+     *
+     * Connections and not onAboutToShow / onClosed: an instance that writes its own onClosed
+     * (HomeScreen's dialogs, the profile confirmation) replaces a handler declared here, and
+     * the restore must run for every one of them. A beat later (callLater), after Qt's own
+     * focus hand-over at the end of the exit.
+     */
+    property Item _focusBefore: null
+    // False for an instance that places the focus itself on closing (the profile confirmation:
+    // the chip the focus came from may have just been removed).
+    property bool restoreFocus: true
+    Connections {
+        target: navDialog
+        function onAboutToShow() {
+            navDialog._focusBefore = (typeof window !== "undefined" && window) ? window.activeFocusItem : null
+        }
+        function onClosed() {
+            if (!navDialog.restoreFocus) return
+            var f = navDialog._focusBefore
+            navDialog._focusBefore = null
+            Qt.callLater(function() {
+                if (f && f.visible && f.enabled) f.forceActiveFocus()
+                else if (typeof stackView !== "undefined" && stackView) stackView.forceActiveFocus()
+            })
         }
     }
 }

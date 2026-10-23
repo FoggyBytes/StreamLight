@@ -364,10 +364,9 @@ ApplicationWindow {
             }
         }
 
-        Keys.onMenuPressed: {
-            var item = stackView.currentItem
-            if (item && item.openSettings) item.openSettings()
-        }
+        // ⚠️ No Keys.onMenuPressed (8.0.0). Moonlight opened Settings on an X nobody took, so X
+        // opened Settings wherever a page has no use for it (the StreamTweak section) and no
+        // prompt said so. Settings is Y, below — the one the status bar prints.
 
         // This is a keypress we've reserved for letting the
         // SdlGamepadKeyNavigation object tell us to show settings

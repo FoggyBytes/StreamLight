@@ -9,7 +9,7 @@ import SdlGamepadKeyNavigation 1.0
 Item {
     id: glyph
 
-    property string buttonKey: ""   // "A","B","X","Y","LB","RB","LT","RT","START","SELECT","RS" (right stick click), "RSCROLL" (right stick up/down)
+    property string buttonKey: ""   // "A","B","X","Y","LB","RB","LT","RT","START","SELECT","RS" (right stick click), "RSCROLL" (right stick up/down), "RSCROLLX" (left/right), "RSMOVE" (any way)
     property string label: ""        // text fallback
     property string glyphSet: SdlGamepadKeyNavigation.controllerType // "xbox"/"ps"/"switch"/"steam"/...
     // Height of a face button. Shoulders and the Select/Start pills are wider than they are
@@ -51,6 +51,12 @@ Item {
         : buttonKey === "RS"     ? (_ps ? "qrc:/res/pad_ps_r3.svg"       : _sw ? "qrc:/res/pad_switch_rs.svg"    : _st ? "qrc:/res/pad_steam_r3.svg"   : "qrc:/res/pad_xbox_rs.svg")
         // 7.0.0: the right stick held up or down, not clicked — the "Scroll" prompt.
         : buttonKey === "RSCROLL" ? (_ps ? "qrc:/res/pad_ps_r_scroll.svg" : _sw ? "qrc:/res/pad_switch_rs_scroll.svg" : _st ? "qrc:/res/pad_steam_rs_scroll.svg" : "qrc:/res/pad_xbox_rs_scroll.svg")
+        // 8.0.0: held left or right (a strip that scrolls sideways), and pushed any way (a panel
+        // that moves, such as the on-screen keyboard).
+        : buttonKey === "RSCROLLX" ? (_ps ? "qrc:/res/pad_ps_r_scroll_h.svg" : _sw ? "qrc:/res/pad_switch_rs_scroll_h.svg" : _st ? "qrc:/res/pad_steam_rs_scroll_h.svg" : "qrc:/res/pad_xbox_rs_scroll_h.svg")
+        // 8.0.0: the D-pad left or right (a cursor), the same drawing for every vendor.
+        : buttonKey === "DPADX"    ? "qrc:/res/pad_dpad_h.svg"
+        : buttonKey === "RSMOVE"   ? (_ps ? "qrc:/res/pad_ps_r_move.svg"     : _sw ? "qrc:/res/pad_switch_rs_move.svg"     : _st ? "qrc:/res/pad_steam_rs_move.svg"     : "qrc:/res/pad_xbox_rs_move.svg")
         : ""
 
     Image {

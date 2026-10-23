@@ -156,6 +156,8 @@ class Theme : public QObject
     Q_PROPERTY(QColor online  READ online  NOTIFY changed)
     Q_PROPERTY(QColor warning READ warning NOTIFY changed)
     Q_PROPERTY(QColor danger  READ danger  NOTIFY changed)
+    Q_PROPERTY(QColor gradeGood     READ gradeGood     NOTIFY changed)
+    Q_PROPERTY(QColor gradeGoodMark READ gradeGoodMark NOTIFY changed)
     Q_PROPERTY(QColor offline READ offline NOTIFY changed)
 
     /**
@@ -227,6 +229,20 @@ class Theme : public QObject
     Q_PROPERTY(bool reduceAnimations READ reduceAnimations WRITE setReduceAnimations NOTIFY changed)
 
     /**
+     * 8.0.0: animations at the display's refresh rate instead of Qt's 60 — see
+     * backend/uianimationdriver.h for why the basic render loop caps them. Off by default.
+     */
+    Q_PROPERTY(bool unlockFrameRate READ unlockFrameRate WRITE setUnlockFrameRate NOTIFY changed)
+
+    /**
+     * 8.0.0: the text of the dense pages — Settings and the StreamTweak section — is drawn a size
+     * smaller than the rest of the app, all of it in one proportion. AppShell sets this while one
+     * of them is on screen; their own text and the shared controls in them (SegmentedSelector,
+     * PillButton, SectionTabBar) multiply their font sizes by it. 1.0 everywhere else. Not stored.
+     */
+    Q_PROPERTY(qreal textScale READ textScale WRITE setTextScale NOTIFY textScaleChanged)
+
+    /**
      * Play the opening animation — waves, logo, wordmark — before Home (6.0.0). On by default.
      * AppShell reads it once, at launch, and skips it anyway under reduceAnimations or when a
      * command line opened the app straight into a stream.
@@ -259,6 +275,14 @@ class Theme : public QObject
      * it in a QML-side helper — where the engine does see the property read.
      */
     Q_PROPERTY(qreal uiScale READ uiScale WRITE setUiScale NOTIFY uiScaleChanged)
+    /**
+     * 8.0.0 (#43): the window's height over 748 — the height of a 16:9 window 1330 wide, the
+     * shape the app is drawn for. The pages that work out their own scale from their width
+     * (HostStage, AppsScreen, UnlockPad) take the smaller of the two, as the shell does for
+     * uiScale, so a short, very wide window (3840 × 1200) no longer scales by its width alone and
+     * spills out at the bottom. Set by AppShell; large until it is, so nothing is capped early.
+     */
+    Q_PROPERTY(qreal heightFit READ heightFit WRITE setHeightFit NOTIFY uiScaleChanged)
 
     /**
      * The user's interface size, in percent (7.0.0): Settings → Interface → Interface → Interface
@@ -362,6 +386,17 @@ public:
     QColor warning() const { return light() ? QColor(0x7f, 0x3a, 0x05) : QColor(0xf5, 0xa6, 0x23); }
     QColor danger()  const { return light() ? QColor(0x9b, 0x1c, 0x1c) : QColor(0xf8, 0x71, 0x71); }
     /**
+     * A session's verdict "Good" (8.0.0, Sessions). Excellent is online and Poor is danger; Good
+     * was warning, and in Light that dark burnt orange read as Poor's red — an alarm for a
+     * session that went well (Marcello, 21/10/2026, option A″ of docs/mockups/voti).
+     *
+     * Two tones in Light, because a bright orange cannot be text there: gradeGood is the word
+     * (#9c4f08, 4.8:1 on a card), gradeGoodMark the dot and the badge's edge and fill
+     * (#dc5208, 3.3:1 — the 3:1 of a graphical object). In Dark one orange does both.
+     */
+    QColor gradeGood()     const { return light() ? QColor(0x9c, 0x4f, 0x08) : QColor(0xfb, 0x92, 0x3c); }
+    QColor gradeGoodMark() const { return light() ? QColor(0xdc, 0x52, 0x08) : QColor(0xfb, 0x92, 0x3c); }
+    /**
      * "This host is off."
      *
      * ⚠️ It measures 3.67:1 on the page, which is BELOW the 4.5:1 that text needs — and that is
@@ -397,10 +432,15 @@ public:
     int fontDisplay() const { return 34; }   // ms( 4)
 
     bool reduceAnimations() const { return m_ReduceAnimations; }
+    bool unlockFrameRate() const { return m_UnlockFrameRate; }
+    qreal textScale() const { return m_TextScale; }
+    void  setTextScale(qreal s) { if (qFuzzyCompare(s, m_TextScale)) return; m_TextScale = s; emit textScaleChanged(); }
     bool startupAnimation() const { return m_StartupAnimation; }
     bool hostPageCovers() const { return m_HostPageCovers; }
 
     qreal uiScale() const { return m_UiScale; }
+    qreal heightFit() const { return m_HeightFit; }
+    void  setHeightFit(qreal h) { if (qAbs(h - m_HeightFit) < 0.001) return; m_HeightFit = h; emit uiScaleChanged(); }
     int   scalePercent() const { return m_ScalePercent; }
     qreal scaleFactor() const { return m_ScalePercent / 100.0; }
     void  setScalePercent(int pct);
@@ -408,6 +448,9 @@ public:
     void setAccent(const QColor& c);
     void setMode(int m);
     void setReduceAnimations(bool on);
+    void setUnlockFrameRate(bool on);
+    // The display rate Unlock frame rate follows — UiAnimationDriver::screenHz(), 0 when unknown.
+    Q_INVOKABLE int interfaceRefreshHz() const;
     void setStartupAnimation(bool on);
     void setHostPageCovers(bool on);
     void setUiScale(qreal s);
@@ -442,6 +485,7 @@ public:
 
 signals:
     void changed();
+    void textScaleChanged();
     void uiScaleChanged();
     void scheduleChanged();
     void holdChanged();
@@ -495,6 +539,9 @@ private:
     bool    m_Hold = false;
     QTimer  m_Clock;
     bool   m_ReduceAnimations = false;
+    bool   m_UnlockFrameRate = false;
+    qreal  m_TextScale = 1.0;
+    qreal  m_HeightFit = 100.0;
     bool   m_StartupAnimation = true;
     bool   m_HostPageCovers = false;
 

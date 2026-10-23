@@ -17,6 +17,9 @@ Rectangle {
     id: badge
 
     property string since: ""
+    // Drawn over a picture (the host card's): the card's light palette instead of the theme's,
+    // or in Light the word and its outline go dark on a dark picture (21/10/2026).
+    property bool onPicture: false
 
     readonly property real _u: Theme.uiScale
     function _px(n) { return Math.round(n * _u) }
@@ -27,7 +30,7 @@ Rectangle {
     implicitHeight: label.implicitHeight + _px(2)
     radius: _px(4)
     color: "transparent"
-    border.color: Theme.lineHigh
+    border.color: onPicture ? Theme.stageLineHigh : Theme.lineHigh
     border.width: 1
     clip: true
 
@@ -35,7 +38,7 @@ Rectangle {
         id: label
         anchors.centerIn: parent
         text: qsTr("NEW")
-        color: Theme.inkText
+        color: badge.onPicture ? Theme.accent : Theme.inkText
         font.family: Theme.family
         font.pixelSize: badge._px(10)
         font.bold: true

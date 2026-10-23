@@ -169,6 +169,7 @@ SOURCES += \
     backend/powerstatus.cpp \
     backend/windowmove.cpp \
     backend/uisound.cpp \
+    backend/uianimationdriver.cpp \
     backend/logsandcache.cpp \
     backend/windowslocation.cpp \
     backend/steamartwork.cpp \
@@ -246,6 +247,7 @@ HEADERS += \
     backend/powerstatus.h \
     backend/windowmove.h \
     backend/uisound.h \
+    backend/uianimationdriver.h \
     backend/logsandcache.h \
     backend/windowslocation.h \
     backend/steamartwork.h \

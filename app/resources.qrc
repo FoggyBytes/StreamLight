@@ -11,6 +11,12 @@
         <file alias="steam/logo.png">res/steam/streamlight_logo.png</file>
         <file>res/tailscale.svg</file>
         <file>res/tailscale_dark.svg</file>
+        <file>res/net.svg</file>
+        <file>res/net_dark.svg</file>
+        <file>res/headphones.svg</file>
+        <file>res/headphones_dark.svg</file>
+        <file>res/nvidia_eye.svg</file>
+        <file>res/nvidia_eye_dark.svg</file>
         <file>res/tune.svg</file>
         <file>res/tune_dark.svg</file>
         <file>streamlight.ico</file>
@@ -68,6 +74,15 @@
         <file>res/pad_ps_r_scroll.svg</file>
         <file>res/pad_switch_rs_scroll.svg</file>
         <file>res/pad_steam_rs_scroll.svg</file>
+        <file>res/pad_xbox_rs_scroll_h.svg</file>
+        <file>res/pad_ps_r_scroll_h.svg</file>
+        <file>res/pad_switch_rs_scroll_h.svg</file>
+        <file>res/pad_steam_rs_scroll_h.svg</file>
+        <file>res/pad_xbox_rs_move.svg</file>
+        <file>res/pad_ps_r_move.svg</file>
+        <file>res/pad_switch_rs_move.svg</file>
+        <file>res/pad_steam_rs_move.svg</file>
+        <file>res/pad_dpad_h.svg</file>
         <file>res/pad_ps_r3.svg</file>
         <file>res/pad_switch_rs.svg</file>
         <file>res/pad_steam_a.svg</file>

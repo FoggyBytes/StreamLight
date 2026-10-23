@@ -43,6 +43,7 @@ When the host runs [StreamTweak](https://github.com/FoggyBytes/StreamTweak), Str
 - **Every command is signed** (RSA-SHA256, PKCS#1 v1.5) with StreamLight's existing Moonlight client certificate — the same key pair that is generated on the PC at first launch and used to pair with Sunshine. The signature covers the client id, a timestamp and the command; the host checks it against the certificate it approved, rejects timestamps outside ±60 seconds and rejects replays.
 - **A client is approved once, by a person at the host**: StreamLight sends its certificate and a 4-digit PIN that is shown on both screens, and StreamTweak asks its user to compare and approve. Nothing is trusted on first contact alone.
 - Commands that act on the host — power, Windows Update, link speed, clipboard — are refused unless the signature verifies.
+- **The StreamTweak section** (8.0.0, with StreamTweak 10.0.0) changes the host's settings only through three fixed switches — a managed app on or off, spatial audio, NVIDIA Sentinel's auto-restore — and StreamLight refuses to send anything else in their place. No path or command line leaves this device. The host accepts them only from a device it has given *Host management*, on top of the signature. Its Sessions tab only reads, with four fixed requests StreamLight checks before sending.
 - **Streaming never depends on the bridge.** Without an approved bridge StreamLight is an ordinary Moonlight client.
 
 ### Shared clipboard (off by default)

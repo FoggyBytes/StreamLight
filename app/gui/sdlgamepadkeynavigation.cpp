@@ -363,6 +363,7 @@ void SdlGamepadKeyNavigation::noteInputEcho()
         return;
     }
     m_DesktopLayoutReported = true;
+    emit desktopLayoutEchoesChanged();
     const bool menuHold = steamControllerConnected();
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                 "[padnav] %d echoes: Steam's Desktop Layout is sending the pad as keyboard too (notice shown%s)",
@@ -639,7 +640,7 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
             }
             break;
         }
-        case SDL_CONTROLLERDEVICEADDED:
+        case SDL_CONTROLLERDEVICEADDED: {
             SDL_GameController* gc = SDL_GameControllerOpen(event.cdevice.which);
             if (gc != nullptr) {
                 // SDL_CONTROLLERDEVICEADDED can be reported multiple times for the same
@@ -654,6 +655,23 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
                 else {
                     // We already have this game controller open
                     SDL_GameControllerClose(gc);
+                }
+            }
+            break;
+        }
+        case SDL_CONTROLLERDEVICEREMOVED:
+            // 8.0.0: a pad that goes is let go. It used to stay in the list — the glyphs are read
+            // from the first pad, so after swapping an Xbox pad for a DualSense they stayed Xbox,
+            // and the Steam Controller check behind the Desktop Layout notice could see a pad
+            // that was no longer there. `which` is the joystick instance id here, not an index.
+            for (int i = 0; i < m_Gamepads.size(); i++) {
+                SDL_GameController* gc = m_Gamepads[i];
+                if (SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(gc)) == event.cdevice.which) {
+                    logPadDevice("removed", gc);
+                    SDL_GameControllerClose(gc);
+                    m_Gamepads.removeAt(i);
+                    updateControllerType();
+                    break;
                 }
             }
             break;
@@ -676,6 +694,10 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
 
     // Handle analog sticks by polling
     qreal scrollVelocity = 0;
+    qreal scrollVelocityX = 0;
+    // The triggers of every pad, the strongest pull of each (8.0.0) — see below the loop.
+    int leftTriggerMax = 0;
+    int rightTriggerMax = 0;
     for (auto gc : std::as_const(m_Gamepads)) {
         // ⚠️ int, not short: a stick pushed all the way up or left reads −32768, and qAbs() of
         // that as a short is −32768 again. The right stick pushed straight to the top read as
@@ -711,6 +733,15 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
             const qreal pxPerSecond = (rightY > 0 ? 1.0 : -1.0) * (250.0 + 2250.0 * norm * norm);
             // Two pads pushed at once: the stronger push wins.
             if (qAbs(pxPerSecond) > qAbs(scrollVelocity)) scrollVelocity = pxPerSecond;
+        }
+        // 8.0.0: and sideways, the same curve, for the views that scroll that way (#42). Read
+        // separately so a diagonal push is two speeds; a view uses the axis it scrolls on.
+        const int rightX = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_RIGHTX);
+        if (qAbs(rightX) > deadZone) {
+            InputHints::get()->notePadInput();
+            const qreal norm = qMin(1.0, (qAbs(rightX) - deadZone) / qreal(32767 - deadZone));
+            const qreal pxPerSecond = (rightX > 0 ? 1.0 : -1.0) * (250.0 + 2250.0 * norm * norm);
+            if (qAbs(pxPerSecond) > qAbs(scrollVelocityX)) scrollVelocityX = pxPerSecond;
         }
 
         if (SDL_GetTicks() - m_LastAxisNavigationEventTime < AXIS_NAVIGATION_REPEAT_DELAY) {
@@ -763,39 +794,51 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
             m_LastAxisNavigationEventTime = SDL_GetTicks();
         }
 
-        // Triggers → previous / next host on the Home screen. Deliberately NOT
-        // routed through the repeat timer above: a trigger pull is one discrete
-        // step, not a direction you hold, so it is edge-detected with hysteresis
-        // (press above 20000, release below 8000) — a trigger resting just at the
-        // threshold would otherwise flip hosts continuously.
-        //
-        // Key_F14/F15 are inert like the Key_F13 used for Select: nothing in Qt
-        // treats them as activation, so only our explicit handlers consume them.
-        short leftTrigger  = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
-        short rightTrigger = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+        leftTriggerMax  = qMax(leftTriggerMax,  (int)SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_TRIGGERLEFT));
+        rightTriggerMax = qMax(rightTriggerMax, (int)SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_TRIGGERRIGHT));
+    }
 
-        if (!m_LeftTriggerDown && leftTrigger > 20000) {
-            m_LeftTriggerDown = true;
-            InputHints::get()->notePadInput();
-            sendKey(QEvent::Type::KeyPress, Qt::Key_F14);
-            sendKey(QEvent::Type::KeyRelease, Qt::Key_F14);
-        }
-        else if (m_LeftTriggerDown && leftTrigger < 8000) {
-            m_LeftTriggerDown = false;
-        }
+    // Triggers → the profile or the host, one step per pull. Deliberately NOT routed through
+    // the repeat timer above: a trigger pull is one discrete step, not a direction you hold, so
+    // it is edge-detected with hysteresis (press above 20000, release below 8000) — a trigger
+    // resting just at the threshold would otherwise flip hosts continuously.
+    //
+    // ⚠️ 8.0.0: on the strongest pull across ALL pads, outside the loop. The state is one flag
+    // per trigger, and inside the loop a second pad at rest cleared it on every poll: holding LT
+    // with two pads connected (Steam's virtual pad beside the real one, #24) stepped twenty
+    // times a second.
+    //
+    // Key_F14/F15 are inert like the Key_F13 used for Select: nothing in Qt treats them as
+    // activation, so only our explicit handlers consume them.
+    if (!m_LeftTriggerDown && leftTriggerMax > 20000) {
+        m_LeftTriggerDown = true;
+        InputHints::get()->notePadInput();
+        sendKey(QEvent::Type::KeyPress, Qt::Key_F14);
+        sendKey(QEvent::Type::KeyRelease, Qt::Key_F14);
+    }
+    else if (m_LeftTriggerDown && leftTriggerMax < 8000) {
+        m_LeftTriggerDown = false;
+    }
 
-        if (!m_RightTriggerDown && rightTrigger > 20000) {
-            m_RightTriggerDown = true;
-            InputHints::get()->notePadInput();
-            sendKey(QEvent::Type::KeyPress, Qt::Key_F15);
-            sendKey(QEvent::Type::KeyRelease, Qt::Key_F15);
-        }
-        else if (m_RightTriggerDown && rightTrigger < 8000) {
-            m_RightTriggerDown = false;
-        }
+    if (!m_RightTriggerDown && rightTriggerMax > 20000) {
+        m_RightTriggerDown = true;
+        InputHints::get()->notePadInput();
+        sendKey(QEvent::Type::KeyPress, Qt::Key_F15);
+        sendKey(QEvent::Type::KeyRelease, Qt::Key_F15);
+    }
+    else if (m_RightTriggerDown && rightTriggerMax < 8000) {
+        m_RightTriggerDown = false;
     }
 
     setScrollVelocity(scrollVelocity);
+    setScrollVelocityX(scrollVelocityX);
+}
+
+void SdlGamepadKeyNavigation::setScrollVelocityX(qreal pxPerSecond)
+{
+    if (qFuzzyCompare(1.0 + m_ScrollVelocityX, 1.0 + pxPerSecond)) return;
+    m_ScrollVelocityX = pxPerSecond;
+    emit scrollVelocityXChanged();
 }
 
 void SdlGamepadKeyNavigation::setScrollVelocity(qreal pxPerSecond)
@@ -880,6 +923,7 @@ void SdlGamepadKeyNavigation::updateTimerState()
         // No poll, no stick: a view must not go on scrolling at the last speed read, and a
         // D-pad held as the window lost focus must not repeat when it comes back.
         setScrollVelocity(0);
+        setScrollVelocityX(0);
         m_HeldDpad = -1;
         slDbg("polling timer STOPPED");
     }

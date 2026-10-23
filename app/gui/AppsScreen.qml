@@ -90,7 +90,7 @@ FocusScope {
     // must use the same divisor or a host and its games would be drawn at two different
     // sizes, which is the one thing a shared grammar cannot survive.
     // Times the user's Interface scale (7.0.0), like Theme.uiScale for the dialogs.
-    readonly property real _u: Math.max(0.62, Math.min(1.60, width / 1330)) * Theme.scaleFactor
+    readonly property real _u: Math.max(0.62, Math.min(1.60, width / 1330, Theme.heightFit)) * Theme.scaleFactor
 
     // The grey text of this page: the theme's text2/text3 on the floor and its waves. In Light
     // on the lifted cover (Host page background = Game cover) both are one darker grey, #26323a:

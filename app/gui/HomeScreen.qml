@@ -1516,6 +1516,11 @@ FocusScope {
             onPOnlineChanged:  if (!pOnline) { stLocked = false; _lockMisses = 0 }
             onStAuthChanged:   if (stAuth !== "authorized") { stLocked = false; _lockMisses = 0 }
 
+            // 8.0.0: from the CAPS reply that opens every access check — does the host have
+            // the host-section verbs (StreamTweak 10.0.0), and which version is it.
+            property bool   stHostSection: false
+            property string stHostVersion: ""
+
             property bool   stLinkChanging: false
             property double stLinkChangedAt: 0
             property string stSpeedRaw: ""
@@ -1589,6 +1594,7 @@ FocusScope {
                     statusUnknown:     model.statusUnknown,
                     wakeable:          model.wakeable,
                     asleep:            model.asleep,
+                    serverRestart:     model.serverRestart,
                     pyroWaveTest:      model.pyroWaveTest,
                     serverSupported:   model.serverSupported,
                     details:           model.details,
@@ -1609,10 +1615,14 @@ FocusScope {
                     stageImage:        model.stageImage,
                     stageOpacity:      model.stageOpacity,
                     auth:              stAuth,
+                    stEnabled:         stEnabled,
+                    hostSection:       stHostSection,
+                    hostVersion:       stHostVersion,
                     linkText:          homeScreen.formatStreamTweakStatus(stSpeedRaw),
                     willSwitchLink:    willSwitchLink,
                     cantSwitchLink:    cantSwitchLink,
                     localMbps:         stLocalMbps,
+                    hostMbps:          stHostMbps,
                     linkChanging:      stLinkChanging,
                     linkSwitched:      stSwitched,
                     allowsLinkControl: stAllowsLink,
@@ -1672,7 +1682,7 @@ FocusScope {
                 model.tailscaleAddress, model.hasTailscale, model.tailscaleActive,
                 model.gpuModel, model.profileCount, model.activeProfileSlot,
                 model.activeProfileName, model.stageImage,
-                model.stageOpacity, stAuth, stSpeedRaw,
+                model.stageOpacity, model.serverRestart, stAuth, stSpeedRaw, stEnabled, stHostSection, stHostVersion,
                 willSwitchLink, cantSwitchLink, stLastPlayed, stMatchLink,
                 stLinkChanging, stSwitched, stAllowsLink, stSessionActive, stLocked,
                 // What _runningFor() reads to hide the PIN unlock's own session (6.0.0).
@@ -1693,6 +1703,8 @@ FocusScope {
                     return
                 }
                 stAuth = ""
+                stHostSection = false
+                stHostVersion = ""
                 stSpeedRaw = ""
                 stAllowsLink = false
                 stSwitched = false
@@ -1828,6 +1840,12 @@ FocusScope {
                     probe.stLinkChanging = false
                     if (info.currentMbps !== undefined && info.currentMbps > 0)
                         probe.stSpeedRaw = String(info.currentMbps)
+                }
+
+                function onStreamTweakCapsReceived(idx, hostSection, version) {
+                    if (idx !== index) return
+                    probe.stHostSection = hostSection
+                    probe.stHostVersion = version
                 }
 
                 function onStreamTweakAuthReceived(idx, state, pin) {
@@ -2238,6 +2256,7 @@ FocusScope {
         wakeable:          _h ? _h.wakeable          : false
         locked:            _h ? _h.locked === true   : false
         asleep:            _h ? _h.asleep            : false
+        serverRestart:     _h && _h.serverRestart ? _h.serverRestart : ""
         serverSupported:   _h ? _h.serverSupported   : true
         hasTailscale:      _h ? _h.hasTailscale      : false
         tailscaleActive:   _h ? _h.tailscaleActive   : false
@@ -2248,6 +2267,7 @@ FocusScope {
         activeProfileName: _h ? _h.activeProfileName : ""
         streamOverride:    (_h && _h.streamOverride) ? _h.streamOverride : ({})
         authState:         _h ? _h.auth              : ""
+        streamTweakReason: homeScreen.streamTweakReasonFor(_h)
         hostLinkText:      _h ? _h.linkText          : ""
         willSwitchLink:    _h ? _h.willSwitchLink    : false
         cantSwitchLink:    _h ? _h.cantSwitchLink    : false
@@ -2312,8 +2332,10 @@ FocusScope {
     // ═════════════════════════════════════════════════════════════════════════
     // Everything the stage and the Options grid can ask for lands here. Keeping one switch
     // means the mouse, the D-pad and the face-button shortcuts cannot drift apart.
-    function runAction(kind) {
-        var h = currentHost
+    // `forHost` (8.0.0): a record from hostRecordFor(), when the host section asks for a host
+    // that is not necessarily the one selected on the strip.
+    function runAction(kind, forHost) {
+        var h = forHost ? forHost : currentHost
 
         switch (kind) {
         case "addHost":
@@ -2432,6 +2454,12 @@ FocusScope {
             computerModel.requestStreamTweakAuth(h.index)
             break
 
+        // 8.0.0: the host section, from StreamTweak's mark on the card.
+        case "streamtweak":
+            if (streamTweakReasonFor(h).length > 0) return
+            appShell.openHostSection(hostUuidAt(h.index), computerModel, h.name)
+            break
+
         // Both directions of the same control. Restoring shows the chip and its "back to X"
         // confirmation, exactly as answering the prompt does; matching is silent and simply
         // leaves the host ready, which is what the next launch would have waited for.
@@ -2473,10 +2501,87 @@ FocusScope {
         }
     }
 
+    // ═════════════════════════════════════════════════════════════════════════
+    // StreamLight 8.0 — the host section (HostSectionScreen.qml)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /*
+     * Why StreamTweak's logo on the card cannot open the section right now, or "" when it can.
+     * Shown greyed with this reason, never taken away (plan 8.0 / 10.0, "Accesso").
+     *
+     * ⚠️ Since 21/10/2026 the section also holds the integration's own switch for this host (its
+     * Setup tab, moved out of Settings), so it opens whenever there is a host to talk about: with
+     * StreamTweak switched off, not found, too old, pending or denied it opens on Setup alone,
+     * which says which. Only a host that is not paired — the bridge trusts the pairing — or is still
+     * being checked keeps it grey.
+     */
+    function streamTweakReasonFor(h) {
+        if (!h) return ""
+        if (h.statusUnknown)           return qsTr("Checking the host…")
+        if (!h.paired && h.online)     return qsTr("Pair this host first")
+        return ""
+    }
+
+    // The live record of a host, by uuid — what the card reads, for the section to read too.
+    function hostRecordFor(uuid) {
+        var p = hostProbes.itemAt(hostIndexOf(uuid))
+        return p ? p.record() : null
+    }
+
+    /*
+     * Runs one of the card's actions for a host the section names by uuid: "linkSpeed",
+     * "updateHost", "requestStAuth". Through runAction, so the section and the old Options
+     * tiles share one implementation — the restore watch, the update flow, the PIN pop-up.
+     */
+    function runActionFor(uuid, kind) {
+        var r = hostRecordFor(uuid)
+        if (r) runAction(kind, r)
+    }
+
+    /*
+     * The link control of the Dashboard's Network card: both directions and the four reasons
+     * for grey. Moved here from the Options tile it was until 7.0.x.
+     *
+     * The link, by hand. Not the 4.6.0 tile that was removed: that one sent PREPARE and let the
+     * *host* pick a speed it had configured, which is the whole design the 8.1.0 pair undid.
+     * This asks for the same speed the launch would ask for, so it can only agree with it —
+     * either putting the link back now, or getting it ready so the next launch doesn't have to
+     * wait. Greyed with the reason when the host isn't offering the control.
+     *
+     * ⚠️ Two ways to be unable to do this. The host refusing (allowsLinkControl), and the
+     * *client's own* matching being off — globally or by the active profile — which once left
+     * the control looking live while LinkMatcher declined in silence. Restoring is always
+     * sensible, so only the matching direction depends on the preference.
+     *
+     * ⚠️ The session clause applies to the matching direction only. A restore asked for during
+     * a live stream is not refused — the host schedules it and puts the link back once the
+     * stream is done — so greying that one would be lying the other way. Last in the chain
+     * because "matching is off" is the actionable reason when both are true.
+     */
+    function linkActionFor(uuid) {
+        var h = hostRecordFor(uuid)
+        if (!h || h.auth !== "authorized") return { shown: false }
+        var restoring = h.linkSwitched === true
+        // 8.0.0: matching that would change nothing is greyed too — this device's wired link is
+        // unknown here (Wi-Fi, Tailscale, no rate), or the host is not faster than it. Restoring is
+        // never affected: putting the link back is always a real change.
+        var why = h.linkChanging                     ? qsTr("changing")
+                : !h.allowsLinkControl               ? qsTr("host declined")
+                : (!restoring && !h.matchLink)       ? qsTr("matching is off")
+                : (!restoring && h.sessionActive)    ? qsTr("host busy")
+                : (!restoring && !(h.localMbps > 0)) ? qsTr("no wired link to compare from this device")
+                : (!restoring && !(h.hostMbps > h.localMbps)) ? qsTr("already at this device's speed")
+                : ""
+        return { shown: true, restoring: restoring,
+                 label: restoring ? qsTr("Restore NIC speed") : qsTr("Match link speed"),
+                 disabled: why.length > 0, reason: why,
+                 linkText: h.linkText, allowsLinkControl: h.allowsLinkControl === true }
+    }
+
     // Tiles for the Options popup: { kind, icon (emoji) | iconSource, label, danger? }.
     // In the order of what you came for (09/10/2026): getting in (Tailscale, Wake),
-    // doing something to the host (the link, Windows Update, a test, StreamTweak access),
-    // reading about it, making it yours, and Delete at the very end.
+    // a test, reading about it, making it yours, and Delete at the very end. Since 8.0.0
+    // Options is the host as a streaming server; what StreamTweak does is in the host section.
     function menuItemsFor(h) {
         var items = []
         // All Apps is gone (7.0.0): it opened the same page as Open on the card. Its one
@@ -2490,42 +2595,10 @@ FocusScope {
                          reason: qsTr("not installed here") })
         if (!h.online && h.wakeable)
             items.push({ kind: "wake", icon: "⏰", label: qsTr("Wake") })
-        // The link, by hand. Not the 4.6.0 tile that was removed: that one sent PREPARE and let
-        // the *host* pick a speed it had configured, which is the whole design the 8.1.0 pair
-        // undid. This asks for the same speed the launch would ask for, so it can only agree
-        // with it — either putting the link back now, or getting it ready so the next launch
-        // doesn't have to wait. Greyed with the reason when the host isn't offering the control.
-        //
-        // It takes the slot the Power tile had: X on this screen already opens the same power
-        // chooser, and the status-bar prompt is clickable, so the tile was a second door to one
-        // room.
-        // ⚠️ Two ways to be unable to do this, and only one of them used to grey the tile. The
-        // host refusing (allowsLinkControl) was covered; the *client's own* matching being off —
-        // globally or by the active profile — was not, so the tile looked live and LinkMatcher
-        // then declined in silence. Restoring is always sensible, so only the matching direction
-        // depends on the preference.
-        if (h.online && h.paired && h.auth === "authorized") {
-            var restoring = h.linkSwitched === true
-            // ⚠️ The session clause applies to the matching direction only. A restore asked for
-            // during a live stream is not refused — the host schedules it and puts the link back
-            // once the stream is done — so grey that one and the tile would be lying the other
-            // way. Last in the chain because "matching is off" is the actionable reason when
-            // both are true, while this one clears itself.
-            var why = h.linkChanging          ? qsTr("changing")
-                    : !h.allowsLinkControl    ? qsTr("host declined")
-                    : (!restoring && !h.matchLink) ? qsTr("matching is off")
-                    : (!restoring && h.sessionActive) ? qsTr("host busy")
-                    : ""
-            items.push({ kind: "linkSpeed", icon: "🔀",
-                         label: restoring ? qsTr("Restore NIC Speed")
-                                          : qsTr("Match Link Speed"),
-                         disabled: why.length > 0,
-                         reason: why })
-        }
-        if (h.online && h.paired && h.auth === "authorized")
-            items.push({ kind: "updateHost", winMark: true, label: qsTr("Windows Update") })
-        if (h.online && h.paired && (h.auth === "pending" || h.auth === "denied"))
-            items.push({ kind: "requestStAuth", icon: "🔑", label: qsTr("Request Access") })
+        // 8.0.0: Match / Restore link speed, Windows Update and Request Access moved to the
+        // host section (StreamTweak's mark on the card): its Dashboard and its access page. Their
+        // actions are still here — runAction("linkSpeed" / "updateHost" / "requestStAuth") — and
+        // the section calls them through runActionFor(), so one implementation serves both.
         items.push({ kind: "testNetwork", icon: "📡", label: qsTr("Test Network") })
         // PyroWave Test (7.0.0): only on a host that offers PyroWave at all. Greyed with the
         // reason when it can't run; once run, the tile says when and what it found.
@@ -2740,9 +2813,18 @@ FocusScope {
                     border.width: editText.activeFocus ? 2 : 1
                 }
 
-                Keys.onReturnPressed: renamePcDialog.accept()
-                Keys.onEnterPressed:  renamePcDialog.accept()
+                // The pad's A opens the on-screen keyboard (8.0.0); Enter on a keyboard accepts.
+                Keys.onReturnPressed: function(event) { if (!renameKeyboard.offer(event)) renamePcDialog.accept() }
+                Keys.onEnterPressed:  function(event) { if (!renameKeyboard.offer(event)) renamePcDialog.accept() }
+                Keys.onSpacePressed:  function(event) { event.accepted = renameKeyboard.offer(event) }
             }
+        }
+
+        VirtualKeyboard {
+            id: renameKeyboard
+            target: editText
+            mode: "text"
+            onAccepted: { close(); renamePcDialog.accept() }
         }
     }
 

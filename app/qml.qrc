@@ -34,6 +34,15 @@
         <file>gui/CliPair.qml</file>
         <file>gui/SegmentedSelector.qml</file>
         <file>gui/SectionTabBar.qml</file>
+        <file>gui/HostSectionScreen.qml</file>
+        <file>gui/VirtualKeyboard.qml</file>
+        <file>gui/SessionsTab.qml</file>
+        <file>gui/LibraryTab.qml</file>
+        <file>gui/SyncRestartDialog.qml</file>
+        <file>gui/SessionReport.qml</file>
+        <file>gui/SessionTimeline.qml</file>
+        <file>gui/SessionCompare.qml</file>
+        <file>gui/sessionfmt.js</file>
         <file>gui/OnOffSelector.qml</file>
         <file>gui/PairDialog.qml</file>
         <file>gui/StreamTweakPinDialog.qml</file>

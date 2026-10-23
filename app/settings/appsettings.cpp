@@ -344,7 +344,7 @@ int HostProfileManager::count(const QString& uuid) const
 {
     QSettings settings;
     int c = settings.value(grp(uuid) + "/count", 0).toInt();
-    return std::max(0, std::min(c, kMaxProfiles));
+    return std::max(0, c);
 }
 
 int HostProfileManager::active(const QString& uuid) const
@@ -431,10 +431,9 @@ void HostProfileManager::setSettings(const QString& uuid, int slot, const AppOve
 
 int HostProfileManager::add(const QString& uuid)
 {
+    // No ceiling since 8.0.0 (#42): a handheld docked in three places, with glasses and two
+    // Internet variants, needed more than the three there used to be.
     int c = count(uuid);
-    if (c >= kMaxProfiles) {
-        return -1;
-    }
     int slot = c;
     QSettings settings;
     settings.setValue(grp(uuid) + "/count", c + 1);

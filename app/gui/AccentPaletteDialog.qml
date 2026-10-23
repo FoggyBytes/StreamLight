@@ -92,6 +92,15 @@ Popup {
         pop.close()
     }
 
+    VirtualKeyboard {
+        id: hexKeyboard
+        target: hexField
+        mode: "hex"
+        // What is typed shows at once, as it does from a keyboard (textEdited does not fire).
+        onEdited: { var c = hexField._full(); if (c.length > 0) Theme.previewAccent(c) }
+        onAccepted: { var c = hexField._full(); if (c.length > 0) { close(); pop._commit(c) } }
+    }
+
     onOpened: {
         pop._original = Theme.accent
         pop._committed = false
@@ -270,12 +279,15 @@ Popup {
                 // Follows the cursor while the user is elsewhere, so the field always shows
                 // the code of the colour on screen.
                 Binding on text {
-                    when: !hexField.activeFocus
+                    // Nor while the on-screen keyboard is typing into it: the focus is there then.
+                    when: !hexField.activeFocus && !hexKeyboard.visible
                     value: Theme.accent.toString()
                 }
                 onTextEdited: { var c = _full(); if (c.length > 0) Theme.previewAccent(c) }
-                Keys.onReturnPressed: function(event) { var c = _full(); if (c.length > 0) pop._commit(c); event.accepted = true }
-                Keys.onEnterPressed:  function(event) { var c = _full(); if (c.length > 0) pop._commit(c); event.accepted = true }
+                // The pad's A (Space, in Settings) opens the on-screen keyboard (8.0.0).
+                Keys.onReturnPressed: function(event) { if (hexKeyboard.offer(event)) return; var c = _full(); if (c.length > 0) pop._commit(c); event.accepted = true }
+                Keys.onEnterPressed:  function(event) { if (hexKeyboard.offer(event)) return; var c = _full(); if (c.length > 0) pop._commit(c); event.accepted = true }
+                Keys.onSpacePressed:  function(event) { event.accepted = hexKeyboard.offer(event) }
                 // Back on the grid, the cursor's colour is what A would choose: show it.
                 function _backToGrid() {
                     grid.forceActiveFocus()

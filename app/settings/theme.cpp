@@ -1,5 +1,6 @@
 #include "theme.h"
 #include "backend/windowslocation.h"
+#include "backend/uianimationdriver.h"
 
 #include <QDateTime>
 #include <QGuiApplication>
@@ -34,6 +35,7 @@ namespace
     const char* SER_FORCED = "theme/forced";
     const char* SER_FORCEDUNTIL = "theme/forceduntil";
     const char* SER_REDUCE = "theme/reduceanimations";
+    const char* SER_UNLOCKFPS = "theme/unlockframerate";
     const char* SER_STARTUP = "theme/startupanimation";
     const char* SER_HOSTCOVERS = "theme/hostpagecovers";
     const char* SER_MODE = "theme/mode";
@@ -98,6 +100,10 @@ Theme::Theme(QObject* parent)
         m_AccentLight = m_AccentDark;
     }
     m_ReduceAnimations = settings.value(SER_REDUCE, false).toBool();
+    m_UnlockFrameRate = settings.value(SER_UNLOCKFPS, false).toBool();
+    // Here rather than in main(): Theme is built by the QML engine when the first page asks for
+    // it, before any animation runs, and building it earlier would change who owns it.
+    UiAnimationDriver::apply(m_UnlockFrameRate);
     m_StartupAnimation = settings.value(SER_STARTUP, true).toBool();
     // The waves by default: what 7.0.0 introduced. The covers are 6.5.1's look, on request.
     m_HostPageCovers = settings.value(SER_HOSTCOVERS, false).toBool();
@@ -649,6 +655,23 @@ void Theme::setReduceAnimations(bool on)
     emit changed();
 }
 
+int Theme::interfaceRefreshHz() const
+{
+    return UiAnimationDriver::screenHz();
+}
+
+void Theme::setUnlockFrameRate(bool on)
+{
+    if (on == m_UnlockFrameRate) {
+        return;
+    }
+
+    m_UnlockFrameRate = on;
+    UiAnimationDriver::apply(on);
+    save();
+    emit changed();
+}
+
 void Theme::setStartupAnimation(bool on)
 {
     if (on == m_StartupAnimation) {
@@ -684,6 +707,7 @@ void Theme::save() const
     settings.setValue(SER_FORCED, m_Forced);
     settings.setValue(SER_FORCEDUNTIL, m_ForcedUntil);
     settings.setValue(SER_REDUCE, m_ReduceAnimations);
+    settings.setValue(SER_UNLOCKFPS, m_UnlockFrameRate);
     settings.setValue(SER_STARTUP, m_StartupAnimation);
     settings.setValue(SER_HOSTCOVERS, m_HostPageCovers);
     settings.setValue(SER_MODE, m_Mode);

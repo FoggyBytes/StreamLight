@@ -149,18 +149,17 @@ private:
     static QString keyFor(const QString& hostUuid, int appId);
 };
 
-// Per-host streaming profiles (StreamLight 4.0.0): up to 3 named profiles per
-// host, each an AppOverride; one is active. The active profile is applied as a
+// Per-host streaming profiles (StreamLight 4.0.0): named profiles per host, each an
+// AppOverride; one is active. As many as the user wants since 8.0.0 (#42) — it was 3. The active profile is applied as a
 // host-level override at launch (below per-game). Stored via QSettings.
 class HostProfileManager
 {
 public:
-    static const int kMaxProfiles = 3;
     static const int kMaxNameLen = 14;
 
     static HostProfileManager* get();
 
-    int count(const QString& uuid) const;          // 0..kMaxProfiles
+    int count(const QString& uuid) const;          // 0 or more
     int active(const QString& uuid) const;          // slot index, or -1 if none
     void setActive(const QString& uuid, int slot);
     void cycle(const QString& uuid, int dir);       // wraps among existing
@@ -170,7 +169,7 @@ public:
     AppOverride settings(const QString& uuid, int slot) const;
     void setSettings(const QString& uuid, int slot, const AppOverride& ov);
 
-    int add(const QString& uuid);                   // new slot, or -1 if full
+    int add(const QString& uuid);                   // the new slot
     void remove(const QString& uuid, int slot);
 
     /// Drops all of a host's profiles. Same reasoning as AppSettingsManager::forgetHost.

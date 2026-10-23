@@ -36,6 +36,10 @@ Item {
     // Put to sleep by this client and not polled until Wake (6.2.0): reads "Asleep" rather
     // than "Offline", because offline is exactly what we cannot know about it.
     property bool   asleep: false
+    // 8.0.0: the streaming server's name while a Library Sync and restart has it down, else "".
+    // For that minute Moonlight's polls find the host offline; the card says why instead.
+    property string serverRestart: ""
+    readonly property bool _restarting: !online && serverRestart.length > 0
     property bool   serverSupported: true
     property string address: ""
     property string tailscaleAddress: ""
@@ -87,6 +91,20 @@ Item {
 
     // "" (unknown) | none | authorized | pending | denied | open
     property string authState: ""
+
+    /*
+     * 8.0.0: the fourth button, StreamTweak's logo, which opens the host section. Always drawn
+     * (shown greyed, never taken away): when it cannot open, this says why, and the line under
+     * the row shows it while the button holds the focus or the pointer. "" = it can open.
+     */
+    property string streamTweakReason: ""
+
+    // The StreamTweak button is under the pointer: its name (and why it is grey) shows beside
+    // the row. Not a Qt ToolTip — that one is the style's small grey box, and as a child of the
+    // button it would also fade with a greyed button.
+    property bool _markHovered: false
+    // Where the StreamTweak button sits in the row, for the words above it.
+    property real _markX: 0
 
     // Link speed, already formatted by the caller — the stage never parses.
     property string hostLinkText: ""
@@ -247,7 +265,7 @@ Item {
     // them. AppsScreen MUST use the same number — a host and its games drawn at two
     // different scales is the one thing a shared grammar does not survive.
     // Times the user's Interface scale (7.0.0), like Theme.uiScale for the dialogs.
-    readonly property real _u: Math.max(0.62, Math.min(1.60, width / 1330)) * Theme.scaleFactor
+    readonly property real _u: Math.max(0.62, Math.min(1.60, width / 1330, Theme.heightFit)) * Theme.scaleFactor
 
     function _px(n) { return Math.round(n * _u) }
 
@@ -328,12 +346,20 @@ Item {
             list.push({ kind: "open", label: qsTr("Open"), danger: false, disabled: false })
         else if (online)
             list.push({ kind: "pair", label: qsTr("Pair"), danger: false, disabled: false })
+        else if (_restarting)    // not Wake: the PC is on, only its server is restarting
+            list.push({ kind: "open", label: qsTr("Open"), danger: false, disabled: true })
         else if (wakeable)
             list.push({ kind: "wake", label: qsTr("Wake"), danger: false, disabled: false })
         else
             list.push({ kind: "open", label: qsTr("Open"), danger: false, disabled: true })
 
         list.push({ kind: "profiles", label: qsTr("Profiles"), danger: false, disabled: false })
+        // 8.0.0: the host section — StreamTweak's logo, no word (plan 8.0 / 10.0, "Accesso"),
+        // between Profiles and Options (21/10/2026). `label` is still set: it is the button's
+        // accessible name and the words above it under the pointer.
+        list.push({ kind: "streamtweak", mark: true, label: qsTr("StreamTweak"), danger: false,
+                    disabled: streamTweakReason.length > 0, reason: streamTweakReason,
+                    since: "8.0.0" })
         list.push({ kind: "options",  label: qsTr("Options"),  danger: false, disabled: false })
 
         return list
@@ -415,14 +441,26 @@ Item {
           statusUnknown          ? qsTr("Checking")
         : online && paired       ? qsTr("Online")
         : online                 ? qsTr("Reachable")
+        : _restarting            ? qsTr("Restarting")
         : asleep                 ? qsTr("Asleep")
         :                          qsTr("Offline")
 
+    // ⚠️ Over a picture the chips' dots follow the card's own palette (stage*, light in both
+    // themes), like the words beside them. They took the theme's colours until 21/10/2026, so
+    // in Light the dots went dark on a dark picture while their labels stayed light.
+    readonly property color _onBgOnline:  _hasPicture ? Theme.stageOnline  : Theme.online
+    readonly property color _onBgDanger:  _hasPicture ? Theme.stageDanger  : Theme.danger
+    readonly property color _onBgOffline: _hasPicture ? Theme.stageOffline : Theme.offline
+    // The accent as a mark (a dot, a word): the bright accent over a picture, as the profile
+    // badge already does; the contrast-checked ink on the theme's own surface.
+    readonly property color _onBgInk:     _hasPicture ? Theme.accent : Theme.inkText
+
     readonly property color _stateColor:
-          statusUnknown          ? Theme.text2
-        : online && paired       ? Theme.online
-        : online                 ? Theme.warning
-        :                          Theme.offline
+          statusUnknown          ? _onBg2
+        : online && paired       ? _onBgOnline
+        : online                 ? _onBgWarning
+        : _restarting            ? _onBgWarning
+        :                          _onBgOffline
 
     readonly property string _authLabel:
           authState === "authorized" ? qsTr("StreamTweak authorized")
@@ -431,9 +469,9 @@ Item {
         :                              ""
 
     readonly property color _authColor:
-          authState === "authorized" ? Theme.inkText
-        : authState === "pending"    ? Theme.warning
-        :                              Theme.danger
+          authState === "authorized" ? _onBgInk
+        : authState === "pending"    ? _onBgWarning
+        :                              _onBgDanger
 
     // The one line under the name. It answers "can I press A?" before the eye reaches the
     // buttons. The active profile used to be tacked onto the end of it and is now the badge
@@ -446,6 +484,7 @@ Item {
              : online && paired ? (serverSupported ? qsTr("Ready to stream")
                                                    : qsTr("This host needs a newer StreamLight"))
              : online           ? qsTr("Not paired yet")
+             : _restarting      ? qsTr("%1 is restarting · back in about a minute").arg(serverRestart)
              : asleep           ? qsTr("Asleep · wake it to use it")
              : wakeable         ? qsTr("Offline · can be woken up")
              :                    qsTr("Offline")
@@ -698,13 +737,13 @@ Item {
                     if (stage.hasTailscale)
                         c.push({ text: stage.tailscaleActive ? qsTr("Tailscale active")
                                                              : qsTr("Tailscale available"),
-                                 dot: stage.tailscaleActive ? Theme.ink : Theme.text })
+                                 dot: stage.tailscaleActive ? stage._onBgInk : stage._onBg })
                     // Last, so it reads as the newest thing to have happened, and never both
                     // at once: one is the wait, the other is the end of it.
                     if (stage.linkChanging)
-                        c.push({ text: qsTr("Link"), dot: Theme.warning })
+                        c.push({ text: qsTr("Link"), dot: stage._onBgWarning })
                     else if (stage.justReady)
-                        c.push({ text: stage.justReadyText, dot: Theme.online, tick: true })
+                        c.push({ text: stage.justReadyText, dot: stage._onBgOnline, tick: true })
                     return c
                 }
 
@@ -1127,6 +1166,53 @@ Item {
             }
         }
 
+        // 8.0.0: why the focused button is greyed, on the line under the row — the plan's
+        // "motivo sulla riga sotto". Only a button that carries a reason (the StreamTweak mark
+        // today); with the mouse the same words are the button's tooltip.
+        Text {
+            anchors.left: actionRow.left
+            anchors.top: actionRow.bottom
+            anchors.topMargin: stage._px(6)
+            width: card.width - stage._px(38) * 2
+            elide: Text.ElideRight
+            visible: text.length > 0
+            text: {
+                if (!stage.zoneActive || stage.pointerMode) return ""
+                var i = stage.actionIndex
+                if (i < 0 || i >= stage.actions.length) return ""
+                var a = stage.actions[i]
+                return (a.disabled && a.reason !== undefined) ? a.reason : ""
+            }
+            color: stage._onBg3
+            font.family: Theme.family
+            font.pixelSize: stage._px(Theme.fontCaption)
+        }
+
+        // The StreamTweak button's name under the pointer, above it (the NEW badge sits right
+        // over it while that shows).
+        Rectangle {
+            x: actionRow.x + stage._markX
+            anchors.bottom: actionRow.top
+            anchors.bottomMargin: stage._px(30)
+            visible: stage._markHovered
+            width: markTip.implicitWidth + stage._px(20)
+            height: markTip.implicitHeight + stage._px(12)
+            radius: stage._px(8)
+            color: Theme.card
+            border.color: Theme.lineHigh
+            border.width: 1
+            Text {
+                id: markTip
+                anchors.centerIn: parent
+                text: stage.streamTweakReason.length > 0
+                      ? qsTr("StreamTweak · %1").arg(stage.streamTweakReason)
+                      : qsTr("StreamTweak")
+                color: Theme.text
+                font.family: Theme.family
+                font.pixelSize: stage._px(Theme.fontSmall)
+            }
+        }
+
         // ── The action row ───────────────────────────────────────────────────
         Row {
             id: actionRow
@@ -1161,9 +1247,29 @@ Item {
                     readonly property bool _lit: _focused || _hovered
 
                     height: stage._px(58)
-                    width: actionContent.implicitWidth + stage._px(54)
+                    // The mark is square at rest; with the focus it widens for the A beside it,
+                    // exactly as a word does.
+                    width: modelData.mark === true
+                           ? Math.max(height, actionContent.implicitWidth + stage._px(32))
+                           : actionContent.implicitWidth + stage._px(54)
                     radius: stage._px(10)
                     opacity: modelData.disabled ? 0.4 : 1.0
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: modelData.label
+                    on_HoveredChanged: if (modelData.mark === true) stage._markHovered = _hovered
+                    onXChanged: if (modelData.mark === true) stage._markX = x
+                    Component.onCompleted: if (modelData.mark === true) stage._markX = x
+
+                    // NEW above the button, centred, while this is the release that added it. On the
+                    // corner it sat half outside the button and vanished under the focus fill.
+                    NewBadge {
+                        onPicture: stage._hasPicture
+                        since: modelData.since !== undefined ? modelData.since : ""
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.top
+                        anchors.bottomMargin: stage._px(6)
+                    }
 
                     /*
                      * ── Colour, and only colour (5.7.0) ──────────────────────
@@ -1265,8 +1371,24 @@ Item {
                             }
                         }
 
+                        // 8.0.0: StreamTweak's own logo, in its colours — the same mark as its tab
+                        // in Settings. Greyed with the button (its opacity), never recoloured.
+                        Image {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: modelData.mark === true
+                            width: stage._px(42)
+                            height: stage._px(42)
+                            source: modelData.mark === true ? "qrc:/res/streamtweak_logo.png" : ""
+                            sourceSize.width: 128
+                            sourceSize.height: 128
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            mipmap: true
+                        }
+
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
+                            visible: modelData.mark !== true
                             text: modelData.label
                             color: actionBtn._lit
                                    ? (modelData.danger ? "#1a0505" : Theme.onAccent)

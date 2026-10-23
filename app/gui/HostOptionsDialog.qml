@@ -38,7 +38,9 @@ Popup {
         return -1
     }
 
-    readonly property int _cols:  3
+    // Four columns for seven or eight tiles (8.0.0): with the link, Windows Update and access
+    // tiles gone to the host section, three left Delete alone on a row of its own.
+    readonly property int _cols:  (_count === 7 || _count === 8) ? 4 : 3
     readonly property int _cellW: dlg._px(200)
     readonly property int _cellH: dlg._px(124)
     readonly property int _count: items ? items.length : 0

@@ -16,6 +16,9 @@ import QtQuick.Layouts 1.3
  * thing in the dialog, and above it are eight names chosen with the D-pad. A pad can now name
  * a profile; a keyboard can still call it whatever it likes.
  *
+ * 8.0.0: and now a pad can type too — reaching the field (or A on it) opens the on-screen
+ * keyboard, VirtualKeyboard.qml, whose Done applies the name.
+ *
  * ⚠️ The presets are situations, not picture qualities: "Docked", "TV", "Handheld". A profile
  * is chosen by where you are, and that is what the name has to say from the host card, where
  * it is the only word on screen. Keep them inside HostProfilesDialog._maxNameLen (14).
@@ -39,6 +42,16 @@ Popup {
     readonly property var _presets: ["Docked", "Portable", "Handheld", "TV",
                                      "Living room", "Desk", "4K", "1080p"]
     readonly property int _cols: 4
+    // Every chip as wide as the widest name (8.0.0): sized each to its own word, the two rows of
+    // four had columns of different widths and nothing lined up under anything.
+    TextMetrics {
+        id: widestName
+        font.family: Theme.family
+        font.pixelSize: pop._px(Theme.fontSmall)
+        font.bold: true
+        text: { var w = ""; for (var i = 0; i < pop._presets.length; i++) if (pop._presets[i].length > w.length) w = pop._presets[i]; return w }
+    }
+    readonly property int _chipW: Math.ceil(widestName.advanceWidth) + _px(40)
 
     // The shared dialog scale — see SettingsResetDialog for why a dialog cannot take this
     // from the page behind it.
@@ -118,7 +131,7 @@ Popup {
                     model: pop._presets
                     delegate: Rectangle {
                         id: chip
-                        width: chipLabel.implicitWidth + pop._px(34)
+                        width: pop._chipW
                         height: pop._px(42)
                         radius: pop._px(8)
                         readonly property bool _cursor: nameGrid.activeFocus
@@ -213,8 +226,10 @@ Popup {
                     border.color: nameField.activeFocus ? Theme.ink : Theme.line
                     border.width: nameField.activeFocus ? 2 : 1
                 }
-                Keys.onReturnPressed: pop._commit(nameField.text)
-                Keys.onEnterPressed:  pop._commit(nameField.text)
+                // The pad's A opens the on-screen keyboard (8.0.0); Enter on a keyboard applies.
+                Keys.onReturnPressed: function(event) { if (!nameKeyboard.offer(event)) pop._commit(nameField.text) }
+                Keys.onEnterPressed:  function(event) { if (!nameKeyboard.offer(event)) pop._commit(nameField.text) }
+                Keys.onSpacePressed:  function(event) { event.accepted = nameKeyboard.offer(event) }
                 Keys.onUpPressed:     nameGrid.forceActiveFocus()
                 Keys.onDownPressed:   applyBtn.forceActiveFocus()
                 // Shift+Tab (the pad's up in Settings arrives as Tab + Shift) goes back up, like Up.
@@ -251,6 +266,14 @@ Popup {
                 KeyNavigation.left: applyBtn
             }
         }
+    }
+
+    // 8.0.0: with a pad, the field types through the on-screen keyboard; Done applies.
+    VirtualKeyboard {
+        id: nameKeyboard
+        target: nameField
+        mode: "text"
+        onAccepted: { close(); pop._commit(nameField.text) }
     }
 
     onOpened: {

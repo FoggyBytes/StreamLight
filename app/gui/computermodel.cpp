@@ -12,6 +12,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRandomGenerator>
+#include <QRegularExpression>
 #include <QFileInfo>
 #include <QSettings>
 #include <QThreadPool>
@@ -19,7 +20,17 @@
 #include <QUrl>
 
 ComputerModel::ComputerModel(QObject* object)
-    : QAbstractListModel(object) {}
+    : QAbstractListModel(object)
+{
+    m_LibraryJobTimer.setInterval(2000);
+    connect(&m_LibraryJobTimer, &QTimer::timeout, this, &ComputerModel::pollLibraryJobs);
+    connect(&m_BoxArtManager, &BoxArtManager::boxArtLoadComplete, this,
+            [this](NvComputer* computer, NvApp, QUrl) {
+                int index = m_Computers.indexOf(computer);
+                if (index >= 0)
+                    emit libraryCoverReady(index);
+            });
+}
 
 void ComputerModel::initialize(ComputerManager* computerManager)
 {
@@ -154,6 +165,12 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
         return computer->heldAsleep;
     case PyroWaveTestRole:
         return !(computer->serverCodecModeSupport & SCM_PYROWAVE) ? 0 : computer->pyrowaveTestable ? 2 : 1;
+    case ServerRestartRole: {
+        auto job = m_LibraryJobs.constFind(computer->uuid);
+        if (job == m_LibraryJobs.constEnd()) return QString();
+        static const QStringList kDown = { QStringLiteral("stopping"), QStringLiteral("starting"), QStringLiteral("waiting") };
+        return kDown.contains(job->phase) ? (job->server.isEmpty() ? tr("the streaming server") : job->server) : QString();
+    }
     case DetailsRole: {
         QString state, pairState;
 
@@ -237,6 +254,7 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
     names[StreamTweakEnabledRole] = "streamTweakEnabled";
     names[AsleepRole] = "asleep";
     names[PyroWaveTestRole] = "pyroWaveTest";
+    names[ServerRestartRole] = "serverRestart";
 
     return names;
 }
@@ -510,6 +528,146 @@ void ComputerModel::restoreHostLink(int computerIndex)
     // Fire-and-forget: a host that predates 8.1.0, or is already back on its own speed,
     // simply has nothing to do. The UI follows the outcome through NETINFO regardless.
     m_streamTweakBridge.sendRestore(address, [](const QString&) {});
+}
+
+void ComputerModel::requestHostSection(int computerIndex, const QString& verb)
+{
+    // The reads the host section knows. Anything else would go out as a command of its own.
+    static const QStringList kReads = { QStringLiteral("DASHBOARD"), QStringLiteral("APPS"),
+                                        QStringLiteral("NVIDIA"),    QStringLiteral("STATS"),
+                                        QStringLiteral("UPDATESTATE"), QStringLiteral("LIBRARY") };
+    // The Sessions tab's reads (8.0.0), in their only shapes: numbers, a hex session id and a
+    // fixed track name — never a game name or a path (the host upper-cases the line anyway).
+    static const QRegularExpression kSessionReads(QStringLiteral(
+        "^(SESSIONS \\d{1,5} \\d{1,3} (ALL|MINE)"
+        "|SESSION [0-9A-Fa-f]{6,32}"
+        "|SERIES [0-9A-Fa-f]{6,32} (HL|RTT|DROPS|BR|DEC|GPU|POWER)"
+        "|COVER [0-9A-Fa-f]{6,32} \\d{1,2})$"));
+    if (!kReads.contains(verb) && !kSessionReads.match(verb).hasMatch()) return;
+
+    if (!bridgeAllowed(computerIndex)) {         // see requestHostNetInfo()
+        emit hostSectionReceived(computerIndex, verb, QVariantMap());
+        return;
+    }
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString address, uuid;
+    {
+        QReadLocker lock(&computer->lock);
+        address = computer->activeAddress.address();
+        uuid = computer->uuid;
+    }
+    if (address.isEmpty()) {
+        emit hostSectionReceived(computerIndex, verb, QVariantMap());
+        return;
+    }
+
+    m_streamTweakBridge.requestHostSection(address, verb, [this, uuid, verb](const QString& reply) {
+        const int computerIndex = indexOfUuid(uuid);   // see requestHostNetInfo()
+        if (computerIndex < 0) return;
+        QVariantMap data;
+        // "ERR" from a host older than 10.0.0, "STATS_UNAVAILABLE", or nothing on a timeout:
+        // all of them are "no answer", which the page shows as such rather than as zeros.
+        const QJsonDocument doc = QJsonDocument::fromJson(reply.toUtf8());
+        if (doc.isObject()) data = doc.object().toVariantMap();
+        if (verb == QStringLiteral("LIBRARY") && !data.isEmpty()) noteLibraryState(uuid, data);
+        emit hostSectionReceived(computerIndex, verb, data);
+    });
+}
+
+void ComputerModel::setHostSetting(int computerIndex, const QString& command)
+{
+    // ⚠️ The shapes are fixed here, not only on the host: the host refuses anything else, and
+    // this is the second lock on the same door — a QML mistake cannot become a command.
+    static const QRegularExpression kWrite(QStringLiteral(
+        "^(SETAUDIO (ON|OFF)|SETSENTINEL (ON|OFF)|SETAPP [0-9A-F]{16} (ON|OFF)"
+        // Sync and restart (8.0.0, Library tab): no argument, so nothing to choose but the action.
+        "|LIBSYNC)$"));
+    if (!kWrite.match(command).hasMatch()) {
+        emit hostSettingResult(computerIndex, command, QStringLiteral("ERR"));
+        return;
+    }
+    if (!bridgeAllowed(computerIndex)) {         // see requestHostNetInfo()
+        emit hostSettingResult(computerIndex, command, QString());
+        return;
+    }
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString address, uuid;
+    {
+        QReadLocker lock(&computer->lock);
+        address = computer->activeAddress.address();
+        uuid = computer->uuid;
+    }
+    if (address.isEmpty()) {
+        emit hostSettingResult(computerIndex, command, QString());
+        return;
+    }
+
+    m_streamTweakBridge.sendHostSetting(address, command, [this, uuid, command](const QString& reply) {
+        const int computerIndex = indexOfUuid(uuid);
+        if (computerIndex < 0) return;
+        qInfo() << "Host setting" << command << "→" << (reply.isEmpty() ? QStringLiteral("(no answer)") : reply);
+        if (command == QStringLiteral("LIBSYNC") && reply == QStringLiteral("OK")) {
+            // Followed from now on, wherever the user goes: see m_LibraryJobs.
+            m_LibraryJobs.insert(uuid, LibraryJob{ QString(), QStringLiteral("scanning"), QDateTime::currentMSecsSinceEpoch() });
+            if (!m_LibraryJobTimer.isActive()) m_LibraryJobTimer.start();
+        }
+        emit hostSettingResult(computerIndex, command, reply);
+    });
+}
+
+void ComputerModel::noteLibraryState(const QString& uuid, const QVariantMap& state)
+{
+    const QVariantMap job = state.value(QStringLiteral("job")).toMap();
+    const QString phase = job.value(QStringLiteral("phase")).toString();
+    static const QStringList kRunning = { QStringLiteral("scanning"), QStringLiteral("writing"), QStringLiteral("stopping"),
+                                          QStringLiteral("starting"), QStringLiteral("waiting") };
+    const int row = indexOfUuid(uuid);
+    const QString before = row >= 0 ? data(index(row), ServerRestartRole).toString() : QString();
+
+    if (kRunning.contains(phase)) {
+        LibraryJob& j = m_LibraryJobs[uuid];
+        if (j.sinceMs == 0) j.sinceMs = QDateTime::currentMSecsSinceEpoch();
+        j.phase = phase;
+        j.server = state.value(QStringLiteral("server")).toString();
+        if (!m_LibraryJobTimer.isActive()) m_LibraryJobTimer.start();
+    } else {
+        m_LibraryJobs.remove(uuid);
+        if (m_LibraryJobs.isEmpty()) m_LibraryJobTimer.stop();
+    }
+
+    if (row >= 0 && data(index(row), ServerRestartRole).toString() != before)
+        emit dataChanged(index(row), index(row), { ServerRestartRole });
+}
+
+void ComputerModel::pollLibraryJobs()
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const QStringList uuids = m_LibraryJobs.keys();
+    for (const QString& uuid : uuids) {
+        // A job the host stopped answering about: let it go after four minutes.
+        if (now - m_LibraryJobs.value(uuid).sinceMs > 4 * 60 * 1000) {
+            noteLibraryState(uuid, QVariantMap{ { QStringLiteral("job"), QVariantMap{ { QStringLiteral("phase"), QStringLiteral("failed") } } } });
+            continue;
+        }
+        const int row = indexOfUuid(uuid);
+        if (row < 0) { m_LibraryJobs.remove(uuid); continue; }
+        QString address;
+        {
+            QReadLocker lock(&m_Computers[row]->lock);
+            address = m_Computers[row]->activeAddress.address();
+        }
+        if (address.isEmpty()) continue;
+        // The bridge is not the streaming server: it answers right through the restart.
+        m_streamTweakBridge.requestHostSection(address, QStringLiteral("LIBRARY"), [this, uuid](const QString& reply) {
+            const QJsonDocument doc = QJsonDocument::fromJson(reply.toUtf8());
+            if (doc.isObject()) noteLibraryState(uuid, doc.object().toVariantMap());
+        });
+    }
+    if (m_LibraryJobs.isEmpty()) m_LibraryJobTimer.stop();
 }
 
 void ComputerModel::setHostStageBackground(int computerIndex, const QString& imagePath)
@@ -1166,6 +1324,18 @@ void ComputerModel::requestStreamTweakAuth(int computerIndex)
             // out was finding the switch by hand.
             rememberStreamTweakSeen(uuid);
 
+            // StreamLight 8.0: the host section needs "host=1" (StreamTweak 10.0.0); "ver=" lets
+            // the card name an older host as too old rather than as missing.
+            {
+                bool hostSection = false;
+                QString version;
+                for (const QString& token : caps.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+                    if (token == QLatin1String("host=1")) hostSection = true;
+                    else if (token.startsWith(QLatin1String("ver="))) version = token.mid(4);
+                }
+                emit streamTweakCapsReceived(computerIndex, hostSection, version);
+            }
+
             if (caps.contains(QLatin1String("auth=optional"))) {
                 m_streamTweakPins.remove(uuid);
                 emit streamTweakAuthReceived(computerIndex, QStringLiteral("open"), QString());
@@ -1501,6 +1671,31 @@ QVariantMap ComputerModel::runningAppFor(int computerIndex) const
                                    ? QStringLiteral("qrc:/res/no_app_image.png")
                                    : cover.toString();
     return out;
+}
+
+QString ComputerModel::libraryCover(int computerIndex, const QString& name)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count() || name.isEmpty())
+        return QString();
+
+    NvComputer* computer = m_Computers[computerIndex];
+    NvApp found;
+    {
+        QReadLocker lock(&computer->lock);
+        for (const NvApp& app : computer->appList) {
+            if (app.name.compare(name, Qt::CaseInsensitive) == 0) {
+                found = app;
+                break;
+            }
+        }
+    }
+    if (found.id == 0)
+        return QString();
+
+    // The same manager the host page uses: the file on disk when there is one, a download
+    // otherwise. Its placeholder is not passed on — the tab has its own tile with the name.
+    QUrl cover = m_BoxArtManager.loadBoxArt(computer, found);
+    return cover.scheme() == QStringLiteral("qrc") ? QString() : cover.toString();
 }
 
 QString ComputerModel::formatAgo(const QDateTime& utcStamp)

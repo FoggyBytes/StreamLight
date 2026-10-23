@@ -29,9 +29,17 @@ class SdlGamepadKeyNavigation : public QObject
     // 7.0.0: the right stick's scrolling speed in px/s, positive = down, 0 at rest. A speed and
     // not a step: PadScroll.qml moves the view by it on every frame (see the note in the poll).
     Q_PROPERTY(qreal scrollVelocity READ scrollVelocity NOTIFY scrollVelocityChanged)
+    // 8.0.0: the same speed for the stick's horizontal axis, positive = right — for the few
+    // views that scroll sideways (the profile strip of Host profiles, #42).
+    Q_PROPERTY(qreal scrollVelocityX READ scrollVelocityX NOTIFY scrollVelocityXChanged)
     // 7.0.0: some view would move under the right stick right now (a PadScroll with room to
     // scroll holds the focus) — the status bar draws its "Scroll" prompt from this.
     Q_PROPERTY(bool scrollAvailable READ scrollAvailable NOTIFY scrollAvailableChanged)
+    // 8.0.0: Steam's Desktop Layout has been seen sending the pad as keyboard too (the same thing
+    // steamDesktopLayoutDetected says once). Its copy of A can arrive first, as a real Return,
+    // and the on-screen keyboard reads A from the scan code: with this set it opens on that
+    // Return as well (VirtualKeyboard.offer()).
+    Q_PROPERTY(bool desktopLayoutEchoes READ desktopLayoutEchoes NOTIFY desktopLayoutEchoesChanged)
 
 public:
     SdlGamepadKeyNavigation(StreamingPreferences* prefs);
@@ -69,6 +77,8 @@ public:
     QString inputMode() const { return m_InputMode; }
 
     qreal scrollVelocity() const { return m_ScrollVelocity; }
+    qreal scrollVelocityX() const { return m_ScrollVelocityX; }
+    bool desktopLayoutEchoes() const { return m_DesktopLayoutReported; }
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -80,11 +90,13 @@ signals:
     // echoes below, once per launch. menuHoldSwitches: the pad is the Steam Controller
     // (28de:1304), whose Desktop Layout switches to Gamepad on a long press of Menu.
     void steamDesktopLayoutDetected(bool menuHoldSwitches);
+    void desktopLayoutEchoesChanged();
 
     // 7.0.0 — the right stick scrolls. The view that holds the focus moves by scrollVelocity
     // (PadScroll.qml) and calls noteScrolled(); the next D-pad or left-stick step then only
     // brings the focused element back into view (refocusRequested) instead of moving the focus.
     void scrollVelocityChanged();
+    void scrollVelocityXChanged();
     void scrollAvailableChanged();
     void refocusRequested();
 
@@ -98,6 +110,7 @@ private:
     void updateTimerState();
 
     void setScrollVelocity(qreal pxPerSecond);
+    void setScrollVelocityX(qreal pxPerSecond);
 
     void updateControllerType();
 
@@ -138,6 +151,7 @@ private:
     // pulling LT/RT is one discrete "previous/next host", not a direction you hold.
     bool m_ScrolledAway = false;
     qreal m_ScrollVelocity = 0;
+    qreal m_ScrollVelocityX = 0;
     QHash<QObject*, QMetaObject::Connection> m_ScrollViews;
     // 7.0.0: the D-pad direction held down (an SDL button, -1 = none), when it went down and
     // when it last repeated. SDL sends one event per press, so a held D-pad used to move one
