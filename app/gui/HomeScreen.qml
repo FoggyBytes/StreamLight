@@ -2428,6 +2428,12 @@ FocusScope {
             renamePcDialog.open()
             break
 
+        case "wakeMac":
+            wakeMacDialog.pcUuid = hostUuidAt(h.index)
+            wakeMacDialog.pcName = h.name
+            wakeMacDialog.open()
+            break
+
         case "delete":
             deletePcDialog.pcUuid = hostUuidAt(h.index)
             deletePcDialog.pcName = h.name
@@ -2595,6 +2601,12 @@ FocusScope {
                          reason: qsTr("not installed here") })
         if (!h.online && h.wakeable)
             items.push({ kind: "wake", icon: "⏰", label: qsTr("Wake") })
+        // 8.1.0 (issue #45): a second MAC for the magic packet, for a PC whose streaming card is
+        // not the one that wakes it. The note says one is set; NEW only while it has nothing to say.
+        var extraMac = computerModel.hostWakeMacs(h.index).extra || ""
+        items.push({ kind: "wakeMac", icon: "🔌", label: qsTr("Wake-on-LAN"),
+                     since: extraMac.length ? "" : "8.1.0",
+                     note: extraMac.length ? qsTr("+1 MAC") : "" })
         // 8.0.0: Match / Restore link speed, Windows Update and Request Access moved to the
         // host section (StreamTweak's mark on the card): its Dashboard and its access page. Their
         // actions are still here — runAction("linkSpeed" / "updateHost" / "requestStAuth") — and
@@ -2828,6 +2840,14 @@ FocusScope {
         }
     }
 
+    // Wake-on-LAN: a second MAC (8.1.0, issue #45) — see WakeMacDialog.qml.
+    WakeMacDialog {
+        id: wakeMacDialog
+        property string pcUuid: ""
+        model: computerModel
+        pcIndex: homeScreen.hostIndexOf(pcUuid)
+        onClosed: navRoot.forceActiveFocus()
+    }
     NavigableMessageDialog {
         id: showPcDetailsDialog
         headerText: qsTr("HOST DETAILS")

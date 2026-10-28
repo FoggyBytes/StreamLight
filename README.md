@@ -47,6 +47,7 @@ Everything below is in the current release, whichever version first introduced i
 - **Moving background** *(6.0.0+)* — waves in your accent colour rise over the lower three quarters of Home, Settings and the PIN pad, twice as fast while a host is streaming. Still with *Reduce animations*, paused behind dialogs
 - **Opening animation** *(6.0.0+)* — the waves rise, the icon fades in and a band of light writes STREAMLIGHT before Home appears; any button skips it, and *Settings → Interface* turns it off
 - **The host page** puts the library down the left at full height and the game in the spotlight beside it — cover, name, store, and the right verb (*Resume* if it is already running, *Play* if not)
+- **Grid of covers** *(8.1.0+)* — the left stick click or **V** turns the host page's list into a wall of covers, keeping the selected game; in the grid the bottom bar carries Play, Per-game settings and Stop, and the covers mark the game streaming now, the last one played and the pinned ones. *Settings → Interface* picks the layout, the cover size and whether titles show
 - **All, Games and Apps** *(5.9.0+, All 6.1.0+)* — **LB / RB** switch the host page between everything you can launch, the games, and everything else: Desktop, Virtual Display, Steam Big Picture and the host's controls, which open with *Open* and never count hours. The page reopens on the tab you last chose on that host *(6.3.0+)*, All the first time; **LT / RT** move the host's profile
 - **Move between Games and Apps** *(6.1.0+)* — the **right stick click** or **M** moves the selected entry to the other tab, remembered per host. The host's own controls stay on Apps
 - **Remote Input and Remote Monitor** *(5.9.0+)* — the host controls of Vibeshine and Vibepollo 2.0 open beside a running game, and their results and confirmation requests appear as messages and Yes/No questions rather than errors
@@ -54,6 +55,7 @@ Everything below is in the current release, whichever version first introduced i
 - **Play time** *(5.7.0+)* — how long you have streamed each game, beside the store on every row. Filed under the game's name, so it survives a reinstall, and resettable from the per-game panel
 - **Pinned games** *(6.0.0+)* — **Start** on the pad (Menu / Options / +) or **P** pins the selected game: pinned games sit under their own heading right after *Last played*, alphabetically, marked with a pin on the row. Kept per host and by name, so a pin survives a reinstall
 - **Resume from Home** *(6.0.0+)* — while a host is streaming, its card shows the game in progress, marked *Streaming now*, with **Resume** in place of *Play again*
+- **Wake through a second network card** *(8.1.0+)* — the *Wake-on-LAN* tile in a host's Options takes the MAC address of another card of the same PC; **Wake** sends the magic packet to both
 - **Per-host backgrounds** — *(7.0.0+: a small popup that previews on the card)* a picture of your own, and *(6.0.0+)* how much of the moving background shows through the card, from 70% to 100%. Without a picture the card wears your accent colour, in a gradient
 - **Your accent colour** *(7.0.0+: a palette of 24, previewed live)* — or any hex code. Status colours never follow it: online stays green, a pending link change amber, *Shutdown* red
 - **Light or dark** *(7.0.0+)* — *Dark*, *Light*, *System* or *Auto* (sunrise and sunset, or two set hours), switched from Home with the right stick click, and an interface scale of 90%, 100% or 110%
@@ -111,22 +113,12 @@ All of them are switched on **per host**, in the **Setup** tab of the host's Str
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in the section's *Setup* tab; the host has its own switch
 
-## ✨ What's New in 8.0.1 — Full Picture
+## ✨ What's New in 8.1.0 — Cover Story
 
-StreamTweak 10.0.4 on the host for the fuller timeline.
+Works with any host, no StreamTweak update needed.
 
-- **Host compute and Host power in full** — a session's timeline draws GPU, encoder and CPU, and board power with the power limit, the GPU temperature and the moments at the limit, one strip each under the same cursor
-- **Overlay figures you can trust** — the host's figures go blank when it stops answering instead of freezing, and the bitrate average is no longer a little low
-
-## ✨ What's New in 8.0.0 — At Hand
-
-StreamTweak 10.0.0 on the host for the StreamTweak section; the rest works with any host.
-
-- **The host from the sofa** — StreamTweak's logo on the host card opens a section with the host's Dashboard, its streaming Sessions, its game Library with Sync and restart, its managed Apps and NVIDIA Sentinel, all on the pad; Windows Update and link speed moved there from Options, and Settings → StreamTweak became its Setup tab
-- **A keyboard for the controller** — the fields that need typing open an on-screen keyboard at the bottom of the screen
-- **As many host profiles as you like**, scrolling sideways in the profile dialog
-- **Unlock frame rate** — the interface's animations can follow the display's refresh rate instead of 60 fps
-- **Very wide screens** — at 3840 × 1200 and similar, the interface now fits the height too
+- **A wall of covers** — the host page can show its games as a grid of covers instead of the list, switched with the left stick click or **V**; cover size and titles in *Settings → Interface*. Contributed by [@Noklef](https://github.com/Noklef)
+- **Wake through a second network card** — a host's Options take the MAC address of another card of the same PC, for when the card it streams on is not the one that wakes it
 
 *Older releases are in [changelog.txt](changelog.txt).*
 

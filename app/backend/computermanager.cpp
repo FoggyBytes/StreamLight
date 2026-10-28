@@ -1346,6 +1346,31 @@ bool ComputerManager::setStageOpacity(QString uuid, int percent)
     return true;
 }
 
+bool ComputerManager::setWakeMacAddress(QString uuid, QByteArray mac)
+{
+    if (uuid.isEmpty() || (!mac.isEmpty() && mac.size() != 6)) {
+        return false;
+    }
+
+    NvComputer* computer = nullptr;
+    {
+        QReadLocker lock(&m_Lock);
+        computer = m_KnownHosts.value(uuid);
+    }
+    if (computer == nullptr) {
+        return false;
+    }
+
+    {
+        QWriteLocker cLock(&computer->lock);
+        computer->wakeMacAddress = mac;
+    }
+
+    saveHost(computer);
+    emit computerStateChanged(computer);
+    return true;
+}
+
 bool ComputerManager::setHeldAsleep(QString uuid, bool held)
 {
     if (uuid.isEmpty()) {

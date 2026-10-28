@@ -47,6 +47,7 @@
         <file>gui/PairDialog.qml</file>
         <file>gui/StreamTweakPinDialog.qml</file>
         <file>gui/AddHostDialog.qml</file>
+        <file>gui/WakeMacDialog.qml</file>
         <file>gui/PowerDialog.qml</file>
         <file>gui/DialogButton.qml</file>
         <file>gui/UpdateDialog.qml</file>

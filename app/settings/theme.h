@@ -557,7 +557,7 @@ private:
     qreal  m_HeightFit = 100.0;
     bool   m_StartupAnimation = true;
     bool   m_HostPageCovers = false;
-    bool   m_LibraryGrid = true;
+    bool   m_LibraryGrid = false;
     int    m_LibraryCoverSize = 1;
     bool   m_LibraryShowTitles = true;
 

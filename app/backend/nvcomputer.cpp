@@ -37,6 +37,7 @@
 #define SER_STAGEOPACITY "stageopacity"
 #define SER_STENABLED "streamtweakenabled"
 #define SER_HELDASLEEP "heldasleep"
+#define SER_WAKEMAC "wakemac"
 
 NvComputer::NvComputer(QSettings& settings)
 {
@@ -44,6 +45,7 @@ NvComputer::NvComputer(QSettings& settings)
     this->uuid = settings.value(SER_UUID).toString();
     this->hasCustomName = settings.value(SER_CUSTOMNAME).toBool();
     this->macAddress = settings.value(SER_MAC).toByteArray();
+    this->wakeMacAddress = settings.value(SER_WAKEMAC).toByteArray();
     this->localAddress = NvAddress(settings.value(SER_LOCALADDR).toString(),
                                    settings.value(SER_LOCALPORT, QVariant(DEFAULT_HTTP_PORT)).toUInt());
     this->remoteAddress = NvAddress(settings.value(SER_REMOTEADDR).toString(),
@@ -167,6 +169,12 @@ void NvComputer::serialize(QSettings& settings, bool serializeApps) const
     settings.setValue(SER_CUSTOMNAME, hasCustomName);
     settings.setValue(SER_UUID, uuid);
     settings.setValue(SER_MAC, macAddress);
+    if (!wakeMacAddress.isEmpty()) {
+        settings.setValue(SER_WAKEMAC, wakeMacAddress);
+    }
+    else {
+        settings.remove(SER_WAKEMAC);
+    }
     settings.setValue(SER_LOCALADDR, localAddress.address());
     settings.setValue(SER_LOCALPORT, localAddress.port());
     settings.setValue(SER_REMOTEADDR, remoteAddress.address());
@@ -214,6 +222,7 @@ bool NvComputer::isEqualSerialized(const NvComputer &that) const
            this->hasCustomName == that.hasCustomName &&
            this->uuid == that.uuid &&
            this->macAddress == that.macAddress &&
+           this->wakeMacAddress == that.wakeMacAddress &&
            this->localAddress == that.localAddress &&
            this->remoteAddress == that.remoteAddress &&
            this->ipv6Address == that.ipv6Address &&
@@ -374,7 +383,9 @@ NvComputer::NvComputer(NvHTTP& http, QString serverInfo)
 
 bool NvComputer::wake() const
 {
-    QByteArray wolPayload;
+    // One payload per MAC: the one the host reports and, since 8.1.0, the one the user added
+    // for another card of the same PC (wakeMacAddress, issue #45). Both are sent everywhere.
+    QList<QByteArray> wolPayloads;
 
     {
         QReadLocker readLocker(&lock);
@@ -384,17 +395,30 @@ bool NvComputer::wake() const
             return true;
         }
 
-        if (macAddress.isEmpty()) {
+        QList<QByteArray> macs;
+        if (!macAddress.isEmpty()) {
+            macs.append(macAddress);
+        }
+        if (!wakeMacAddress.isEmpty() && wakeMacAddress != macAddress) {
+            macs.append(wakeMacAddress);
+        }
+
+        if (macs.isEmpty()) {
             qWarning() << name << "has no MAC address stored";
             return false;
         }
 
-        // Create the WoL payload
-        wolPayload.append(QByteArray::fromHex("FFFFFFFFFFFF"));
-        for (int i = 0; i < 16; i++) {
-            wolPayload.append(macAddress);
+        // Create the WoL payloads
+        for (const QByteArray& mac : std::as_const(macs)) {
+            QByteArray wolPayload;
+            wolPayload.append(QByteArray::fromHex("FFFFFFFFFFFF"));
+            for (int i = 0; i < 16; i++) {
+                wolPayload.append(mac);
+            }
+            Q_ASSERT(wolPayload.size() == 102);
+            wolPayloads.append(wolPayload);
+            qInfo().noquote() << "WoL for" << name << "to" << QString(mac.toHex(':'));
         }
-        Q_ASSERT(wolPayload.size() == 102);
     }
 
     // Ports used as-is
@@ -475,12 +499,14 @@ bool NvComputer::wake() const
 
             // Send to all static ports
             for (quint16 port : STATIC_WOL_PORTS) {
-                if (sock.writeDatagram(wolPayload, address, port)) {
-                    qInfo().nospace().noquote() << "Sent WoL packet to " << name << " via " << address.toString() << ":" << port;
-                    success = true;
-                }
-                else {
-                    qWarning() << "Send failed:" << sock.error();
+                for (const QByteArray& wolPayload : std::as_const(wolPayloads)) {
+                    if (sock.writeDatagram(wolPayload, address, port)) {
+                        qInfo().nospace().noquote() << "Sent WoL packet to " << name << " via " << address.toString() << ":" << port;
+                        success = true;
+                    }
+                    else {
+                        qWarning() << "Send failed:" << sock.error();
+                    }
                 }
             }
 
@@ -499,12 +525,14 @@ bool NvComputer::wake() const
                 for (quint16 port : DYNAMIC_WOL_PORTS) {
                     port = (port - 47989) + basePort;
 
-                    if (sock.writeDatagram(wolPayload, address, port)) {
-                        qInfo().nospace().noquote() << "Sent WoL packet to " << name << " via " << address.toString() << ":" << port;
-                        success = true;
-                    }
-                    else {
-                        qWarning() << "Send failed:" << sock.error();
+                    for (const QByteArray& wolPayload : std::as_const(wolPayloads)) {
+                        if (sock.writeDatagram(wolPayload, address, port)) {
+                            qInfo().nospace().noquote() << "Sent WoL packet to " << name << " via " << address.toString() << ":" << port;
+                            success = true;
+                        }
+                        else {
+                            qWarning() << "Send failed:" << sock.error();
+                        }
                     }
                 }
             }

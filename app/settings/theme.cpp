@@ -108,7 +108,7 @@ Theme::Theme(QObject* parent)
     // it, before any animation runs, and building it earlier would change who owns it.
     UiAnimationDriver::apply(m_UnlockFrameRate);
     m_StartupAnimation = settings.value(SER_STARTUP, true).toBool();
-    m_LibraryGrid = settings.value(SER_LIBRARY_GRID, true).toBool();
+    m_LibraryGrid = settings.value(SER_LIBRARY_GRID, false).toBool();
     m_LibraryCoverSize = qBound(0, settings.value(SER_LIBRARY_COVER_SIZE, 1).toInt(), 2);
     m_LibraryShowTitles = settings.value(SER_LIBRARY_SHOW_TITLES, true).toBool();
     // The waves by default: what 7.0.0 introduced. The covers are 6.5.1's look, on request.

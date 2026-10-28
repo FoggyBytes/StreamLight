@@ -4,6 +4,23 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+----------------------------------------
+Version 8.1.0 - Cover Story (28/10/2026)
+----------------------------------------
+
+No StreamTweak update required — 8.1.0 is client-side and works with any host. The host page can show its games as a wall of covers, and Wake can reach a second network card.
+
+✨ NEW FEATURES:
+• Grid of covers on the host page — the library can show its games as covers instead of the list: the left stick click, V or the prompt in the bottom bar switch between the two, and the selected game stays selected; in the grid the bar carries Play / Resume, Per-game settings and Stop, and the covers mark the game streaming now, the last one played and the pinned ones
+• A second MAC address for Wake — the new Wake-on-LAN tile in a host's Options takes the MAC of another network card of that PC, for a host whose streaming card is not the one that wakes it; Wake sends the magic packet to both
+
+🎨 UI:
+• Settings → Interface: Library layout (List, the default, or Grid), Grid cover size (Small, Medium, Large) and Grid titles
+• Left stick click glyphs for the Xbox, PlayStation, Nintendo and Steam sets
+
+🙏 THANKS:
+• Thanks to @Noklef for the grid of covers (https://github.com/FoggyBytes/StreamLight/pull/46) and to @kayti for asking for a second Wake address (https://github.com/FoggyBytes/StreamLight/issues/45)
+
 -----------------------------------------
 Version 8.0.1 - Full Picture (28/10/2026)
 -----------------------------------------

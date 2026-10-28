@@ -11,9 +11,26 @@ import SdlGamepadKeyNavigation 1.0
 import WindowMove 1.0
 
 /*
- * The host library has two layouts: a full-width cover grid, and a title list with a
- * spotlight. Both share the model, delegate and session actions. FocusScope propagates
- * controller/keyboard focus from the Loader down into whichever view is active.
+ * The host page — the showcase.
+ *
+ * Same grammar as Home: one thing in the spotlight and everything else in a strip, two
+ * navigation zones, and the action row saying what A will do. There the spotlight is the
+ * host, here it is the game — so moving between the two screens does not mean learning a
+ * second way of reading.
+ *
+ * What the grid of covers could never show, because there was nowhere to put it: which
+ * store a game comes from in words rather than a 16px badge, whether it is running right
+ * now, whether it carries settings of its own, and the right verb on the button — Resume
+ * for a session already up, Play for one that isn't.
+ *
+ * 8.1.0 (PR #46, @Noklef): the grid of covers is back as a second layout, chosen by the user
+ * (left-stick click, V, the status-bar prompt or Settings → Interface). The list above stays
+ * the default for the reasons just given; the grid is for who would rather browse by cover.
+ * Both share the model, the delegate and the session actions, so launch, resume and quit
+ * take the same path in either; in the grid the spotlight's buttons move to the status bar.
+ *
+ * Root is FocusScope (not Item) — required for activeFocus propagation from the Loader
+ * above us down into the two zones. Plain Items do not propagate.
  */
 FocusScope {
     id: appsRoot
@@ -1251,7 +1268,16 @@ FocusScope {
     // ═════════════════════════════════════════════════════════════════════════
     // The library — the only zone
     // ═════════════════════════════════════════════════════════════════════════
-    // Tabs and filtering are shared by the title list and cover grid.
+    /*
+     * A vertical list of titles, not a wall of covers — by default.
+     *
+     * The cover already has a place — the spotlight above, at a size worth looking at — so
+     * repeating it forty times small was showing the same thing twice and reading neither
+     * well. A list gives every game its name in full, which a 200px cover cannot, and one
+     * axis to move along instead of two: on a pad that is the difference between arriving at
+     * a game and hunting for it. The grid (coverGrid, 8.1.0) is there for who prefers it;
+     * the tabs and their filtering serve both views.
+     */
     // The tabs over the library (5.9.0; ALL since 6.1.0). Clickable for the mouse. LB/RB sit at
     // the two ends (6.1.0 — they were LT/RT, named in the status bar), the way the dialogs'
     // SectionTabBar draws them: the prompt beside the thing it moves needs no caption.
@@ -1928,13 +1954,39 @@ FocusScope {
                         elide: Text.ElideRight
                     }
 
+                    // The focus outline is a line, so ink (3:1 in Light), not the raw accent.
                     Rectangle {
                         anchors.fill: tileArt
                         radius: tileArt.radius
                         visible: appDelegate._lit
                         color: "transparent"
-                        border.width: 3
-                        border.color: Theme.accent
+                        border.width: appsRoot._px(3)
+                        border.color: Theme.ink
+                    }
+
+                    // Pinned (8.1.0): the grid has no PINNED heading, so without this a game
+                    // pinned with Start would just move, with nothing saying why. On a dark
+                    // disc because it sits on a picture of any colour.
+                    Rectangle {
+                        visible: appDelegate._pinned
+                        anchors.top: tileArt.top
+                        anchors.left: tileArt.left
+                        anchors.topMargin: appsRoot._px(8)
+                        anchors.leftMargin: appsRoot._px(8)
+                        width: appsRoot._px(28)
+                        height: width
+                        radius: width / 2
+                        color: Qt.rgba(0, 0, 0, 0.6)
+
+                        Image {
+                            anchors.centerIn: parent
+                            width: appsRoot._px(16)
+                            height: width
+                            source: "qrc:/res/pin.svg"
+                            sourceSize.width: width * Screen.devicePixelRatio
+                            sourceSize.height: height * Screen.devicePixelRatio
+                            smooth: true
+                        }
                     }
 
                     Rectangle {
@@ -1948,7 +2000,7 @@ FocusScope {
                                         Math.max(0, tileArt.width - appsRoot._px(16)))
                         height: appsRoot._px(24)
                         radius: appsRoot._px(6)
-                        color: appDelegate._gridBadgeKind === "streaming" ? Theme.accent
+                        color: appDelegate._gridBadgeKind === "streaming" ? Theme.accentFill
                                : Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, 0.92)
 
                         TextMetrics {
@@ -1989,7 +2041,7 @@ FocusScope {
                     anchors.right: parent.right
                     height: appsRoot._px(42)
                     text: model.name
-                    color: appDelegate._lit ? Theme.text : Theme.text2
+                    color: appDelegate._lit ? Theme.text : appsRoot._text2
                     font.family: Theme.family
                     font.pixelSize: appsRoot._px(Theme.fontBody)
                     font.weight: appDelegate._lit ? Font.DemiBold : Font.Normal

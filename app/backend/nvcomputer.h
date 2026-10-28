@@ -132,6 +132,12 @@ public:
     // LAN path is unreachable (remote). Persisted; not overwritten by update().
     NvAddress tailscaleAddress;
     QByteArray macAddress;
+    // A second network card that can wake this PC (8.1.0, issue #45), typed by the user.
+    // macAddress is the card /serverinfo answers on — the one the host streams on — and it
+    // is rewritten on every poll, so a MAC the user chose lives here instead. The magic packet
+    // goes to both: a wrong one costs nothing and cannot break a wake that already worked.
+    // Empty = none. Persisted; not overwritten by update().
+    QByteArray wakeMacAddress;
     QString name;
     bool hasCustomName;
     QString uuid;

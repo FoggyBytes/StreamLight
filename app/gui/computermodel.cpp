@@ -105,7 +105,7 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
     case BusyRole:
         return computer->currentGameId != 0;
     case WakeableRole:
-        return !computer->macAddress.isEmpty();
+        return !computer->macAddress.isEmpty() || !computer->wakeMacAddress.isEmpty();
     case StatusUnknownRole:
         return computer->state == NvComputer::CS_UNKNOWN;
     case ServerSupportedRole:
@@ -207,6 +207,8 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
                tr("IPv6 Address: %1").arg(computer->ipv6Address.toString()) + '\n' +
                tr("Manual Address: %1").arg(computer->manualAddress.toString()) + '\n' +
                tr("MAC Address: %1").arg(computer->macAddress.isEmpty() ? tr("Unknown") : QString(computer->macAddress.toHex(':'))) + '\n' +
+               (computer->wakeMacAddress.isEmpty() ? QString()
+                    : tr("Also wakes with: %1").arg(QString(computer->wakeMacAddress.toHex(':'))) + '\n') +
                tr("Pair State: %1").arg(pairState) + '\n' +
                tr("Running Game ID: %1").arg(computer->state == NvComputer::CS_ONLINE ? QString::number(computer->currentGameId) : tr("Unknown")) + '\n' +
                tr("HTTPS Port: %1").arg(computer->state == NvComputer::CS_ONLINE ? QString::number(computer->activeHttpsPort) : tr("Unknown"));
@@ -733,6 +735,53 @@ void ComputerModel::setHostStageOpacity(int computerIndex, int percent)
     // to follow it now rather than on the next poll tick.
     QModelIndex idx = createIndex(computerIndex, 0);
     emit dataChanged(idx, idx, { StageOpacityRole });
+}
+
+QVariantMap ComputerModel::hostWakeMacs(int computerIndex) const
+{
+    QVariantMap out;
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return out;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+    out["reported"] = computer->macAddress.isEmpty() ? QString()
+                                                     : QString(computer->macAddress.toHex(':')).toUpper();
+    out["extra"] = computer->wakeMacAddress.isEmpty() ? QString()
+                                                      : QString(computer->wakeMacAddress.toHex(':')).toUpper();
+    return out;
+}
+
+bool ComputerModel::setHostWakeMac(int computerIndex, const QString& text)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return false;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString uuid;
+    {
+        QReadLocker lock(&computer->lock);
+        uuid = computer->uuid;
+    }
+    if (uuid.isEmpty()) return false;
+
+    QString digits = text.trimmed();
+    digits.remove(':').remove('-').remove('.').remove(' ');
+
+    QByteArray mac;
+    if (!digits.isEmpty()) {
+        static const QRegularExpression hex12(QStringLiteral("^[0-9A-Fa-f]{12}$"));
+        if (!hex12.match(digits).hasMatch()) return false;
+        mac = QByteArray::fromHex(digits.toLatin1());
+        // All zeros is what Sunshine reports when it has no MAC; the low bit of the first byte
+        // marks a group address, which no network card has.
+        if (mac == QByteArray(6, '\0') || (quint8(mac[0]) & 0x01)) return false;
+    }
+
+    if (!m_ComputerManager->setWakeMacAddress(uuid, mac)) return false;
+
+    // The Wake tile depends on it (WakeableRole): repaint now, not on the next poll.
+    QModelIndex idx = createIndex(computerIndex, 0);
+    emit dataChanged(idx, idx, { WakeableRole, DetailsRole });
+    return true;
 }
 
 bool ComputerModel::heldAsleep(int computerIndex) const

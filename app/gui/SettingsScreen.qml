@@ -3759,6 +3759,119 @@ FocusScope {
                         }
                         RowSeparator { }
 
+                        // ── Library layout (8.1.0, PR #46) ────────────────────
+                        // The host page's games as the list (default) or as a grid of covers.
+                        // Also switched on the page itself with the left-stick click or V.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: libraryLayoutSelector.left
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Row {
+                                    spacing: settingsScreen._px(8)
+                                    Label {
+                                        text: qsTr("Library layout")
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._fpx(Theme.fontBody)
+                                        font.bold: true
+                                        color: settingsScreen._text
+                                    }
+                                    NewBadge { since: "8.1.0"; anchors.verticalCenter: parent.verticalCenter }
+                                }
+                                Label {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: qsTr("The host page's games, also switched there with the left stick")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            SegmentedSelector {
+                                id: libraryLayoutSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                labels: [qsTr("List"), qsTr("Grid")]
+                                Binding on currentIndex { value: Theme.libraryGrid ? 1 : 0 }
+                                onActivated: function(idx) { Theme.libraryGrid = idx === 1 }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Grid cover size (8.1.0) ───────────────────────────
+                        // Sets the columns: the grid fits as many covers of this size as it can.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeight
+
+                            Row {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(8)
+                                Label {
+                                    text: qsTr("Grid cover size")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                NewBadge { since: "8.1.0"; anchors.verticalCenter: parent.verticalCenter }
+                            }
+
+                            SegmentedSelector {
+                                id: gridCoverSizeSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                labels: [qsTr("Small"), qsTr("Medium"), qsTr("Large")]
+                                Binding on currentIndex { value: Theme.libraryCoverSize }
+                                onActivated: function(idx) { Theme.libraryCoverSize = idx }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Grid titles (8.1.0) ───────────────────────────────
+                        // Off: covers only. A game without a cover still shows its name on the tile.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeight
+
+                            Row {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(8)
+                                Label {
+                                    text: qsTr("Grid titles")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                NewBadge { since: "8.1.0"; anchors.verticalCenter: parent.verticalCenter }
+                            }
+
+                            OnOffSelector {
+                                id: gridTitlesSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: Theme.libraryShowTitles
+                                onToggled: function(v) { Theme.libraryShowTitles = v }
+                            }
+                        }
+                        RowSeparator { }
+
                         // ── Button icon set ───────────────────────────────────
                         // This row and the next only change how the interface draws the buttons it
                         // asks for, not what any input does — hence Interface, not Input or
@@ -4024,79 +4137,6 @@ FocusScope {
                                     StreamingPreferences.dateFormat = _values[idx]
                                     StreamingPreferences.save()
                                 }
-                            }
-                        }
-                        RowSeparator { }
-
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Grid cover size")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Adjusts cover size and the number of columns")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            SegmentedSelector {
-                                id: gridCoverSizeSelector
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                labels: [qsTr("Small"), qsTr("Medium"), qsTr("Large")]
-                                Binding on currentIndex { value: Theme.libraryCoverSize }
-                                onActivated: function(idx) { Theme.libraryCoverSize = idx }
-                            }
-                        }
-                        RowSeparator { }
-
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Show grid titles")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Game names below covers in Grid layout")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._px(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: gridTitlesSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: Theme.libraryShowTitles
-                                onToggled: function(v) { Theme.libraryShowTitles = v }
                             }
                         }
                         RowSeparator { }

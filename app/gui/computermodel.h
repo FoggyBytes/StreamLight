@@ -219,6 +219,19 @@ public:
     Q_INVOKABLE void setHostStageOpacity(int computerIndex, int percent);
 
     /**
+     * Wake-on-LAN (8.1.0, issue #45): { reported, extra } as "AA:BB:CC:DD:EE:FF" strings, empty
+     * when unknown / not set. "reported" is the MAC /serverinfo gave — the card the host
+     * streams on — and "extra" one the user added for another card of the same PC.
+     */
+    Q_INVOKABLE QVariantMap hostWakeMacs(int computerIndex) const;
+    /**
+     * Sets the extra MAC from what the user typed: twelve hex digits, with or without ':' '-'
+     * or '.' between them; empty clears it. False (and nothing stored) when it is not a MAC,
+     * or is all zeros or a multicast address, which no card has.
+     */
+    Q_INVOKABLE bool setHostWakeMac(int computerIndex, const QString& text);
+
+    /**
      * The last three pictures chosen as a host background, newest first, for any host
      * (7.0.0) — the Background panel offers them so a pad can pick a picture without the
      * file dialog. Files that no longer exist are dropped on read.

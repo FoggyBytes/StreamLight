@@ -242,6 +242,9 @@ public:
     // How opaque the host's card is on Home, in percent (6.0.0). Stored as given: the range
     // is ComputerModel's to enforce, since it is also what the slider is drawn from.
     bool setStageOpacity(QString uuid, int percent);
+    // A second MAC for Wake-on-LAN (8.1.0, issue #45): six bytes, or empty to clear. Checked
+    // by ComputerModel, which parses what the user typed.
+    bool setWakeMacAddress(QString uuid, QByteArray mac);
 
     // The StreamTweak integration for one host. Persisted immediately: the Settings tab is
     // a place people leave by killing the app, so waiting for teardown would lose the choice.
