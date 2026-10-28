@@ -165,6 +165,10 @@ GlobalCommandLineParser::ParseResult GlobalCommandLineParser::parse(const QStrin
         "See 'moonlight <action> --help' for help of specific action."
     );
     parser.addPositionalArgument("action", "Action to execute", "<action>");
+    // 8.2.0: passed by the sign-in task only (backend/signinlaunch.h), read again in main().
+    QCommandLineOption signInOption("sign-in", "Started at Windows sign-in.");
+    signInOption.setFlags(QCommandLineOption::HiddenFromHelp);
+    parser.addOption(signInOption);
     parser.parse(args);
     auto posArgs = parser.positionalArguments();
 

@@ -51,6 +51,17 @@ FocusScope {
     // Text a size smaller than the rest of the app, in one proportion (Theme.textScale, 21/10/2026).
     function _fpx(n) { return Math.round(n * _u * Theme.textScale) }
 
+    // StreamTweak's version (CAPS ver=, "x.y.z") is at least `min`. False when unknown.
+    function _versionAtLeast(ver, min) {
+        if (!ver) return false
+        var a = ver.split("."), b = min.split(".")
+        for (var i = 0; i < b.length; i++) {
+            var x = parseInt(a[i] || "0"), y = parseInt(b[i])
+            if (x !== y) return x > y
+        }
+        return true
+    }
+
     // The whole width, like Settings (21/10/2026): the margins of Settings, and the content laid
     // out in columns so a label and its value stay close — numbers in a row of five, cards in
     // rows of three — fewer of them as the window narrows.
@@ -680,6 +691,10 @@ FocusScope {
         enabled: root._full
         computerModel: root.computerModel
         hostIndex: root.hostIndex
+        hostName: root.hostName
+        // 8.2.0: delete a session — Host management, and a host that knows DELETESESSION.
+        canDelete: root.hostManagement
+                   && root._versionAtLeast(root.host && root.host.hostVersion ? root.host.hostVersion : "", "10.0.6")
         opacity: tabSlide.opacity * (root._full ? 1 : 0.4)
         transform: tabSlide.shift
     }
@@ -785,10 +800,23 @@ FocusScope {
                     visible: root._dashLoaded && !root.hostManagement
                 }
 
-                // Streaming to another device right now.
+                /*
+                 * Streaming to another device right now.
+                 *
+                 * 8.2.0: only ANOTHER device. Whoever is looking at this section is not streaming
+                 * from here, so "Streaming to this device" only ever showed the stream just ended —
+                 * StreamTweak keeps a session open for 30 s after the disconnect, and the card read
+                 * it as a stream (28/10/2026, §98.7). StreamTweak 10.0.6 says `active` only while a
+                 * stream is live; from an older host an unnamed device is that same grace period
+                 * once the telemetry name has aged out, so it is not shown either (a Moonlight
+                 * client, which sends no telemetry, then goes unseen there).
+                 */
+                readonly property bool _liveFlag: root._versionAtLeast(root.host && root.host.hostVersion
+                                                                       ? root.host.hostVersion : "", "10.0.6")
                 Rectangle {
                     width: parent.width
-                    visible: dashPage._streaming.active === true
+                    visible: dashPage._streaming.active === true && !streamingText._me
+                             && (streamingText._who.length > 0 || dashPage._liveFlag)
                     height: visible ? streamingText.implicitHeight + root._px(24) : 0
                     radius: root._px(10)
                     color: Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.12)
@@ -801,9 +829,8 @@ FocusScope {
                         readonly property string _who: dashPage._streaming.client || ""
                         readonly property bool _me: _who.length > 0 && _who === SystemProperties.clientName()
                         readonly property string _game: dashPage._streaming.game || ""
-                        text: (_me ? qsTr("Streaming to this device")
-                                   : _who.length ? qsTr("Streaming to %1").arg(_who)
-                                                 : qsTr("Streaming to another device"))
+                        text: (_who.length ? qsTr("Streaming to %1").arg(_who)
+                                           : qsTr("Streaming to another device"))
                               + (_game.length ? " · " + _game : "")
                         color: Theme.text
                         font.family: Theme.family

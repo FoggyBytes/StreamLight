@@ -8,6 +8,7 @@ import ComputerManager 1.0
 import StreamingPreferences 1.0
 import SystemProperties 1.0
 import SdlGamepadKeyNavigation 1.0
+import SignInLaunch 1.0
 
 ApplicationWindow {
     property bool pollingActive: false
@@ -408,7 +409,7 @@ ApplicationWindow {
             inactivityTimer.stop()
 
             // Restart polling if it was stopped
-            if (!pollingActive) {
+            if (!pollingActive && !SignInLaunch.holding) {
                 ComputerManager.startPolling()
                 pollingActive = true
             }
@@ -418,13 +419,25 @@ ApplicationWindow {
         SdlGamepadKeyNavigation.notifyWindowFocus(visible && active)
     }
 
+    // 8.2.0: started at sign-in, polling waits for the user to pick StreamLight — a host whose
+    // NIC wakes on any directed packet would otherwise be woken for someone going to the desktop.
+    Connections {
+        target: SignInLaunch
+        function onHoldingChanged() {
+            if (!SignInLaunch.holding && window.visible && window.active && !window.pollingActive) {
+                ComputerManager.startPolling()
+                window.pollingActive = true
+            }
+        }
+    }
+
     onActiveChanged: {
         if (active) {
             // Stop the inactivity timer
             inactivityTimer.stop()
 
             // Restart polling if it was stopped
-            if (!pollingActive) {
+            if (!pollingActive && !SignInLaunch.holding) {
                 ComputerManager.startPolling()
                 pollingActive = true
             }

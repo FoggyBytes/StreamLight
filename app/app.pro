@@ -52,6 +52,8 @@ win32 {
     INCLUDEPATH += $$PWD/../libs/windows/include
     # hid.lib and cfgmgr32.lib: DualSense waveform haptics (7.0.0, dualsensehid.cpp, dualsensehaptics.cpp)
     LIBS += dcomp.lib advapi32.lib ws2_32.lib winmm.lib dxva2.lib ole32.lib gdi32.lib user32.lib d3d9.lib dwmapi.lib dbghelp.lib iphlpapi.lib shell32.lib hid.lib cfgmgr32.lib
+    # taskschd, oleaut32 and secur32: the sign-in task; wtsapi32: is the session locked (8.2.0, backend/signinlaunch.cpp)
+    LIBS += taskschd.lib oleaut32.lib secur32.lib wtsapi32.lib
 }
 macx:!disable-prebuilts {
     INCLUDEPATH += $$PWD/../libs/mac/include $$PWD/../libs/mac/include/SDL2
@@ -173,6 +175,7 @@ SOURCES += \
     backend/logsandcache.cpp \
     backend/windowslocation.cpp \
     backend/steamartwork.cpp \
+    backend/signinlaunch.cpp \
     backend/pyrowavetest.cpp \
     backend/pyrowaveudpprobe.cpp \
     backend/gradientimage.cpp \
@@ -251,6 +254,7 @@ HEADERS += \
     backend/logsandcache.h \
     backend/windowslocation.h \
     backend/steamartwork.h \
+    backend/signinlaunch.h \
     backend/pyrowavetest.h \
     backend/pyrowaveudpprobe.h \
     logfile.h \

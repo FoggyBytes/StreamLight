@@ -1,4 +1,4 @@
-; StreamLight 8.1.0 — Moonlight fork with StreamTweak integration.
+; StreamLight 8.2.0 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
@@ -11,7 +11,7 @@
 ; Reading version.txt from here was considered and left alone: that file carries a UTF-8
 ; BOM and no trailing newline, so an ISPP FileRead would have to skip three bytes by
 ; position, which is a more fragile thing than one line to remember at release time.
-#define AppVersion "8.1.0"
+#define AppVersion "8.2.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -181,6 +181,13 @@ Filename: "{app}\{#AppExeName}"; Parameters: "--register-xbox-tile"; \
 ; stopped running Setup /VERYSILENT (14/09/2026).
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; \
     Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+; 8.2.0: the sign-in task (Settings → Interface → Start at sign-in, app/backend/signinlaunch.cpp).
+; Left behind, it would try to start an exe that is gone at every sign-in, forever. Same name
+; as k_TaskName; harmless when the switch was never turned on.
+Filename: "schtasks.exe"; Parameters: "/Delete /TN ""StreamLight Startup"" /F"; \
+    Flags: runhidden waituntilterminated; RunOnceId: "DeleteSignInTask"
 
 [Code]
 // ── Stop Windows from maximising the wizard ──────────────────────────────────

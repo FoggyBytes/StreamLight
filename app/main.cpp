@@ -49,6 +49,7 @@
 #include "logfile.h"
 #include "backend/logsandcache.h"
 #include "backend/steamartwork.h"
+#include "backend/signinlaunch.h"
 #include "backend/pyrowavetest.h"
 #include "storereset.h"
 #include "utils.h"
@@ -1152,6 +1153,11 @@ int main(int argc, char *argv[])
                                            [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                                return SteamArtwork::get(qmlEngine);
                                            });
+    qmlRegisterSingletonType<SignInLaunch>("SignInLaunch", 1, 0,
+                                           "SignInLaunch",
+                                           [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
+                                               return SignInLaunch::get(qmlEngine);
+                                           });
     qmlRegisterSingletonType<PyroWaveTest>("PyroWaveTest", 1, 0,
                                            "PyroWaveTest",
                                            [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
@@ -1192,6 +1198,9 @@ int main(int argc, char *argv[])
     case GlobalCommandLineParser::NormalStartRequested:
         // Empty = normal launch (AppShell only). CLI modes set a .qml URL.
         initialView = QString();
+        // 8.2.0: started by the sign-in task — the opening animation stops on a choice, and no
+        // host is contacted until the user picks StreamLight (backend/signinlaunch.h).
+        SignInLaunch::setLaunchedAtSignIn(app.arguments().contains(QString::fromLatin1(SignInLaunch::argument())));
         break;
     case GlobalCommandLineParser::StreamRequested:
         {

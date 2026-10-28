@@ -13,6 +13,7 @@ import AppUpdate 1.0
 import LogsAndCache 1.0
 import UiSound 1.0
 import SteamArtwork 1.0
+import SignInLaunch 1.0
 import QtQuick.Dialogs as QD
 
 // SettingsScreen — Xbox-style flat settings panel.
@@ -3604,6 +3605,64 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: Theme.startupAnimation
                                 onToggled: function(v) { Theme.startupAnimation = v }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Start at sign-in (8.2.0, 28/10/2026) ──────────────
+                        // A scheduled task starts StreamLight when the user signs in to
+                        // Windows, and the opening animation stops on StreamLight / Windows
+                        // desktop (StartupSplash, backend/signinlaunch.h). The switch shows
+                        // Task Scheduler's truth, read back after every change.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: signInSwitch.left
+                                anchors.rightMargin: settingsScreen._px(12)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Row {
+                                    spacing: settingsScreen._px(8)
+                                    Label {
+                                        text: qsTr("Start at sign-in")
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._fpx(Theme.fontBody)
+                                        font.bold: true
+                                        color: settingsScreen._text
+                                    }
+                                    NewBadge { since: "8.2.0"; anchors.verticalCenter: parent.verticalCenter }
+                                }
+                                Label {
+                                    width: parent.width
+                                    elide: Text.ElideRight
+                                    text: SignInLaunch.lastError !== ""
+                                          ? qsTr("Could not change it: %1").arg(SignInLaunch.lastError)
+                                          : qsTr("Opens with a choice: StreamLight or the Windows desktop")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
+                                    color: SignInLaunch.lastError !== "" ? Theme.danger : settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: signInSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: SignInLaunch.enabled
+                                onToggled: function(v) {
+                                    if (!SignInLaunch.setEnabled(v)) {
+                                        // Nothing changed, so the binding has nothing to re-assert:
+                                        // move it once by hand, then hand it back to the truth.
+                                        signInSwitch.checked = v
+                                        signInSwitch.checked = Qt.binding(function() { return SignInLaunch.enabled })
+                                    }
+                                }
                             }
                         }
                         RowSeparator { }

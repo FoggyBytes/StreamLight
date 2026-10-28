@@ -7,6 +7,7 @@ import InputHints 1.0
 import StreamingPreferences 1.0
 import SystemProperties 1.0
 import AppUpdate 1.0
+import SignInLaunch 1.0
 
 // AppShell — two-panel shell (sidebar + content area).
 // Pushed as the initial StackView item by main.qml.
@@ -44,10 +45,14 @@ FocusScope {
     Component.onCompleted: {
         _fit()
         // The opening animation (6.0.0) — decided here, once. See StartupSplash.
-        _splashOnLaunch = Theme.startupAnimation && !Theme.reduceAnimations
-                          && !(typeof initialView !== "undefined" && initialView && initialView.length > 0)
+        // 8.2.0: a launch by the sign-in task always shows it, stopped on the choice — without
+        // the animation when that is off.
+        var cli = typeof initialView !== "undefined" && initialView && initialView.length > 0
+        var animate = Theme.startupAnimation && !Theme.reduceAnimations
+        var atSignIn = SignInLaunch.launchedAtSignIn && !cli
+        _splashOnLaunch = atSignIn || (animate && !cli)
         if (_splashOnLaunch)
-            startupSplash.start()
+            startupSplash.start(atSignIn, animate)
         // The release lookup behind the startup update prompt (see _maybePromptUpdate at the
         // bottom). Settings runs the same lookup again when it opens.
         AppUpdate.checkLatest()
@@ -572,10 +577,12 @@ FocusScope {
         enabled: !startupSplash.blocking
 
         // Home stays always-active so ComputerModel survives Apps/Settings.
+        // 8.2.0: except before the choice at sign-in — Home talks to the hosts (status, lock
+        // state, StreamTweak), and nothing may until the user has picked StreamLight.
         Loader {
             id: homeLoader
             anchors.fill: parent
-            active: true
+            active: !SignInLaunch.holding
             visible: currentPage === 0 || appShell._outgoing === 0
             focus: currentPage === 0
             opacity: appShell._pageOpacity(0)
@@ -1064,6 +1071,8 @@ FocusScope {
     StartupSplash {
         id: startupSplash
         anchors.fill: parent
+        // 8.2.0: started at sign-in behind the lock screen — wait for the unlock.
+        held: SignInLaunch.waitingForUnlock
         // Input returns to Home when the fade starts, not when it ends: by then Home is
         // visible, and a press during the last 0.4 s should do what it looks like it does.
         onBlockingChanged: {
@@ -1073,6 +1082,14 @@ FocusScope {
         onFinished: {
             appShell._maybePromptUpdate()
             appShell._maybeShowSteamBanner()
+        }
+        // 8.2.0, the choice at sign-in. Released BEFORE the fade: Home loads here, and must be
+        // there when blocking turns false. "Windows desktop" closes the app — the desktop is
+        // already underneath.
+        onStreamLightChosen: SignInLaunch.release()
+        onDesktopChosen: {
+            if (typeof window !== "undefined" && window.quitApp) window.quitApp()
+            else Qt.quit()
         }
     }
 

@@ -149,6 +149,8 @@ public:
      * is the only question that sees it. Emits gameStillRunningAfterQuit only on a clear yes;
      * an older host, the integration off, or "known":false say nothing. By uuid, never by row:
      * the answer comes seconds later (§80.2).
+     * 8.2.0: a yes is asked again until 32 s after the Quit, and only a yes at the end is said —
+     * a game can take longer than 8 s to go (§98.5).
      */
     Q_INVOKABLE void checkGameAfterQuit(const QString& hostUuid, const QString& appName);
     Q_INVOKABLE void markUnlockSession(int computerIndex, bool begin);
@@ -428,6 +430,8 @@ private:
     BoxArtManager m_BoxArtManager;      // the Library tab's covers (libraryCover)
     static void rememberStreamTweakSeen(const QString& uuid);
     void bumpLayoutRevision();
+    // One GAMEALIVE of checkGameAfterQuit(); asks again while the game is still closing (8.2.0).
+    void askGameAliveAfterQuit(const QString& hostUuid, const QString& appName, int attempt);
 
     // A Library Sync and restart in progress on a host (8.0.0), followed from here and not
     // from the section, so Home keeps saying "Restarting" after the section is left: for the

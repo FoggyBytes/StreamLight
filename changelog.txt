@@ -4,6 +4,23 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+---------------------------------------
+Version 8.2.0 - Front Door (28/10/2026)
+---------------------------------------
+
+StreamLight can open when you sign in to Windows and ask where you want to go. Deleting a session from the StreamTweak section needs StreamTweak 10.0.6 on the host; everything else works with any host.
+
+✨ NEW FEATURES:
+• Start at sign-in — with the new switch in Settings → Interface, StreamLight opens when you sign in to Windows and its opening animation stops on a choice: A starts StreamLight, B goes to the Windows desktop; left alone for 10 seconds it opens StreamLight, and any button or mouse movement stops the countdown. Nothing reaches your hosts until you pick StreamLight, so a host that wakes on any network packet stays asleep if you go to the desktop
+• Delete a session from the StreamTweak section — the right stick click (Del on the keyboard) in the Sessions tab deletes the selected session after a confirmation, from StreamTweak's history on the host as well; it needs Host management for this device and StreamTweak 10.0.6
+
+✨ IMPROVEMENTS:
+• The Sessions tab keeps up by itself — the session you just finished appears without leaving the tab and coming back, as soon as StreamTweak closes it (half a minute after the stream ends, the time it waits for a reconnect)
+
+🐛 FIXES:
+• No more "still running on the host" for a game that was closing — after Quit session a game that takes more than a few seconds to exit (Ace Combat 8 needs about 12) was reported as still running; StreamLight now asks again for half a minute and says so only if the game is really still there
+• The StreamTweak section no longer shows the game you just quit as streaming — for half a minute after a stream ended, the Dashboard said it was streaming to this device and then to "another device"; the card now appears only while another device is really streaming
+
 ----------------------------------------
 Version 8.1.0 - Cover Story (28/10/2026)
 ----------------------------------------

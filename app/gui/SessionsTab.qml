@@ -1,4 +1,5 @@
 import QtQuick 2.15
+import QtQuick.Controls 2.15
 import Theme 1.0
 import SdlGamepadKeyNavigation 1.0
 import "sessionfmt.js" as Fmt
@@ -14,7 +15,16 @@ import "sessionfmt.js" as Fmt
  *   SERIES <id> <track>                  one track of the timeline, asked when it is shown — with
  *                                        Host compute / Host power also its subtracks (8.0.1)
  *   COVER <id> <n>                       a cover thumbnail, asked when its row is drawn
+ *   DELETESESSION <id>                   (8.2.0, StreamTweak 10.0.6) one session out of the host's
+ *                                        history, after a confirmation; needs Host management
  * Sessions are named by id, never by a game: the bridge upper-cases the line.
+ *
+ * 8.2.0: the list follows the host by itself. A session appears in the history only once
+ * StreamTweak has closed it — 30 s after the client left, the grace period in which a reconnect
+ * still joins it — and the list used to be asked once, so the session just played was missing
+ * until the tab was left and opened again. Now, while the tab is shown, the first row is asked
+ * every 5 s (SESSIONS 0 1, a few hundred bytes), and the page is read again only when the totals
+ * or the first id have moved, the cursor staying on the session it was on.
  *
  * Where the pad is (`zone`):
  *   filter   This device / All devices      ◂ ▸ choose · ▾ back to the list
@@ -32,6 +42,9 @@ FocusScope {
     // False while the host cannot answer (StreamTweak off, missing, too old…): the tab is shown
     // greyed by the section and asks nothing.
     property bool available: true
+    // 8.2.0: this device may delete sessions on the host — Host management, StreamTweak 10.0.6+.
+    property bool canDelete: false
+    property string hostName: ""
 
     readonly property real _u: Theme.uiScale
     function _px(n) { return Math.round(n * _u) }
@@ -115,6 +128,28 @@ FocusScope {
         loading = true
         _ask(_listCmd(0))
     }
+
+    // ── Following the host (8.2.0) ───────────────────────────────────────────────────
+    // The id the cursor should land on again when the first page comes back ("" = none).
+    property string _keepId: ""
+    function _probe() {
+        if (!available || filter === "" || loading) return
+        _ask("SESSIONS 0 1 " + (filter === "mine" ? "MINE" : "ALL"))
+    }
+    // The page again, in place: no emptying, the cursor kept on its session.
+    function _refresh() {
+        if (loading) return
+        _keepId = sel ? sel.id : ""
+        loading = true
+        _ask(_listCmd(0))
+    }
+    Timer {
+        id: probeTimer
+        interval: 5000
+        repeat: true
+        running: tab.shown && tab.available && tab.filter !== "" && Qt.application.state === Qt.ApplicationActive
+        onTriggered: tab._probe()
+    }
     function _more() {
         if (loading || items.length >= total) return
         loading = true
@@ -129,8 +164,13 @@ FocusScope {
             if (series[sel.id + "/" + _partKeys[i]] === undefined) _ask("SERIES " + sel.id + " " + _partKeys[i])
     }
 
-    // First shown: the whole history, then "This device" if this device has any.
-    onShownChanged: if (shown && filter === "" && !loading) reload()
+    // First shown: the whole history, then "This device" if this device has any. Shown again:
+    // a look at whether anything moved meanwhile (8.2.0).
+    onShownChanged: {
+        if (!shown) return
+        if (filter === "" && !loading) reload()
+        else _probe()
+    }
     onFilterChanged: if (filter !== "" && !_firstAnswer) reload()
     property bool _firstAnswer: false
 
@@ -174,6 +214,18 @@ FocusScope {
         function onHostSectionReceived(idx, verb, data) {
             if (idx !== tab.hostIndex) return
             var p = verb.split(" ")
+            if (p[0] === "SESSIONS" && p[2] === "1") {
+                // The 5 s look (8.2.0): read the page again only if something moved.
+                tab._done(verb)
+                if (data.items === undefined || tab.loading) return
+                if (p[3] !== (tab.filter === "mine" ? "MINE" : "ALL")) return
+                var first = data.items.length ? data.items[0].id : ""
+                var have = tab.items.length ? tab.items[0].id : ""
+                if (data.total_all !== tab.totalAll || data.total_mine !== tab.totalMine
+                        || data.total !== tab.total || first !== have)
+                    tab._refresh()
+                return
+            }
             if (p[0] === "SESSIONS") {
                 tab._done(verb)
                 tab.loading = false
@@ -194,6 +246,14 @@ FocusScope {
                 if (offset === 0) tab.items = data.items
                 else if (offset === tab.items.length) tab.items = tab.items.concat(data.items)
                 tab.total = data.total || 0
+                if (offset === 0 && tab._keepId !== "") {
+                    // A refresh: back on the session the cursor was on, wherever it moved to.
+                    var at = -1
+                    for (var i = 0; i < tab.items.length; i++)
+                        if (tab.items[i].id === tab._keepId) { at = i; break }
+                    tab.cur = at >= 0 ? at : Math.min(tab.cur, Math.max(0, tab.items.length - 1))
+                    tab._keepId = ""
+                }
                 if (tab.sel) detailTimer.restart()
             } else if (p[0] === "SESSION") {
                 tab._done(verb)
@@ -207,6 +267,59 @@ FocusScope {
                 if (data.cover !== undefined) tab._set("covers", p[1], data.cover)
             }
         }
+    }
+
+    Connections {
+        target: tab.computerModel
+        function onHostSettingResult(idx, command, reply) {
+            if (idx !== tab.hostIndex || command.indexOf("DELETESESSION ") !== 0) return
+            var id = command.substring(14)
+            if (reply === "OK" || reply === "ERR_UNKNOWN_SESSION") { tab._dropLocally(id); tab._refresh(); return }
+            deleteFailed.text = reply === "ERR_NO_MANAGEMENT"
+                ? qsTr("This device has no Host management on %1. Turn it on in StreamTweak, under Setup › Clients.").arg(tab.hostName)
+                : reply === "" ? qsTr("%1 did not answer.").arg(tab.hostName)
+                               : qsTr("%1 could not delete the session.").arg(tab.hostName)
+            deleteFailed.open()
+        }
+    }
+
+    // ── Delete (8.2.0) ───────────────────────────────────────────────────────────────
+    function askDelete() {
+        if (!canDelete || !sel || (zone !== "list" && zone !== "report")) return
+        deleteConfirm.sessionId = sel.id
+        deleteConfirm.text = qsTr("Delete the session of %1, %2 at %3? It is deleted from StreamTweak on %4 as well.")
+                                .arg(Fmt.games(sel)).arg(Fmt.day(sel.start)).arg(Fmt.time(sel.start)).arg(tab.hostName)
+        deleteConfirm.open()
+    }
+    // Gone from the host: out of the list at once, without waiting for the page.
+    function _dropLocally(id) {
+        var at = -1
+        for (var i = 0; i < items.length; i++) if (items[i].id === id) { at = i; break }
+        if (at < 0) return
+        var it = items.slice(); var mine = it[at].mine === true
+        it.splice(at, 1)
+        items = it
+        total = Math.max(0, total - 1)
+        totalAll = Math.max(0, totalAll - 1)
+        if (mine) totalMine = Math.max(0, totalMine - 1)
+        marked = marked.filter(function(m) { return m !== id })
+        if (cur >= items.length) cur = Math.max(0, items.length - 1)
+        if (!items.length && zone === "report") zone = "list"
+    }
+
+    NavigableMessageDialog {
+        id: deleteConfirm
+        parent: Overlay.overlay
+        property string sessionId: ""
+        headerText: qsTr("DELETE SESSION")
+        standardButtons: Dialog.Yes | Dialog.No
+        onAccepted: if (sessionId !== "") tab.computerModel.setHostSetting(tab.hostIndex, "DELETESESSION " + sessionId)
+    }
+    NavigableMessageDialog {
+        id: deleteFailed
+        parent: Overlay.overlay
+        headerText: qsTr("DELETE SESSION")
+        standardButtons: Dialog.Ok
     }
 
     // ── Actions ──────────────────────────────────────────────────────────────────────
@@ -242,6 +355,7 @@ FocusScope {
                       { btn: "LT", key: "−", act: "", kind: "section:zoomOut" },
                       { btn: "RT", key: "+", act: qsTr("Zoom"), kind: "section:zoomIn" },
                       { btn: "X", key: "X", act: markAct, kind: "section:mark" } ]
+            if (canDelete) r.push({ btn: "RS", key: "Del", act: qsTr("Delete"), kind: "section:delete" })
             if (two) r.push({ btn: "START", key: "C", act: qsTr("Compare"), kind: "section:compare" })
             r.push({ btn: "B", key: "Esc", act: qsTr("List"), kind: "section:back" })
             return r
@@ -249,6 +363,7 @@ FocusScope {
         var l = []
         if (sel) l.push({ btn: "A", key: "Enter", act: qsTr("Timeline"), kind: "section:open" },
                         { btn: "X", key: "X", act: markAct, kind: "section:mark" })
+        if (sel && canDelete) l.push({ btn: "RS", key: "Del", act: qsTr("Delete"), kind: "section:delete" })
         if (two) l.push({ btn: "START", key: "C", act: qsTr("Compare"), kind: "section:compare" })
         l.push({ btn: "LB", key: "PgUp", act: qsTr("Prev tab"), kind: "prevTab" },
                { btn: "RB", key: "PgDn", act: qsTr("Next tab"), kind: "nextTab" },
@@ -260,6 +375,7 @@ FocusScope {
         switch (kind) {
         case "open":      if (sel) zone = "report"; break
         case "mark":      toggleMark(); break
+        case "delete":    askDelete(); break
         case "compare":   openCompare(); break
         case "prevTrack": _cycleTrack(-1); break
         case "nextTrack": _cycleTrack(1); break
@@ -281,6 +397,7 @@ FocusScope {
         var RB = k === Qt.Key_F17 || k === Qt.Key_E
         var LT = k === Qt.Key_F14 || k === Qt.Key_Minus
         var RT = k === Qt.Key_F15 || k === Qt.Key_Plus || k === Qt.Key_Equal
+        var DEL = k === Qt.Key_F19 || k === Qt.Key_Delete
 
         if (zone === "compare") {
             if (B) { zone = "list"; e.accepted = true }
@@ -288,6 +405,7 @@ FocusScope {
         }
         if (START && marked.length === 2) { openCompare(); e.accepted = true; return }
         if (X && (zone === "list" || zone === "report")) { toggleMark(); e.accepted = true; return }
+        if (DEL && (zone === "list" || zone === "report")) { askDelete(); e.accepted = true; return }
 
         if (zone === "filter") {
             if (k === Qt.Key_Left || k === Qt.Key_Right) { filter = filter === "mine" ? "all" : "mine"; e.accepted = true }

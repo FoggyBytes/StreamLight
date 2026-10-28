@@ -585,7 +585,9 @@ void ComputerModel::setHostSetting(int computerIndex, const QString& command)
     static const QRegularExpression kWrite(QStringLiteral(
         "^(SETAUDIO (ON|OFF)|SETSENTINEL (ON|OFF)|SETAPP [0-9A-F]{16} (ON|OFF)"
         // Sync and restart (8.0.0, Library tab): no argument, so nothing to choose but the action.
-        "|LIBSYNC)$"));
+        "|LIBSYNC"
+        // One session out of the host's history (8.2.0, Sessions tab; StreamTweak 10.0.6).
+        "|DELETESESSION [0-9A-Fa-f]{6,32})$"));
     if (!kWrite.match(command).hasMatch()) {
         emit hostSettingResult(computerIndex, command, QStringLiteral("ERR"));
         return;
@@ -1136,33 +1138,60 @@ void ComputerModel::checkGameAfterQuit(const QString& hostUuid, const QString& a
     constexpr int SettleMs = 8000;
 
     QTimer::singleShot(SettleMs, this, [this, hostUuid, appName]() {
-        const int computerIndex = indexOfUuid(hostUuid);
-        if (computerIndex < 0 || !bridgeAllowed(computerIndex))   // see requestHostNetInfo()
-            return;
-
-        NvComputer* computer = m_Computers[computerIndex];
-        QString address;
-        {
-            QReadLocker lock(&computer->lock);
-            address = computer->activeAddress.address();
-        }
-        if (address.isEmpty())
-            return;
-
-        m_streamTweakBridge.requestGameAlive(address,
-            [this, hostUuid, appName](const QString& response) {
-                // Empty or ERR is a host before 9.2.3: nothing to say, as before.
-                const QJsonObject o = QJsonDocument::fromJson(response.toUtf8()).object();
-                if (!o.value(QStringLiteral("known")).toBool() ||
-                    !o.value(QStringLiteral("running")).toBool())
-                    return;
-
-                const QString game = o.value(QStringLiteral("game")).toString();
-                qInfo() << "GAMEALIVE after Quit:" << (game.isEmpty() ? appName : game)
-                        << "is still running on the host";
-                emit gameStillRunningAfterQuit(hostUuid, game.isEmpty() ? appName : game);
-            });
+        askGameAliveAfterQuit(hostUuid, appName, 0);
     });
+}
+
+void ComputerModel::askGameAliveAfterQuit(const QString& hostUuid, const QString& appName, int attempt)
+{
+    /*
+     * 8.2.0: a "still running" is asked again before it is said. Eight seconds is not enough for
+     * every game: Ace Combat 8 (started through start_protected_game.exe, its anti-cheat) left
+     * 12 s after Vibeshine ended it — GAMEALIVE at +9 s, Steam's own log saying the processes
+     * exited 3 s later, twice (26/10 and 28/10) — and the notice said a game was running that
+     * was a moment from gone. So: every 4 s, six more times (32 s after the Quit in all), and
+     * the notice only if the game is still there at the last one. A game Vibeshine cannot
+     * close at all (the Xbox app case this exists for) is still running then.
+     */
+    constexpr int RetryMs = 4000;
+    constexpr int Retries = 6;
+
+    const int computerIndex = indexOfUuid(hostUuid);
+    if (computerIndex < 0 || !bridgeAllowed(computerIndex))   // see requestHostNetInfo()
+        return;
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QString address;
+    {
+        QReadLocker lock(&computer->lock);
+        address = computer->activeAddress.address();
+    }
+    if (address.isEmpty())
+        return;
+
+    m_streamTweakBridge.requestGameAlive(address,
+        [this, hostUuid, appName, attempt](const QString& response) {
+            // Empty or ERR is a host before 9.2.3: nothing to say, as before.
+            const QJsonObject o = QJsonDocument::fromJson(response.toUtf8()).object();
+            if (!o.value(QStringLiteral("known")).toBool() ||
+                !o.value(QStringLiteral("running")).toBool()) {
+                if (attempt > 0)
+                    qInfo() << "GAMEALIVE after Quit: the game closed" << (8 + attempt * RetryMs / 1000)
+                            << "s after the Quit";
+                return;
+            }
+
+            const QString game = o.value(QStringLiteral("game")).toString();
+            if (attempt < Retries) {
+                QTimer::singleShot(RetryMs, this, [this, hostUuid, appName, attempt]() {
+                    askGameAliveAfterQuit(hostUuid, appName, attempt + 1);
+                });
+                return;
+            }
+            qInfo() << "GAMEALIVE after Quit:" << (game.isEmpty() ? appName : game)
+                    << "is still running on the host";
+            emit gameStillRunningAfterQuit(hostUuid, game.isEmpty() ? appName : game);
+        });
 }
 
 void ComputerModel::matchHostLinkSpeed(int computerIndex)
