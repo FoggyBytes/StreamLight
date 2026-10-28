@@ -13,6 +13,7 @@ HostMetricsPoller::HostMetricsPoller(const QString& hostAddress, QObject* parent
             this,     &HostMetricsPoller::poll);
 
     m_timer.setInterval(1000);
+    m_clock.start();
 }
 
 void HostMetricsPoller::start()
@@ -28,6 +29,8 @@ void HostMetricsPoller::stop()
 HostMetrics HostMetricsPoller::latestMetrics() const
 {
     QMutexLocker locker(&m_mutex);
+    if (m_receivedAtMs < 0 || m_clock.elapsed() - m_receivedAtMs > kStaleAfterMs)
+        return HostMetrics{};
     return m_metrics;
 }
 
@@ -57,7 +60,7 @@ void HostMetricsPoller::onStatsReceived(const QString& statsJson)
 
     // Empty string means the connection failed — keep the last known values
     // rather than resetting to -1, so the overlay doesn't flicker on transient
-    // network hiccups.
+    // network hiccups. They expire in latestMetrics() if no reply follows.
     if (statsJson.isEmpty() || statsJson == QStringLiteral("STATS_UNAVAILABLE"))
         return;
 
@@ -89,6 +92,7 @@ void HostMetricsPoller::onStatsReceived(const QString& statsJson)
 
     QMutexLocker locker(&m_mutex);
     m_metrics = parsed;
+    m_receivedAtMs = m_clock.elapsed();
 }
 
 HostMetrics HostMetricsPoller::parseObject(const QJsonObject& obj)

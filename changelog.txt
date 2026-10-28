@@ -4,6 +4,19 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-----------------------------------------
+Version 8.0.1 - Full Picture (28/10/2026)
+-----------------------------------------
+
+Needs StreamTweak 10.0.4 on the host for the fuller timeline; with an older StreamTweak the two host tracks stay one line, as before. The overlay fixes work with any host.
+
+✨ IMPROVEMENTS:
+• Host compute and Host power show every reading — in a session's timeline, Host compute now draws GPU, encoder and CPU, and Host power the board power, the power limit in force, the GPU temperature and the moments at the limit, one strip each under the same clock and cursor with its value on the left; on PyroWave the encoder reads n/a, since PyroWave does not use it
+
+🐛 FIXES:
+• Host figures in the overlay no longer freeze — when the host stops answering (StreamTweak closed, or this device's access removed) its GPU, CPU and network figures go blank after 5 seconds instead of showing the last values as live ones
+• Bitrate in the overlay reads true — its average was 0 to 10% low
+
 ------------------------------------
 Version 8.0.0 - At Hand (23/10/2026)
 ------------------------------------

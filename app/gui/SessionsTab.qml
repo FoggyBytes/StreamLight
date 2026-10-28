@@ -11,7 +11,8 @@ import "sessionfmt.js" as Fmt
  * Everything stays on the host; it travels on the bridge a piece at a time (StreamTweak 10.0.0):
  *   SESSIONS <offset> <count> ALL|MINE   a page of the list (50 at a time, more as the cursor nears the end)
  *   SESSION <id>                         one report, asked when the cursor rests on a row
- *   SERIES <id> <track>                  one track of the timeline, asked when it is shown
+ *   SERIES <id> <track>                  one track of the timeline, asked when it is shown — with
+ *                                        Host compute / Host power also its subtracks (8.0.1)
  *   COVER <id> <n>                       a cover thumbnail, asked when its row is drawn
  * Sessions are named by id, never by a game: the bridge upper-cases the line.
  *
@@ -80,6 +81,21 @@ FocusScope {
     readonly property var track: tracks.length ? tracks[Math.min(trackIndex, tracks.length - 1)] : null
     readonly property var points: sel && track && series[sel.id + "/" + track.key] !== undefined
                                   ? series[sel.id + "/" + track.key] : []
+    // The other series of Host compute and Host power, drawn as strips (8.0.1): the ones the host
+    // lists in SESSION's `subtracks` (StreamTweak 10.0.4 — an older host has none).
+    readonly property var _partKeys: {
+        if (!detail || !track || !detail.subtracks) return []
+        var want = track.key === "GPU" ? ["ENC", "CPU"] : track.key === "POWER" ? ["PLIMIT", "TEMP", "PCAP"] : []
+        return want.filter(function(k) { return detail.subtracks.indexOf(k) >= 0 })
+    }
+    readonly property var parts: {
+        var m = {}
+        for (var i = 0; i < _partKeys.length; i++) {
+            var k = sel ? sel.id + "/" + _partKeys[i] : ""
+            if (series[k] !== undefined) m[_partKeys[i]] = series[k]
+        }
+        return m
+    }
 
     // ── Requests ─────────────────────────────────────────────────────────────────────
     function _ask(cmd) {
@@ -109,6 +125,8 @@ FocusScope {
     function _needSeries() {
         if (!sel || !detail || !track) return
         if (series[sel.id + "/" + track.key] === undefined) _ask("SERIES " + sel.id + " " + track.key)
+        for (var i = 0; i < _partKeys.length; i++)
+            if (series[sel.id + "/" + _partKeys[i]] === undefined) _ask("SERIES " + sel.id + " " + _partKeys[i])
     }
 
     // First shown: the whole history, then "This device" if this device has any.
@@ -144,8 +162,11 @@ FocusScope {
             tab.cursor = Math.max(0, Math.min(1, tab.cursor + (v > 0 ? 1 : -1) * windowsPerSec / tab.zoom * dt))
         }
     }
-    onDetailChanged: _needSeries()
-    onTrackChanged: _needSeries()
+    // Asked once every binding has caught up: `_partKeys` is a binding on the same track, and Qt
+    // does not say whether it or this handler runs first — read here directly, it could still hold
+    // the previous track's keys, so the strips were asked only on the way out (28/10/2026).
+    onDetailChanged: Qt.callLater(_needSeries)
+    onTrackChanged: Qt.callLater(_needSeries)
     onTracksChanged: if (trackIndex >= tracks.length) trackIndex = 0
 
     Connections {
@@ -436,6 +457,7 @@ FocusScope {
         tracks: tab.tracks
         trackIndex: tab.trackIndex
         points: tab.points
+        parts: tab.parts
         cursor: tab.cursor
         zoom: tab.zoom
         active: tab.zone === "report" && tab.activeFocus

@@ -1383,7 +1383,7 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
             if (WANT(OI_BITRATE)) {
                 if (forceFullDetail) {
                     // The log summary describes the session, and the tracker's figures do
-                    // not: its average covers the last 2.5 s and its peak the last 10 s
+                    // not: its average covers the last 2.25 s and its peak the last 10 s
                     // before the line is written — the quit, the menu, the black screen.
                     // Bytes over the same span as the frame rates (addVideoStats).
                     ret = snprintf(&output[offset], length - offset,

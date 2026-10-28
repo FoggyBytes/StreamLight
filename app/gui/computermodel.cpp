@@ -541,7 +541,7 @@ void ComputerModel::requestHostSection(int computerIndex, const QString& verb)
     static const QRegularExpression kSessionReads(QStringLiteral(
         "^(SESSIONS \\d{1,5} \\d{1,3} (ALL|MINE)"
         "|SESSION [0-9A-Fa-f]{6,32}"
-        "|SERIES [0-9A-Fa-f]{6,32} (HL|RTT|DROPS|BR|DEC|GPU|POWER)"
+        "|SERIES [0-9A-Fa-f]{6,32} (HL|RTT|DROPS|BR|DEC|GPU|POWER|ENC|CPU|PLIMIT|TEMP|PCAP)"
         "|COVER [0-9A-Fa-f]{6,32} \\d{1,2})$"));
     if (!kReads.contains(verb) && !kSessionReads.match(verb).hasMatch()) return;
 

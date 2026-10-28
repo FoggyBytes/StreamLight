@@ -29,7 +29,12 @@ double BandwidthTracker::GetAverageMbps() const {
     int currentIndex = (ms.count() / bucketIntervalMs) % bucketCount;
     int maxBuckets = bucketCount / 4;
     size_t totalBytes = 0;
-    steady_clock::time_point oldestBucket = now;
+    // The bucket being filled is never summed, so the span ends where it starts.
+    // Measuring to `now` instead (as upstream does) divided complete buckets by
+    // part of an incomplete one too: the average read 0-10% low.
+    const steady_clock::time_point currentBucketStart(
+        milliseconds(ms.count() - ms.count() % bucketIntervalMs));
+    steady_clock::time_point oldestBucket = currentBucketStart;
 
     // Sum bytes from 25% most recent buckets as long as they are completed
     for (int i = 0; i < maxBuckets; i++) {
@@ -43,7 +48,7 @@ double BandwidthTracker::GetAverageMbps() const {
         }
     }
 
-    double elapsed = duration<double>(now - oldestBucket).count();
+    double elapsed = duration<double>(currentBucketStart - oldestBucket).count();
     if (elapsed <= 0.0) {
         return 0.0;
     }

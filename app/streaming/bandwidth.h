@@ -12,7 +12,8 @@
  * and deals well with spikes.
  *
  * GetAverageMbps() is calculated using the 25% most recent fully completed buckets. The default settings will
- * return an average of the past 2.5s of data, ignoring the in-progress bucket. Using only 2.5s of data for the
+ * return an average of the past 2.25s of data (the newest 10 buckets less the one in progress, which is
+ * ignored — StreamLight 8.0.1 measures the span to that bucket's start, not to now). Using only 2.25s of data for the
  * average provides a good balance of reactivity and smoothness.
  *
  * GetPeakMbps() returns the peak bandwidth seen during any one bucket interval across the full time window.

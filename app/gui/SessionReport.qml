@@ -15,6 +15,7 @@ Item {
     property var tracks: []             // the tracks this session has, as SessionsTab.allTracks
     property int trackIndex: 0
     property var points: []
+    property var parts: ({})            // Host compute / Host power's other series (8.0.1)
     property real cursor: 0.5
     property int zoom: 1
     property bool active: false         // the pad is in the timeline
@@ -245,6 +246,7 @@ Item {
                 anchors.margins: rep._px(14)
                 detail: rep.detail
                 points: rep.points
+                parts: rep.parts
                 track: rep.tracks.length ? rep.tracks[Math.min(rep.trackIndex, rep.tracks.length - 1)] : null
                 cursor: rep.cursor
                 zoom: rep.zoom

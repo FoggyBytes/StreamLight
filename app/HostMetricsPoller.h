@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <QMutex>
 #include <QString>
 
@@ -33,8 +34,9 @@ struct HostMetrics
  * concurrently; access is protected by an internal QMutex.
  *
  * If the host is unreachable (StreamTweak not running) each poll attempt
- * simply fails silently and latestMetrics() continues returning the last
- * known values (or all-(-1) until the first successful response).
+ * simply fails silently. latestMetrics() keeps returning the last known
+ * values through a transient hiccup, but only for kStaleAfterMs: after that
+ * it returns all-(-1), as before the first successful response.
  */
 class HostMetricsPoller : public QObject
 {
@@ -68,10 +70,17 @@ private slots:
 private:
     static HostMetrics parseObject(const QJsonObject& obj);
 
+    // How long a reply stays valid without a newer one. Long enough to ride out a few
+    // missed polls (one a second), short enough that a host that stopped answering —
+    // StreamTweak closed, this client revoked — no longer passes frozen figures for live ones.
+    static constexpr qint64 kStaleAfterMs = 5000;
+
     QString            m_hostAddress;
     QTimer             m_timer;
     StreamTweakBridge  m_bridge;
+    QElapsedTimer      m_clock;
     mutable QMutex     m_mutex;
     HostMetrics        m_metrics;
+    qint64             m_receivedAtMs = -1;   // m_clock time of m_metrics, -1 = never
     bool               m_pendingRequest = false;
 };
