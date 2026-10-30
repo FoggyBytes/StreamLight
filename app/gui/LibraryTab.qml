@@ -347,7 +347,7 @@ FocusScope {
     // ── The shelf: two rows of covers, each centred, scrolling sideways ──────────────
     // The first half of the list on top, the rest below (11 → 6 over 5), and each row centred
     // on its own, so an odd count sits staggered by half a cover. When the rows are wider than the
-    // tab the shelf scrolls with the right stick (or the mouse); the covers take no focus.
+    // tab the shelf scrolls with the right stick (or the mouse: drag or wheel); the covers take no focus.
     readonly property int _topCount: Math.ceil(games.length / 2)
     readonly property int _bottomCount: games.length - _topCount
     function _rowOf(i) { return i < _topCount ? 0 : 1 }
@@ -377,6 +377,19 @@ FocusScope {
         readonly property real rowsY: Math.max(0, (height - coverH * 2 - _gap) / 2)
         contentWidth: Math.max(width, _rowsW)
         contentHeight: height
+
+        // 8.3.0 (#49): the mouse wheel scrolls the shelf. A Flickable that only flicks sideways
+        // reads only angleDelta.x (Qt 6.12), so a plain wheel did nothing; here either axis does,
+        // one notch ≈ one cover.
+        WheelHandler {
+            target: null
+            enabled: shelf.interactive
+            onWheel: function(event) {
+                var d = event.angleDelta.x !== 0 ? event.angleDelta.x : event.angleDelta.y
+                shelf.contentX = Math.max(0, Math.min(shelf.contentWidth - shelf.width,
+                    shelf.contentX - d * shelf.cellW / 120))
+            }
+        }
 
         // The cover's left edge in the content, by index.
         function coverX(i) { return rowsX + (tab._rowOf(i) === 0 ? 0 : bottomX) + tab._posOf(i) * cellW }

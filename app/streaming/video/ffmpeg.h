@@ -93,10 +93,29 @@ private:
 
     bool finishRenderInitialization(PDECODER_PARAMETERS params);
 
-    // forceFullDetail ignores the user's overlay verbosity and always emits the
-    // full set of metrics. Used by the log summary, which must not depend on how
-    // the on-screen overlay happens to be configured.
-    void stringifyVideoStats(VIDEO_STATS& stats, char* output, int length, bool forceFullDetail = false);
+    // The log summary: every metric, whatever the on-screen overlay is set to show.
+    void stringifyVideoStats(VIDEO_STATS& stats, char* output, int length);
+
+    // The overlay (8.3.0, issue #47): the bar's short entries and the card's rows in sections.
+    void buildOverlayBar(VIDEO_STATS& stats, Overlay::OverlayBar& bar);
+    void buildOverlayCard(VIDEO_STATS& stats, Overlay::OverlayCard& card);
+    QString vrrSummary(const VIDEO_STATS& stats, bool detail);
+
+    // Which figures are past the point where the problem is felt (8.3.0) — drawn in red by the
+    // card and the bar alike, from these thresholds only, and only for the items of the Default
+    // preset (overlayWarnings); overlayThresholds() is every threshold, judged or not.
+    struct OverlayWarnings {
+        bool loss = false;
+        bool partial = false;
+        bool pacing = false;
+        bool rtt = false;
+        bool hostLatency = false;
+        bool decode = false;
+        bool queue = false;
+        bool vrr = false;
+    };
+    OverlayWarnings overlayWarnings(const VIDEO_STATS& stats);
+    OverlayWarnings overlayThresholds(const VIDEO_STATS& stats);
 
     void logVideoStats(VIDEO_STATS& stats, const char* title);
 

@@ -139,6 +139,7 @@ bool DXVA2Renderer::initializeRenderer()
 
     m_DisplayWidth = renderTargetDesc.Width;
     m_DisplayHeight = renderTargetDesc.Height;
+    Overlay::OverlayManager::setViewportSize(m_DisplayWidth, m_DisplayHeight);
 
     m_Device->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
     m_Device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
@@ -658,22 +659,12 @@ void DXVA2Renderer::notifyOverlayUpdated(Overlay::OverlayType type)
 
     SDL_FRect renderRect = {};
 
-    if (type == Overlay::OverlayStatusUpdate) {
-        // Bottom Left
-        renderRect.x = 0;
-        renderRect.y = m_DisplayHeight - newSurface->h;
-    }
-    else if (type == Overlay::OverlayDebug || type == Overlay::OverlayStreamSettings) {
-        // Opposite top corners — the stats card takes the one the user chose (Settings >
-        // Overlay), the settings panel the other. No inset here, matching how this renderer
-        // has always drawn the card flush against the edge.
-        //
-        // ⚠️ Both types have to be named. With only OverlayDebug here the settings panel fell
-        // through every branch and kept the zeroed renderRect, so it drew at the top-left
-        // corner whatever the user had chosen — and on top of the stats card when that was
-        // top-left too.
-        renderRect.x = Overlay::OverlayManager::getOverlayOriginX(type, m_DisplayWidth, newSurface->w, 0);
-        renderRect.y = 0;
+    // Where every overlay goes is the OverlayManager's answer (8.3.0), top-left origin as here.
+    {
+        const SDL_Rect place = Overlay::OverlayManager::overlayRect(type, m_DisplayWidth, m_DisplayHeight,
+                                                                    newSurface->w, newSurface->h);
+        renderRect.x = place.x;
+        renderRect.y = place.y;
     }
 
     renderRect.w = newSurface->w;

@@ -109,13 +109,13 @@
     </qresource>
     <qresource prefix="/data">
         <file alias="gamecontrollerdb.txt">SDL_GameControllerDB/gamecontrollerdb.txt</file>
-        <file alias="RobotoMono.ttf">RobotoMono.ttf</file>
         <file alias="egl_nv12.frag">shaders/egl_nv12.frag</file>
         <file alias="egl_opaque.frag">shaders/egl_opaque.frag</file>
         <file alias="egl_overlay.frag">shaders/egl_overlay.frag</file>
         <file alias="egl.vert">shaders/egl.vert</file>
         <file alias="d3d11_vertex.fxc">shaders/d3d11_vertex.fxc</file>
         <file alias="d3d11_overlay_pixel.fxc">shaders/d3d11_overlay_pixel.fxc</file>
+        <file alias="d3d11_overlay_pixel_hdr.fxc">shaders/d3d11_overlay_pixel_hdr.fxc</file>
         <file alias="d3d11_yuv420_pixel.fxc">shaders/d3d11_yuv420_pixel.fxc</file>
         <file alias="d3d11_ayuv_pixel.fxc">shaders/d3d11_ayuv_pixel.fxc</file>
         <file alias="d3d11_y410_pixel.fxc">shaders/d3d11_y410_pixel.fxc</file>

@@ -385,7 +385,8 @@ Popup {
      * underneath this popup.
      */
     // ── The profile strip (8.0.0, #42) ─────────────────────────────────────────────────────
-    // Scrolls the strip so `item` (a chip, Off or + Add) is in view, with a little room around it.
+    // Scrolls the strip so `item` (a chip or Off) is in view, with a little room around it.
+    // + Add is not in the strip any more (8.3.0, #49): it stays put beside RT.
     function _revealChip(item) {
         if (!item || !chipFlick.overflows) return
         var r = item.mapToItem(chipFlick.contentItem, 0, 0, item.width, item.height)
@@ -981,6 +982,10 @@ Popup {
              * (◀/▶) and the profile chosen with LT/RT · Q/E; the right stick moves it without
              * moving the focus; a fade and a count say how many chips are out of sight.
              * While everything fits, the chips sit at the right end, as they always did.
+             *
+             * 8.3.0 (#49): + Add is out of the strip, fixed between it and RT. At the strip's end
+             * it was the first thing to go out of sight, the count at the edge never counted it,
+             * and a mouse could not bring it back — see the WheelHandler on chipFlick.
              */
             Item {
                 id: chipBar
@@ -1024,13 +1029,14 @@ Popup {
 
                 Flickable {
                     id: chipFlick
-                    anchors.right: rtShoulder.visible ? rtShoulder.left : parent.right
+                    anchors.right: addBtn.left
                     anchors.rightMargin: dlg._px(10)
-                    // As wide as the chips while they fit, the whole bar (less the shoulders) once
-                    // they do not — so LT stays beside them either way.
+                    // As wide as the chips while they fit, the whole bar (less the shoulders and
+                    // + Add) once they do not — so LT stays beside them either way.
                     width: Math.min(chipRow.width,
                                     parent.width - (ltShoulder.visible ? ltShoulder.width + dlg._px(10) : 0)
-                                                 - (rtShoulder.visible ? rtShoulder.width + dlg._px(10) : 0))
+                                                 - (rtShoulder.visible ? rtShoulder.width : 0)
+                                                 - addBtn.width - dlg._px(20))
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                     clip: true
@@ -1040,6 +1046,19 @@ Popup {
                     contentHeight: height
 
                     readonly property bool overflows: chipRow.width > width + 1
+
+                    // 8.3.0 (#49): the mouse wheel moves the strip. A Flickable that only flicks
+                    // sideways reads only angleDelta.x (Qt 6.12, QQuickFlickable::wheelEvent), so
+                    // a plain wheel did nothing; here either axis does, one notch ≈ one chip.
+                    WheelHandler {
+                        target: null
+                        enabled: chipFlick.overflows
+                        onWheel: function(event) {
+                            var d = event.angleDelta.x !== 0 ? event.angleDelta.x : event.angleDelta.y
+                            chipFlick.contentX = Math.max(0, Math.min(chipFlick.contentWidth - chipFlick.width,
+                                chipFlick.contentX - d * dlg._px(120) / 120))
+                        }
+                    }
 
             Row {
                 id: chipRow
@@ -1226,11 +1245,18 @@ Popup {
                     KeyNavigation.down: dlg._editing ? dlg._firstOfSection(sectionBar.currentIndex)
                                                      : addBtn
                 }
+            }
+                }
 
-                // "+ Add" pill — same look/size as the Off pill (just a touch wider).
+                // "+ Add" pill — same look/size as the Off pill (just a touch wider). Outside the
+                // strip since 8.3.0 (#49), fixed beside RT — or at the bar's end without profiles,
+                // where RT is hidden — so it is always in sight and under the mouse. Declared after
+                // chipFlick so Tab still reaches it last.
                 FocusScope {
                     id: addBtn
                     activeFocusOnTab: true
+                    anchors.right: rtShoulder.visible ? rtShoulder.left : parent.right
+                    anchors.rightMargin: dlg._px(10)
                     anchors.verticalCenter: parent.verticalCenter
                     implicitHeight: dlg._px(52)
                     implicitWidth: addPill.implicitWidth + dlg._px(12)
@@ -1266,12 +1292,9 @@ Popup {
                     Keys.onReturnPressed: dlg.addProfile()
                     Keys.onEnterPressed:  dlg.addProfile()
                     Keys.onSpacePressed:  dlg.addProfile()
-                    onActiveFocusChanged: if (activeFocus) dlg._revealChip(addBtn)
                     KeyNavigation.left: dlg._hasProfiles ? profileTabs : offBtn
                     KeyNavigation.down: dlg._editing ? dlg._firstOfSection(sectionBar.currentIndex)
                                                      : doneBtn
-                }
-            }
                 }
 
                 // How many chips are out of sight on each side, over a fade at that edge.
@@ -1404,23 +1427,11 @@ Popup {
             // later says it only to whoever happened to be looking. Off — not merely
             // faded — when everything already fits, so it never implies hidden rows
             // that do not exist.
-            ScrollBar.vertical: ScrollBar {
-                id: rowsScrollBar
-                policy: flick.contentHeight > flick.height ? ScrollBar.AlwaysOn
-                                                          : ScrollBar.AlwaysOff
-                width: dlg._px(6)
+            // The app's bar since 8.3.0 (#48), which does all of the above itself; its stroke
+            // stays where the old 6 px one was, inside the _padX gutter, clear of the controls.
+            ScrollBar.vertical: ThemedScrollBar {
                 anchors.right: parent.right
-                anchors.rightMargin: dlg._px(7)
-                // Sits inside the _padX gutter, so it never covers a control.
-                contentItem: Rectangle {
-                    radius: width / 2
-                    color: rowsScrollBar.pressed ? dlg._ink : dlg._dim
-                    opacity: rowsScrollBar.pressed ? 1.0 : 0.7
-                }
-                background: Rectangle {
-                    radius: width / 2
-                    color: dlg._line
-                }
+                anchors.rightMargin: dlg._px(3)
             }
 
             // Auto-scroll: keep the focused row in view as the D-pad moves down the
@@ -1633,7 +1644,7 @@ Popup {
                                     visible: bitrateSlider.activeFocus
                                 }
 
-                                Slider {
+                                ThemedSlider {
                                     id: bitrateSlider
                                     anchors.fill: parent
                                     from: dlg._effPyroWave ? 5000 : 500
@@ -1684,37 +1695,13 @@ Popup {
                                         return Math.max(0, Math.min(1, t))
                                     }
 
-                                    background: Rectangle {
-                                        x: bitrateSlider.leftPadding
-                                        y: bitrateSlider.topPadding + bitrateSlider.availableHeight / 2 - height / 2
-                                        width: bitrateSlider.availableWidth
-                                        height: dlg._px(3); radius: dlg._px(2)
-                                        color: Theme.text
-
-                                        Rectangle {
-                                            visible: dlg._bitrateOverridden
-                                            width: Math.max(2, dlg._px(2))
-                                            height: dlg._px(12)
-                                            radius: width / 2
-                                            color: Theme.text3
-                                            x: bitrateSlider._globalPos * (parent.width - width)
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
-                                    }
-                                    handle: Rectangle {
-                                        x: bitrateSlider.leftPadding + bitrateSlider.visualPosition * (bitrateSlider.availableWidth - width)
-                                        y: bitrateSlider.topPadding + bitrateSlider.availableHeight / 2 - height / 2
-                                        implicitWidth: dlg._px(14); implicitHeight: dlg._px(14); radius: dlg._px(7)
-                                        // Accent only while the profile holds its own bitrate
-                                        // (6.0.0): the one control left that painted the accent
-                                        // on an inherited value. Neutral otherwise, like the
-                                        // inherited pill of every other row.
-                                        readonly property color _base: dlg._bitrateOverridden ? dlg._inkText : Theme.text
-                                        color: bitrateSlider.pressed ? Qt.lighter(_base, 1.2)
-                                             : bitrateSlider.hovered ? Qt.lighter(_base, 1.1)
-                                             :                         _base
-                                        border.color: _base; border.width: 1
-                                    }
+                                    // The global value's tick, only while the profile holds its own.
+                                    marker: dlg._bitrateOverridden ? bitrateSlider._globalPos : -1
+                                    // Accent only while the profile holds its own bitrate
+                                    // (6.0.0): the one control left that painted the accent
+                                    // on an inherited value. Neutral otherwise, like the
+                                    // inherited pill of every other row.
+                                    tint: dlg._bitrateOverridden ? Theme.accentFill : Theme.text
                                 }
                             }
 

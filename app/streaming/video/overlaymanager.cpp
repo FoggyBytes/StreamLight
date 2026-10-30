@@ -1,172 +1,219 @@
 #include "overlaymanager.h"
-#include "path.h"
 #include "settings/streamingpreferences.h"
+#include "settings/theme.h"
 
-#include <QByteArray>
+#include <QFont>
+#include <QFontMetricsF>
 #include <QImage>
+#include <QMutexLocker>
 #include <QPainter>
 #include <QStringList>
 #include <QSvgRenderer>
-#include <cmath>
+#include <QtMath>
+#include <atomic>
 
 using namespace Overlay;
 
+/*
+ * The overlays, as redesigned in 8.3.0 (issue #47, mockup in docs/mockups/overlay-redesign,
+ * direction A for the card and the bar, B's row of tiles in A's surfaces for the panel).
+ *
+ * Painted with QPainter on a QImage and handed to the renderers as an ARGB8888 SDL_Surface,
+ * as before — SDL_ttf drew the text until 8.2.0. QPainter gives the app's own fonts (DM Sans,
+ * JetBrains Mono, registered by main.qml's FontLoaders), anti-aliased shapes and SVG glyphs
+ * in one pass, on whichever thread builds the surface.
+ *
+ * ⚠️ Every measure is a fraction of the viewport's HEIGHT: 1 unit = 1 px at 1080p. Until 8.2.0
+ * the sizes were pixels, so a 25 px line took a fortieth of a 1080p screen and an eightieth of
+ * a 4K one — the "too small at 4K, even at the largest size" of the first 8.3.0 test.
+ *
+ * Colours are the theme's stage palette (theme.h, stage*): the dark values, always, because
+ * the overlays sit on video in either theme. The accent is the user's, as it is in Dark.
+ */
+
 namespace {
 
-// Rasterize a self-contained button SVG (Qt resource path) into dst at (x, y),
-// fitted to a square of the given size. No-op if the resource is invalid.
-void blitSvgIcon(SDL_Surface* dst, const QString& path, int x, int y, int size)
+const QColor kText(0xf3, 0xf7, 0xf8);
+const QColor kText2(0xa2, 0xb2, 0xba);
+const QColor kText3(0x75, 0x87, 0x90);
+const QColor kOnline(0x4a, 0xde, 0x80);
+const QColor kWarning(0xf5, 0xa6, 0x23);
+const QColor kDanger(0xf8, 0x71, 0x71);
+const QColor kLine(0xff, 0xff, 0xff, 0x14);
+// The box's edge: a light line that holds over a bright and a dark scene alike.
+const QColor kFrame(0xff, 0xff, 0xff, 0x40);
+
+std::atomic<int> s_ViewportWidth{0};
+std::atomic<int> s_ViewportHeight{0};
+
+double unitFor(double sizeFactor)
 {
-    if (path.isEmpty() || size <= 0) return;
+    const int h = s_ViewportHeight > 0 ? s_ViewportHeight.load() : 1080;
+    return h / 1080.0 * sizeFactor;
+}
 
-    QSvgRenderer renderer(path);
-    if (!renderer.isValid()) return;
+int viewportWidth()
+{
+    return s_ViewportWidth > 0 ? s_ViewportWidth.load() : 1920;
+}
 
-    QImage img(size, size, QImage::Format_ARGB32);
+QFont sansFont(double px, QFont::Weight weight = QFont::Normal)
+{
+    QFont f(QStringLiteral("DM Sans"));
+    f.setPixelSize(qMax(1, qRound(px)));
+    f.setWeight(weight);
+    f.setStyleStrategy(QFont::PreferAntialias);
+    return f;
+}
+
+QFont monoFont(double px, QFont::Weight weight = QFont::Medium)
+{
+    QFont f(QStringLiteral("JetBrains Mono"));
+    f.setPixelSize(qMax(1, qRound(px)));
+    f.setWeight(weight);
+    f.setStyleStrategy(QFont::PreferAntialias);
+    return f;
+}
+
+// Small capitals with tracking: the section labels of Settings.
+QFont capsFont(double px, double u)
+{
+    QFont f = sansFont(px, QFont::DemiBold);
+    f.setCapitalization(QFont::AllUppercase);
+    f.setLetterSpacing(QFont::AbsoluteSpacing, 1.4 * u);
+    return f;
+}
+
+double textWidth(const QFont& f, const QString& s)
+{
+    return QFontMetricsF(f).horizontalAdvance(s);
+}
+
+QImage newCanvas(int w, int h)
+{
+    QImage img(qMax(1, w), qMax(1, h), QImage::Format_ARGB32_Premultiplied);
     img.fill(Qt::transparent);
-    {
-        QPainter p(&img);
-        renderer.render(&p);
-    }
-
-    // QImage Format_ARGB32 and SDL_PIXELFORMAT_ARGB8888 share byte layout on
-    // little-endian (B,G,R,A), so we can copy scanlines directly.
-    SDL_Surface* tmp = SDL_CreateRGBSurfaceWithFormat(
-        0, size, size, 32, SDL_PIXELFORMAT_ARGB8888);
-    if (!tmp) return;
-    for (int row = 0; row < size; row++) {
-        memcpy((Uint8*)tmp->pixels + row * tmp->pitch, img.scanLine(row), size * 4);
-    }
-    SDL_SetSurfaceBlendMode(tmp, SDL_BLENDMODE_BLEND);
-    SDL_Rect d = { x, y, size, size };
-    SDL_BlitSurface(tmp, nullptr, dst, &d);
-    SDL_FreeSurface(tmp);
+    return img;
 }
 
-// ---- Low-level surface drawing helpers (ARGB8888, no blending: values are set
-// directly; semi-transparent looks are achieved by pre-mixing over the card bg).
-
-inline Uint32 mapColor(SDL_Surface* s, SDL_Color c)
+// The renderers take straight (not premultiplied) ARGB8888, which is QImage's ARGB32 byte for
+// byte on little-endian.
+SDL_Surface* toSurface(const QImage& canvas)
 {
-    return SDL_MapRGBA(s->format, c.r, c.g, c.b, c.a);
+    const QImage img = canvas.convertToFormat(QImage::Format_ARGB32);
+    SDL_Surface* s = SDL_CreateRGBSurfaceWithFormat(0, img.width(), img.height(), 32, SDL_PIXELFORMAT_ARGB8888);
+    if (s == nullptr) {
+        return nullptr;
+    }
+    for (int row = 0; row < img.height(); row++) {
+        memcpy((Uint8*)s->pixels + row * s->pitch, img.constScanLine(row), img.width() * 4);
+    }
+    return s;
 }
 
-void fillRect(SDL_Surface* s, int x, int y, int w, int h, SDL_Color c)
+void beginPaint(QImage& img, QPainter& p)
 {
-    SDL_Rect r = { x, y, w, h };
-    SDL_FillRect(s, &r, mapColor(s, c));
+    p.begin(&img);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setRenderHint(QPainter::TextAntialiasing, true);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
 }
 
-// Filled rounded rectangle. Corners outside the radius are left untouched
-// (transparent), so the card reads as rounded over the video.
-void fillRoundedRect(SDL_Surface* s, int x, int y, int w, int h, int radius, SDL_Color c)
+// The card every overlay sits on: the app's card colour, a light edge, round corners.
+void drawBox(QPainter& p, const QRectF& r, double radius, const QColor& fill, double u)
 {
-    if (radius * 2 > w) radius = w / 2;
-    if (radius * 2 > h) radius = h / 2;
-    Uint32 col = mapColor(s, c);
+    const double pen = qMax(1.0, 1.25 * u);
+    p.setPen(QPen(kFrame, pen));
+    p.setBrush(fill);
+    const double h = pen / 2;
+    p.drawRoundedRect(r.adjusted(h, h, -h, -h), radius, radius);
+}
 
-    // Centre band (full width)
-    SDL_Rect mid = { x, y + radius, w, h - radius * 2 };
-    SDL_FillRect(s, &mid, col);
+void drawDot(QPainter& p, const QPointF& centre, double d, const QColor& c)
+{
+    p.setPen(Qt::NoPen);
+    p.setBrush(c);
+    p.drawEllipse(centre, d / 2, d / 2);
+}
 
-    // Top/bottom bands, narrowed per-scanline to follow the corner arcs
-    for (int i = 0; i < radius; i++) {
-        double dy = radius - i - 0.5;
-        int inset = (int)std::lround(radius - std::sqrt((double)radius * radius - dy * dy));
-        int rowW = w - inset * 2;
-        if (rowW <= 0) continue;
-        SDL_Rect top = { x + inset, y + i, rowW, 1 };
-        SDL_FillRect(s, &top, col);
-        SDL_Rect bot = { x + inset, y + h - 1 - i, rowW, 1 };
-        SDL_FillRect(s, &bot, col);
+// A padlock of height h, its body's bottom-left corner at the given point: a read-only tile of
+// the Stream Settings panel (30/10/2026 — greying alone did not say the value cannot change).
+void drawLock(QPainter& p, const QPointF& bottomLeft, double h, const QColor& c)
+{
+    const double bodyH = h * 0.58, bodyW = h * 0.78;
+    const QRectF body(bottomLeft.x(), bottomLeft.y() - bodyH, bodyW, bodyH);
+    const double stroke = qMax(1.0, h * 0.13);
+    const double shackleW = bodyW * 0.62;
+    const QRectF shackle(body.center().x() - shackleW / 2, bottomLeft.y() - h + stroke / 2,
+                         shackleW, (h - bodyH) * 2);
+    p.setBrush(Qt::NoBrush);
+    p.setPen(QPen(c, stroke, Qt::SolidLine, Qt::RoundCap));
+    p.drawArc(shackle, 0, 180 * 16);
+    p.drawLine(QPointF(shackle.left(), shackle.center().y()), QPointF(shackle.left(), body.top()));
+    p.drawLine(QPointF(shackle.right(), shackle.center().y()), QPointF(shackle.right(), body.top()));
+    p.setPen(Qt::NoPen);
+    p.setBrush(c);
+    p.drawRoundedRect(body, h * 0.1, h * 0.1);
+}
+
+// Text whose left edge is x and whose baseline is y.
+void drawText(QPainter& p, const QFont& f, const QColor& c, double x, double baseline, const QString& s)
+{
+    p.setFont(f);
+    p.setPen(c);
+    p.drawText(QPointF(x, baseline), s);
+}
+
+// The baseline that centres a line of font f in a band from top to top + height.
+double centredBaseline(const QFont& f, double top, double height)
+{
+    const QFontMetricsF fm(f);
+    return top + (height + fm.ascent() - fm.descent()) / 2;
+}
+
+void drawSvg(QPainter& p, const QString& path, const QRectF& r)
+{
+    if (path.isEmpty()) {
+        return;
+    }
+    QSvgRenderer renderer(path);
+    if (renderer.isValid()) {
+        renderer.render(&p, r);
     }
 }
 
-void fillCircle(SDL_Surface* s, int cx, int cy, int r, SDL_Color c)
+QColor fromSdl(const SDL_Color& c)
 {
-    Uint32 col = mapColor(s, c);
-    for (int dy = -r; dy <= r; dy++) {
-        int dx = (int)std::lround(std::sqrt((double)r * r - (double)dy * dy));
-        SDL_Rect row = { cx - dx, cy + dy, dx * 2 + 1, 1 };
-        SDL_FillRect(s, &row, col);
-    }
+    return QColor(c.r, c.g, c.b, c.a);
 }
 
-// Small horizontal triangle (arrow). dir < 0 points left ('‹'), dir > 0 right ('›').
-void fillArrow(SDL_Surface* s, int x, int y, int w, int h, int dir, SDL_Color c)
+// The card and bar box: the user's transparency (Settings > Overlay) on the app's card colour.
+QColor statsFill()
 {
-    Uint32 col = mapColor(s, c);
-    for (int i = 0; i < h; i++) {
-        double t = std::abs((double)i - (h - 1) / 2.0) / ((h - 1) / 2.0); // 0 at tip row, 1 at base edges
-        int len = (int)std::lround(w * (1.0 - t));
-        if (len <= 0) continue;
-        int rx = (dir < 0) ? (x + (w - len)) : x;     // left arrow: tip on the left
-        SDL_Rect row = { rx, y + i, len, 1 };
-        SDL_FillRect(s, &row, col);
-    }
+    return StreamingPreferences::get()->overlayBoxColorValue();
 }
 
-// Render one UTF-8 text segment, optionally blitting it onto dst at (x, baselineY
-// centred). Returns the rendered width; pass dst=nullptr to measure only.
-int textSeg(TTF_Font* f, const QString& str, SDL_Color c, SDL_Surface* dst, int x, int centreY)
+double statsSizeFactor()
 {
-    if (!f || str.isEmpty()) return 0;
-    QByteArray u = str.toUtf8();
-    if (!dst) {
-        int w = 0, h = 0;
-        TTF_SizeUTF8(f, u.constData(), &w, &h);
-        return w;
-    }
-    SDL_Surface* t = TTF_RenderUTF8_Blended(f, u.constData(), c);
-    if (!t) return 0;
-    int w = t->w;
-    SDL_Rect r = { x, centreY - t->h / 2, t->w, t->h };
-    SDL_BlitSurface(t, nullptr, dst, &r);
-    SDL_FreeSurface(t);
-    return w;
+    return StreamingPreferences::get()->overlaySizeFactor();
 }
 
 } // namespace
 
 OverlayManager::OverlayManager() :
-    m_Renderer(nullptr),
-    m_FontData(Path::readDataFile("RobotoMono.ttf"))
+    m_Renderer(nullptr)
 {
     memset(m_Overlays, 0, sizeof(m_Overlays));
 
-    const SDL_Color defaultCard = {0x18, 0x18, 0x1A, 0xF0};
+    // A new stream: its renderer will say how big it is.
+    s_ViewportWidth = 0;
+    s_ViewportHeight = 0;
 
-    // The stats card. Colour, transparency and font size are the user's (Settings >
-    // Overlay) and are re-read on every update — these are only what it looks like
-    // before the first one. Its corner is decided by the renderer.
-    m_Overlays[OverlayType::OverlayDebug].color = {0xFF, 0xFF, 0xFF, 0xFF};
-    m_Overlays[OverlayType::OverlayDebug].bgColor = defaultCard;
-    m_Overlays[OverlayType::OverlayDebug].fontSize = 20;
-
-    m_Overlays[OverlayType::OverlayStatusUpdate].color = {0xFF, 0xFF, 0xFF, 0xFF};
-    m_Overlays[OverlayType::OverlayStatusUpdate].bgColor = defaultCard;
-    m_Overlays[OverlayType::OverlayStatusUpdate].fontSize = 36;
-
-    // Live "Stream Settings" overlay — top-right (positioned by the renderer).
-    // Font size matches the stats card's default (20) for a consistent overlay look.
-    // ⚠️ Deliberately NOT following the stats card's user settings: this one is a
-    // control surface being operated, and a control surface has to stay legible
-    // whatever someone picked for a read-only readout.
-    m_Overlays[OverlayType::OverlayStreamSettings].color = {0xFF, 0xFF, 0xFF, 0xFF};
-    m_Overlays[OverlayType::OverlayStreamSettings].bgColor = defaultCard;
-    m_Overlays[OverlayType::OverlayStreamSettings].fontSize = 20;
-
-    // While TTF will usually not be initialized here, it is valid for that not to
-    // be the case, since Session destruction is deferred and could overlap with
-    // the lifetime of a new Session object.
-    //SDL_assert(TTF_WasInit() == 0);
-
-    if (TTF_Init() != 0) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "TTF_Init() failed: %s",
-                    TTF_GetError());
-        return;
-    }
+    // The accent as the dark theme has it, read here because the Session — and so this — is
+    // built on the thread the theme lives on; the surfaces are built on others.
+    Theme* theme = Theme::get();
+    m_Accent = theme != nullptr ? theme->darkAccent() : QColor(0x00, 0xd3, 0xf2);
+    m_OnAccent = theme != nullptr ? theme->onColor(m_Accent) : QColor(0x06, 0x18, 0x1c);
 }
 
 OverlayManager::~OverlayManager()
@@ -175,21 +222,7 @@ OverlayManager::~OverlayManager()
         if (m_Overlays[i].surface != nullptr) {
             SDL_FreeSurface(m_Overlays[i].surface);
         }
-        if (m_Overlays[i].font != nullptr) {
-            TTF_CloseFont(m_Overlays[i].font);
-        }
-        if (m_Overlays[i].smallFont != nullptr) {
-            TTF_CloseFont(m_Overlays[i].smallFont);
-        }
     }
-
-    TTF_Quit();
-
-    // For similar reasons to the comment in the constructor, this will usually,
-    // but not always, deinitialize TTF. In the cases where Session objects overlap
-    // in lifetime, there may be an additional reference on TTF for the new Session
-    // that means it will not be cleaned up here.
-    //SDL_assert(TTF_WasInit() == 0);
 }
 
 bool OverlayManager::isOverlayEnabled(OverlayType type)
@@ -199,7 +232,7 @@ bool OverlayManager::isOverlayEnabled(OverlayType type)
 
 void OverlayManager::updateOverlayText(OverlayType type, const char* text)
 {
-    m_Overlays[type].isPanel = false;
+    m_Overlays[type].kind = KindText;
     SDL_utf8strlcpy(m_Overlays[type].text, text, sizeof(m_Overlays[0].text));
 
     setOverlayTextUpdated(type);
@@ -207,22 +240,32 @@ void OverlayManager::updateOverlayText(OverlayType type, const char* text)
 
 void OverlayManager::updateOverlayPanel(OverlayType type, const OverlayPanel& panel)
 {
-    m_Overlays[type].isPanel = true;
+    m_Overlays[type].kind = KindPanel;
     m_Panels[type] = panel;
 
     setOverlayTextUpdated(type);
 }
 
-int OverlayManager::getOverlayFontSize(OverlayType type)
+void OverlayManager::updateOverlayBar(OverlayType type, const OverlayBar& bar)
 {
-    return m_Overlays[type].fontSize;
+    {
+        QMutexLocker lock(&m_ContentLock);
+        m_Bars[type] = bar;
+    }
+    m_Overlays[type].kind = KindBar;
+
+    setOverlayTextUpdated(type);
 }
 
-SDL_Surface* OverlayManager::getUpdatedOverlaySurface(OverlayType type)
+void OverlayManager::updateOverlayCard(OverlayType type, const OverlayCard& card)
 {
-    // If a new surface is available, return it. If not, return nullptr.
-    // Caller must free the surface on success.
-    return (SDL_Surface*)SDL_AtomicSetPtr((void**)&m_Overlays[type].surface, nullptr);
+    {
+        QMutexLocker lock(&m_ContentLock);
+        m_Cards[type] = card;
+    }
+    m_Overlays[type].kind = KindCard;
+
+    setOverlayTextUpdated(type);
 }
 
 void OverlayManager::setOverlayTextUpdated(OverlayType type)
@@ -242,17 +285,23 @@ void OverlayManager::setOverlayState(OverlayType type, bool enabled)
 
     if (stateChanged) {
         if (!enabled) {
-            // Set the text to empty string on disable
+            // Empty the content on disable, so switching back on does not show a second-old
+            // reading.
             m_Overlays[type].text[0] = 0;
+            QMutexLocker lock(&m_ContentLock);
+            m_Bars[type] = OverlayBar();
+            m_Cards[type] = OverlayCard();
         }
 
         notifyOverlayUpdated(type);
     }
 }
 
-SDL_Color OverlayManager::getOverlayColor(OverlayType type)
+SDL_Surface* OverlayManager::getUpdatedOverlaySurface(OverlayType type)
 {
-    return m_Overlays[type].color;
+    // If a new surface is available, return it. If not, return nullptr.
+    // Caller must free the surface on success.
+    return (SDL_Surface*)SDL_AtomicSetPtr((void**)&m_Overlays[type].surface, nullptr);
 }
 
 void OverlayManager::setOverlayRenderer(IOverlayRenderer* renderer)
@@ -260,17 +309,40 @@ void OverlayManager::setOverlayRenderer(IOverlayRenderer* renderer)
     m_Renderer = renderer;
 }
 
-int OverlayManager::getOverlayOriginX(OverlayType type, int viewportWidth, int surfaceWidth, int margin)
+SDL_Rect OverlayManager::overlayRect(OverlayType type, int viewportWidth, int viewportHeight,
+                                     int surfaceWidth, int surfaceHeight)
 {
-    bool onRight = (StreamingPreferences::get()->overlayPosition
-                    == StreamingPreferences::OVP_TOP_RIGHT);
+    const int margin = qRound(24.0 * viewportHeight / 1080.0);
+    SDL_Rect r = { 0, 0, surfaceWidth, surfaceHeight };
 
-    // The settings panel always takes the opposite corner to the stats card.
-    if (type == OverlayType::OverlayStreamSettings) {
-        onRight = !onRight;
+    switch (type) {
+    case OverlayDebug:
+        if (StreamingPreferences::get()->overlayLayout == StreamingPreferences::OVL_BAR) {
+            r.x = (viewportWidth - surfaceWidth) / 2;
+        }
+        else {
+            r.x = StreamingPreferences::get()->overlayPosition == StreamingPreferences::OVP_TOP_RIGHT
+                    ? viewportWidth - surfaceWidth - margin : margin;
+        }
+        r.y = margin;
+        break;
+    case OverlayStreamSettings:
+        r.x = (viewportWidth - surfaceWidth) / 2;
+        r.y = viewportHeight - surfaceHeight - qRound(margin * 1.5);
+        break;
+    case OverlayStatusUpdate:
+    default:
+        r.x = margin;
+        r.y = viewportHeight - surfaceHeight - margin;
+        break;
     }
+    return r;
+}
 
-    return onRight ? (viewportWidth - surfaceWidth - margin) : margin;
+void OverlayManager::setViewportSize(int width, int height)
+{
+    s_ViewportWidth = width;
+    s_ViewportHeight = height;
 }
 
 void OverlayManager::notifyOverlayUpdated(OverlayType type)
@@ -279,63 +351,15 @@ void OverlayManager::notifyOverlayUpdated(OverlayType type)
         return;
     }
 
-    // The stats card takes its colour, transparency and size from the user before every
-    // rebuild, so a change in Settings shows up on the next tick instead of the next
-    // session. The other overlays keep what the constructor gave them.
-    if (type == OverlayType::OverlayDebug) {
-        StreamingPreferences* prefs = StreamingPreferences::get();
-
-        const QColor text = prefs->overlayTextColorValue();
-        m_Overlays[type].color = { (Uint8)text.red(), (Uint8)text.green(), (Uint8)text.blue(), 0xFF };
-
-        const QColor box = prefs->overlayBoxColorValue();
-        m_Overlays[type].bgColor = { (Uint8)box.red(), (Uint8)box.green(),
-                                     (Uint8)box.blue(), (Uint8)box.alpha() };
-
-        // A font carries its size, so a new size means a new font. Closing the old one
-        // is not optional: TTF_OpenFontRW here runs once per size change, and leaking a
-        // face per change would accumulate for as long as the session lasts.
-        const int wanted = prefs->overlayFontPixelSize();
-        if (wanted != m_Overlays[type].fontSize) {
-            m_Overlays[type].fontSize = wanted;
-            if (m_Overlays[type].font != nullptr) {
-                TTF_CloseFont(m_Overlays[type].font);
-                m_Overlays[type].font = nullptr;
-            }
-            if (m_Overlays[type].smallFont != nullptr) {
-                TTF_CloseFont(m_Overlays[type].smallFont);
-                m_Overlays[type].smallFont = nullptr;
-            }
-        }
-    }
-
-    // Construct the required font to render the overlay
-    if (m_Overlays[type].font == nullptr) {
-        if (m_FontData.isEmpty()) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "SDL overlay font failed to load");
-            return;
-        }
-
-        // m_FontData must stay around until the font is closed
-        m_Overlays[type].font = TTF_OpenFontRW(SDL_RWFromConstMem(m_FontData.constData(), m_FontData.size()),
-                                               1,
-                                               m_Overlays[type].fontSize);
-        if (m_Overlays[type].font == nullptr) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "TTF_OpenFont() failed: %s",
-                        TTF_GetError());
-
-            // Can't proceed without a font
-            return;
-        }
-    }
-
-    // Build the new surface (rounded card with text, or a structured panel).
+    // Build the new surface.
     SDL_Surface* newSurface = nullptr;
     if (m_Overlays[type].enabled) {
-        newSurface = m_Overlays[type].isPanel ? buildPanelSurface(type)
-                                              : buildTextSurface(type);
+        switch (m_Overlays[type].kind) {
+        case KindPanel: newSurface = buildPanelSurface(type); break;
+        case KindBar:   newSurface = buildBarSurface(type);   break;
+        case KindCard:  newSurface = buildCardSurface(type);  break;
+        default:        newSurface = buildTextSurface(type);  break;
+        }
     }
 
     // Exchange the old surface with the new one
@@ -352,281 +376,408 @@ void OverlayManager::notifyOverlayUpdated(OverlayType type)
     }
 }
 
-TTF_Font* OverlayManager::panelSmallFont(OverlayType type)
-{
-    if (m_Overlays[type].smallFont == nullptr) {
-        if (m_FontData.isEmpty()) {
-            return nullptr;
-        }
-        int sz = m_Overlays[type].fontSize - 5;
-        if (sz < 12) sz = 12;
-        m_Overlays[type].smallFont = TTF_OpenFontRW(
-            SDL_RWFromConstMem(m_FontData.constData(), m_FontData.size()), 1, sz);
-    }
-    return m_Overlays[type].smallFont;
-}
-
-// Plain multi-line text overlay (stats / status) on a rounded dark card.
-// Rendered line-by-line and sized to the longest line — TTF_..._Wrapped pads the
-// surface out to the full wrap width, which left a large empty gap on short text.
+// The in-stream notices ("Gamepad mouse mode active", the clipboard's): their lines on a small
+// card, bottom left.
 SDL_Surface* OverlayManager::buildTextSurface(OverlayType type)
 {
-    TTF_Font* font = m_Overlays[type].font;
-    const SDL_Color color = m_Overlays[type].color;
-
     QStringList lines = QString::fromUtf8(m_Overlays[type].text).split(QLatin1Char('\n'));
     while (!lines.isEmpty() && lines.last().isEmpty()) {
-        lines.removeLast();  // drop trailing blank line from a final '\n'
+        lines.removeLast();
     }
     if (lines.isEmpty()) {
         return nullptr;
     }
 
-    // Render each line; track the widest for the (tight) card width.
-    QVector<SDL_Surface*> lineSurfs;
-    lineSurfs.reserve(lines.size());
-    int maxW = 0;
-    for (const QString& ln : lines) {
-        SDL_Surface* s = nullptr;
-        if (!ln.isEmpty()) {
-            QByteArray u = ln.toUtf8();
-            s = TTF_RenderUTF8_Blended(font, u.constData(), color);
-            if (s != nullptr) {
-                maxW = qMax(maxW, s->w);
-            }
-        }
-        lineSurfs.append(s);
+    const double u = unitFor(1.0);
+    const QFont first = sansFont(17 * u, QFont::DemiBold);
+    const QFont rest = sansFont(15 * u);
+    const double padX = 18 * u, padY = 12 * u, lineH = 24 * u;
+
+    double w = 0;
+    for (int i = 0; i < lines.size(); i++) {
+        w = qMax(w, textWidth(i == 0 ? first : rest, lines[i]));
     }
 
-    const int kPadX = 12, kPadY = 11, radius = 9;
-    const int lineSkip = TTF_FontLineSkip(font);
-    SDL_Surface* bg = SDL_CreateRGBSurfaceWithFormat(
-        0, maxW + kPadX * 2, lineSkip * lines.size() + kPadY * 2,
-        32, SDL_PIXELFORMAT_ARGB8888);
-    if (bg != nullptr) {
-        SDL_FillRect(bg, nullptr, SDL_MapRGBA(bg->format, 0, 0, 0, 0));
-        fillRoundedRect(bg, 0, 0, bg->w, bg->h, radius, m_Overlays[type].bgColor);
-
-        int y = kPadY;
-        for (SDL_Surface* s : lineSurfs) {
-            if (s != nullptr) {
-                SDL_SetSurfaceBlendMode(s, SDL_BLENDMODE_BLEND);
-                SDL_Rect d = { kPadX, y, s->w, s->h };
-                SDL_BlitSurface(s, nullptr, bg, &d);
-            }
-            y += lineSkip;
-        }
+    QImage img = newCanvas(qCeil(w + padX * 2), qCeil(lineH * lines.size() + padY * 2));
+    QPainter p;
+    beginPaint(img, p);
+    drawBox(p, QRectF(0, 0, img.width(), img.height()), 12 * u, QColor(0x0f, 0x15, 0x19, 0xE6), u);
+    for (int i = 0; i < lines.size(); i++) {
+        const QFont& f = i == 0 ? first : rest;
+        drawText(p, f, i == 0 ? kText : kText2, padX, centredBaseline(f, padY + i * lineH, lineH), lines[i]);
     }
-
-    for (SDL_Surface* s : lineSurfs) {
-        if (s != nullptr) {
-            SDL_FreeSurface(s);
-        }
-    }
-    return bg;
+    p.end();
+    return toSurface(img);
 }
 
-// Structured panel (Stream Settings): rounded card, header + target chip,
-// selectable value rows with ‹ › arrows, divider, status line, footer badges.
+/*
+ * The card (8.3.0, direction A): the app's card, a header with the host's name beside the status
+ * dot (green, red when any figure shown is past its threshold), then the sections — a rule, the
+ * title in small capitals, a row per figure with its label left and its value right in mono.
+ * A value past its threshold is red, with a red mark at the row's left edge.
+ */
+SDL_Surface* OverlayManager::buildCardSurface(OverlayType type)
+{
+    QMutexLocker lock(&m_ContentLock);
+    const OverlayCard& card = m_Cards[type];
+    if (card.sections.isEmpty()) {
+        return nullptr;
+    }
+
+    const double u = unitFor(statsSizeFactor());
+    if (u != m_SlotUnit) {
+        m_BarSlotWidths.clear();
+        m_CardSlotWidths.clear();
+        m_SlotUnit = u;
+    }
+
+    const QFont caps = capsFont(11 * u, u);
+    const QFont chipFont = [&]() { QFont f = sansFont(11.5 * u, QFont::DemiBold); f.setLetterSpacing(QFont::AbsoluteSpacing, 1.0 * u); return f; }();
+    const QFont label = sansFont(15 * u);
+    const QFont value = monoFont(15 * u);
+
+    const double pad = 18 * u, headerH = 26 * u, rowH = 25 * u, titleH = 26 * u, gap = 10 * u;
+    const double labelGap = 28 * u;
+
+    // Width: the widest label + value, values in their grown slots; the header; a floor.
+    bool alert = false;
+    double contentW = 280 * u;
+    double labelColW = 0, valueColW = 0;
+    for (const OverlayCardSection& s : card.sections) {
+        for (const OverlayCardRow& r : s.rows) {
+            alert = alert || r.warn;
+            const int vw = qCeil(textWidth(value, r.value));
+            const int slot = qMax(vw, m_CardSlotWidths.value(r.label, 0));
+            m_CardSlotWidths.insert(r.label, slot);
+            labelColW = qMax(labelColW, textWidth(label, r.label));
+            valueColW = qMax(valueColW, double(slot));
+        }
+    }
+    const double chipW = textWidth(chipFont, m_HostName) + 7 * u + 6 * u + 18 * u;
+    contentW = qMax(contentW, labelColW + labelGap + valueColW);
+    contentW = qMax(contentW, textWidth(caps, QStringLiteral("Performance")) + 16 * u + chipW);
+
+    double h = pad + headerH;
+    for (const OverlayCardSection& s : card.sections) {
+        h += gap + titleH + rowH * s.rows.size();
+    }
+    h += pad;
+
+    QImage img = newCanvas(qCeil(contentW + pad * 2), qCeil(h));
+    QPainter p;
+    beginPaint(img, p);
+    drawBox(p, QRectF(0, 0, img.width(), img.height()), 14 * u, statsFill(), u);
+
+    // Header: PERFORMANCE, and the host's chip on the right.
+    double y = pad;
+    drawText(p, caps, kText2, pad, centredBaseline(caps, y, headerH), QStringLiteral("Performance"));
+    {
+        const double ch = 24 * u;
+        const QRectF chip(pad + contentW - chipW, y + (headerH - ch) / 2, chipW, ch);
+        p.setPen(QPen(QColor(0xff, 0xff, 0xff, 0x30), qMax(1.0, u)));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(chip, ch / 2, ch / 2);
+        drawDot(p, QPointF(chip.left() + 9 * u + 3.5 * u, chip.center().y()), 7 * u, alert ? kDanger : kOnline);
+        drawText(p, chipFont, kText, chip.left() + 9 * u + 7 * u + 6 * u, centredBaseline(chipFont, chip.top(), ch), m_HostName);
+    }
+    y += headerH;
+
+    for (const OverlayCardSection& s : card.sections) {
+        y += gap;
+        p.setPen(QPen(kLine, qMax(1.0, u)));
+        p.drawLine(QPointF(pad, y - gap / 2), QPointF(pad + contentW, y - gap / 2));
+        drawText(p, caps, kText3, pad, centredBaseline(caps, y + 4 * u, titleH - 4 * u), s.title);
+        y += titleH;
+        for (const OverlayCardRow& r : s.rows) {
+            if (r.warn) {
+                p.setPen(Qt::NoPen);
+                p.setBrush(kDanger);
+                const double mh = rowH * 0.62;
+                p.drawRoundedRect(QRectF(pad - 10 * u, y + (rowH - mh) / 2, 3 * u, mh), 1.5 * u, 1.5 * u);
+            }
+            drawText(p, label, kText2, pad, centredBaseline(label, y, rowH), r.label);
+            const double vw = textWidth(value, r.value);
+            drawText(p, value, r.warn ? kDanger : kText, pad + contentW - vw, centredBaseline(value, y, rowH), r.value);
+            y += rowH;
+        }
+    }
+
+    p.end();
+    return toSurface(img);
+}
+
+/*
+ * The bar (8.3.0, direction A): a pill at the top centre, the status dot first, then the entries
+ * between thin dividers — each a label in small capitals, the value in mono and its unit. Past
+ * 85% of the viewport's width it wraps, between entries only, each line centred.
+ *
+ * ⚠️ The width is kept steady on purpose. The bar is centred, so a width that followed the
+ * digits would move both of its edges every second; instead each value has a slot as wide as
+ * the widest that figure has been this session, and is right-aligned in it.
+ */
+SDL_Surface* OverlayManager::buildBarSurface(OverlayType type)
+{
+    QMutexLocker lock(&m_ContentLock);
+    const OverlayBar& bar = m_Bars[type];
+    if (bar.entries.isEmpty()) {
+        return nullptr;
+    }
+
+    const double u = unitFor(statsSizeFactor());
+    if (u != m_SlotUnit) {
+        m_BarSlotWidths.clear();
+        m_CardSlotWidths.clear();
+        m_SlotUnit = u;
+    }
+
+    const QFont caps = capsFont(11 * u, u);
+    const QFont value = monoFont(17 * u);
+    const QFont unit = sansFont(12.5 * u);
+    const double lineH = 44 * u, padX = 16 * u, dotD = 9 * u, space = 14 * u, inner = 7 * u;
+
+    // Every entry's width, its values in their slots.
+    struct PartLayout { double labelW; double slotW; double valueW; double unitW; };
+    QVector<QVector<PartLayout>> layouts;
+    QVector<double> entryW;
+    bool alert = false;
+    for (const OverlayBarEntry& e : bar.entries) {
+        QVector<PartLayout> parts;
+        double w = 0;
+        for (int i = 0; i < e.parts.size(); i++) {
+            const OverlayBarPart& part = e.parts[i];
+            alert = alert || part.warn;
+            PartLayout pl;
+            pl.labelW = part.label.isEmpty() ? 0 : textWidth(caps, part.label);
+            pl.valueW = textWidth(value, part.value);
+            pl.slotW = qMax(pl.valueW, double(m_BarSlotWidths.value(part.key, 0)));
+            m_BarSlotWidths.insert(part.key, qCeil(pl.slotW));
+            pl.unitW = part.unit.isEmpty() ? 0 : textWidth(unit, part.unit);
+            w += (i > 0 ? space : 0) + (pl.labelW > 0 ? pl.labelW + inner : 0) + pl.slotW + (pl.unitW > 0 ? inner * 0.7 + pl.unitW : 0);
+            parts.append(pl);
+        }
+        layouts.append(parts);
+        entryW.append(w);
+    }
+
+    // Whole entries per line; the first line also carries the dot.
+    const double divider = space * 2 + qMax(1.0, u);
+    const double maxLineW = viewportWidth() * 0.85 - padX * 2;
+    QVector<QVector<int>> lines;
+    QVector<double> lineW;
+    {
+        QVector<int> cur;
+        double w = dotD + space;
+        for (int e = 0; e < entryW.size(); e++) {
+            const double add = cur.isEmpty() ? entryW[e] : divider + entryW[e];
+            if (!cur.isEmpty() && w + add > maxLineW) {
+                lines.append(cur);
+                lineW.append(w);
+                cur.clear();
+                w = entryW[e];
+            }
+            else {
+                w += add;
+            }
+            cur.append(e);
+        }
+        lines.append(cur);
+        lineW.append(w);
+    }
+    double contentW = 0;
+    for (double w : lineW) {
+        contentW = qMax(contentW, w);
+    }
+
+    const double h = lineH * lines.size();
+    QImage img = newCanvas(qCeil(contentW + padX * 2), qCeil(h));
+    QPainter p;
+    beginPaint(img, p);
+    drawBox(p, QRectF(0, 0, img.width(), img.height()), lines.size() == 1 ? h / 2 : 18 * u, statsFill(), u);
+
+    for (int l = 0; l < lines.size(); l++) {
+        const double top = l * lineH;
+        const double baseline = centredBaseline(value, top, lineH);
+        double x = padX + (contentW - lineW[l]) / 2;
+        if (l == 0) {
+            drawDot(p, QPointF(x + dotD / 2, top + lineH / 2), dotD, alert ? kDanger : kOnline);
+            x += dotD + space;
+        }
+        for (int n = 0; n < lines[l].size(); n++) {
+            const int e = lines[l][n];
+            if (n > 0) {
+                x += space;
+                p.setPen(QPen(QColor(0xff, 0xff, 0xff, 0x30), qMax(1.0, u)));
+                p.drawLine(QPointF(x, top + lineH * 0.28), QPointF(x, top + lineH * 0.72));
+                x += qMax(1.0, u) + space;
+            }
+            const OverlayBarEntry& entry = bar.entries[e];
+            for (int i = 0; i < entry.parts.size(); i++) {
+                const OverlayBarPart& part = entry.parts[i];
+                const PartLayout& pl = layouts[e][i];
+                if (i > 0) {
+                    x += space;
+                }
+                if (pl.labelW > 0) {
+                    drawText(p, caps, part.warn ? QColor(0xf8, 0x71, 0x71, 0xCC) : kText3, x, baseline, part.label);
+                    x += pl.labelW + inner;
+                }
+                drawText(p, value, part.warn ? kDanger : kText, x + pl.slotW - pl.valueW, baseline, part.value);
+                x += pl.slotW;
+                if (pl.unitW > 0) {
+                    x += inner * 0.7;
+                    drawText(p, unit, kText2, x, baseline, part.unit);
+                    x += pl.unitW;
+                }
+            }
+        }
+    }
+
+    p.end();
+    return toSurface(img);
+}
+
+/*
+ * The Stream Settings panel (8.3.0: B's row of tiles in A's surfaces): a card at the bottom
+ * centre — the title, what it applies to and the chip of where Save writes, then a tile per
+ * setting. The selected tile is washed in the accent with an accent edge and its value in an
+ * accent pill; a changed value carries the amber dot; the bitrate sits on a gauge. Under them a
+ * rule, the status line and the controller prompts.
+ *
+ * ⚠️ Always Medium, whatever size the stats overlay has: this one is a control being operated,
+ * and it has to stay legible whatever someone picked for a readout — as before 8.3.0.
+ */
 SDL_Surface* OverlayManager::buildPanelSurface(OverlayType type)
 {
     const OverlayPanel& panel = m_Panels[type];
-    TTF_Font* main = m_Overlays[type].font;
-    TTF_Font* small = panelSmallFont(type);
-    if (main == nullptr) {
+    if (panel.rows.isEmpty()) {
         return nullptr;
     }
-    if (small == nullptr) {
-        small = main;
-    }
 
-    const int mainH  = TTF_FontHeight(main);
-    const int smallH = TTF_FontHeight(small);
+    const double u = unitFor(1.0);
+    const QFont title = sansFont(21 * u, QFont::DemiBold);
+    const QFont subtitle = sansFont(13 * u);
+    const QFont chipFont = sansFont(12.5 * u, QFont::DemiBold);
+    const QFont caps = capsFont(11 * u, u);
+    const QFont value = monoFont(17 * u);
+    const QFont hint = sansFont(12 * u);
+    const QFont status = sansFont(13 * u);
+    const QFont prompt = sansFont(14 * u, QFont::Medium);
 
-    // Layout metrics
-    const int kPadX = 16;
-    const int kPadTop = 12, kPadBottom = 14;
-    const int rowH = mainH + 10;
-    const int headerH = smallH + 12;
-    const int gapHeaderRows = 8;
-    const int dividerGap = 9;
-    const int statusH = smallH + 8;
-    const int footerH = mainH + 12;
-    const int colGap = 18;
-    const int arrowW = 6, arrowH = qMax(8, mainH / 2), arrowGap = 9;
-    const int hintGap = 9;
-    const int radius = 12;
+    const double pad = 22 * u, tileW = 176 * u, tileH = 112 * u, tileGap = 10 * u;
+    const double headerH = 30 * u, vgap = 14 * u, footerH = 26 * u, glyph = 22 * u;
 
-    auto measMain  = [&](const QString& s) { return textSeg(main,  s, {}, nullptr, 0, 0); };
-    auto measSmall = [&](const QString& s) { return textSeg(small, s, {}, nullptr, 0, 0); };
+    const int n = panel.rows.size();
+    const double innerW = n * tileW + (n - 1) * tileGap;
+    const double w = innerW + pad * 2;
+    const double h = pad + headerH + vgap + tileH + vgap + qMax(1.0, u) + vgap + footerH + pad;
 
-    auto labelStartX = [&](const OverlayRow& r) {
-        return kPadX + (r.indent ? 16 : 0);
-    };
-    auto clusterWidth = [&](const OverlayRow& r) {
-        int w = measMain(r.value);
-        if (r.showArrows) w += (arrowW + arrowGap) * 2;
-        if (!r.hint.isEmpty()) w += measSmall(r.hint) + hintGap;
-        if (!r.trailingGlyph.isEmpty()) w += measSmall(r.trailingGlyph) + 10;
-        return w;
-    };
+    QImage img = newCanvas(qCeil(w), qCeil(h));
+    QPainter p;
+    beginPaint(img, p);
+    drawBox(p, QRectF(0, 0, img.width(), img.height()), 16 * u, QColor(0x0f, 0x15, 0x19, 0xF0), u);
 
-    // --- Measure: find the panel inner width
-    int maxRight = 0;
-    for (const OverlayRow& r : panel.rows) {
-        int right = labelStartX(r) + measMain(r.label) + colGap + clusterWidth(r);
-        maxRight = qMax(maxRight, right);
-    }
+    // Header.
+    double y = pad;
     {
-        int hdr = kPadX + measSmall(panel.title) + 28 + measSmall(panel.badgeText);
-        maxRight = qMax(maxRight, hdr);
-    }
-    if (!panel.statusLine.isEmpty()) {
-        maxRight = qMax(maxRight, kPadX + measSmall(panel.statusLine));
-    }
-    const int badgeR = smallH / 2 + 2;
-    const int iconSize = mainH + 2;
-    auto badgeDim = [&](const OverlayBadge& b) {
-        return b.iconPath.isEmpty() ? badgeR * 2 : iconSize;
-    };
-    {
-        int fr = kPadX;
-        for (int i = 0; i < panel.footerBadges.size(); i++) {
-            fr += badgeDim(panel.footerBadges[i]) + 7 + measMain(panel.footerBadges[i].label);
-            if (i + 1 < panel.footerBadges.size()) fr += 18;
+        const double bl = centredBaseline(title, y, headerH);
+        drawText(p, title, kText, pad, bl, panel.title);
+        if (!panel.subtitle.isEmpty()) {
+            drawText(p, subtitle, kText2, pad + textWidth(title, panel.title) + 12 * u, bl, panel.subtitle);
         }
-        maxRight = qMax(maxRight, fr);
-    }
-
-    const int panelW = maxRight + kPadX;
-    int panelH = kPadTop + headerH + 1 + gapHeaderRows
-               + panel.rows.size() * rowH
-               + dividerGap + 1 + dividerGap
-               + (panel.statusLine.isEmpty() ? 0 : statusH)
-               + (panel.footerBadges.isEmpty() ? 0 : footerH)
-               + kPadBottom;
-
-    SDL_Surface* surf = SDL_CreateRGBSurfaceWithFormat(
-        0, panelW, panelH, 32, SDL_PIXELFORMAT_ARGB8888);
-    if (surf == nullptr) {
-        return nullptr;
-    }
-    SDL_FillRect(surf, nullptr, SDL_MapRGBA(surf->format, 0, 0, 0, 0));
-
-    // Card background
-    fillRoundedRect(surf, 0, 0, panelW, panelH, radius, SDL_Color{0x16, 0x16, 0x19, 0xF2});
-
-    // Colors
-    const SDL_Color cTitle   = {0xB8, 0xBC, 0xC2, 0xFF};
-    const SDL_Color cDivider = {0x33, 0x33, 0x39, 0xFF};
-    const SDL_Color cLabel   = {0xCE, 0xD2, 0xD6, 0xFF};
-    const SDL_Color cLabelSel= {0x4A, 0xDE, 0x80, 0xFF};
-    const SDL_Color cHint    = {0x76, 0x7A, 0x80, 0xFF};
-    const SDL_Color cArrow   = {0x66, 0x6A, 0x70, 0xFF};
-    const SDL_Color cArrowSel= {0xC2, 0xC6, 0xCC, 0xFF};
-    const SDL_Color cSelBar  = {0x22, 0xC5, 0x5E, 0xFF};
-    const SDL_Color cSelRow  = {0x21, 0x2F, 0x26, 0xF2};
-    const SDL_Color cBadgeTxt = {0xFF, 0xFF, 0xFF, 0xFF};
-    const SDL_Color cFootLbl  = {0xCE, 0xD2, 0xD6, 0xFF};
-
-    int y = kPadTop;
-
-    // --- Header: title (left) + target chip (right)
-    {
-        int cy = y + headerH / 2;
-        textSeg(small, panel.title, cTitle, surf, kPadX, cy);
         if (!panel.badgeText.isEmpty()) {
-            int bw = measSmall(panel.badgeText);
-            textSeg(small, panel.badgeText, panel.badgeColor, surf,
-                    panelW - kPadX - bw, cy);
+            const double ch = 26 * u;
+            const double cw = textWidth(chipFont, panel.badgeText) + 7 * u + 6 * u + 22 * u;
+            const QRectF chip(pad + innerW - cw, y + (headerH - ch) / 2, cw, ch);
+            p.setPen(QPen(QColor(0xf3, 0xf7, 0xf8, 0x42), qMax(1.0, u)));
+            p.setBrush(QColor(0xf3, 0xf7, 0xf8, 0x12));
+            p.drawRoundedRect(chip, ch / 2, ch / 2);
+            drawDot(p, QPointF(chip.left() + 11 * u + 3.5 * u, chip.center().y()), 7 * u, fromSdl(panel.badgeColor));
+            drawText(p, chipFont, kText, chip.left() + 11 * u + 7 * u + 6 * u, centredBaseline(chipFont, chip.top(), ch), panel.badgeText);
         }
-        y += headerH;
-        fillRect(surf, kPadX, y, panelW - kPadX * 2, 1, cDivider);
-        y += 1 + gapHeaderRows;
     }
+    y += headerH + vgap;
 
-    // --- Rows
-    for (const OverlayRow& r : panel.rows) {
-        int rowCentre = y + rowH / 2;
+    // The tiles.
+    for (int i = 0; i < n; i++) {
+        const OverlayRow& r = panel.rows[i];
+        const QRectF tile(pad + i * (tileW + tileGap), y, tileW, tileH);
+        const bool sel = r.selected && !r.dimmed;
 
-        if (r.selected) {
-            fillRect(surf, 5, y + 2, panelW - 10, rowH - 4, cSelRow);
-            fillRoundedRect(surf, 8, y + 5, 3, rowH - 10, 1, cSelBar);
+        QColor fill = sel ? QColor(m_Accent.red(), m_Accent.green(), m_Accent.blue(), 0x1F) : QColor(0xf3, 0xf7, 0xf8, 0x0A);
+        const double edge = sel ? qMax(1.5, 2 * u) : qMax(1.0, u);
+        p.setPen(QPen(sel ? m_Accent : kLine, edge));
+        p.setBrush(fill);
+        p.drawRoundedRect(tile.adjusted(edge / 2, edge / 2, -edge / 2, -edge / 2), 12 * u, 12 * u);
+
+        // Label, with the amber dot when the value differs from what the stream runs with.
+        const QString lbl = r.indent ? QStringLiteral("· ") + r.label : r.label;
+        const double lblBase = centredBaseline(caps, tile.top() + 8 * u, 22 * u);
+        drawText(p, caps, r.dimmed ? kText3 : sel ? kText : kText3, tile.left() + 14 * u, lblBase, lbl);
+        if (r.changed) {
+            drawDot(p, QPointF(tile.left() + 14 * u + textWidth(caps, lbl) + 9 * u, tile.top() + 19 * u), 7 * u, kWarning);
+        }
+        // Read-only: a padlock in the corner, so it says why the tile is grey.
+        if (r.dimmed) {
+            drawLock(p, QPointF(tile.right() - 14 * u - 11 * u, tile.top() + 26 * u), 15 * u, kText3);
         }
 
-        // A dimmed row is read-only (e.g. frame pacing while V-Sync is off):
-        // label and value are drawn in the muted hint colour so it reads as
-        // information rather than as something the user failed to select.
-        SDL_Color lc = r.dimmed ? cHint
-                     : r.selected ? cLabelSel
-                     : (r.labelColor.a ? r.labelColor : cLabel);
-        textSeg(main, r.label, lc, surf, labelStartX(r), rowCentre);
+        // The value in its pill.
+        const double pillH = 34 * u;
+        const double pillW = qMin(tileW - 24 * u, textWidth(value, r.value) + 22 * u);
+        const QRectF pill(tile.left() + 12 * u, tile.top() + 38 * u, pillW, pillH);
+        p.setPen(Qt::NoPen);
+        p.setBrush(sel ? m_Accent : QColor(0xf3, 0xf7, 0xf8, r.dimmed ? 0x0A : 0x12));
+        p.drawRoundedRect(pill, 8 * u, 8 * u);
+        drawText(p, value, sel ? m_OnAccent : r.dimmed ? kText3 : kText,
+                 pill.left() + (pill.width() - textWidth(value, r.value)) / 2, centredBaseline(value, pill.top(), pillH), r.value);
 
-        SDL_Color ac = r.selected ? cArrowSel : cArrow;
-
-        // Lay the right cluster from the right edge inward.
-        int curRight = panelW - kPadX;
-        if (!r.trailingGlyph.isEmpty()) {
-            int tw = measSmall(r.trailingGlyph);
-            textSeg(small, r.trailingGlyph, r.trailingColor, surf, curRight - tw, rowCentre);
-            curRight -= tw + 10;
+        // Under the value: what to press and the hint, and the gauge if the tile has one —
+        // then thinner and at the very bottom, with the words just above it (30/10/2026: the
+        // bitrate tile said nothing about ▲▼, its gauge sat where the others print it).
+        QString under = r.hint;
+        if (sel && r.showArrows) {
+            under = QStringLiteral("▲▼  ") + (r.hint.isEmpty() ? QStringLiteral("change") : r.hint);
         }
-        if (r.showArrows) {
-            fillArrow(surf, curRight - arrowW, rowCentre - arrowH / 2, arrowW, arrowH, +1, ac);
-            curRight -= arrowW + arrowGap;
-        }
-        int vw = measMain(r.value);
-        SDL_Color vc = r.dimmed ? cHint
-                     : r.valueColor.a ? r.valueColor
-                     : SDL_Color{0xF0, 0xF0, 0xF0, 0xFF};
-        textSeg(main, r.value, vc, surf, curRight - vw, rowCentre);
-        curRight -= vw;
-        if (r.showArrows) {
-            curRight -= arrowGap;
-            fillArrow(surf, curRight - arrowW, rowCentre - arrowH / 2, arrowW, arrowH, -1, ac);
-            curRight -= arrowW;
-        }
-        if (!r.hint.isEmpty()) {
-            curRight -= hintGap;
-            int hw = measSmall(r.hint);
-            textSeg(small, r.hint, cHint, surf, curRight - hw, rowCentre);
-        }
-
-        y += rowH;
-    }
-
-    // --- Divider before footer
-    y += dividerGap;
-    fillRect(surf, kPadX, y, panelW - kPadX * 2, 1, cDivider);
-    y += 1 + dividerGap;
-
-    // --- Status line
-    if (!panel.statusLine.isEmpty()) {
-        textSeg(small, panel.statusLine, panel.statusColor, surf, kPadX, y + statusH / 2);
-        y += statusH;
-    }
-
-    // --- Footer badges: vendor controller-button SVG (or flat circle) + label
-    if (!panel.footerBadges.isEmpty()) {
-        int cy = y + footerH / 2;
-        int x = kPadX;
-        for (const OverlayBadge& b : panel.footerBadges) {
-            int dim = badgeDim(b);
-            if (!b.iconPath.isEmpty()) {
-                blitSvgIcon(surf, b.iconPath, x, cy - iconSize / 2, iconSize);
-            } else {
-                int cx = x + badgeR;
-                fillCircle(surf, cx, cy, badgeR, b.color);
-                int gw = measSmall(b.glyph);
-                textSeg(small, b.glyph, cBadgeTxt, surf, cx - gw / 2, cy);
+        if (r.gauge >= 0) {
+            const QRectF track(tile.left() + 14 * u, tile.bottom() - 13 * u, tileW - 28 * u, 4 * u);
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor(0xf3, 0xf7, 0xf8, 0x1F));
+            p.drawRoundedRect(track, 2 * u, 2 * u);
+            p.setBrush(m_Accent);
+            p.drawRoundedRect(QRectF(track.left(), track.top(), track.width() * qBound(0.0, r.gauge, 1.0), track.height()), 2 * u, 2 * u);
+            if (!under.isEmpty()) {
+                drawText(p, hint, kText3, tile.left() + 14 * u, centredBaseline(hint, tile.top() + 74 * u, 18 * u), under);
             }
-            x += dim + 7;
-            int lw = measMain(b.label);
-            textSeg(main, b.label, cFootLbl, surf, x, cy);
-            x += lw + 18;
         }
-        y += footerH;
+        else if (!under.isEmpty()) {
+            drawText(p, hint, kText3, tile.left() + 14 * u, centredBaseline(hint, tile.bottom() - 30 * u, 20 * u), under);
+        }
+    }
+    y += tileH + vgap;
+
+    // Rule, status, prompts.
+    p.setPen(QPen(kLine, qMax(1.0, u)));
+    p.drawLine(QPointF(pad, y), QPointF(pad + innerW, y));
+    y += qMax(1.0, u) + vgap;
+
+    drawText(p, status, fromSdl(panel.statusColor), pad, centredBaseline(status, y, footerH), panel.statusLine);
+
+    double promptsW = 0;
+    for (int i = 0; i < panel.footerBadges.size(); i++) {
+        promptsW += (i > 0 ? 20 * u : 0) + glyph + 7 * u + textWidth(prompt, panel.footerBadges[i].label);
+    }
+    double x = pad + innerW - promptsW;
+    for (int i = 0; i < panel.footerBadges.size(); i++) {
+        const OverlayBadge& b = panel.footerBadges[i];
+        if (i > 0) {
+            x += 20 * u;
+        }
+        drawSvg(p, b.iconPath, QRectF(x, y + (footerH - glyph) / 2, glyph, glyph));
+        x += glyph + 7 * u;
+        drawText(p, prompt, i == 0 ? kText : kText2, x, centredBaseline(prompt, y, footerH), b.label);
+        x += textWidth(prompt, b.label);
     }
 
-    return surf;
+    p.end();
+    return toSurface(img);
 }

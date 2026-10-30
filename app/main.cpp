@@ -65,6 +65,7 @@
 #include "settings/inputhints.h"
 #include "backend/powerstatus.h"
 #include "backend/windowmove.h"
+#include "backend/windowchrome.h"
 #include "backend/uisound.h"
 #include "backend/gradientimage.h"
 #include "gui/sdlgamepadkeynavigation.h"
@@ -1138,6 +1139,11 @@ int main(int argc, char *argv[])
                                          [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                              return WindowMove::get(qmlEngine);
                                          });
+    qmlRegisterSingletonType<WindowChrome>("WindowChrome", 1, 0,
+                                           "WindowChrome",
+                                           [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
+                                               return WindowChrome::get(qmlEngine);
+                                           });
     qmlRegisterSingletonType<UiSound>("UiSound", 1, 0,
                                       "UiSound",
                                       [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {

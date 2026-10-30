@@ -63,8 +63,8 @@ Everything below is in the current release, whichever version first introduced i
 - **Time, date and battery** in the top right of every screen, in the clock and date format you read
 
 **🎬 In-stream**
-- **Performance overlay, built line by line** — thirteen lines to choose from, switched on and off *on the overlay itself* in Settings, plus corner, text colour, font size and transparency. Minimal / Default / Full remain as starting points
-- **Stream Settings panel** — change resolution, frame rate, bitrate, HDR and frame pacing **while streaming**, applied with a brief reconnect and host-agnostic. It takes the corner the performance overlay is not using
+- **Performance overlay, built line by line** — thirteen lines to choose from, switched on and off *on the overlay itself* in Settings, plus corner, size and transparency. Minimal / Default / Full remain as starting points. *(8.3.0+)* A card in sections or a **bar** at the top centre with its own presets, in the app's fonts and accent, sized to the screen; a figure turns red when it signals a problem
+- **Stream Settings panel** — change resolution, frame rate, bitrate, HDR and frame pacing **while streaming**, applied with a brief reconnect and host-agnostic. *(8.3.0+)* A row of tiles at the bottom centre, clear of the performance overlay
 - **Custom resolutions and frame rates** — any width and height, and any rate, not just the presets, from Settings or the in-stream panel
 - **Your display's own values are offered too** *(5.5.0+)* — the resolution and refresh rate this machine reports appear in the pickers, so a 165 Hz or 16:10 screen needs nothing typed in. Marked with a dot in *Settings* and with the words *this display* in the in-stream panel, which offers the same list
 - **Frame pacing** — Off or On, evening frames out with the same software pacer Moonlight uses
@@ -114,14 +114,17 @@ All of them are switched on **per host**, in the **Setup** tab of the host's Str
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in the section's *Setup* tab; the host has its own switch
 
-## ✨ What's New in 8.2.0 — Front Door
+## ✨ What's New in 8.3.0 — At a Glance
 
-Works with any host; deleting a session needs StreamTweak 10.0.6.
+Works with any host.
 
-- **Start at sign-in** — turn it on in *Settings → Interface* and StreamLight opens when you sign in to Windows, its opening animation stopping on a choice: **A** starts StreamLight, **B** goes to the Windows desktop, and after 10 seconds untouched StreamLight opens by itself. Your hosts are not contacted until you choose StreamLight, so going to the desktop never wakes one
-- **Delete a session** — in the StreamTweak section's Sessions tab, the **right stick click** (Del) deletes the selected session after a confirmation, on the host too
-- **Sessions keep up** — the session you just finished appears in the Sessions tab by itself, once StreamTweak has closed it
-- **No false "still running"** — after *Quit session*, a game that takes a few seconds to close is no longer reported as still running on the host, and the StreamTweak section's Dashboard no longer shows it as streaming to another device
+- **New in-stream overlays** — the card, the bar and the Stream Settings panel drawn with the app's fonts and your accent, sized to the screen: Large is as readable at 4K as at 1080p
+- **Overlay as a bar** — *Settings → Overlay → Layout: Bar* puts the performance overlay on one line at the top centre (FPS · Bandwidth · Network · Decode · Frame loss) — the same five as the card's Default, and the same Minimal too
+- **The card in sections** — Stream, Network, This device and Host, in the top corner you choose
+- **Stream Settings as tiles** — at the bottom centre, clear of the overlay; left and right pick a setting, up and down change it
+- **Problems in red** — a figure of the Default view turns red when it is a problem you feel: frames lost from 1%, latency over 60 ms, decoding slower than one frame; figures you add are shown, never red
+- **No title bar** — the background runs up to the top of the window, with only minimize, maximize and close, in the app's theme; snap layouts still work
+- **Scroll bars and sliders in your accent** — one thin scroll bar and one slider for the whole app
 
 *Older releases are in [changelog.txt](changelog.txt).*
 

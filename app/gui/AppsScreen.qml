@@ -1648,7 +1648,7 @@ FocusScope {
          * ⚠️ mirrored, not a negative x: the handle has to grow from the correct side, and
          * LayoutMirroring on the bar alone flips it without touching the list's own layout.
          */
-        ScrollBar.vertical: ScrollBar {
+        ScrollBar.vertical: ThemedScrollBar {
             parent: appList
             anchors.left: parent.left
             anchors.top: parent.top
@@ -1705,7 +1705,7 @@ FocusScope {
         Keys.onEnterPressed: function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
         Keys.onSpacePressed: function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
 
-        ScrollBar.vertical: ScrollBar {}
+        ScrollBar.vertical: ThemedScrollBar { }
     }
 
     // The launch, resume and quit paths are identical in both layouts.

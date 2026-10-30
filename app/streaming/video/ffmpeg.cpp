@@ -1217,7 +1217,33 @@ void FFmpegVideoDecoder::finalizeActiveVideoStats()
     SDL_zero(m_ActiveWndVideoStats);
 }
 
-void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, int length, bool forceFullDetail)
+// The codec as the overlay names it, for the card's Video stream line and the bar alike.
+static const char* videoCodecName(int videoFormat)
+{
+    const bool hdr = LiGetCurrentHostDisplayHdrMode();
+    switch (videoFormat)
+    {
+    case VIDEO_FORMAT_H264:              return "H.264";
+    case VIDEO_FORMAT_H264_HIGH8_444:    return "H.264 4:4:4";
+    case VIDEO_FORMAT_H265:              return "HEVC";
+    case VIDEO_FORMAT_H265_REXT8_444:    return "HEVC 4:4:4";
+    case VIDEO_FORMAT_H265_MAIN10:       return hdr ? "HEVC 10-bit HDR" : "HEVC 10-bit SDR";
+    case VIDEO_FORMAT_H265_REXT10_444:   return hdr ? "HEVC 10-bit HDR 4:4:4" : "HEVC 10-bit SDR 4:4:4";
+    case VIDEO_FORMAT_AV1_MAIN8:         return "AV1";
+    case VIDEO_FORMAT_AV1_HIGH8_444:     return "AV1 4:4:4";
+    case VIDEO_FORMAT_AV1_MAIN10:        return hdr ? "AV1 10-bit HDR" : "AV1 10-bit SDR";
+    case VIDEO_FORMAT_AV1_HIGH10_444:    return hdr ? "AV1 10-bit HDR 4:4:4" : "AV1 10-bit SDR 4:4:4";
+    case VIDEO_FORMAT_PYROWAVE:          return "PyroWave";
+    case VIDEO_FORMAT_PYROWAVE_444:      return "PyroWave 4:4:4";
+    case VIDEO_FORMAT_PYROWAVE_HDR10:    return hdr ? "PyroWave 10-bit HDR" : "PyroWave 10-bit SDR";
+    case VIDEO_FORMAT_PYROWAVE_HDR10_444: return hdr ? "PyroWave 10-bit HDR 4:4:4" : "PyroWave 10-bit SDR 4:4:4";
+    default:
+        SDL_assert(false);
+        return "UNKNOWN";
+    }
+}
+
+void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, int length)
 {
     int offset = 0;
     const char* codecString;
@@ -1230,110 +1256,18 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
     // Start with an empty string
     output[offset] = 0;
 
-    // The lines the user asked for (Settings > Overlay). Replaces the fixed
-    // Off/Minimal/Default/Full profiles: verbosity levels were three guesses at
-    // which figures matter, and which ones matter is personal.
-    //
-    // The log summary passes forceFullDetail and gets everything, because a
-    // diagnostic log that silently empties itself when the user has the overlay
-    // off — the default — is worse than useless: the people least likely to run
-    // the overlay are the ones we ask for logs.
-    const int items = forceFullDetail
-            ? static_cast<int>(StreamingPreferences::OI_ALL)
-            : StreamingPreferences::get()->overlayItems;
-    if (items == 0) {
-        return;
-    }
+    // The log summary, and since 8.3.0 only that: the overlay builds its own card and bar
+    // (buildOverlayCard, buildOverlayBar). Every line, whatever the overlay shows, because a
+    // diagnostic log that silently empties itself when the user has the overlay off — the
+    // default — is worse than useless: the people least likely to run the overlay are the ones
+    // we ask for logs. WANT() stays so each block still says which item it is.
+    const int items = StreamingPreferences::OI_ALL;
 #define WANT(bit) ((items & StreamingPreferences::bit) != 0)
 
-    switch (m_VideoFormat)
-    {
-    case VIDEO_FORMAT_H264:
-        codecString = "H.264";
-        break;
-
-    case VIDEO_FORMAT_H264_HIGH8_444:
-        codecString = "H.264 4:4:4";
-        break;
-
-    case VIDEO_FORMAT_H265:
-        codecString = "HEVC";
-        break;
-
-    case VIDEO_FORMAT_H265_REXT8_444:
-        codecString = "HEVC 4:4:4";
-        break;
-
-    case VIDEO_FORMAT_H265_MAIN10:
-        if (LiGetCurrentHostDisplayHdrMode()) {
-            codecString = "HEVC 10-bit HDR";
-        }
-        else {
-            codecString = "HEVC 10-bit SDR";
-        }
-        break;
-
-    case VIDEO_FORMAT_H265_REXT10_444:
-        if (LiGetCurrentHostDisplayHdrMode()) {
-            codecString = "HEVC 10-bit HDR 4:4:4";
-        }
-        else {
-            codecString = "HEVC 10-bit SDR 4:4:4";
-        }
-        break;
-
-    case VIDEO_FORMAT_AV1_MAIN8:
-        codecString = "AV1";
-        break;
-
-    case VIDEO_FORMAT_AV1_HIGH8_444:
-        codecString = "AV1 4:4:4";
-        break;
-
-    case VIDEO_FORMAT_AV1_MAIN10:
-        if (LiGetCurrentHostDisplayHdrMode()) {
-            codecString = "AV1 10-bit HDR";
-        }
-        else {
-            codecString = "AV1 10-bit SDR";
-        }
-        break;
-
-    case VIDEO_FORMAT_AV1_HIGH10_444:
-        if (LiGetCurrentHostDisplayHdrMode()) {
-            codecString = "AV1 10-bit HDR 4:4:4";
-        }
-        else {
-            codecString = "AV1 10-bit SDR 4:4:4";
-        }
-        break;
-
-    case VIDEO_FORMAT_PYROWAVE:
-        codecString = "PyroWave";
-        break;
-
-    case VIDEO_FORMAT_PYROWAVE_444:
-        codecString = "PyroWave 4:4:4";
-        break;
-
-    case VIDEO_FORMAT_PYROWAVE_HDR10:
-        codecString = LiGetCurrentHostDisplayHdrMode() ? "PyroWave 10-bit HDR" : "PyroWave 10-bit SDR";
-        break;
-
-    case VIDEO_FORMAT_PYROWAVE_HDR10_444:
-        codecString = LiGetCurrentHostDisplayHdrMode() ? "PyroWave 10-bit HDR 4:4:4" : "PyroWave 10-bit SDR 4:4:4";
-        break;
-
-    default:
-        SDL_assert(false);
-        codecString = "UNKNOWN";
-        break;
-    }
+    codecString = videoCodecName(m_VideoFormat);
 
     // The host block is resolved first because the two section headings only earn
-    // their place as a pair: with no host section there is nothing to tell apart,
-    // and "--- Client Metrics ---" is the widest line in the box — exactly the
-    // width someone trimming the overlay down is trying to get rid of.
+    // their place as a pair: with no host section there is nothing to tell apart.
     HostMetrics hostMetrics{};
     bool showHostSection = false;
     if (WANT(OI_HOST_METRICS)) {
@@ -1346,9 +1280,7 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
         }
     }
 
-    const bool anyClientItem = (items & ~static_cast<int>(StreamingPreferences::OI_HOST_METRICS)) != 0;
-
-    if (showHostSection && anyClientItem) {
+    if (showHostSection) {
         ret = snprintf(&output[offset], length - offset,
                        "--- Client Metrics (StreamLight) ---\n");
         if (ret < 0 || ret >= length - offset) {
@@ -1377,31 +1309,14 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
                 offset += ret;
             }
 
-            // The peak is a modifier of the bitrate line, not a line of its own — with
-            // the average off there is nothing for it to be the peak of, which is why
-            // the settings page greys it out in that case rather than letting it lie.
             if (WANT(OI_BITRATE)) {
-                if (forceFullDetail) {
-                    // The log summary describes the session, and the tracker's figures do
-                    // not: its average covers the last 2.25 s and its peak the last 10 s
-                    // before the line is written — the quit, the menu, the black screen.
-                    // Bytes over the same span as the frame rates (addVideoStats).
-                    ret = snprintf(&output[offset], length - offset,
-                                   "Bitrate: %.1f Mbps (session average)\n",
-                                   stats.receivedMbps);
-                }
-                else if (WANT(OI_BITRATE_PEAK)) {
-                    ret = snprintf(&output[offset], length - offset,
-                                   "Bitrate: %.1f Mbps, Peak (%us): %.1f\n",
-                                   m_BwTracker.GetAverageMbps(),
-                                   m_BwTracker.GetWindowSeconds(),
-                                   m_BwTracker.GetPeakMbps());
-                }
-                else {
-                    ret = snprintf(&output[offset], length - offset,
-                                   "Bitrate: %.1f Mbps\n",
-                                   m_BwTracker.GetAverageMbps());
-                }
+                // The log summary describes the session, and the tracker's figures do not:
+                // its average covers the last 2.25 s and its peak the last 10 s before the
+                // line is written — the quit, the menu, the black screen. Bytes over the
+                // same span as the frame rates (addVideoStats).
+                ret = snprintf(&output[offset], length - offset,
+                               "Bitrate: %.1f Mbps (session average)\n",
+                               stats.receivedMbps);
                 if (ret < 0 || ret >= length - offset) {
                     SDL_assert(false);
                     return;
@@ -1577,17 +1492,11 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
                                measurement.blockedPresents, measurement.cadenceSlips);
             }
         }
-        else if (!forceFullDetail) {
-            // Switched on but nothing measured yet — the first window has not closed, or
-            // this renderer does not instrument. Say so rather than leave a gap where the
-            // user just switched a line on and sees nothing appear.
-            ret = snprintf(&output[offset], length - offset, "Cadence: measuring...\n");
-        }
         else {
-            // ⚠️ The end-of-session summary asks for every line (forceFullDetail passes
-            // OI_ALL), but this one needs instrumentation that only runs when it was
-            // switched on. With nothing measured there is nothing to record, and
-            // "measuring..." in a log written after the stream ended would be a lie.
+            // ⚠️ The summary asks for every line, but this one needs instrumentation that
+            // only runs when the overlay's Presentation cadence is switched on. With nothing
+            // measured there is nothing to record, and "measuring..." in a log written after
+            // the stream ended would be a lie.
             ret = 0;
         }
         if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
@@ -1696,12 +1605,9 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
                 ret = snprintf(&output[offset], length - offset, "VRR pacing: Inactive\n");
             }
         }
-        else if (!forceFullDetail) {
-            ret = snprintf(&output[offset], length - offset, "VRR pacing: Off\n");
-        }
         else {
-            // The end-of-session log asks for every line; with VRR never asked for there
-            // is nothing to record.
+            // The summary asks for every line; with VRR never asked for there is nothing to
+            // record.
             ret = 0;
         }
         if (ret < 0 || ret >= length - offset) { SDL_assert(false); return; }
@@ -1766,16 +1672,12 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
         else
             snprintf(vramStr, sizeof(vramStr), "N/A");
 
-        // The heading is drawn only when there is a client section above it to be
-        // told apart from — on its own it is a title over the only thing there is.
-        // In the log summary these are the last sample the host sent, not the session:
-        // the heading says so rather than let them pass for averages.
+        // These are the last sample the host sent, not the session: the heading says so
+        // rather than let them pass for averages.
         ret = snprintf(&output[offset], length - offset,
                        "%sGPU: %s%% | Enc: %s | Temp: %sC | VRAM: %s\n"
                        "CPU: %s%% | Net TX: %s Mbps\n",
-                       !anyClientItem ? "" :
-                       forceFullDetail ? "--- Host Metrics (StreamTweak, last sample) ---\n" :
-                                         "--- Host Metrics (StreamTweak) ---\n",
+                       "--- Host Metrics (StreamTweak, last sample) ---\n",
                        gpuStr, encField, tempStr, vramStr, cpuStr, netStr);
 
         if (ret > 0 && ret < length - offset)
@@ -1785,14 +1687,398 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
 #undef WANT
 }
 
+/*
+ * Where each figure starts to be a problem you feel (8.3.0). The card and the bar draw the
+ * same values red from here, and nothing else decides it. Two rules, both already the
+ * project's own:
+ *  - StreamTweak's session grade (QualityGradeCalculator): red where the grade would drop,
+ *    so the overlay never contradicts the verdict that follows the session;
+ *  - one frame period of the stream: past it, something no longer keeps up.
+ * The figures are the overlay's own — the last two one-second windows.
+ *
+ *  - frames lost on the network, PyroWave's partial frames, frames dropped by pacing: >= 1%,
+ *    the grade's High/Medium line (2 frames in 120 at 60 FPS). The protocol's own "poor
+ *    connection" waits for 15% twice — far too late for a readout;
+ *  - network latency: > 60 ms, the grade's Low. Lower would be red all the time over
+ *    Tailscale, where 30-50 ms is normal;
+ *  - host processing latency, decoding time, frame queue delay: average > one frame period —
+ *    the host, the decoder or the queue no longer keeps one frame per frame;
+ *  - VRR: running below its own target (Nonary's, shown on the same line), or asked for and
+ *    not running.
+ * Deliberately never red: FPS (a still screen lowers it with nothing wrong — the grade
+ * leaves it out for the same reason), bitrate (follows the scene), rendering time (includes
+ * the V-Sync wait by design), host GPU/CPU/encoder (98% is a heavy game's normal), cadence.
+ *
+ * ⚠️ Only the items of the Default preset (OI_DEFAULT, the same for the card and the bar) are
+ * judged at all — Marcello, 30/10/2026. An item switched on beyond it is shown in plain colour
+ * and never turns the status dot red: with VRR pacing on, the dot was red for good, since
+ * VRR rarely reaches its own target. The other thresholds stay, in case an item joins the
+ * Default; today pacing drops, host latency, queue delay and VRR are never red.
+ */
+FFmpegVideoDecoder::OverlayWarnings FFmpegVideoDecoder::overlayWarnings(const VIDEO_STATS& stats)
+{
+    OverlayWarnings w = overlayThresholds(stats);
+    auto judged = [](int bit) { return (StreamingPreferences::OI_DEFAULT & bit) != 0; };
+    w.loss = w.loss && judged(StreamingPreferences::OI_NET_DROPS);
+    w.partial = w.partial && judged(StreamingPreferences::OI_NET_DROPS);
+    w.pacing = w.pacing && judged(StreamingPreferences::OI_JITTER_DROPS);
+    w.rtt = w.rtt && judged(StreamingPreferences::OI_LATENCY);
+    w.hostLatency = w.hostLatency && judged(StreamingPreferences::OI_HOST_LATENCY);
+    w.decode = w.decode && judged(StreamingPreferences::OI_DECODE_TIME);
+    w.queue = w.queue && judged(StreamingPreferences::OI_QUEUE_DELAY);
+    w.vrr = w.vrr && judged(StreamingPreferences::OI_VRR);
+    return w;
+}
+
+FFmpegVideoDecoder::OverlayWarnings FFmpegVideoDecoder::overlayThresholds(const VIDEO_STATS& stats)
+{
+    OverlayWarnings w;
+    const double frameMs = 1000.0 / (m_StreamFps > 0 ? m_StreamFps : 60);
+
+    if (stats.renderedFrames != 0) {
+        if (stats.totalFrames != 0) {
+            w.loss = (double)stats.networkDroppedFrames / stats.totalFrames * 100 >= 1.0;
+            w.partial = m_PyroWaveActive && (double)stats.decoderPartialFrames / stats.totalFrames * 100 >= 1.0;
+        }
+        if (stats.decodedFrames != 0) {
+            w.pacing = (double)stats.pacerDroppedFrames / stats.decodedFrames * 100 >= 1.0;
+            w.decode = (stats.totalDecodeTimeUs / 1000.0) / stats.decodedFrames > frameMs;
+        }
+        w.rtt = stats.lastRtt > 60;
+        w.queue = (stats.totalQueuePacingTimeUs / 1000.0) / stats.renderedFrames > frameMs;
+    }
+    if (stats.framesWithHostProcessingLatency > 0) {
+        w.hostLatency = (double)stats.totalHostProcessingLatency / 10 / stats.framesWithHostProcessingLatency > frameMs;
+    }
+
+    Session* session = Session::get();
+    const bool requested = session != nullptr && session->isVrrRequested();
+    if (stats.vrrTelemetryActive || stats.vrrEligibleFrames != 0 ||
+            stats.vrrPacingDroppedFrames != 0 ||
+            stats.vrrPresentFailedFrames != 0 ||
+            stats.vrrPresentCancelledFrames != 0) {
+        const auto& readiness = stats.vrrReadiness;
+        const double target = stats.vrrOnTimeTargetPerMillion / 10000.0;
+        if (!stats.vrrTelemetryActive) {
+            w.vrr = requested;
+        }
+        else if (readiness.samples != 0 && readiness.intervalPolicy) {
+            w.vrr = readiness.interval.evaluatedUs && readiness.interval.qualityPercent() < target;
+        }
+        else if (readiness.samples != 0 && !readiness.meanMissPolicy) {
+            const uint64_t late = qMin(readiness.misses, readiness.samples);
+            w.vrr = (double)(readiness.samples - late) * 100.0 / (double)readiness.samples < target;
+        }
+    }
+    else {
+        w.vrr = requested;
+    }
+
+    return w;
+}
+
+/*
+ * VRR in a few words, for the card and the bar: the smoothness the log's VRR line reports, or
+ * the state when there is no figure. `detail` adds the target ("of 99.50") and the reason VRR
+ * is not running.
+ */
+QString FFmpegVideoDecoder::vrrSummary(const VIDEO_STATS& stats, bool detail)
+{
+    auto pct = [](double v) { return QString::number(v, 'f', 2) + QStringLiteral(" %"); };
+    Session* session = Session::get();
+    if (stats.vrrTelemetryActive || stats.vrrEligibleFrames != 0 ||
+            stats.vrrPacingDroppedFrames != 0 ||
+            stats.vrrPresentFailedFrames != 0 ||
+            stats.vrrPresentCancelledFrames != 0) {
+        if (!stats.vrrTelemetryActive) {
+            return QStringLiteral("Inactive");
+        }
+        const auto& readiness = stats.vrrReadiness;
+        const QString target = detail ? QStringLiteral(" of ") + QString::number(stats.vrrOnTimeTargetPerMillion / 10000.0, 'f', 2) : QString();
+        if (readiness.samples == 0) {
+            return QStringLiteral("Starting");
+        }
+        if (readiness.intervalPolicy) {
+            return readiness.interval.evaluatedUs ? pct(readiness.interval.qualityPercent()) + target
+                                                  : QStringLiteral("Collecting");
+        }
+        if (readiness.meanMissPolicy) {
+            return pct(Vrr13::ReadinessWindow::meanMissScore(readiness));
+        }
+        const uint64_t late = qMin(readiness.misses, readiness.samples);
+        return pct((double)(readiness.samples - late) * 100.0 / (double)readiness.samples) + target;
+    }
+    if (session != nullptr && session->isVrrRequested()) {
+        const char* reason = session->vrrInactiveReason();
+        if (reason == nullptr && m_Pacer != nullptr) {
+            reason = m_Pacer->vrrFallbackReason();
+        }
+        return detail && reason != nullptr ? QStringLiteral("Inactive · ") + QString::fromLatin1(reason)
+                                           : QStringLiteral("Inactive");
+    }
+    return QStringLiteral("Off");
+}
+
+/*
+ * The overlay as a bar (Settings > Overlay > Layout = Bar, 8.3.0, issue #47): the items the
+ * user switched on for the bar (overlayBarItems — the bar keeps its own choice), each as a
+ * short entry: a label in small capitals, the value, its unit — FPS 60.0 | BANDWIDTH 41.2 Mbps |
+ * NETWORK 11 ms | DECODE 3.2 ms | FRAME LOSS 0.10 %. Same windows (the last two seconds, as the
+ * card) and the same figures as the card, cut down to the one that matters per item:
+ *  - Frame rate breakdown shows the rendering rate, the one that reaches the screen;
+ *  - Host processing latency and Network latency show the average;
+ *  - Presentation cadence has no short form and stays in the card;
+ *  - Host metrics show GPU and CPU, the rest of the block stays in the card.
+ * Its own order, the issue's: the figures you watch first, the diagnostics after.
+ * ⚠️ "Frame loss", not the issue's "Packet Loss": the figure counts frames lost on the network,
+ * and the protocol exposes no count of packets — a frame can be many packets, and FEC can
+ * recover lost packets without losing a frame. Milliseconds keep one decimal: a fast client
+ * decodes in well under one, and "0 ms" would say nothing.
+ * Red values come from overlayWarnings(), as in the card.
+ *
+ * The keys name each figure's slot in OverlayManager::buildBarSurface, which keeps the bar's
+ * width steady; they only have to be distinct.
+ */
+void FFmpegVideoDecoder::buildOverlayBar(VIDEO_STATS& stats, Overlay::OverlayBar& bar)
+{
+    const int items = StreamingPreferences::get()->overlayBarItems;
+#define WANT(bit) ((items & StreamingPreferences::bit) != 0)
+    const OverlayWarnings warn = overlayWarnings(stats);
+
+    auto add = [&bar](std::initializer_list<Overlay::OverlayBarPart> parts) {
+        Overlay::OverlayBarEntry entry;
+        for (const Overlay::OverlayBarPart& part : parts) {
+            entry.parts.append(part);
+        }
+        bar.entries.append(entry);
+    };
+    auto part = [](int key, const char* label, const QString& value, const char* unit, bool warn = false) {
+        Overlay::OverlayBarPart p;
+        p.key = key;
+        p.label = QString::fromLatin1(label);
+        p.value = value;
+        p.unit = QString::fromLatin1(unit);
+        p.warn = warn;
+        return p;
+    };
+    auto num = [](double v, int decimals) { return QString::number(v, 'f', decimals); };
+    const QString na = QStringLiteral("N/A");
+    const bool haveStream = stats.receivedFps > 0 && (m_VideoDecoderCtx != nullptr || m_PyroWaveActive);
+    const bool haveFrames = stats.renderedFrames != 0;
+
+    if (haveStream && WANT(OI_VIDEO)) {
+        const int height = m_VideoDecoderCtx != nullptr ? m_VideoDecoderCtx->height : m_OriginalVideoHeight;
+        add({ part(1, "", QStringLiteral("%1p%2 %3").arg(height).arg(m_StreamFps)
+                              .arg(QString::fromLatin1(videoCodecName(m_VideoFormat))), "") });
+    }
+    if (stats.receivedFps > 0 && WANT(OI_FRAMERATES)) {
+        add({ part(3, "FPS", num(stats.renderedFps, 1), "") });
+    }
+    if (haveStream && WANT(OI_BITRATE)) {
+        const QString value = WANT(OI_BITRATE_PEAK)
+                ? num(m_BwTracker.GetAverageMbps(), 1) + QStringLiteral(" / ") + num(m_BwTracker.GetPeakMbps(), 1)
+                : num(m_BwTracker.GetAverageMbps(), 1);
+        add({ part(2, "Bandwidth", value, "Mbps") });
+    }
+    if (WANT(OI_HOST_LATENCY)) {
+        add({ stats.framesWithHostProcessingLatency > 0
+              ? part(4, "Host", num((double)stats.totalHostProcessingLatency / 10 / stats.framesWithHostProcessingLatency, 1), "ms", warn.hostLatency)
+              : part(4, "Host", na, "") });
+    }
+    if (haveFrames && WANT(OI_LATENCY)) {
+        add({ stats.lastRtt != 0 ? part(8, "Network", QString::number(stats.lastRtt), "ms", warn.rtt)
+                                 : part(8, "Network", na, "") });
+    }
+    if (haveFrames && WANT(OI_DECODE_TIME)) {
+        add({ part(9, "Decode", num((double)(stats.totalDecodeTimeUs / 1000.0) / stats.decodedFrames, 1), "ms", warn.decode) });
+    }
+    if (haveFrames && WANT(OI_QUEUE_DELAY)) {
+        add({ part(10, "Queue", num((double)(stats.totalQueuePacingTimeUs / 1000.0) / stats.renderedFrames, 1), "ms", warn.queue) });
+    }
+    if (haveFrames && WANT(OI_RENDER_TIME)) {
+        add({ part(11, "Render", num((double)(stats.totalRenderingTimeUs / 1000.0) / stats.renderedFrames, 1), "ms") });
+    }
+    if (haveFrames && WANT(OI_NET_DROPS)) {
+        const double loss = (double)stats.networkDroppedFrames / stats.totalFrames * 100;
+        if (m_PyroWaveActive) {
+            // PyroWave shows a frame that lost packets instead of dropping it (#26).
+            add({ part(5, "Frame loss", num(loss, 2), "%", warn.loss),
+                  part(6, "Partial", num(stats.totalFrames ? (double)stats.decoderPartialFrames / stats.totalFrames * 100 : 0.0, 2), "%",
+                       warn.partial) });
+        }
+        else {
+            add({ part(5, "Frame loss", num(loss, 2), "%", warn.loss) });
+        }
+    }
+    if (haveFrames && WANT(OI_JITTER_DROPS)) {
+        add({ part(7, "Pacing", num((double)stats.pacerDroppedFrames / stats.decodedFrames * 100, 2), "%", warn.pacing) });
+    }
+    if (WANT(OI_VRR)) {
+        // The percentage takes its unit apart, as every other figure of the bar.
+        QString vrr = vrrSummary(stats, false);
+        const bool pct = vrr.endsWith(QStringLiteral(" %"));
+        if (pct) {
+            vrr.chop(2);
+        }
+        add({ part(12, "VRR", vrr, pct ? "%" : "", warn.vrr) });
+    }
+    if (WANT(OI_HOST_METRICS)) {
+        Session* s = Session::get();
+        if (s != nullptr) {
+            const HostMetrics hostMetrics = s->getHostMetrics();
+            // Drawn only when the host answered, as in the card: an empty reading would say
+            // the host is broken when StreamTweak is simply not running.
+            if (hostMetrics.gpu >= 0 || hostMetrics.cpu >= 0) {
+                add({ part(13, "GPU", hostMetrics.gpu >= 0 ? QString::number(hostMetrics.gpu) : na, hostMetrics.gpu >= 0 ? "%" : ""),
+                      part(14, "CPU", hostMetrics.cpu >= 0 ? QString::number(hostMetrics.cpu) : na, hostMetrics.cpu >= 0 ? "%" : "") });
+            }
+        }
+    }
+
+#undef WANT
+}
+
+/*
+ * The card (8.3.0): the same items as ever (overlayItems), as rows of a label and a value in
+ * sections — Stream, Network, This device, Host. A section with nothing switched on is left
+ * out. The figures are those of the log summary (stringifyVideoStats), over the same two
+ * windows, written short; red values come from overlayWarnings(), as in the bar.
+ */
+void FFmpegVideoDecoder::buildOverlayCard(VIDEO_STATS& stats, Overlay::OverlayCard& card)
+{
+    const int items = StreamingPreferences::get()->overlayItems;
+#define WANT(bit) ((items & StreamingPreferences::bit) != 0)
+    const OverlayWarnings warn = overlayWarnings(stats);
+
+    auto num = [](double v, int decimals, const char* unit) {
+        return QString::number(v, 'f', decimals) + QString::fromLatin1(unit);
+    };
+    const QString na = QStringLiteral("N/A");
+    const bool haveStream = stats.receivedFps > 0 && (m_VideoDecoderCtx != nullptr || m_PyroWaveActive);
+    const bool haveFrames = stats.renderedFrames != 0;
+
+    Session* session = Session::get();
+
+    Overlay::OverlayCardSection stream { QStringLiteral("Stream"), {} };
+    Overlay::OverlayCardSection network { QStringLiteral("Network"), {} };
+    Overlay::OverlayCardSection device { QStringLiteral("This device"), {} };
+    Overlay::OverlayCardSection host { QStringLiteral("Host"), {} };
+    auto row = [](Overlay::OverlayCardSection& s, const QString& label, const QString& value, bool w = false) {
+        s.rows.append({ label, value, w });
+    };
+
+    // Stream
+    if (haveStream && WANT(OI_VIDEO)) {
+        const int width = m_VideoDecoderCtx != nullptr ? m_VideoDecoderCtx->width : m_OriginalVideoWidth;
+        const int height = m_VideoDecoderCtx != nullptr ? m_VideoDecoderCtx->height : m_OriginalVideoHeight;
+        row(stream, QStringLiteral("Video"), QStringLiteral("%1×%2 · %3").arg(width).arg(height).arg(m_StreamFps));
+        row(stream, QStringLiteral("Codec"), QString::fromLatin1(videoCodecName(m_VideoFormat)));
+    }
+    if (stats.receivedFps > 0 && WANT(OI_FRAMERATES)) {
+        row(stream, QStringLiteral("Received"), num(stats.receivedFps, 1, " fps"));
+        row(stream, QStringLiteral("Decoded"), num(stats.decodedFps, 1, " fps"));
+        row(stream, QStringLiteral("Rendered"), num(stats.renderedFps, 1, " fps"));
+    }
+    if (haveStream && WANT(OI_BITRATE)) {
+        row(stream, QStringLiteral("Bandwidth"), WANT(OI_BITRATE_PEAK)
+            ? num(m_BwTracker.GetAverageMbps(), 1, "") + QStringLiteral(" · peak ") + num(m_BwTracker.GetPeakMbps(), 1, " Mbps")
+            : num(m_BwTracker.GetAverageMbps(), 1, " Mbps"));
+    }
+
+    // Network
+    if (haveFrames && WANT(OI_LATENCY)) {
+        row(network, QStringLiteral("Latency"), stats.lastRtt != 0
+            ? QStringLiteral("%1 ms ±%2").arg(stats.lastRtt).arg(stats.lastRttVariance) : na, warn.rtt);
+    }
+    if (haveFrames && WANT(OI_NET_DROPS)) {
+        row(network, QStringLiteral("Frame loss"), num((double)stats.networkDroppedFrames / stats.totalFrames * 100, 2, " %"), warn.loss);
+        // PyroWave shows a frame that lost packets instead of dropping it (#26).
+        if (m_PyroWaveActive && stats.totalFrames) {
+            row(network, QStringLiteral("Partial frames"), num((double)stats.decoderPartialFrames / stats.totalFrames * 100, 2, " %"), warn.partial);
+            row(network, QStringLiteral("Rejected"), num((double)stats.decoderRejectedFrames / stats.totalFrames * 100, 2, " %"));
+        }
+    }
+    if (haveFrames && WANT(OI_JITTER_DROPS)) {
+        row(network, QStringLiteral("Pacing drops"), num((double)stats.pacerDroppedFrames / stats.decodedFrames * 100, 2, " %"), warn.pacing);
+        if (m_PyroWaveActive && stats.totalFrames) {
+            row(network, QStringLiteral("Skipped"), num((double)stats.decoderSkippedFrames / stats.totalFrames * 100, 2, " %"));
+        }
+    }
+
+    // This device
+    if (haveFrames && WANT(OI_DECODE_TIME)) {
+        row(device, QStringLiteral("Decode"), num((double)(stats.totalDecodeTimeUs / 1000.0) / stats.decodedFrames, 2, " ms"), warn.decode);
+        row(device, QStringLiteral("Decoder wait"), num((double)(stats.totalDecodeQueueTimeUs / 1000.0) / stats.decodedFrames, 2, " ms"));
+    }
+    if (haveFrames && WANT(OI_QUEUE_DELAY)) {
+        row(device, QStringLiteral("Queue"), num((double)(stats.totalQueuePacingTimeUs / 1000.0) / stats.renderedFrames, 2, " ms"), warn.queue);
+    }
+    if (haveFrames && WANT(OI_RENDER_TIME)) {
+        row(device, QStringLiteral("Render"), num((double)(stats.totalRenderingTimeUs / 1000.0) / stats.renderedFrames, 2, " ms"));
+    }
+    if (WANT(OI_CADENCE)) {
+        PACING_MEASUREMENT m;
+        if (m_FrontendRenderer != nullptr && m_FrontendRenderer->getPacingMeasurement(&m)) {
+            const QString asked = m.syncInterval >= 2 ? QStringLiteral("%1:%1").arg(m.syncInterval) : QStringLiteral("immediate");
+            row(device, QStringLiteral("Cadence"), m.vblanksPerFrame < 0
+                ? asked + QStringLiteral(" · q ") + num(m.queueDepthVblanks, 1, "")
+                : asked + QStringLiteral(" · ") + num(m.vblanksPerFrame, 2, " v/f"));
+            row(device, QStringLiteral("Present wait"), num(m.presentWaitMs, 2, " ms") + QStringLiteral(" · max ") + num(m.presentWaitMaxMs, 2, ""));
+        }
+        else {
+            row(device, QStringLiteral("Cadence"), QStringLiteral("measuring"));
+        }
+    }
+    if (WANT(OI_VRR)) {
+        row(device, QStringLiteral("VRR"), vrrSummary(stats, true), warn.vrr);
+    }
+
+    // Host
+    if (WANT(OI_HOST_LATENCY)) {
+        row(host, QStringLiteral("Processing"), stats.framesWithHostProcessingLatency > 0
+            ? num((double)stats.totalHostProcessingLatency / 10 / stats.framesWithHostProcessingLatency, 1, " ms")
+              + QStringLiteral(" · max ") + num((double)stats.maxHostProcessingLatency / 10, 1, "")
+            : na, warn.hostLatency);
+    }
+    if (WANT(OI_HOST_METRICS) && session != nullptr) {
+        const HostMetrics hm = session->getHostMetrics();
+        // Only when the host answered: an empty block would say the host is broken when
+        // StreamTweak is simply not running.
+        if (hm.gpu >= 0 || hm.gpuEnc >= 0 || hm.gpuTemp >= 0 || hm.vramUsed >= 0 || hm.cpu >= 0 || hm.netTx >= 0) {
+            host.title = QStringLiteral("Host · StreamTweak");
+            auto pctOrNa = [&na](int v) { return v >= 0 ? QStringLiteral("%1 %").arg(v) : na; };
+            row(host, QStringLiteral("GPU"), pctOrNa(hm.gpu));
+            // With PyroWave the host encodes on the GPU's shaders and NVENC sits idle (6.4.0).
+            row(host, QStringLiteral("Encoder"), m_PyroWaveActive ? QStringLiteral("n/a · PyroWave") : pctOrNa(hm.gpuEnc));
+            if (hm.gpuTemp >= 0) {
+                row(host, QStringLiteral("GPU temp"), QStringLiteral("%1 °C").arg(hm.gpuTemp));
+            }
+            if (hm.vramUsed >= 0) {
+                row(host, QStringLiteral("VRAM"), hm.vramTotal >= 0
+                    ? QString::number(hm.vramUsed / 1024.0, 'f', 1) + QStringLiteral(" / ") + QString::number(hm.vramTotal / 1024.0, 'f', 1) + QStringLiteral(" GB")
+                    : QString::number(hm.vramUsed / 1024.0, 'f', 1) + QStringLiteral(" GB"));
+            }
+            row(host, QStringLiteral("CPU"), pctOrNa(hm.cpu));
+            row(host, QStringLiteral("Net TX"), hm.netTx >= 0 ? QStringLiteral("%1 Mbps").arg(hm.netTx) : na);
+        }
+    }
+
+    for (const Overlay::OverlayCardSection* s : { &stream, &network, &device, &host }) {
+        if (!s->rows.isEmpty()) {
+            card.sections.append(*s);
+        }
+    }
+
+#undef WANT
+}
+
 void FFmpegVideoDecoder::logVideoStats(VIDEO_STATS& stats, const char* title)
 {
     if (stats.renderedFps > 0 || stats.renderedFrames != 0 ||
             stats.vrrTelemetryActive) {
-        // The log's buffer. Same size as the overlay's own (OverlayManager), which since
-        // 6.0.0 holds this string at full detail with the VRR lines too.
+        // The log's buffer: the summary at full detail, VRR lines included (6.0.0).
         char videoStatsStr[2048];
-        stringifyVideoStats(stats, videoStatsStr, sizeof(videoStatsStr), true);
+        stringifyVideoStats(stats, videoStatsStr, sizeof(videoStatsStr));
 
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "\n%s\n------------------\n%s",
@@ -3271,9 +3557,16 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
             addVideoStats(m_LastWndVideoStats, lastTwoWndStats);
             addVideoStats(m_ActiveWndVideoStats, lastTwoWndStats);
 
-            char text[4096];
-            stringifyVideoStats(lastTwoWndStats, text, sizeof(text));
-            Session::get()->getOverlayManager().updateOverlayText(Overlay::OverlayDebug, text);
+            if (StreamingPreferences::get()->overlayLayout == StreamingPreferences::OVL_BAR) {
+                Overlay::OverlayBar bar;
+                buildOverlayBar(lastTwoWndStats, bar);
+                Session::get()->getOverlayManager().updateOverlayBar(Overlay::OverlayDebug, bar);
+            }
+            else {
+                Overlay::OverlayCard card;
+                buildOverlayCard(lastTwoWndStats, card);
+                Session::get()->getOverlayManager().updateOverlayCard(Overlay::OverlayDebug, card);
+            }
         }
 
         // The presentation cadence line, written from here rather than from where it is

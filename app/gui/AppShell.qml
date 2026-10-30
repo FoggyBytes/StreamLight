@@ -1,6 +1,7 @@
 import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import WindowChrome 1.0
 
 import SdlGamepadKeyNavigation 1.0
 import InputHints 1.0
@@ -551,6 +552,11 @@ FocusScope {
     // uninterrupted surface from the content down to the button prompts.
     // The wash lives in AmbientBackground now, so the screens that cover this one whole — the
     // quit screen, the PIN pad — can stand on exactly the same ground instead of a copy of it.
+    // 8.3.0 (#48): the strip at the top that Windows treats as the title bar — no bar is drawn
+    // there, the floor runs under it and only the three caption buttons sit on it (WindowChrome,
+    // CaptionButtons.qml). What stands at the top of the pages steps below it. 0 in full screen.
+    readonly property real titleInset: WindowChrome.inset
+
     AmbientBackground {
         id: ambientBackground
         z: -1
@@ -570,6 +576,7 @@ FocusScope {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
+        anchors.topMargin: appShell.titleInset
         anchors.bottom: statusBar.top
         focus: true
         // Invisible and deaf while the opening animation runs; see StartupSplash.
@@ -694,7 +701,7 @@ FocusScope {
      */
     StatusCluster {
         anchors.top: parent.top
-        anchors.topMargin: Math.round(22 * Theme.uiScale)
+        anchors.topMargin: appShell.titleInset + Math.round(22 * Theme.uiScale)
         anchors.right: parent.right
         anchors.rightMargin: Math.round(44 * Theme.uiScale)
         transformOrigin: Item.TopRight
@@ -1216,7 +1223,7 @@ FocusScope {
         id: steamLayoutBanner
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
-        anchors.topMargin: Math.round(72 * Theme.uiScale)
+        anchors.topMargin: appShell.titleInset + Math.round(72 * Theme.uiScale)
     }
 
     UpdatePromptDialog {

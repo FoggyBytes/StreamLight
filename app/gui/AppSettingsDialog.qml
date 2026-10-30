@@ -707,22 +707,10 @@ Popup {
             // Always on when there is more below, off when everything already fits.
             // Same bar as HostProfilesDialog — the two dialogs mirror each other, and
             // a scroll hint that appears in one and not the other is worse than none.
-            ScrollBar.vertical: ScrollBar {
-                id: rowsScrollBar
-                policy: flick.contentHeight > flick.height ? ScrollBar.AlwaysOn
-                                                          : ScrollBar.AlwaysOff
-                width: dlg._px(6)
+            // The app's bar since 8.3.0 (#48); stroke where the old 6 px one was.
+            ScrollBar.vertical: ThemedScrollBar {
                 anchors.right: parent.right
-                anchors.rightMargin: dlg._px(7)
-                contentItem: Rectangle {
-                    radius: width / 2
-                    color: rowsScrollBar.pressed ? dlg._ink : dlg._dim
-                    opacity: rowsScrollBar.pressed ? 1.0 : 0.7
-                }
-                background: Rectangle {
-                    radius: width / 2
-                    color: dlg._line
-                }
+                anchors.rightMargin: dlg._px(3)
             }
 
             // Auto-scroll: keep the focused row in view as the D-pad moves down the
@@ -932,7 +920,7 @@ Popup {
                                     visible: bitrateSlider.activeFocus
                                 }
 
-                                Slider {
+                                ThemedSlider {
                                     id: bitrateSlider
                                     anchors.fill: parent
                                     from: dlg._effPyroWave ? 5000 : 500
@@ -984,36 +972,11 @@ Popup {
                                         return Math.max(0, Math.min(1, t))
                                     }
 
-                                    // Verbatim Settings look: solid white track + green handle.
-                                    background: Rectangle {
-                                        x: bitrateSlider.leftPadding
-                                        y: bitrateSlider.topPadding + bitrateSlider.availableHeight / 2 - height / 2
-                                        width: bitrateSlider.availableWidth
-                                        height: dlg._px(3); radius: dlg._px(2)
-                                        color: Theme.text
-
-                                        Rectangle {
-                                            visible: dlg._bitrateOverridden
-                                            width: Math.max(2, dlg._px(2))
-                                            height: dlg._px(12)
-                                            radius: width / 2
-                                            color: Theme.text3
-                                            x: bitrateSlider._inheritPos * (parent.width - width)
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
-                                    }
-                                    handle: Rectangle {
-                                        x: bitrateSlider.leftPadding + bitrateSlider.visualPosition * (bitrateSlider.availableWidth - width)
-                                        y: bitrateSlider.topPadding + bitrateSlider.availableHeight / 2 - height / 2
-                                        implicitWidth: dlg._px(14); implicitHeight: dlg._px(14); radius: dlg._px(7)
-                                        // Accent only while the game holds its own bitrate
-                                        // (6.0.0) — see the twin in HostProfilesDialog.
-                                        readonly property color _base: dlg._bitrateOverridden ? dlg._inkText : Theme.text
-                                        color: bitrateSlider.pressed ? Qt.lighter(_base, 1.2)
-                                             : bitrateSlider.hovered ? Qt.lighter(_base, 1.1)
-                                             :                         _base
-                                        border.color: _base; border.width: 1
-                                    }
+                                    // The inherited value's tick, only while the game holds its own.
+                                    marker: dlg._bitrateOverridden ? bitrateSlider._inheritPos : -1
+                                    // Accent only while the game holds its own bitrate
+                                    // (6.0.0) — see the twin in HostProfilesDialog.
+                                    tint: dlg._bitrateOverridden ? Theme.accentFill : Theme.text
                                 }
                             }
 

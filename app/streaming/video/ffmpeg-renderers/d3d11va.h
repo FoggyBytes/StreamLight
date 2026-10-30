@@ -99,7 +99,7 @@ private:
     bool retirePreparedVrrFrameForMutation();
     void releasePreparedVrrFrame();
     void queueRenderDeviceReset();
-    void renderOverlay(Overlay::OverlayType type);
+    void renderOverlay(Overlay::OverlayType type, bool hdr);
     bool createOverlayVertexBuffer(Overlay::OverlayType type, int width, int height, Microsoft::WRL::ComPtr<ID3D11Buffer>& newVertexBuffer);
     void bindColorConversion(bool frameChanged, AVFrame* frame);
     void bindVideoVertexBuffer(bool frameChanged, AVFrame* frame);
@@ -362,6 +362,8 @@ private:
     std::array<LastOverlay, Overlay::OverlayMax> m_LastOverlay;
 
     Microsoft::WRL::ComPtr<ID3D11PixelShader> m_OverlayPixelShader;
+    // The same overlays on a PQ / BT.2020 swap chain (an HDR stream): d3d11_overlay_pixel_hdr.hlsl.
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> m_OverlayPixelShaderHdr;
 
     AVBufferRef* m_HwDeviceContext;
 

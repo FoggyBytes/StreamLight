@@ -2,6 +2,9 @@
     <qresource prefix="/">
         <file>gui/main.qml</file>
         <file>gui/AppShell.qml</file>
+        <file>gui/CaptionButtons.qml</file>
+        <file>gui/ThemedScrollBar.qml</file>
+        <file>gui/ThemedSlider.qml</file>
         <file>gui/HomeScreen.qml</file>
         <file>gui/HostStage.qml</file>
         <file>gui/StatusCluster.qml</file>

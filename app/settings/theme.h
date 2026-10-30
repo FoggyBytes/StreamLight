@@ -51,6 +51,8 @@ class Theme : public QObject
      * luminance threshold, not by contrast). Text on it is always onAccent.
      */
     Q_PROPERTY(QColor accentFill READ accentFill NOTIFY changed)
+    /** The accent as the dark theme has it (8.3.0): the in-stream overlays and their preview. */
+    Q_PROPERTY(QColor darkAccent READ darkAccent NOTIFY changed)
 
     /** Page background: near-black carrying a trace of the accent, never pure black. */
     Q_PROPERTY(QColor ground READ ground NOTIFY changed)
@@ -306,6 +308,9 @@ public:
     explicit Theme(QObject* parent = nullptr);
 
     QColor accent()     const { return m_Accent; }
+    // The accent as the dark theme has it, whichever theme is showing: the in-stream overlays
+    // sit on video, so they always take the dark side (8.3.0).
+    QColor darkAccent() const { return m_AccentDark; }
     QVariantList accentPalette() const;
     QColor onAccent()   const;
     QColor ground()     const;

@@ -814,29 +814,17 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
         if (m_Overlays[i].hasOverlay) {
             // Position the overlay
             overlayParts[i].src = { 0, 0, (float)m_Overlays[i].overlay.tex->params.w, (float)m_Overlays[i].overlay.tex->params.h };
-            if (i == Overlay::OverlayStatusUpdate) {
-                // Bottom Left
-                overlayParts[i].dst.x0 = 0;
-                overlayParts[i].dst.y0 = SDL_max(0, targetFrame.crop.y1 - overlayParts[i].src.y1);
-            }
-            else if (i == Overlay::OverlayDebug || i == Overlay::OverlayStreamSettings) {
-                // Opposite top corners — the stats card takes the one the user chose
-                // (Settings > Overlay), the settings panel the other.
-                //
-                // ⚠️ Both types have to be named. With only OverlayDebug here, and that one
-                // hardcoded to the left, the settings panel fell through every branch and kept
-                // the zeroed dst — so both landed top-left, drawn on top of each other. That
-                // has been true on this renderer for as long as the panel has existed.
-                //
-                // No inset and crop.x1 as the width, matching the StatusUpdate branch above,
-                // which likewise treats crop.y1 as the bottom edge and 0 as the left. Only x
-                // changes here; the card stays flush against the top as it always was.
-                overlayParts[i].dst.x0 = Overlay::OverlayManager::getOverlayOriginX(
-                            (Overlay::OverlayType)i,
-                            (int)targetFrame.crop.x1,
-                            (int)overlayParts[i].src.x1,
-                            0);
-                overlayParts[i].dst.y0 = 0;
+            // Where every overlay goes is the OverlayManager's answer (8.3.0), top-left origin as
+            // here, inside the crop: crop.x1 / crop.y1 are the width and the bottom edge.
+            {
+                Overlay::OverlayManager::setViewportSize((int)targetFrame.crop.x1, (int)targetFrame.crop.y1);
+                const SDL_Rect place = Overlay::OverlayManager::overlayRect((Overlay::OverlayType)i,
+                                                                            (int)targetFrame.crop.x1,
+                                                                            (int)targetFrame.crop.y1,
+                                                                            (int)overlayParts[i].src.x1,
+                                                                            (int)overlayParts[i].src.y1);
+                overlayParts[i].dst.x0 = place.x;
+                overlayParts[i].dst.y0 = SDL_max(0, place.y);
             }
             overlayParts[i].dst.x1 = overlayParts[i].dst.x0 + overlayParts[i].src.x1;
             overlayParts[i].dst.y1 = overlayParts[i].dst.y0 + overlayParts[i].src.y1;

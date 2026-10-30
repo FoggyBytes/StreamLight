@@ -58,6 +58,12 @@ import InputHints 1.0
  * animation off (setting or Reduce animations) the choice still shows, from its first frame.
  * ⚠️ Home is not loaded and no host is polled until StreamLight is picked — that is AppShell's
  * and main.qml's half (SignInLaunch.holding), and why a pick must emit before `_picked` moves.
+ *
+ * 8.3.0 (Marcello, 30/10/2026): no focus at first — the filled Start button looked like a cursor
+ * the D-pad could move, and it could not. A and B choose directly. The first arrow (the pad's
+ * D-pad) shows the focus on Start, the next ones move it, the prompt moves with it — A, on the
+ * focused button only — and A takes it (`_navIndex`). Any key stops the countdown, the D-pad
+ * included.
  */
 FocusScope {
     id: splash
@@ -88,6 +94,8 @@ FocusScope {
     property bool _counting: true
     property bool _picked: false
     property bool _leaving: false
+    // The button the D-pad has focused: -1 none (A Start, B desktop), 0 Start, 1 desktop.
+    property int _navIndex: -1
     // Wall-clock start of the choice (ms) and the seconds since — the choice has its own clock,
     // because t holds still at fadeAt while it is on screen.
     property real _choiceAt: 0
@@ -149,6 +157,7 @@ FocusScope {
         choice = atSignIn === true
         _picked = false
         _leaving = false
+        _navIndex = -1
         _counting = true
         cdLeft = countdownSecs
         _choiceAt = 0
@@ -285,10 +294,16 @@ FocusScope {
         if (splash.choosing) {
             // Any key: someone is there, the countdown stops. A and B also choose — on the pad
             // A is Return (Space in unlock mode), B is Escape.
+            // The arrows show the focus, then move it; A takes the focused button.
             var k = event.key
             splash._stopCountdown("key 0x" + k.toString(16))
-            if (k === Qt.Key_Return || k === Qt.Key_Enter || k === Qt.Key_Space)
-                splash.pick(true)
+            var back = k === Qt.Key_Left || k === Qt.Key_Up || k === Qt.Key_Backtab
+                       || (k === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))
+            var fwd = !back && (k === Qt.Key_Right || k === Qt.Key_Down || k === Qt.Key_Tab)
+            if (back || fwd)
+                splash._navIndex = splash._navIndex < 0 ? 0 : (fwd ? 1 : 0)
+            else if (k === Qt.Key_Return || k === Qt.Key_Enter || k === Qt.Key_Space)
+                splash.pick(splash._navIndex !== 1)
             else if (k === Qt.Key_Escape || k === Qt.Key_Back)
                 splash.pick(false)
             return
@@ -452,13 +467,16 @@ FocusScope {
     }
 
     // ── 8.2.0: the choice ─────────────────────────────────────────────────────────────────
-    // A button with its prompt: the pad glyph while a pad is in use, the key otherwise.
+    // A button with its prompt: the pad glyph while a pad is in use, the key otherwise. Filled
+    // with the accent only when the D-pad has focused it (8.3.0).
     component ChoiceButton: Rectangle {
         id: btn
         property string buttonKey: "A"
         property string keyLabel: "Enter"
         property string text: ""
-        property bool primary: false
+        property bool focused: false
+        // The prompt beside the label: with the D-pad's focus, only the focused button has one.
+        property bool showPrompt: true
         // An inline component cannot see this file's ids: the scale and the state come in.
         property real u: 1
         property bool live: false
@@ -466,23 +484,25 @@ FocusScope {
         // Where the pointer is, in scene coordinates — see splash._pointerAt().
         signal touched(real x, real y)
 
-        readonly property color _fg: primary ? Theme.onAccent : Theme.text
+        readonly property color _fg: focused ? Theme.onAccent : Theme.text
 
         height: Math.round(58 * btn.u)
         width: btnRow.implicitWidth + Math.round(48 * btn.u)
         radius: height / 2
-        color: primary ? (btnMouse.containsMouse ? Qt.lighter(Theme.accentFill, 1.12) : Theme.accentFill)
+        color: focused ? (btnMouse.containsMouse ? Qt.lighter(Theme.accentFill, 1.12) : Theme.accentFill)
                        : (btnMouse.containsMouse ? Theme.cardHigh : "transparent")
-        border.color: primary ? "transparent" : Theme.lineHigh
-        border.width: primary ? 0 : Math.max(1, 1.5 * btn.u)
+        border.color: focused ? "transparent" : Theme.lineHigh
+        border.width: focused ? 0 : Math.max(1, 1.5 * btn.u)
 
         Row {
             id: btnRow
             anchors.centerIn: parent
             spacing: Math.round(12 * btn.u)
 
+            // Hidden by opacity, not removed: the buttons keep their width as the focus moves.
             PadGlyph {
                 visible: InputHints.padActive
+                opacity: btn.showPrompt ? 1 : 0
                 anchors.verticalCenter: parent.verticalCenter
                 buttonKey: btn.buttonKey
                 label: btn.buttonKey
@@ -490,6 +510,7 @@ FocusScope {
             }
             Rectangle {
                 visible: !InputHints.padActive
+                opacity: btn.showPrompt ? 1 : 0
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.max(height, capText.implicitWidth + Math.round(14 * btn.u))
                 height: Math.round(24 * btn.u)
@@ -513,7 +534,7 @@ FocusScope {
                 color: btn._fg
                 font.family: Theme.family
                 font.pixelSize: Math.round(Theme.fontTitle * btn.u)
-                font.weight: btn.primary ? Font.DemiBold : Font.Medium
+                font.weight: btn.focused ? Font.DemiBold : Font.Medium
             }
         }
 
@@ -543,7 +564,8 @@ FocusScope {
             spacing: Math.round(20 * splash._u)
 
             ChoiceButton {
-                primary: true
+                focused: splash._navIndex === 0
+                showPrompt: splash._navIndex !== 1
                 u: splash._u
                 live: splash.choosing
                 onTouched: function(x, y) { splash._pointerAt(x, y) }
@@ -552,12 +574,15 @@ FocusScope {
                 text: qsTr("Start StreamLight")
                 onActivated: splash.pick(true)
             }
+            // With the D-pad's focus the prompt is A, on the focused button only: A takes it.
             ChoiceButton {
+                focused: splash._navIndex === 1
+                showPrompt: splash._navIndex !== 0
                 u: splash._u
                 live: splash.choosing
                 onTouched: function(x, y) { splash._pointerAt(x, y) }
-                buttonKey: "B"
-                keyLabel: "Esc"
+                buttonKey: splash._navIndex >= 0 ? "A" : "B"
+                keyLabel: splash._navIndex >= 0 ? "Enter" : "Esc"
                 text: qsTr("Windows desktop")
                 onActivated: splash.pick(false)
             }

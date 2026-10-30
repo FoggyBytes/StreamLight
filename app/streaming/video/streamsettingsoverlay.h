@@ -5,18 +5,20 @@
 #include <QString>
 #include <QVector>
 #include "settings/streamingpreferences.h"
+#include "SDL_compat.h"
 
-// In-stream "Stream Settings" overlay (4.4.0): a navigable panel rendered
-// top-right over the live video that lets the user change resolution / fps /
-// bitrate / HDR while streaming. Changes are applied host-agnostically by a
-// resume reconnect (Session::requestReconfigure), so a brief "blip" applies the
-// whole batch. Driven entirely by SdlInputHandler (keyboard + controller); the
-// panel itself is rendered through the existing text-overlay path
-// (OverlayManager / OverlayStreamSettings), matching the stats overlay look.
+// In-stream "Stream Settings" overlay (4.4.0): a navigable panel over the live video
+// that lets the user change resolution / fps / bitrate / HDR / frame pacing while
+// streaming. Changes are applied host-agnostically by a resume reconnect
+// (Session::requestReconfigure), so a brief "blip" applies the whole batch. Driven
+// entirely by SdlInputHandler (keyboard + controller). Since 8.3.0 it is a row of tiles
+// at the bottom centre, painted by OverlayManager::buildPanelSurface from the
+// OverlayPanel that render() fills: ◀▶ pick a tile, ▲▼ change its value.
 //
 // Frame pacing is set at decoder/renderer init, so it rides the same reconnect
-// as the other rows rather than changing live. It is shown read-only when V-Sync
-// is off, since the decoder ignores the mode entirely in that case.
+// as the other rows rather than changing live. It is shown read-only (greyed, with a
+// padlock) when V-Sync is off, since the decoder ignores the mode entirely in that case,
+// and while VRR paces the session.
 class StreamSettingsOverlay
 {
 public:
@@ -24,7 +26,10 @@ public:
 
     bool isActive() const { return m_Active; }
 
-    void open();    // seed from current prefs, show the panel
+    // Seed from current prefs, show the panel. `pad` is the controller that opened it (or the
+    // first connected one, from the keyboard): with the glyph set on Auto, the prompts are drawn
+    // for that pad's family, as the app does outside the stream. Null = Xbox.
+    void open(SDL_GameController* pad = nullptr);
     void close();   // hide the panel
 
     // Navigation, called by the input handler while active.
@@ -41,7 +46,6 @@ private:
     enum SaveTarget { TARGET_GAME, TARGET_HOST, TARGET_GLOBAL };
     SaveTarget activeTarget(int* hostSlot = nullptr) const;
     QString targetLabel() const;
-    QString saveLabel() const;   // vendor north-button glyph name (Y / Triangle / X)
     void writeCurrentTo(SaveTarget target, int hostSlot);
 
     enum RowId {
@@ -63,11 +67,11 @@ private:
     int  effectiveWidth() const;
     int  effectiveHeight() const;
     int  changeCount() const;
-    QString confirmLabel() const;
-    QString cancelLabel() const;
 
     StreamingPreferences* m_Prefs;
     bool m_Active = false;
+    // The prompts' family, resolved at open(): never GS_AUTO.
+    StreamingPreferences::GlyphSet m_Glyphs = StreamingPreferences::GS_XBOX;
 
     // model
     /*
@@ -90,7 +94,7 @@ private:
     int m_FpsIndex = 0;     // index into m_FpsValues
     int m_BitrateKbps = 20000;
     bool m_Hdr = false;
-    int m_PacingIndex = 0;  // index into s_PacingValues (FP_OFF/AUTO/MATCHED/MULTIPLE)
+    int m_PacingIndex = 0;  // index into s_PacingValues (FP_OFF / FP_ON)
 
     // committed baseline (seeded values) for change detection
     int m_BaseW = 0, m_BaseH = 0, m_BaseFps = 0, m_BaseKbps = 0;

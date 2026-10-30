@@ -455,7 +455,7 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Detected stats toggle gamepad combo");
 
-        // Cycle the stats overlay: Off -> Minimal -> Default -> Full -> Off ...
+        // Show or hide the stats overlay (what it shows is chosen in Settings > Overlay)
         Session::get()->togglePerfOverlay();
 
         // Clear buttons down on this gamepad
@@ -470,8 +470,9 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Detected stream settings gamepad combo");
 
-        // Open the live Stream Settings overlay (input is captured while open).
-        m_StreamSettings->open();
+        // Open the live Stream Settings overlay (input is captured while open), its prompts
+        // drawn for this pad.
+        m_StreamSettings->open(state->controller);
 
         // Clear buttons down on this gamepad
         LiSendMultiControllerEvent(state->index, m_GamepadMask,

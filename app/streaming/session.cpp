@@ -758,6 +758,10 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
         m_StreamTweakEnabled = computer->streamTweakEnabled;
         // 6.3.0: rejoining what is already running, not launching it — see m_RejoinsRunningApp.
         m_RejoinsRunningApp = computer->currentGameId != 0 && computer->currentGameId == app.id;
+        // 8.3.0: the name on the overlay card's chip, taken once here under the computer's lock.
+        // The card is built on the decoder thread every second, and reading the name there
+        // would race the polling thread that can rewrite it.
+        m_OverlayManager.setHostName(computer->name);
     }
 
     // The StreamTweak host-metrics poller. Owned by this Session (parent = this). Polling fails

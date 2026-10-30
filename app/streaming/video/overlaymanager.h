@@ -1,10 +1,12 @@
 #pragma once
 
+#include <QColor>
+#include <QHash>
+#include <QMutex>
 #include <QString>
 #include <QVector>
 
 #include "SDL_compat.h"
-#include <SDL_ttf.h>
 
 namespace Overlay {
 
@@ -15,42 +17,73 @@ enum OverlayType {
     OverlayMax
 };
 
-// A single navigable/informational row in a structured panel (see OverlayPanel).
-// Rendered as: [indent] label  ...  [hint] [‹] value [›] [trailingGlyph]
+// One setting of the Stream Settings panel (see OverlayPanel), drawn as a tile.
 struct OverlayRow {
     QString label;
-    SDL_Color labelColor = {0xE0, 0xE0, 0xE0, 0xFF};
-    QString hint;                              // small dim text before the value, e.g. "custom" / "16:10"
+    QString hint;                              // small dim text under the value, e.g. "this display" / "16:10"
     QString value;
-    SDL_Color valueColor = {0xFF, 0xFF, 0xFF, 0xFF};
-    bool showArrows = false;
-    QString trailingGlyph;                     // e.g. "↻" (reset) or "⚡" (instant)
-    SDL_Color trailingColor = {0x80, 0x80, 0x80, 0xFF};
+    bool showArrows = false;                   // the value can be changed (▲▼ on the selected tile)
     bool selected = false;
-    bool indent = false;
-    bool dimmed = false;                       // read-only row: greyed, no arrows
+    bool indent = false;                       // a sub-setting (custom width / height)
+    bool dimmed = false;                       // read-only: greyed, never the selection
+    bool changed = false;                      // differs from what the stream runs with: the amber dot
+    double gauge = -1;                         // 0..1 on a track under the value (the bitrate); < 0 = none
 };
 
-// A footer action hint, e.g. a green "A" controller button + "Apply".
-// If iconPath is set (a Qt resource path to a self-contained button SVG) it is
-// rasterized and used; otherwise a flat colored circle + glyph letter is drawn.
+// A footer prompt: a controller button glyph (a Qt resource SVG) and its action.
 struct OverlayBadge {
     QString iconPath;
-    QString glyph;
     QString label;
-    SDL_Color color = {0x60, 0x60, 0x60, 0xFF};
 };
 
-// A structured, multi-row panel (used by the Stream Settings overlay) rendered
-// as a dark rounded card with a header/badge, selectable rows, and a footer.
+// The Stream Settings panel (8.3.0 design): a card at the bottom centre with a header, the
+// settings as a row of tiles, a status line and the controller prompts.
 struct OverlayPanel {
     QString title;
-    QString badgeText;
+    QString subtitle;
+    QString badgeText;                         // where Save writes: Global, a host profile, a game
     SDL_Color badgeColor = {0x9A, 0xA0, 0xA6, 0xFF};
     QVector<OverlayRow> rows;
     QString statusLine;
     SDL_Color statusColor = {0x80, 0x80, 0x80, 0xFF};
     QVector<OverlayBadge> footerBadges;
+};
+
+// One figure of the bar (8.3.0, issue #47): a label, its value and its unit. `key` names the
+// value's slot so the bar keeps its width from one second to the next (see buildBarSurface).
+// `warn` draws it in red.
+struct OverlayBarPart {
+    int key = 0;
+    QString label;
+    QString value;
+    QString unit;
+    bool warn = false;
+};
+
+// One entry between the bar's dividers. Usually one part; the host metrics have two (GPU, CPU).
+// An entry is never split across lines.
+struct OverlayBarEntry {
+    QVector<OverlayBarPart> parts;
+};
+
+struct OverlayBar {
+    QVector<OverlayBarEntry> entries;
+};
+
+// The card (8.3.0): the figures in sections, a label and a value per row.
+struct OverlayCardRow {
+    QString label;
+    QString value;
+    bool warn = false;
+};
+
+struct OverlayCardSection {
+    QString title;
+    QVector<OverlayCardRow> rows;
+};
+
+struct OverlayCard {
+    QVector<OverlayCardSection> sections;
 };
 
 class IOverlayRenderer
@@ -68,59 +101,82 @@ public:
     ~OverlayManager();
 
     bool isOverlayEnabled(OverlayType type);
+    // Plain lines on a small card: the in-stream notices (OverlayStatusUpdate).
     void updateOverlayText(OverlayType type, const char* text);
-    // Render a structured panel (rounded card, selectable rows, header + footer)
-    // instead of a plain wrapped-text block. Used by the Stream Settings overlay.
+    // The Stream Settings panel.
     void updateOverlayPanel(OverlayType type, const OverlayPanel& panel);
+    // The performance overlay as a bar (Settings > Overlay > Layout = Bar) or as the card.
+    void updateOverlayBar(OverlayType type, const OverlayBar& bar);
+    void updateOverlayCard(OverlayType type, const OverlayCard& card);
     void setOverlayTextUpdated(OverlayType type);
     void setOverlayState(OverlayType type, bool enabled);
-    SDL_Color getOverlayColor(OverlayType type);
-    int getOverlayFontSize(OverlayType type);
     SDL_Surface* getUpdatedOverlaySurface(OverlayType type);
 
     void setOverlayRenderer(IOverlayRenderer* renderer);
 
+    // The host's name on the card's chip, set once by the Session as it is built.
+    void setHostName(const QString& name) { m_HostName = name; }
+
     /**
-     * Left edge for an overlay of @p surfaceWidth inside a viewport of @p viewportWidth.
-     *
-     * OverlayDebug takes the corner the user chose (Settings > Overlay); OverlayStreamSettings
-     * takes the other one, so the two can never land on top of each other and the live
-     * settings panel needs no corner setting of its own. That relationship is the reason the
-     * position choice has two values and not three.
-     *
-     * Here rather than in each renderer because every renderer would otherwise carry its own
-     * copy of it, and they already disagree about which way y points — one shared answer for
-     * x is one fewer thing to keep in step.
+     * Where an overlay of @p surfaceWidth × @p surfaceHeight goes in a viewport of
+     * @p viewportWidth × @p viewportHeight, as a top-left corner with y growing downwards —
+     * renderers whose y grows upwards flip it. One answer for all of them (8.3.0):
+     *  - the card: the top corner the user chose (Settings > Overlay > Position);
+     *  - the bar: the top centre;
+     *  - the Stream Settings panel: always the bottom centre, so it never meets either;
+     *  - the notices: the bottom left.
+     * The margin follows the viewport's height, like every other measure of the overlays.
      */
-    static int getOverlayOriginX(OverlayType type, int viewportWidth, int surfaceWidth, int margin);
+    static SDL_Rect overlayRect(OverlayType type, int viewportWidth, int viewportHeight,
+                                int surfaceWidth, int surfaceHeight);
+
+    /**
+     * The size the overlays are drawn into, from the renderer. Every measure of the overlays
+     * is a fraction of the height (1 unit = 1 px at 1080p), so they keep their proportions at
+     * any resolution; the bar wraps between entries past 85% of the width. Renderers call it
+     * whenever their output size is known or changes.
+     */
+    static void setViewportSize(int width, int height);
 
 private:
     void notifyOverlayUpdated(OverlayType type);
     SDL_Surface* buildTextSurface(OverlayType type);
     SDL_Surface* buildPanelSurface(OverlayType type);
-    TTF_Font* panelSmallFont(OverlayType type);
+    SDL_Surface* buildBarSurface(OverlayType type);
+    SDL_Surface* buildCardSurface(OverlayType type);
 
-    // POD only — this array is memset-zeroed in the constructor. Non-POD panel
-    // data lives in m_Panels (default-constructed) below.
+    enum Kind { KindText, KindPanel, KindBar, KindCard };
+
+    // POD only — this array is memset-zeroed in the constructor. The structured content lives
+    // in the arrays below.
     struct {
         bool enabled;
-        bool isPanel;
-        int fontSize;
-        SDL_Color color;
-        SDL_Color bgColor;
-        // 2048 since 6.0.0: the performance overlay at full detail, with the two VRR lines,
-        // measured 912 bytes on a real session — too close to 1024, and updateOverlayText()
-        // truncates without a word. The stats are formatted into a buffer of the same size.
+        int kind;
+        // 2048 since 6.0.0, when this held the whole performance overlay; it holds only the
+        // notices now, which are a line or two.
         char text[2048];
-
-        TTF_Font* font;
-        TTF_Font* smallFont;
         SDL_Surface* surface;
-
     } m_Overlays[OverlayMax];
     OverlayPanel m_Panels[OverlayMax];
+    // ⚠️ Bars and cards under m_ContentLock: the decoder thread writes them every second, and
+    // the overlay hotkey rebuilds the surface from the main thread when it switches the
+    // overlay back on.
+    OverlayBar m_Bars[OverlayMax];
+    OverlayCard m_Cards[OverlayMax];
+    QMutex m_ContentLock;
+    // Widest value each slot has shown in this session — bar parts by key, card rows by label.
+    // The bar is centred and the card can sit in the right corner, so a width that followed
+    // the digits would move an edge every second; a slot only grows, and only until the figure
+    // has been at its widest once. Cleared when the unit changes (size or window).
+    QHash<int, int> m_BarSlotWidths;
+    QHash<QString, int> m_CardSlotWidths;
+    double m_SlotUnit = 0;
+    // The app's accent as it is in the dark theme — the overlays always sit on video —,
+    // and what reads on it. Taken when the stream starts, on the thread the theme lives on.
+    QColor m_Accent;
+    QColor m_OnAccent;
+    QString m_HostName;
     IOverlayRenderer* m_Renderer;
-    QByteArray m_FontData;
 };
 
 }

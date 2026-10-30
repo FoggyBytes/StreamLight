@@ -795,11 +795,9 @@ FocusScope {
             }
         }
 
-        ScrollBar.vertical: ScrollBar {
-            policy: contentFlick.contentHeight > contentFlick.height
-                    ? ScrollBar.AsNeeded
-                    : ScrollBar.AlwaysOff
-        }
+        // The app's bar (8.3.0, #48): in the 16 px gutter tabContent leaves on the right, clear of
+        // the cards — Material's grey one sat over their edge.
+        ScrollBar.vertical: ThemedScrollBar { }
 
         Item {
             id: tabContent
@@ -1359,7 +1357,7 @@ FocusScope {
                                             StreamingPreferences.fps)
                             }
 
-                            Slider {
+                            ThemedSlider {
                                 id: bitrateSlider
                                 anchors.right: bitrateValueLabel.left
                                 anchors.rightMargin: settingsScreen._px(12)
@@ -1443,27 +1441,6 @@ FocusScope {
                                         _stopAccel()
                                         event.accepted = true
                                     }
-                                }
-
-                                background: Rectangle {
-                                    x: bitrateSlider.leftPadding
-                                    y: bitrateSlider.topPadding + bitrateSlider.availableHeight / 2 - height / 2
-                                    width: bitrateSlider.availableWidth
-                                    height: settingsScreen._px(3)
-                                    radius: settingsScreen._px(2)
-                                    color: Theme.text
-                                }
-                                handle: Rectangle {
-                                    x: bitrateSlider.leftPadding + bitrateSlider.visualPosition * (bitrateSlider.availableWidth - width)
-                                    y: bitrateSlider.topPadding + bitrateSlider.availableHeight / 2 - height / 2
-                                    implicitWidth: settingsScreen._px(14)
-                                    implicitHeight: settingsScreen._px(14)
-                                    radius: settingsScreen._px(7)
-                                    color: bitrateSlider.pressed ? Qt.lighter(Theme.ink, 1.2)
-                                         : bitrateSlider.hovered ? Qt.lighter(Theme.ink, 1.1)
-                                         :                         Theme.ink
-                                    border.color: Theme.ink
-                                    border.width: 1
                                 }
                             }
 
@@ -2705,7 +2682,10 @@ FocusScope {
                                     color: settingsScreen._text
                                 }
                                 Label {
-                                    text: qsTr("On: behaves like a trackpad.  Off: directly controls the pointer.")
+                                    // 8.3.0 (#48): Off passes touch and pen to the host as they are
+                                    // (abstouch.cpp, LI_FF_PEN_TOUCH_EVENTS); the old text only said
+                                    // "controls the pointer", the fallback for hosts without it.
+                                    text: qsTr("On: the screen works as a trackpad.  Off: touch and pen reach the host as they are.")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
                                     color: settingsScreen._textDim
@@ -3704,7 +3684,7 @@ FocusScope {
 
                             // The pad and the keyboard step it by 5 and hear the step itself, as a
                             // Move at the new volume; a drag with the mouse plays Confirm on release.
-                            Slider {
+                            ThemedSlider {
                                 id: navSoundsVolume
                                 anchors.right: navSoundsVolumeLabel.left
                                 anchors.rightMargin: settingsScreen._px(12)
@@ -3718,28 +3698,6 @@ FocusScope {
                                 value: UiSound.volume
                                 onMoved: UiSound.volume = Math.round(value)
                                 onPressedChanged: if (!pressed) UiSound.play(UiSound.Confirm)
-
-                                background: Rectangle {
-                                    x: navSoundsVolume.leftPadding
-                                    y: navSoundsVolume.topPadding + navSoundsVolume.availableHeight / 2 - height / 2
-                                    width: navSoundsVolume.availableWidth
-                                    height: settingsScreen._px(3)
-                                    radius: settingsScreen._px(2)
-                                    color: navSoundsVolume.enabled ? Theme.text : Theme.offline
-                                }
-                                handle: Rectangle {
-                                    x: navSoundsVolume.leftPadding + navSoundsVolume.visualPosition * (navSoundsVolume.availableWidth - width)
-                                    y: navSoundsVolume.topPadding + navSoundsVolume.availableHeight / 2 - height / 2
-                                    implicitWidth: settingsScreen._px(14)
-                                    implicitHeight: settingsScreen._px(14)
-                                    radius: settingsScreen._px(7)
-                                    color: !navSoundsVolume.enabled ? Theme.offline
-                                         : navSoundsVolume.pressed ? Qt.lighter(Theme.ink, 1.2)
-                                         : navSoundsVolume.hovered ? Qt.lighter(Theme.ink, 1.1)
-                                         :                           Theme.ink
-                                    border.color: navSoundsVolume.enabled ? Theme.ink : Theme.offline
-                                    border.width: 1
-                                }
                             }
 
                             Label {
@@ -4308,134 +4266,234 @@ FocusScope {
                 visible: tabBar.currentIndex === settingsScreen._ti("overlay")
                 spacing: settingsScreen._px(16)
 
-                // The real overlay face, so the preview is not merely "something like it".
-                FontLoader { id: overlayFace; source: "qrc:/data/RobotoMono.ttf" }
+                // The overlays' own faces and colours (8.3.0, mockup in docs/mockups/overlay-redesign):
+                // the app's DM Sans and JetBrains Mono, and the theme's stage palette — the overlays
+                // sit on video, so they always take the dark values. The same numbers as
+                // OverlayManager's, so the preview is the overlay and not something like it.
+                readonly property string _sans: Theme.family
+                readonly property string _mono: "JetBrains Mono"
+                readonly property color _oText:   "#f3f7f8"
+                readonly property color _oText2:  "#a2b2ba"
+                readonly property color _oText3:  "#758790"
+                readonly property color _oOnline: "#4ade80"
+                readonly property color _oFrame:  "#40ffffff"
+                readonly property color _oLine:   "#14ffffff"
+                // The accent as the dark theme has it, and what reads on it. Read through the
+                // property first: a binding that only calls a function registers no dependency.
+                readonly property color _oAccent: Theme.darkAccent
+                readonly property color _oOnAccent: _oAccent.a >= 0 ? Theme.onColor(_oAccent) : "black"
 
                 // Read through properties rather than calling the invokables straight from a
                 // binding: a binding that only calls a function registers no dependency, so the
                 // preview would keep the colours it happened to be built with. Same trap as
                 // PadGlyph's resolver — see its comment.
-                readonly property int   _itemMask: StreamingPreferences.overlayItems
-                readonly property int   _colorSel: StreamingPreferences.overlayTextColor
+                // The lines of the layout on show: the card and the bar keep their own choice
+                // (8.3.0), so every switch, preset and the bitrate peak write the active one.
+                readonly property int   _itemMask: _isBar ? StreamingPreferences.overlayBarItems
+                                                          : StreamingPreferences.overlayItems
+                function _setMask(mask) {
+                    if (_isBar) StreamingPreferences.overlayBarItems = mask
+                    else        StreamingPreferences.overlayItems = mask
+                    StreamingPreferences.save()
+                }
                 readonly property int   _transpSel: StreamingPreferences.overlayTransparency
                 readonly property int   _sizeSel:  StreamingPreferences.overlayFontSize
-                readonly property color _txtColor: overlayTab._colorSel >= 0
-                                                   ? StreamingPreferences.overlayTextColorValue() : "white"
                 readonly property color _boxColor: overlayTab._transpSel >= 0
-                                                   ? StreamingPreferences.overlayBoxColorValue() : "#f018181a"
-                readonly property int   _fontPx:   overlayTab._sizeSel >= 0
-                                                   ? StreamingPreferences.overlayFontPixelSize() : 20
+                                                   ? StreamingPreferences.overlayBoxColorValue() : "#eb0f1519"
+                // Small / Medium / Large on the overlays' unit: 1 unit = 1 px at 1080p.
+                readonly property real  _sizeFactor: overlayTab._sizeSel >= 0
+                                                     ? StreamingPreferences.overlaySizeFactor() : 1
 
-                // Which corner the stats card takes; the settings panel gets the other one,
-                // exactly as OverlayManager::getOverlayOriginX flips it in the stream.
+                // Which top corner the card takes (the in-stream settings open at the bottom centre).
                 readonly property bool _statsRight:
                     StreamingPreferences.overlayPosition === StreamingPreferences.OVP_TOP_RIGHT
 
-                // Advance width of one character per pixel of font size. The face is
-                // monospace, so every string's width is a multiplication — which is how the
-                // settings panel below sizes its columns without a measuring pass per row.
-                readonly property string _mono: overlayFace.status === FontLoader.Ready
-                                                ? overlayFace.name : "monospace"
-                TextMetrics {
-                    id: monoUnit
-                    font.family: overlayTab._mono
-                    font.pixelSize: 100
-                    text: "0"
+                // Layout = Bar (8.3.0, issue #47): one line at the top centre instead of the card.
+                readonly property bool _isBar:
+                    StreamingPreferences.overlayLayout === StreamingPreferences.OVL_BAR
+
+                // What the bar shows for one item — label, value, unit — with illustrative numbers
+                // in step with the card's rows below; buildOverlayBar in ffmpeg.cpp is the
+                // authority. null for the one item with no short form, which the bar leaves to the
+                // card.
+                function barPartsFor(defIndex) {
+                    var bit = itemDefs[defIndex].bit
+                    if (bit === StreamingPreferences.OI_VIDEO)
+                        return [["", settingsScreen._pyroWave ? "1080p60 PyroWave" : "1080p60 HEVC", ""]]
+                    if (bit === StreamingPreferences.OI_BITRATE)
+                        return [["Bandwidth", (_itemMask & StreamingPreferences.OI_BITRATE_PEAK)
+                                              ? "41.2 / 58.4" : "41.2", "Mbps"]]
+                    if (bit === StreamingPreferences.OI_FRAMERATES)   return [["FPS", "60.0", ""]]
+                    if (bit === StreamingPreferences.OI_HOST_LATENCY) return [["Host", "2.1", "ms"]]
+                    // With PyroWave the stream adds the frames shown with lost packets (#26).
+                    if (bit === StreamingPreferences.OI_NET_DROPS)
+                        return settingsScreen._pyroWave ? [["Frame loss", "0.10", "%"], ["Partial", "0.00", "%"]]
+                                                        : [["Frame loss", "0.10", "%"]]
+                    if (bit === StreamingPreferences.OI_JITTER_DROPS) return [["Pacing", "0.02", "%"]]
+                    if (bit === StreamingPreferences.OI_LATENCY)      return [["Network", "11", "ms"]]
+                    if (bit === StreamingPreferences.OI_DECODE_TIME)  return [["Decode", "3.2", "ms"]]
+                    if (bit === StreamingPreferences.OI_QUEUE_DELAY)  return [["Queue", "0.4", "ms"]]
+                    if (bit === StreamingPreferences.OI_RENDER_TIME)  return [["Render", "1.1", "ms"]]
+                    if (bit === StreamingPreferences.OI_VRR)          return [["VRR", "99.62", "%"]]
+                    if (bit === StreamingPreferences.OI_HOST_METRICS) return [["GPU", "47", "%"], ["CPU", "18", "%"]]
+                    return null
                 }
-                readonly property real _adv: monoUnit.advanceWidth / 100
+
+                function _defIndexOf(bit) {
+                    for (var i = 0; i < itemDefs.length; i++) {
+                        if (itemDefs[i].bit === bit) return i
+                    }
+                    return -1
+                }
+
+                // The bar's own order (8.3.0), the issue's: the figures watched first, the
+                // diagnostics after, Presentation cadence (card only) last. buildOverlayBar adds
+                // its entries in the same order.
+                readonly property var barOrder: [
+                    _defIndexOf(StreamingPreferences.OI_VIDEO), _defIndexOf(StreamingPreferences.OI_FRAMERATES),
+                    _defIndexOf(StreamingPreferences.OI_BITRATE), _defIndexOf(StreamingPreferences.OI_HOST_LATENCY),
+                    _defIndexOf(StreamingPreferences.OI_LATENCY), _defIndexOf(StreamingPreferences.OI_DECODE_TIME),
+                    _defIndexOf(StreamingPreferences.OI_QUEUE_DELAY), _defIndexOf(StreamingPreferences.OI_RENDER_TIME),
+                    _defIndexOf(StreamingPreferences.OI_NET_DROPS), _defIndexOf(StreamingPreferences.OI_JITTER_DROPS),
+                    _defIndexOf(StreamingPreferences.OI_VRR), _defIndexOf(StreamingPreferences.OI_HOST_METRICS),
+                    _defIndexOf(StreamingPreferences.OI_CADENCE)
+                ]
+
+                // The card's sections and the items in each, in buildOverlayCard's order.
+                readonly property var cardSections: [
+                    { title: "Stream", items: [_defIndexOf(StreamingPreferences.OI_VIDEO),
+                                                _defIndexOf(StreamingPreferences.OI_FRAMERATES),
+                                                _defIndexOf(StreamingPreferences.OI_BITRATE)] },
+                    { title: "Network", items: [_defIndexOf(StreamingPreferences.OI_LATENCY),
+                                                 _defIndexOf(StreamingPreferences.OI_NET_DROPS),
+                                                 _defIndexOf(StreamingPreferences.OI_JITTER_DROPS)] },
+                    { title: "This device", items: [_defIndexOf(StreamingPreferences.OI_DECODE_TIME),
+                                                     _defIndexOf(StreamingPreferences.OI_QUEUE_DELAY),
+                                                     _defIndexOf(StreamingPreferences.OI_RENDER_TIME),
+                                                     _defIndexOf(StreamingPreferences.OI_CADENCE),
+                                                     _defIndexOf(StreamingPreferences.OI_VRR)] },
+                    // ⚠️ No binding on the mask in this list: a new list rebuilds every row, and
+                    // the row just toggled with A took the focus with it (30/10/2026). The
+                    // "· StreamTweak" of the title is added where the title is drawn.
+                    { title: "Host", host: true,
+                      items: [_defIndexOf(StreamingPreferences.OI_HOST_LATENCY),
+                              _defIndexOf(StreamingPreferences.OI_HOST_METRICS)] }
+                ]
 
                 /*
-                 * One list drives both the switches below and the preview above, so the two
-                 * cannot drift apart. `lines` is what stringifyVideoStats writes for that item,
-                 * with illustrative numbers — if a line changes there, it changes here.
+                 * One list drives the switches and the preview, so the two cannot drift apart.
+                 * `rows` is what buildOverlayCard writes for that item, as label and value, with
+                 * illustrative numbers — if a row changes there, it changes here.
                  */
                 readonly property var itemDefs: [
                     { bit: StreamingPreferences.OI_VIDEO,
                       name: qsTr("Video stream"),
                       desc: qsTr("Resolution, frame rate and codec"),
-                      host: false, sub: false,
-                      lines: ["Video stream: 1920x1080 60.00 FPS (Codec: HEVC)"] },
+                      rows: [["Video", "1920×1080 · 60"], ["Codec", "HEVC"]] },
                     { bit: StreamingPreferences.OI_BITRATE,
                       name: qsTr("Bitrate"),
                       desc: qsTr("How much video is actually arriving"),
-                      host: false, sub: false,
-                      lines: ["Bitrate: 41.2 Mbps"] },
-                    // ⚠️ OI_BITRATE_PEAK is deliberately NOT here. Every entry in this list is a
-                    // line of the overlay; the peak is not one — it changes what the bitrate
-                    // line says. As a row of its own it was the only thing in the box that
-                    // matched nothing visible, and it needed a special "greyed when bitrate is
-                    // off" case to stand up at all. It lives with the style settings instead.
+                      rows: [["Bandwidth", "41.2 Mbps"]] },
+                    // ⚠️ OI_BITRATE_PEAK is deliberately NOT here. Every entry in this list is
+                    // something the overlay shows; the peak is not one — it changes what the
+                    // bandwidth says. It lives with the style settings instead.
                     { bit: StreamingPreferences.OI_FRAMERATES,
                       name: qsTr("Frame rate breakdown"),
-                      desc: qsTr("Frames arriving, decoded and drawn, as three separate figures"),
-                      host: false, sub: false,
-                      lines: ["Incoming frame rate from network: 60.00 FPS",
-                              "Decoding frame rate: 60.00 FPS",
-                              "Rendering frame rate: 60.00 FPS"] },
+                      desc: qsTr("Frames arriving, decoded and drawn, as three separate figures — the bar shows the drawn one"),
+                      rows: [["Received", "60.0 fps"], ["Decoded", "60.0 fps"], ["Rendered", "60.0 fps"]] },
                     { bit: StreamingPreferences.OI_HOST_LATENCY,
                       name: qsTr("Host processing latency"),
                       desc: qsTr("How long the host takes to capture and encode each frame"),
-                      host: false, sub: false,
-                      lines: ["Host processing latency min/max/average: 1.2/4.8/2.1 ms"] },
+                      rows: [["Processing", "2.1 ms · max 4.8"]] },
                     { bit: StreamingPreferences.OI_NET_DROPS,
                       name: qsTr("Network frame drops"),
-                      desc: qsTr("Frames the connection lost on the way here"),
-                      host: false, sub: false,
-                      lines: ["Frames dropped by your network connection: 0.10%"] },
+                      desc: qsTr("Frames the connection lost on the way here; with PyroWave, also those shown with lost packets — red from 1%"),
+                      rows: [["Frame loss", "0.10 %"]] },
                     { bit: StreamingPreferences.OI_JITTER_DROPS,
                       name: qsTr("Pacing frame drops"),
                       desc: qsTr("Frames this device discarded to keep the picture on time; with PyroWave, also those skipped before decoding"),
-                      host: false, sub: false,
-                      lines: ["Frames dropped by client pacing: 0.02%"] },
+                      rows: [["Pacing drops", "0.02 %"]] },
                     { bit: StreamingPreferences.OI_LATENCY,
                       name: qsTr("Network latency"),
-                      desc: qsTr("Round trip to the host, and how much it wanders"),
-                      host: false, sub: false,
-                      lines: ["Average network latency: 11 ms (variance: 2 ms)"] },
+                      desc: qsTr("Round trip to the host, and how much it wanders — red over 60 ms"),
+                      rows: [["Latency", "11 ms ±2"]] },
                     { bit: StreamingPreferences.OI_DECODE_TIME,
                       name: qsTr("Decoding time"),
-                      desc: qsTr("How long this device takes to decode a frame"),
-                      host: false, sub: false,
-                      lines: ["Average decoding time: 3.21 ms"] },
+                      desc: qsTr("How long this device takes to decode a frame — red past one frame"),
+                      rows: [["Decode", "3.21 ms"], ["Decoder wait", "0.10 ms"]] },
                     { bit: StreamingPreferences.OI_QUEUE_DELAY,
                       name: qsTr("Frame queue delay"),
                       desc: qsTr("How long decoded frames wait before being drawn"),
-                      host: false, sub: false,
-                      lines: ["Average frame queue delay: 0.40 ms"] },
+                      rows: [["Queue", "0.40 ms"]] },
                     { bit: StreamingPreferences.OI_RENDER_TIME,
                       name: qsTr("Rendering time"),
                       desc: qsTr("Drawing, including the wait for the monitor's V-sync"),
-                      host: false, sub: false,
-                      lines: ["Average rendering time (including monitor V-sync latency): 1.10 ms"] },
+                      rows: [["Render", "1.10 ms"]] },
                     { bit: StreamingPreferences.OI_CADENCE,
                       name: qsTr("Presentation cadence"),
-                      desc: qsTr("How long each frame is held on screen and how long presenting it blocks — the measurement behind Fractional V-Sync"),
-                      host: false, sub: false,
-                      lines: ["Cadence: 2:2 asked, 2.00 v/f (2-2), queue 1.0 (0-2), wait 0.31 ms (max 0.90, 0 blocked, 0 slips)"] },
+                      desc: qsTr("How long each frame is held on screen and how long presenting it blocks — the measurement behind Fractional V-Sync. Card only"),
+                      rows: [["Cadence", "2:2 · 2.00 v/f"], ["Present wait", "0.31 ms · max 0.90"]] },
                     { bit: StreamingPreferences.OI_VRR,
                       name: qsTr("VRR pacing"),
                       desc: qsTr("How evenly VRR presents frames, or why it is not running"),
-                      host: false, sub: false,
-                      lines: ["VRR pacing: Active | Smoothness (2m): 99.62% / 99.50% target",
-                              "Client interval error (1s): 0.212 ms | Tolerance: 0.50 ms | Dropped (30s): 0"] },
+                      rows: [["VRR", "99.62 % of 99.50"]] },
                     { bit: StreamingPreferences.OI_HOST_METRICS,
                       name: qsTr("Host metrics"),
                       desc: qsTr("GPU, encoder, temperature, VRAM, CPU and outbound network — needs StreamTweak on the host"),
-                      host: true, sub: false,
-                      lines: ["GPU: 47% | Enc: 12% | Temp: 62C | VRAM: 4096 / 8192 MB",
-                              "CPU: 18% | Net TX: 41 Mbps"] }
+                      rows: [["GPU", "47 %"], ["Encoder", "12 %"], ["GPU temp", "62 °C"], ["VRAM", "4.0 / 8.0 GB"],
+                             ["CPU", "18 %"], ["Net TX", "41 Mbps"]] }
                 ]
 
-                // The three ready-made sets. Anything else is Custom, which is reported
-                // beside the group rather than offered inside it — see the Preset row.
-                readonly property var presetMasks: [
-                    StreamingPreferences.OI_VIDEO | StreamingPreferences.OI_BITRATE |
-                    StreamingPreferences.OI_LATENCY | StreamingPreferences.OI_NET_DROPS,
+                // The rows one item shows. Only the bandwidth varies, because its peak is a
+                // modifier of that row rather than a row of its own.
+                // With PyroWave the stream writes a few rows more, and they are shown here too
+                // (30/10/2026): the preview said "Frame loss" where the stream also said
+                // "Partial". settingsScreen._pyroWave is the global codec, the best guess there is.
+                function rowsFor(defIndex) {
+                    var d = itemDefs[defIndex]
+                    var pyro = settingsScreen._pyroWave
+                    if (d.bit === StreamingPreferences.OI_BITRATE && (_itemMask & StreamingPreferences.OI_BITRATE_PEAK)) {
+                        return [["Bandwidth", "41.2 · peak 58.4 Mbps"]]
+                    }
+                    if (pyro && d.bit === StreamingPreferences.OI_VIDEO)
+                        return [["Video", "1920×1080 · 60"], ["Codec", "PyroWave"]]
+                    if (pyro && d.bit === StreamingPreferences.OI_NET_DROPS)
+                        return [["Frame loss", "0.10 %"], ["Partial frames", "0.00 %"], ["Rejected", "0.00 %"]]
+                    if (pyro && d.bit === StreamingPreferences.OI_JITTER_DROPS)
+                        return [["Pacing drops", "0.02 %"], ["Skipped", "0.00 %"]]
+                    if (pyro && d.bit === StreamingPreferences.OI_HOST_METRICS)
+                        return [["GPU", "47 %"], ["Encoder", "n/a · PyroWave"], ["GPU temp", "62 °C"],
+                                ["VRAM", "4.0 / 8.0 GB"], ["CPU", "18 %"], ["Net TX", "41 Mbps"]]
+                    return d.rows
+                }
 
-                    StreamingPreferences.OI_VIDEO | StreamingPreferences.OI_BITRATE |
-                    StreamingPreferences.OI_NET_DROPS | StreamingPreferences.OI_JITTER_DROPS |
+                // The three ready-made sets of the layout on show. Anything else is Custom, which
+                // is reported beside the group rather than offered inside it — see the Preset row.
+                readonly property var presetMasks: _isBar ? barPresetMasks : cardPresetMasks
+
+                // The bar's own (8.3.0), on the premise that a bar is chosen to show less:
+                // Minimal = is it smooth, does the network answer, is anything lost; Default = the
+                // five figures of issue #47; Full = the whole picture that still fits one line at
+                // 1080p with the Small font. Queue, Render and Pacing are diagnostics, left to Custom.
+                // ⚠️ Minimal and Default are OI_MINIMAL and OI_DEFAULT for the card too (30/10/2026):
+                // the same items in both shapes, and the Default's are the only ones ever drawn red
+                // (overlayWarnings in ffmpeg.cpp). Only Full differs: everything, for the card.
+                readonly property var barPresetMasks: [
+                    StreamingPreferences.OI_MINIMAL,
+
+                    StreamingPreferences.OI_DEFAULT,
+
+                    StreamingPreferences.OI_VIDEO | StreamingPreferences.OI_FRAMERATES |
+                    StreamingPreferences.OI_BITRATE | StreamingPreferences.OI_HOST_LATENCY |
                     StreamingPreferences.OI_LATENCY | StreamingPreferences.OI_DECODE_TIME |
-                    StreamingPreferences.OI_HOST_METRICS,
+                    StreamingPreferences.OI_NET_DROPS | StreamingPreferences.OI_VRR |
+                    StreamingPreferences.OI_HOST_METRICS
+                ]
+
+                readonly property var cardPresetMasks: [
+                    StreamingPreferences.OI_MINIMAL,
+
+                    StreamingPreferences.OI_DEFAULT,
 
                     StreamingPreferences.OI_ALL
                 ]
@@ -4447,56 +4505,6 @@ FocusScope {
                         if (overlayTab.presetMasks[i] === m) return i
                     }
                     return -1
-                }
-
-                /*
-                 * Every row the box shows, in order: each item, plus the two section headings
-                 * where the renderer would put them.
-                 *
-                 * The headings follow the same rule as stringifyVideoStats — they appear only
-                 * as a pair, because a heading over the only section there is is just the
-                 * widest line in the box. That means they come and go as items are switched,
-                 * which is correct: the box has to look like what will actually be drawn.
-                 */
-                readonly property var rowModel: {
-                    var mask = overlayTab._itemMask
-                    var defs = overlayTab.itemDefs
-                    var client = [], host = []
-                    var clientOn = false, hostOn = false
-
-                    for (var i = 0; i < defs.length; i++) {
-                        var on = (mask & defs[i].bit) !== 0
-                        if (defs[i].host) {
-                            host.push({ kind: "item", defIndex: i })
-                            if (on) hostOn = true
-                        }
-                        else {
-                            client.push({ kind: "item", defIndex: i })
-                            if (on) clientOn = true
-                        }
-                    }
-
-                    var out = []
-                    if (clientOn && hostOn) {
-                        out.push({ kind: "head", text: "--- Client Metrics (StreamLight) ---" })
-                    }
-                    out = out.concat(client)
-                    if (clientOn && hostOn) {
-                        out.push({ kind: "head", text: "--- Host Metrics (StreamTweak) ---" })
-                    }
-                    return out.concat(host)
-                }
-
-                // The mono lines one item contributes. Only the bitrate varies, because its
-                // peak is a modifier of that line rather than a line of its own.
-                function linesFor(defIndex) {
-                    var d = overlayTab.itemDefs[defIndex]
-                    if (d.bit === StreamingPreferences.OI_BITRATE) {
-                        return [(overlayTab._itemMask & StreamingPreferences.OI_BITRATE_PEAK)
-                                ? "Bitrate: 41.2 Mbps, Peak (5s): 58.4"
-                                : "Bitrate: 41.2 Mbps"]
-                    }
-                    return d.lines.length > 0 ? d.lines : [d.name]
                 }
 
                 // What the status line under the box is saying, driven by whatever has focus.
@@ -4653,9 +4661,67 @@ FocusScope {
                                     Binding on currentIndex { value: overlayTab.presetIndex }
 
                                     onActivated: function(idx) {
-                                        StreamingPreferences.overlayItems = overlayTab.presetMasks[idx]
-                                        StreamingPreferences.save()
+                                        overlayTab._setMask(overlayTab.presetMasks[idx])
                                     }
+                                }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Layout (8.3.0, issue #47) ─────────────────────────
+                        // The card in a corner, or the bar at the top centre. A shape and not a
+                        // third Position: the corners keep their meaning for the card.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: overlayLayoutSelector.left
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+
+                                Row {
+                                    spacing: settingsScreen._px(8)
+                                    Label {
+                                        text: qsTr("Layout")
+                                        font.family: Theme.family
+                                        font.pixelSize: settingsScreen._fpx(Theme.fontBody)
+                                        font.bold: true
+                                        color: settingsScreen._text
+                                    }
+                                    NewBadge { since: "8.3.0"; anchors.verticalCenter: parent.verticalCenter }
+                                }
+                                Label {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: qsTr("A box in a corner, or one line at the top centre")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            SegmentedSelector {
+                                id: overlayLayoutSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                labels: [qsTr("Card"), qsTr("Bar")]
+                                property var _values: [
+                                    StreamingPreferences.OVL_CARD,
+                                    StreamingPreferences.OVL_BAR
+                                ]
+
+                                Binding on currentIndex {
+                                    value: overlayTab._isBar ? 1 : 0
+                                }
+                                onActivated: function(idx) {
+                                    StreamingPreferences.overlayLayout = _values[idx]
+                                    StreamingPreferences.save()
                                 }
                             }
                         }
@@ -4687,7 +4753,11 @@ FocusScope {
                                 Label {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
-                                    text: qsTr("The in-stream settings panel takes the other corner")
+                                    // 8.3.0: the in-stream settings no longer take the other
+                                    // corner — they open at the bottom centre, clear of both.
+                                    text: overlayTab._isBar
+                                          ? qsTr("The bar sits at the top centre")
+                                          : qsTr("The card's corner. Stream settings open at the bottom centre")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
                                     color: settingsScreen._textDim
@@ -4701,6 +4771,8 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
 
                                 labels: [qsTr("Top left"), qsTr("Top right")]
+                                // The bar has one place; the corner stays saved for the card.
+                                disabledIndices: overlayTab._isBar ? [0, 1] : []
                                 property var _values: [
                                     StreamingPreferences.OVP_TOP_LEFT,
                                     StreamingPreferences.OVP_TOP_RIGHT
@@ -4723,13 +4795,15 @@ FocusScope {
                         }
                         RowSeparator { }
 
-                        // ── Font size ─────────────────────────────────────────
+                        // ── Size ──────────────────────────────────────────────
+                        // 8.3.0: a factor on a unit that follows the window's height, so the
+                        // three sizes look the same at 1080p and at 4K (they were pixels).
                         Item {
                             width: parent.width
                             height: settingsScreen._rowHeight
 
                             Label {
-                                text: qsTr("Font size")
+                                text: qsTr("Size")
                                 font.family: Theme.family
                                 font.pixelSize: settingsScreen._fpx(Theme.fontBody)
                                 font.bold: true
@@ -4769,53 +4843,9 @@ FocusScope {
                         }
                         RowSeparator { }
 
-                        // ── Text colour ───────────────────────────────────────
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeight
-
-                            Label {
-                                text: qsTr("Text colour")
-                                font.family: Theme.family
-                                font.pixelSize: settingsScreen._fpx(Theme.fontBody)
-                                font.bold: true
-                                color: settingsScreen._text
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-
-                            SegmentedSelector {
-                                id: overlayColorSelector
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-
-                                labels: [qsTr("White"), qsTr("Green"), qsTr("Yellow"), qsTr("Cyan"), qsTr("Orange")]
-                                property var _values: [
-                                    StreamingPreferences.OTC_WHITE,
-                                    StreamingPreferences.OTC_GREEN,
-                                    StreamingPreferences.OTC_YELLOW,
-                                    StreamingPreferences.OTC_CYAN,
-                                    StreamingPreferences.OTC_ORANGE
-                                ]
-
-                                Binding on currentIndex {
-                                    value: {
-                                        var v = StreamingPreferences.overlayTextColor
-                                        for (var i = 0; i < overlayColorSelector._values.length; i++) {
-                                            if (overlayColorSelector._values[i] === v) return i
-                                        }
-                                        return 0
-                                    }
-                                }
-                                onActivated: function(idx) {
-                                    StreamingPreferences.overlayTextColor = _values[idx]
-                                    StreamingPreferences.save()
-                                }
-                            }
-                        }
-                        RowSeparator { }
+                        // (Text colour was here until 8.2.0. The redesigned overlays draw in the
+                        // theme's own text colours and the app's accent, so the five colours had
+                        // nowhere left to go; the preference went with the row.)
 
                         // ── Transparency ──────────────────────────────────────
                         // Five steps rather than a slider: a slider is the one control on this
@@ -4843,7 +4873,9 @@ FocusScope {
                                 Label {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
-                                    text: qsTr("How much of the game shows through the box behind the text")
+                                    text: overlayTab._isBar
+                                          ? qsTr("How much of the game shows through the bar")
+                                          : qsTr("How much of the game shows through the box behind the text")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
                                     color: settingsScreen._textDim
@@ -4904,7 +4936,9 @@ FocusScope {
                                 Label {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
-                                    text: qsTr("Adds the highest of the last few seconds to the bitrate line")
+                                    text: overlayTab._isBar
+                                          ? qsTr("Adds the highest of the last few seconds to the bitrate")
+                                          : qsTr("Adds the highest of the last few seconds to the bitrate line")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
                                     color: settingsScreen._textDim
@@ -4918,10 +4952,9 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: (overlayTab._itemMask & StreamingPreferences.OI_BITRATE_PEAK) !== 0
                                 onToggled: function(v) {
-                                    StreamingPreferences.overlayItems = v
-                                            ? (StreamingPreferences.overlayItems | StreamingPreferences.OI_BITRATE_PEAK)
-                                            : (StreamingPreferences.overlayItems & ~StreamingPreferences.OI_BITRATE_PEAK)
-                                    StreamingPreferences.save()
+                                    overlayTab._setMask(v
+                                            ? (overlayTab._itemMask | StreamingPreferences.OI_BITRATE_PEAK)
+                                            : (overlayTab._itemMask & ~StreamingPreferences.OI_BITRATE_PEAK))
                                 }
                             }
                         }
@@ -4952,7 +4985,8 @@ FocusScope {
                     wrapMode: Text.WordWrap
                     text: overlayTab.focusedDesc.length > 0
                           ? overlayTab.focusedDesc
-                          : qsTr("Select a line to switch it on or off")
+                          : overlayTab._isBar ? qsTr("Select a figure to switch it on or off")
+                                              : qsTr("Select a line to switch it on or off")
                     font.family: Theme.family
                     font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
                     color: settingsScreen._textDim
@@ -4967,59 +5001,31 @@ FocusScope {
                  * controller it was worse than that, because the preview held nothing focusable,
                  * so the pad could not reach it at all and you were toggling blind.
                  *
-                 * So the box became the control. Each line is focusable and A turns it on or off,
-                 * in the real face, colours and transparency it will have while streaming. Lines
-                 * that are off stay where they are, dimmed: nothing jumps as you work, and you
-                 * turn one back on where you left it.
+                 * So the box became the control. Each item is focusable and A turns it on or off,
+                 * in the face, colours and transparency it will have while streaming. Items that
+                 * are off stay where they are, dimmed: nothing jumps as you work, and you turn one
+                 * back on where you left it.
                  *
-                 * It also happens to be the only version that fits: thirteen rows of 20px mono is
-                 * about a fifth of the height thirteen described switch rows took, which is what
-                 * made the old one unusable at 1080p.
+                 * 8.3.0: drawn as the redesigned overlays, on a 1080p screen in small — the card
+                 * in its corner or the bar at the top centre, and the Stream Settings panel at the
+                 * bottom centre, where it opens in the stream. The overlays' unit is one pixel of
+                 * that screen, so Small / Medium / Large keep their real proportions here.
                  */
                 Rectangle {
                     id: itemsStrip
-                    width: parent.width
+                    // Never wider than the screen it shows: the scale stops at 1, and a wider strip
+                    // left the 1920 screen against its left edge — the corner and the centre of the
+                    // preview were no longer those of the strip (30/10/2026).
+                    width: Math.min(parent.width, 1920 + _inset * 2)
+                    x: (parent.width - width) / 2
                     radius: 8
                     color: "transparent"
                     border.color: settingsScreen._border
                     border.width: 1
-                    implicitHeight: Math.round(
-                        Math.max(itemsCol.implicitHeight + 20, panelCard.height) * _scale) + 26
 
                     readonly property int _inset: 13
-
-                    /*
-                     * ⚠️ The scale is deliberately NOT tied to the stream resolution any more,
-                     * and it must not be tied to it again. It used to be `strip width / stream
-                     * width`, on the argument that the overlay is composited into the stream
-                     * 1:1 (d3d11va draws the card at its literal pixel size, and SDL_ttf point
-                     * sizes are pixels at 72 DPI), so a 25pt line really does take 25 of the
-                     * stream's pixels — one line out of 1080, or out of 2160 at 4K.
-                     *
-                     * That ratio only looks honest. The strip is not a scale model of the
-                     * screen: it is ~1770 wide and ~300 tall against a 3840x2160 stream, so
-                     * scaling by width while the height is arbitrary conveys nothing the eye
-                     * can check. What it did convey, reliably, is that the higher your
-                     * resolution the less usable this page becomes — at 4K it put Large at
-                     * 11px and Small at 7px, i.e. the control's whole range below legibility.
-                     *
-                     * ⚠️ The reference is the natural width at LARGE, whatever is selected.
-                     * Measuring the current size instead would blow Small up to fill the strip
-                     * and make all three look identical — the same self-inverting preview the
-                     * old font-size floor produced, from the other side. Against a fixed
-                     * reference the three keep their 16:20:25 relation, which is the only
-                     * thing the setting actually means.
-                     *
-                     * Both cards take this one scale: the stats card's size is the user's, the
-                     * settings panel's is fixed at 20 in OverlayManager, so drawing them
-                     * together is also how you see one shrink against the other.
-                     */
-                    readonly property real _statsNaturalW:
-                        itemsCol.implicitWidth * 25 / Math.max(1, overlayTab._fontPx) + 22
-
-                    readonly property real _scale:
-                        Math.min(1, (width - _inset * 2 - 40)
-                                    / Math.max(1, _statsNaturalW + panelCard.width))
+                    readonly property real _scale: Math.min(1, (width - _inset * 2) / 1920)
+                    implicitHeight: Math.round(overlayScreen.height * _scale) + _inset * 2
 
                     // A surface, not a scene: transparency is the one setting that does not
                     // exist on its own — over a panel the box's own colour it cannot be judged.
@@ -5035,460 +5041,650 @@ FocusScope {
                         }
                     }
 
-                    // Everything the overlay is made of, scaled as one: box, text, padding. Two
-                    // separately-scaled things would drift, and the padding is part of the look.
-                    //
-                    // ⚠️ transformOrigin follows the corner it is pinned to. An item scaled
-                    // about TopRight shrinks towards x + width, so that edge stays put and x is
-                    // set from the UNSCALED width — subtracting the scaled width here would
-                    // push it inwards twice.
                     Item {
-                        x: overlayTab._statsRight
-                           ? itemsStrip.width - itemsStrip._inset - width
-                           : itemsStrip._inset
+                        id: overlayScreen
+                        x: itemsStrip._inset
                         y: itemsStrip._inset
-                        width: itemsCol.implicitWidth + 22
-                        height: itemsCol.implicitHeight + 20
-                        transformOrigin: overlayTab._statsRight ? Item.TopRight : Item.TopLeft
+                        width: 1920
+                        height: 24 + (overlayTab._isBar ? barPreview.height * barPreview.scale : statsCard.height)
+                                + 48 + panelCard.height + 36
+                        transformOrigin: Item.TopLeft
                         scale: itemsStrip._scale
 
-                        // The box itself, drawn with the user's own colour and transparency.
+                        // ── The card (OverlayManager::buildCardSurface) ─────────────────
                         Rectangle {
-                            anchors.fill: parent
-                            radius: 9
+                            id: statsCard
+                            visible: !overlayTab._isBar
+                            readonly property real u: overlayTab._sizeFactor
+                            x: overlayTab._statsRight ? overlayScreen.width - width - 24 : 24
+                            y: 24
+                            width: cardCol.width + 36 * u
+                            height: cardCol.implicitHeight + 36 * u
+                            radius: 14 * u
                             color: overlayTab._boxColor
-                        }
+                            border.color: overlayTab._oFrame
+                            border.width: Math.max(1, 1.25 * u)
 
-                    Column {
-                        id: itemsCol
-                        x: 11
-                        y: 10
-                        spacing: 0
+                            Column {
+                                id: cardCol
+                                x: 18 * statsCard.u
+                                y: 18 * statsCard.u
+                                width: 330 * statsCard.u
 
-                        Repeater {
-                            model: overlayTab.rowModel
-
-                            delegate: Item {
-                                id: lineRow
-                                width: lineCol.implicitWidth + 14
-                                height: lineCol.implicitHeight + 4
-
-                                // Headings are derived, not chosen: they appear only when there
-                                // are two sections to tell apart. Making them focusable would
-                                // offer a switch that decides nothing.
-                                // Landing on any line should bring the whole box into view, not
-                                // just the one line: a row is 30px of a 13-row block, so
-                                // entering from above used to leave everything below the fold —
-                                // and the point of the block is that you see the shape change
-                                // as you switch lines on and off. See contentFlick's handler.
-                                readonly property Item revealTarget: itemsStrip
-
-                                readonly property bool _pickable: modelData.kind === "item"
-                                readonly property var _def: _pickable ? overlayTab.itemDefs[modelData.defIndex] : null
-                                readonly property bool _on: _pickable
-                                    && (overlayTab._itemMask & _def.bit) !== 0
-                                // The bitrate peak has nothing to be the peak of on its own.
-                                readonly property bool _usable: _pickable && (!_def.sub
-                                    || (overlayTab._itemMask & StreamingPreferences.OI_BITRATE) !== 0)
-
-                                activeFocusOnTab: _pickable && _usable
-                                onActiveFocusChanged: if (activeFocus && _def) overlayTab.focusedDesc = _def.desc
-
-                                function _toggle() {
-                                    if (!_usable) return
-                                    StreamingPreferences.overlayItems = _on
-                                        ? (StreamingPreferences.overlayItems & ~_def.bit)
-                                        : (StreamingPreferences.overlayItems | _def.bit)
-                                    StreamingPreferences.save()
-                                }
-
-                                Keys.onReturnPressed: function(event) { _toggle(); event.accepted = true }
-                                Keys.onEnterPressed:  function(event) { _toggle(); event.accepted = true }
-                                Keys.onSpacePressed:  function(event) { _toggle(); event.accepted = true }
-
-                                // Disabled on the two section headings and on a row that has
-                                // nothing to switch: a disabled HoverState receives no hover
-                                // at all, so neither the wash nor the pointing hand appears
-                                // over something that cannot be clicked.
-                                HoverState {
-                                    id: lineHov
-                                    enabled: lineRow._pickable && lineRow._usable
-                                }
-
-                                Rectangle {
-                                    anchors.fill: parent
-                                    anchors.margins: -2
-                                    radius: 4
-                                    visible: lineHov.keyFocused
-                                    color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.18)
-                                    border.color: Theme.ink
-                                    border.width: 1
-                                }
-
-                                // These rows had no pointer feedback at all, so the focus ring
-                                // could not simply be suppressed under the mouse — something
-                                // has to take its place. A row inside the preview box is a
-                                // filled shape with no border of its own, so it washes, the
-                                // same way a SegmentedSelector pill does.
-                                Rectangle {
-                                    anchors.fill: parent
-                                    anchors.margins: -2
-                                    radius: 4
-                                    color: Qt.rgba(1, 1, 1, 0.05)
-                                    opacity: lineHov.active ? 1 : 0
-
-                                    Behavior on opacity {
-                                        enabled: !Theme.reduceAnimations
-                                        NumberAnimation { duration: 120; easing.type: Easing.OutQuad }
-                                    }
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    enabled: lineRow._pickable && lineRow._usable
-                                    // cursorShape belongs to HoverState now.
-                                    onClicked: { lineRow.forceActiveFocus(); lineRow._toggle() }
-                                }
-
-                                Column {
-                                    id: lineCol
-                                    x: 7
-                                    y: 2
-                                    spacing: 0
-
-                                    Repeater {
-                                        model: modelData.kind === "head"
-                                               ? [modelData.text]
-                                               : overlayTab.linesFor(modelData.defIndex)
-                                        delegate: Text {
-                                            text: modelData
-                                            // Headings keep the overlay's own grey; a line that
-                                            // is off is the chosen colour, faded, so it still
-                                            // reads as the thing it will be once switched on.
-                                            color: lineRow._pickable ? overlayTab._txtColor : "#8a8a8a"
-                                            opacity: !lineRow._pickable ? 1.0
-                                                   : !lineRow._usable ? 0.18
-                                                   : lineRow._on ? 1.0 : 0.28
-                                            font.family: overlayFace.status === FontLoader.Ready
-                                                         ? overlayFace.name : "monospace"
-                                            font.pixelSize: overlayTab._fontPx
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    }
-
-                    /*
-                     * The in-stream Stream Settings panel, in the corner the stats card is not
-                     * in.
-                     *
-                     * ⚠️ Two positions and not three is load-bearing — it is what lets this
-                     * panel take the opposite corner by itself (OverlayManager::getOverlayOriginX
-                     * flips `onRight` for OverlayStreamSettings) — and this is where that shows.
-                     * So the half of the strip the stats card does not fill is not waste: it is
-                     * the preview of the Position setting, which nothing else displayed.
-                     *
-                     * A replica, not a control. Resolution, frame rate, bitrate, HDR and pacing
-                     * belong to Video and Network; they are only read here, so the picture is
-                     * the user's own. The rows are deliberately not focusable — in this strip
-                     * focus means "this line is a switch", and none of these are.
-                     *
-                     * Metrics mirror buildPanelSurface: main font 20 — fixed there, NOT the
-                     * user's size, which is why picking Small visibly shrinks the stats card
-                     * against this one — small font main-5, 16 padding, 18 column gap.
-                     */
-                    Item {
-                        id: panelCard
-                        x: overlayTab._statsRight
-                           ? itemsStrip._inset
-                           : itemsStrip.width - itemsStrip._inset - width
-                        y: itemsStrip._inset
-                        transformOrigin: overlayTab._statsRight ? Item.TopLeft : Item.TopRight
-                        scale: itemsStrip._scale
-
-                        readonly property int _main:   20
-                        readonly property int _small:  15
-                        readonly property int _pad:    16
-                        readonly property int _colGap: 18
-                        readonly property int _gap:     9
-                        readonly property int _mainH:  Math.round(_main  * 1.32)
-                        readonly property int _smallH: Math.round(_small * 1.32)
-                        readonly property int _rowH:   _mainH + 10
-                        readonly property int _arrowW: 6
-                        readonly property int _arrowsW: (_arrowW + _gap) * 2
-
-                        function _w(s, px) { return s.length * overlayTab._adv * px }
-
-                        // ⚠️ This is the Stream Settings panel's preview, not the performance
-                        // overlay's — that one lost its Frame pacing line in 5.2.0, the panel
-                        // still has the row. So these are the panel's own labels (s_PacingLabels
-                        // in streamsettingsoverlay.cpp), which the preview exists to match.
-                        // Session forces the mode off without V-Sync.
-                        readonly property string _pacing:
-                              !StreamingPreferences.enableVsync ? "Off"
-                            : StreamingPreferences.framePacingMode === StreamingPreferences.FP_OFF ? "Off"
-                            :                                                                        "On"
-
-                        // The same rows the panel builds, in the same order, from the same
-                        // preferences. Frame pacing is read-only without V-Sync there, so it is
-                        // read-only here: no arrows, muted, and never drawn as the selection.
-                        readonly property var _rows: [
-                            { label: "Resolution",
-                              value: StreamingPreferences.width + "x" + StreamingPreferences.height,
-                              hint: "", locked: false },
-                            { label: "Frame rate",
-                              value: StreamingPreferences.fps + " fps",
-                              hint: "", locked: false },
-                            { label: "Bitrate",
-                              value: Math.round(StreamingPreferences.bitrateKbps / 1000) + " Mbps",
-                              hint: "", locked: false },
-                            { label: "HDR",
-                              value: StreamingPreferences.enableHdr ? "On" : "Off",
-                              hint: "", locked: false },
-                            { label: "Frame pacing",
-                              value: panelCard._pacing,
-                              hint: StreamingPreferences.enableVsync ? "" : "V-Sync off",
-                              locked: !StreamingPreferences.enableVsync }
-                        ]
-
-                        readonly property string _status: "No changes"
-                        readonly property var _footer: ["Apply", "Cancel", "Save"]
-
-                        // Widest of rows, header and footer — the panel measures all three, and
-                        // a monospace face makes each one a multiplication rather than a layout
-                        // pass, so nothing here can feed back into the width.
-                        readonly property real _contentW: {
-                            var m = 0, i
-                            for (i = 0; i < _rows.length; i++) {
-                                var r = _rows[i]
-                                var cluster = _w(r.value, _main)
-                                            + (r.locked ? 0 : _arrowsW)
-                                            + (r.hint === "" ? 0 : _w(r.hint, _small) + _gap)
-                                m = Math.max(m, _w(r.label, _main) + _colGap + cluster)
-                            }
-                            m = Math.max(m, _w("STREAM SETTINGS", _small) + 28 + _w("Global", _small))
-                            m = Math.max(m, _w(_status, _small))
-                            var f = 0
-                            for (i = 0; i < _footer.length; i++) {
-                                f += (_mainH + 2) + 7 + _w(_footer[i], _main)
-                                if (i + 1 < _footer.length) f += _colGap
-                            }
-                            return Math.max(m, f)
-                        }
-
-                        width:  Math.ceil(_contentW) + _pad * 2
-                        height: panelBody.y + panelBody.implicitHeight + 14
-
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: 12
-                            color: "#F2161619"
-                        }
-
-                        Column {
-                            id: panelBody
-                            y: 12
-                            width: parent.width
-                            spacing: 0
-
-                            // Header: title left, save target chip right.
-                            Item {
-                                width: parent.width
-                                height: panelCard._smallH + 12
-                                Text {
-                                    x: panelCard._pad
-                                    height: parent.height
-                                    verticalAlignment: Text.AlignVCenter
-                                    text: "STREAM SETTINGS"
-                                    color: "#B8BCC2"
-                                    font.family: overlayTab._mono
-                                    font.pixelSize: panelCard._small
-                                }
-                                Text {
-                                    x: parent.width - panelCard._pad - width
-                                    height: parent.height
-                                    verticalAlignment: Text.AlignVCenter
-                                    // Grey is the Global tint; a game override is amber and a
-                                    // host profile cyan, but only a live session knows which.
-                                    text: "Global"
-                                    color: "#9AA0A6"
-                                    font.family: overlayTab._mono
-                                    font.pixelSize: panelCard._small
-                                }
-                            }
-                            Rectangle {
-                                x: panelCard._pad
-                                width: panelCard.width - panelCard._pad * 2
-                                height: 1
-                                color: "#333339"
-                            }
-                            Item { width: 1; height: 8 }
-
-                            Repeater {
-                                model: panelCard._rows
-
-                                delegate: Item {
-                                    id: psRow
-                                    width: panelBody.width
-                                    height: panelCard._rowH
-
-                                    // Only the first row is drawn as the selection: it is what
-                                    // shows the green bar and label the panel uses for focus.
-                                    readonly property bool _sel: index === 0 && !modelData.locked
-
-                                    Rectangle {
-                                        visible: psRow._sel
-                                        x: 5; y: 2
-                                        width: panelCard.width - 10
-                                        height: psRow.height - 4
-                                        color: "#F2212F26"
-                                    }
-                                    Rectangle {
-                                        visible: psRow._sel
-                                        x: 8; y: 5
-                                        width: 3
-                                        height: psRow.height - 10
-                                        radius: 1
-                                        color: "#22C55E"
-                                    }
-
+                                Item {
+                                    width: parent.width
+                                    height: 26 * statsCard.u
                                     Text {
-                                        x: panelCard._pad
-                                        height: parent.height
-                                        verticalAlignment: Text.AlignVCenter
-                                        text: modelData.label
-                                        color: modelData.locked ? "#767A80"
-                                             : psRow._sel       ? "#4ADE80"
-                                             :                    "#CED2D6"
-                                        font.family: overlayTab._mono
-                                        font.pixelSize: panelCard._main
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "Performance"
+                                        color: overlayTab._oText2
+                                        font.family: overlayTab._sans
+                                        font.pixelSize: 11 * statsCard.u
+                                        font.weight: Font.DemiBold
+                                        font.letterSpacing: 1.4 * statsCard.u
+                                        font.capitalization: Font.AllUppercase
                                     }
-
-                                    // Right cluster, laid inward from the edge: hint ‹ value ›.
-                                    Row {
-                                        x: parent.width - panelCard._pad - width
-                                        height: parent.height
-                                        spacing: panelCard._gap
-
-                                        Text {
-                                            visible: modelData.hint !== ""
-                                            height: parent.height
-                                            verticalAlignment: Text.AlignVCenter
-                                            text: modelData.hint
-                                            color: "#767A80"
-                                            font.family: overlayTab._mono
-                                            font.pixelSize: panelCard._small
-                                        }
-                                        Canvas {
-                                            visible: !modelData.locked
-                                            width: panelCard._arrowW
-                                            height: parent.height
-                                            property color tint: psRow._sel ? "#C2C6CC" : "#666A70"
-                                            onTintChanged: requestPaint()
-                                            onPaint: {
-                                                var c = getContext("2d")
-                                                c.reset()
-                                                var h = Math.max(8, panelCard._mainH / 2)
-                                                var t = (height - h) / 2
-                                                c.fillStyle = tint
-                                                c.beginPath()
-                                                c.moveTo(width, t)
-                                                c.lineTo(width, t + h)
-                                                c.lineTo(0, t + h / 2)
-                                                c.closePath()
-                                                c.fill()
-                                            }
-                                        }
-                                        Text {
-                                            height: parent.height
-                                            verticalAlignment: Text.AlignVCenter
-                                            text: modelData.value
-                                            color: modelData.locked ? "#767A80" : "#F0F0F0"
-                                            font.family: overlayTab._mono
-                                            font.pixelSize: panelCard._main
-                                        }
-                                        Canvas {
-                                            visible: !modelData.locked
-                                            width: panelCard._arrowW
-                                            height: parent.height
-                                            property color tint: psRow._sel ? "#C2C6CC" : "#666A70"
-                                            onTintChanged: requestPaint()
-                                            onPaint: {
-                                                var c = getContext("2d")
-                                                c.reset()
-                                                var h = Math.max(8, panelCard._mainH / 2)
-                                                var t = (height - h) / 2
-                                                c.fillStyle = tint
-                                                c.beginPath()
-                                                c.moveTo(0, t)
-                                                c.lineTo(0, t + h)
-                                                c.lineTo(width, t + h / 2)
-                                                c.closePath()
-                                                c.fill()
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Item { width: 1; height: 9 }
-                            Rectangle {
-                                x: panelCard._pad
-                                width: panelCard.width - panelCard._pad * 2
-                                height: 1
-                                color: "#333339"
-                            }
-                            Item { width: 1; height: 9 }
-
-                            Item {
-                                width: parent.width
-                                height: panelCard._smallH + 8
-                                Text {
-                                    x: panelCard._pad
-                                    height: parent.height
-                                    verticalAlignment: Text.AlignVCenter
-                                    text: panelCard._status
-                                    color: "#808080"
-                                    font.family: overlayTab._mono
-                                    font.pixelSize: panelCard._small
-                                }
-                            }
-
-                            // Footer: the vendor button glyphs the panel rasterises for real.
-                            // ⚠️ PadGlyph follows the detected pad when the glyph set is Auto,
-                            // where the panel's own padIcon() falls back to Xbox — the two
-                            // differ only in that case, and padIcon() is the odd one out.
-                            Item {
-                                width: parent.width
-                                height: panelCard._mainH + 12
-                                Row {
-                                    x: panelCard._pad
-                                    height: parent.height
-                                    spacing: panelCard._colGap
-
-                                    Repeater {
-                                        model: [
-                                            { key: "A", label: panelCard._footer[0] },
-                                            { key: "B", label: panelCard._footer[1] },
-                                            { key: "Y", label: panelCard._footer[2] }
-                                        ]
-                                        delegate: Row {
-                                            height: parent.height
-                                            spacing: 7
-                                            PadGlyph {
+                                    Rectangle {
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        height: 24 * statsCard.u
+                                        width: chipRow.implicitWidth + 18 * statsCard.u
+                                        radius: height / 2
+                                        color: "transparent"
+                                        border.color: "#30ffffff"
+                                        border.width: Math.max(1, statsCard.u)
+                                        Row {
+                                            id: chipRow
+                                            anchors.centerIn: parent
+                                            spacing: 6 * statsCard.u
+                                            Rectangle {
+                                                width: 7 * statsCard.u; height: width; radius: width / 2
+                                                color: overlayTab._oOnline
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                buttonKey: modelData.key
-                                                size: panelCard._mainH + 2
                                             }
                                             Text {
-                                                height: parent.height
-                                                verticalAlignment: Text.AlignVCenter
+                                                text: "HOST"
+                                                color: overlayTab._oText
+                                                font.family: overlayTab._sans
+                                                font.pixelSize: 11.5 * statsCard.u
+                                                font.weight: Font.DemiBold
+                                                font.letterSpacing: 1 * statsCard.u
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Repeater {
+                                    model: overlayTab.cardSections
+                                    delegate: Column {
+                                        id: secCol
+                                        width: cardCol.width
+                                        readonly property var _sec: modelData
+
+                                        Item { width: 1; height: 5 * statsCard.u }
+                                        Rectangle { width: parent.width; height: Math.max(1, statsCard.u); color: overlayTab._oLine }
+                                        Item {
+                                            width: parent.width
+                                            height: 30 * statsCard.u
+                                            Text {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                anchors.verticalCenterOffset: 2 * statsCard.u
+                                                text: secCol._sec.host === true
+                                                      && (overlayTab._itemMask & StreamingPreferences.OI_HOST_METRICS)
+                                                      ? "Host · StreamTweak" : secCol._sec.title
+                                                color: overlayTab._oText3
+                                                font.family: overlayTab._sans
+                                                font.pixelSize: 11 * statsCard.u
+                                                font.weight: Font.DemiBold
+                                                font.letterSpacing: 1.4 * statsCard.u
+                                                font.capitalization: Font.AllUppercase
+                                            }
+                                        }
+
+                                        Repeater {
+                                            model: secCol._sec.items
+                                            delegate: Item {
+                                                id: lineRow
+                                                width: secCol.width
+                                                height: rowsCol.implicitHeight
+
+                                                // Landing on any item should bring the whole box into
+                                                // view, not just the one item: the point of the block is
+                                                // that you see the shape change as you switch items on and
+                                                // off. See contentFlick's handler.
+                                                readonly property Item revealTarget: itemsStrip
+
+                                                readonly property int _di: modelData
+                                                readonly property var _def: overlayTab.itemDefs[_di]
+                                                readonly property bool _on: (overlayTab._itemMask & _def.bit) !== 0
+
+                                                activeFocusOnTab: true
+                                                onActiveFocusChanged: if (activeFocus) overlayTab.focusedDesc = _def.desc
+
+                                                function _toggle() {
+                                                    overlayTab._setMask(_on ? (overlayTab._itemMask & ~_def.bit)
+                                                                            : (overlayTab._itemMask | _def.bit))
+                                                }
+
+                                                Keys.onReturnPressed: function(event) { _toggle(); event.accepted = true }
+                                                Keys.onEnterPressed:  function(event) { _toggle(); event.accepted = true }
+                                                Keys.onSpacePressed:  function(event) { _toggle(); event.accepted = true }
+
+                                                HoverState { id: lineHov }
+
+                                                Rectangle {
+                                                    anchors.fill: parent
+                                                    anchors.margins: -4 * statsCard.u
+                                                    radius: 6 * statsCard.u
+                                                    visible: lineHov.keyFocused
+                                                    color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.18)
+                                                    border.color: Theme.ink
+                                                    border.width: 1
+                                                }
+
+                                                // A row inside the preview box is a filled shape with no
+                                                // border of its own, so the pointer washes it, the same way
+                                                // a SegmentedSelector pill does.
+                                                Rectangle {
+                                                    anchors.fill: parent
+                                                    anchors.margins: -4 * statsCard.u
+                                                    radius: 6 * statsCard.u
+                                                    color: Qt.rgba(1, 1, 1, 0.05)
+                                                    opacity: lineHov.active ? 1 : 0
+
+                                                    Behavior on opacity {
+                                                        enabled: !Theme.reduceAnimations
+                                                        NumberAnimation { duration: 120; easing.type: Easing.OutQuad }
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    // cursorShape belongs to HoverState now.
+                                                    onClicked: { lineRow.forceActiveFocus(); lineRow._toggle() }
+                                                }
+
+                                                Column {
+                                                    id: rowsCol
+                                                    width: parent.width
+                                                    // Off: the item faded, in place.
+                                                    opacity: lineRow._on ? 1.0 : 0.28
+
+                                                    Repeater {
+                                                        model: overlayTab.rowsFor(lineRow._di)
+                                                        delegate: Item {
+                                                            width: rowsCol.width
+                                                            height: 25 * statsCard.u
+                                                            Text {
+                                                                anchors.verticalCenter: parent.verticalCenter
+                                                                text: modelData[0]
+                                                                color: overlayTab._oText2
+                                                                font.family: overlayTab._sans
+                                                                font.pixelSize: 15 * statsCard.u
+                                                            }
+                                                            Text {
+                                                                anchors.right: parent.right
+                                                                anchors.verticalCenter: parent.verticalCenter
+                                                                text: modelData[1]
+                                                                color: overlayTab._oText
+                                                                font.family: overlayTab._mono
+                                                                font.pixelSize: 15 * statsCard.u
+                                                                font.weight: Font.Medium
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── The bar (OverlayManager::buildBarSurface) ───────────────────
+                        // Every figure, in the bar's order; off ones faded in place, Presentation
+                        // cadence greyed to say it stays in the card. Wider than the bar may be
+                        // in the stream (85% of 1920), it is scaled to fit here instead of wrapping.
+                        Rectangle {
+                            id: barPreview
+                            visible: overlayTab._isBar
+                            readonly property real u: overlayTab._sizeFactor
+                            width: barRow.implicitWidth + 32 * u
+                            height: 44 * u
+                            radius: height / 2
+                            color: overlayTab._boxColor
+                            border.color: overlayTab._oFrame
+                            border.width: Math.max(1, 1.25 * u)
+                            transformOrigin: Item.TopLeft
+                            scale: Math.min(1, 1632 / Math.max(1, width))
+                            x: (overlayScreen.width - width * scale) / 2
+                            y: 24
+
+                            Row {
+                                id: barRow
+                                anchors.centerIn: parent
+                                spacing: 14 * barPreview.u
+
+                                Rectangle {
+                                    width: 9 * barPreview.u; height: width; radius: width / 2
+                                    color: overlayTab._oOnline
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+
+                                Repeater {
+                                    model: overlayTab.barOrder
+                                    delegate: Row {
+                                        id: barEntry
+                                        readonly property int _di: modelData
+                                        spacing: 14 * barPreview.u
+                                        anchors.verticalCenter: parent.verticalCenter
+
+                                        Rectangle {
+                                            visible: index > 0
+                                            width: Math.max(1, barPreview.u)
+                                            height: 20 * barPreview.u
+                                            color: "#30ffffff"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+
+                                        Item {
+                                            id: barItem
+                                            width: barSegs.implicitWidth
+                                            height: 30 * barPreview.u
+                                            anchors.verticalCenter: parent.verticalCenter
+
+                                            // As the card's items: landing on an entry brings the
+                                            // whole strip into view.
+                                            readonly property Item revealTarget: itemsStrip
+
+                                            readonly property var _def: overlayTab.itemDefs[barEntry._di]
+                                            readonly property bool _usable:
+                                                overlayTab.barPartsFor(barEntry._di) !== null
+                                            readonly property bool _on: _usable
+                                                && (overlayTab._itemMask & _def.bit) !== 0
+
+                                            activeFocusOnTab: _usable
+                                            onActiveFocusChanged: if (activeFocus) overlayTab.focusedDesc = _def.desc
+
+                                            function _toggle() {
+                                                if (!_usable) return
+                                                overlayTab._setMask(_on ? (overlayTab._itemMask & ~_def.bit)
+                                                                        : (overlayTab._itemMask | _def.bit))
+                                            }
+
+                                            Keys.onReturnPressed: function(event) { _toggle(); event.accepted = true }
+                                            Keys.onEnterPressed:  function(event) { _toggle(); event.accepted = true }
+                                            Keys.onSpacePressed:  function(event) { _toggle(); event.accepted = true }
+
+                                            /*
+                                             * The bar is a line, so it is walked as one (30/10/2026):
+                                             * left and right move along its entries and stop at the
+                                             * ends; up and down — in Settings the D-pad's Shift+Tab
+                                             * and Tab — leave it for the rows above and whatever
+                                             * follows, instead of stepping through every entry.
+                                             */
+                                            readonly property bool _barEntry: true
+                                            function _along(forward) {
+                                                var n = barItem.nextItemInFocusChain(forward)
+                                                if (n && n._barEntry === true) n.forceActiveFocus(forward ? Qt.TabFocusReason
+                                                                                                          : Qt.BacktabFocusReason)
+                                            }
+                                            function _leave(forward) {
+                                                var n = barItem.nextItemInFocusChain(forward)
+                                                for (var guard = 0; n && n._barEntry === true && guard < 64; guard++)
+                                                    n = n.nextItemInFocusChain(forward)
+                                                if (n) n.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason)
+                                            }
+                                            Keys.onLeftPressed:  function(event) { _along(false); event.accepted = true }
+                                            Keys.onRightPressed: function(event) { _along(true);  event.accepted = true }
+                                            // ⚠️ The pad's up is Key_Tab WITH Shift (a keyboard sends Key_Backtab).
+                                            Keys.onTabPressed:     function(event) { _leave(!(event.modifiers & Qt.ShiftModifier)); event.accepted = true }
+                                            Keys.onBacktabPressed: function(event) { _leave(false); event.accepted = true }
+
+                                            HoverState {
+                                                id: barHov
+                                                enabled: barItem._usable
+                                            }
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                anchors.margins: -4 * barPreview.u
+                                                radius: 6 * barPreview.u
+                                                visible: barHov.keyFocused
+                                                color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.18)
+                                                border.color: Theme.ink
+                                                border.width: 1
+                                            }
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                anchors.margins: -4 * barPreview.u
+                                                radius: 6 * barPreview.u
+                                                color: Qt.rgba(1, 1, 1, 0.05)
+                                                opacity: barHov.active ? 1 : 0
+
+                                                Behavior on opacity {
+                                                    enabled: !Theme.reduceAnimations
+                                                    NumberAnimation { duration: 120; easing.type: Easing.OutQuad }
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                enabled: barItem._usable
+                                                onClicked: { barItem.forceActiveFocus(); barItem._toggle() }
+                                            }
+
+                                            Row {
+                                                id: barSegs
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                spacing: 14 * barPreview.u
+                                                // As the card: off is faded; with no short form, fainter still.
+                                                opacity: !barItem._usable ? 0.18 : barItem._on ? 1.0 : 0.28
+
+                                                Repeater {
+                                                    model: overlayTab.barPartsFor(barEntry._di) || [["Cadence", "card only", ""]]
+                                                    delegate: Row {
+                                                        spacing: 7 * barPreview.u
+                                                        Text {
+                                                            visible: modelData[0] !== ""
+                                                            anchors.baseline: barVal.baseline
+                                                            text: modelData[0]
+                                                            color: overlayTab._oText3
+                                                            font.family: overlayTab._sans
+                                                            font.pixelSize: 11 * barPreview.u
+                                                            font.weight: Font.DemiBold
+                                                            font.letterSpacing: 1.4 * barPreview.u
+                                                            font.capitalization: Font.AllUppercase
+                                                        }
+                                                        Text {
+                                                            id: barVal
+                                                            text: modelData[1]
+                                                            color: overlayTab._oText
+                                                            font.family: overlayTab._mono
+                                                            font.pixelSize: 17 * barPreview.u
+                                                            font.weight: Font.Medium
+                                                        }
+                                                        Text {
+                                                            visible: modelData[2] !== ""
+                                                            anchors.baseline: barVal.baseline
+                                                            text: modelData[2]
+                                                            color: overlayTab._oText2
+                                                            font.family: overlayTab._sans
+                                                            font.pixelSize: 12.5 * barPreview.u
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        /*
+                         * ── The Stream Settings panel (OverlayManager::buildPanelSurface) ──
+                         *
+                         * At the bottom centre, where it opens in the stream (8.3.0) — so the
+                         * strip also shows that it never meets the card or the bar. A replica, not
+                         * a control: resolution, frame rate, bitrate, HDR and pacing belong to Video
+                         * and Network and are only read here, so the picture is the user's own. The
+                         * tiles are deliberately not focusable — in this strip focus means "this is
+                         * a switch", and none of these are.
+                         *
+                         * Always Medium, as in the stream: a control being operated keeps its size
+                         * whatever someone picked for the readout above.
+                         */
+                        Rectangle {
+                            id: panelCard
+
+                            // ⚠️ The panel's own labels (s_PacingLabels in streamsettingsoverlay.cpp).
+                            // Session forces the mode off without V-Sync.
+                            readonly property string _pacing:
+                                  !StreamingPreferences.enableVsync ? "Off"
+                                : settingsScreen._vrrActive ? "On"
+                                : StreamingPreferences.framePacingMode === StreamingPreferences.FP_OFF ? "Off"
+                                :                                                                        "On"
+                            readonly property int _maxKbps:
+                                StreamingPreferences.getMaxBitrate(StreamingPreferences.videoCodecConfig)
+
+                            // The same tiles the panel builds, in the same order, from the same
+                            // preferences. Frame pacing is read-only without V-Sync or with VRR
+                            // there, so it is here: greyed, a padlock, never the selection.
+                            readonly property var _rows: [
+                                { label: "Resolution",
+                                  value: StreamingPreferences.width + "×" + StreamingPreferences.height,
+                                  hint: "", locked: false, gauge: -1 },
+                                { label: "Frame rate",
+                                  value: StreamingPreferences.fps + " fps",
+                                  hint: "", locked: false, gauge: -1 },
+                                { label: "Bitrate",
+                                  value: Math.round(StreamingPreferences.bitrateKbps / 1000) + " Mbps",
+                                  hint: "", locked: false,
+                                  // From 5000 kbps, the panel's own lowest (kBitrateMinKbps).
+                                  gauge: _maxKbps > 5000 ? (StreamingPreferences.bitrateKbps - 5000) / (_maxKbps - 5000) : -1 },
+                                { label: "HDR",
+                                  value: StreamingPreferences.enableHdr ? "On" : "Off",
+                                  hint: "", locked: false, gauge: -1 },
+                                { label: "Frame pacing",
+                                  value: panelCard._pacing,
+                                  hint: !StreamingPreferences.enableVsync ? "Locked: V-Sync off"
+                                      : settingsScreen._vrrActive ? "Locked by VRR" : "",
+                                  locked: !StreamingPreferences.enableVsync || settingsScreen._vrrActive, gauge: -1 }
+                            ]
+
+                            x: (overlayScreen.width - width) / 2
+                            y: overlayScreen.height - height - 36
+                            width: tilesRow.implicitWidth + 44
+                            height: panelCol.implicitHeight + 44
+                            radius: 16
+                            color: "#f00f1519"
+                            border.color: overlayTab._oFrame
+                            border.width: 1.25
+
+                            Column {
+                                id: panelCol
+                                x: 22
+                                y: 22
+                                spacing: 14
+
+                                Item {
+                                    width: tilesRow.implicitWidth
+                                    height: 30
+                                    Row {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 12
+                                        Text {
+                                            id: panelTitle
+                                            text: "Stream settings"
+                                            color: overlayTab._oText
+                                            font.family: overlayTab._sans
+                                            font.pixelSize: 21
+                                            font.weight: Font.DemiBold
+                                        }
+                                        Text {
+                                            anchors.baseline: panelTitle.baseline
+                                            text: "Applies to this stream"
+                                            color: overlayTab._oText2
+                                            font.family: overlayTab._sans
+                                            font.pixelSize: 13
+                                        }
+                                    }
+                                    // Where Save writes: grey is Global; a game override is amber
+                                    // and a host profile cyan, but only a live session knows which.
+                                    Rectangle {
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        height: 26
+                                        width: targetRow.implicitWidth + 22
+                                        radius: height / 2
+                                        color: "#12f3f7f8"
+                                        border.color: "#42f3f7f8"
+                                        border.width: 1
+                                        Row {
+                                            id: targetRow
+                                            anchors.centerIn: parent
+                                            spacing: 6
+                                            Rectangle {
+                                                width: 7; height: 7; radius: 3.5
+                                                color: "#9AA0A6"
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                            Text {
+                                                text: "Global"
+                                                color: overlayTab._oText
+                                                font.family: overlayTab._sans
+                                                // ⚠️ An int: a decimal literal here fails the whole page.
+                                                font.pixelSize: 13
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Row {
+                                    id: tilesRow
+                                    spacing: 10
+
+                                    Repeater {
+                                        model: panelCard._rows
+                                        delegate: Rectangle {
+                                            id: tile
+                                            // The first tile is drawn as the selection, as the panel
+                                            // opens on it.
+                                            readonly property bool _sel: index === 0 && !modelData.locked
+                                            width: 176
+                                            height: 112
+                                            radius: 12
+                                            color: _sel ? Qt.rgba(overlayTab._oAccent.r, overlayTab._oAccent.g, overlayTab._oAccent.b, 0.12)
+                                                        : "#0af3f7f8"
+                                            border.color: _sel ? overlayTab._oAccent : overlayTab._oLine
+                                            border.width: _sel ? 2 : 1
+
+                                            Text {
+                                                x: 14
+                                                y: 13
                                                 text: modelData.label
-                                                color: "#CED2D6"
-                                                font.family: overlayTab._mono
-                                                font.pixelSize: panelCard._main
+                                                color: tile._sel ? overlayTab._oText : overlayTab._oText3
+                                                font.family: overlayTab._sans
+                                                font.pixelSize: 11
+                                                font.weight: Font.DemiBold
+                                                font.letterSpacing: 1.4
+                                                font.capitalization: Font.AllUppercase
+                                            }
+                                            Rectangle {
+                                                x: 12
+                                                y: 38
+                                                height: 34
+                                                width: Math.min(parent.width - 24, tileValue.implicitWidth + 22)
+                                                radius: 8
+                                                color: tile._sel ? overlayTab._oAccent
+                                                     : modelData.locked ? "#0af3f7f8" : "#12f3f7f8"
+                                                Text {
+                                                    id: tileValue
+                                                    anchors.centerIn: parent
+                                                    text: modelData.value
+                                                    color: tile._sel ? overlayTab._oOnAccent
+                                                         : modelData.locked ? overlayTab._oText3 : overlayTab._oText
+                                                    font.family: overlayTab._mono
+                                                    font.pixelSize: 17
+                                                    font.weight: Font.Medium
+                                                }
+                                            }
+                                            // The padlock of a read-only tile (OverlayManager's drawLock).
+                                            Item {
+                                                visible: modelData.locked
+                                                x: parent.width - 25
+                                                y: 11
+                                                width: 12; height: 15
+                                                Rectangle {
+                                                    x: 2; y: 0.9
+                                                    width: 8; height: 12
+                                                    radius: 4
+                                                    color: "transparent"
+                                                    border.color: overlayTab._oText3
+                                                    border.width: 2
+                                                }
+                                                Rectangle {
+                                                    y: parent.height - 8.7
+                                                    width: parent.width; height: 8.7
+                                                    radius: 1.5
+                                                    color: overlayTab._oText3
+                                                }
+                                            }
+                                            Rectangle {
+                                                visible: modelData.gauge >= 0
+                                                x: 14
+                                                y: parent.height - 13
+                                                width: parent.width - 28
+                                                height: 4
+                                                radius: 2
+                                                color: "#1ff3f7f8"
+                                                Rectangle {
+                                                    width: parent.width * Math.max(0, Math.min(1, modelData.gauge))
+                                                    height: parent.height
+                                                    radius: parent.radius
+                                                    color: overlayTab._oAccent
+                                                }
+                                            }
+                                            // With a gauge the words sit just above it, as in the panel.
+                                            Text {
+                                                visible: text !== ""
+                                                x: 14
+                                                y: modelData.gauge >= 0 ? 76 : parent.height - 30
+                                                text: tile._sel ? "▲▼  " + (modelData.hint !== "" ? modelData.hint : "change") : modelData.hint
+                                                color: overlayTab._oText3
+                                                font.family: overlayTab._sans
+                                                font.pixelSize: 12
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    width: tilesRow.implicitWidth
+                                    height: 1
+                                    color: overlayTab._oLine
+                                }
+
+                                Item {
+                                    width: tilesRow.implicitWidth
+                                    height: 26
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "No changes"
+                                        color: overlayTab._oText3
+                                        font.family: overlayTab._sans
+                                        font.pixelSize: 13
+                                    }
+                                    // The vendor button glyphs the panel paints for real. Both follow
+                                    // the pad in use when the glyph set is Auto (the panel since
+                                    // 30/10/2026: it used to fall back to Xbox).
+                                    Row {
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 20
+                                        Repeater {
+                                            model: [
+                                                { key: "A", label: "Apply" },
+                                                { key: "B", label: "Cancel" },
+                                                { key: "Y", label: "Save" }
+                                            ]
+                                            delegate: Row {
+                                                spacing: 7
+                                                PadGlyph {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    buttonKey: modelData.key
+                                                    size: 22
+                                                }
+                                                Text {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: modelData.label
+                                                    color: index === 0 ? overlayTab._oText : overlayTab._oText2
+                                                    font.family: overlayTab._sans
+                                                    font.pixelSize: 14
+                                                    font.weight: Font.Medium
+                                                }
                                             }
                                         }
                                     }

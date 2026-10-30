@@ -4,6 +4,36 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+----------------------------------------
+Version 8.3.0 - At a Glance (30/10/2026)
+----------------------------------------
+
+No StreamTweak update required — 8.3.0 is client-side and works with any host. The in-stream overlays are redesigned: the performance overlay as a card or as a bar, the Stream Settings panel as a row of tiles, and what is going wrong in red. The window loses its title bar, and scroll bars and sliders take your accent.
+
+✨ NEW FEATURES:
+• Performance overlay as a bar — Settings → Overlay → Layout: Bar puts it on one line at the top centre (FPS · Bandwidth · Network · Decode · Frame loss), wrapping between figures on a narrow window; it keeps its own lines and its own Full, while Minimal (FPS · Network · Frame loss) and Default (the five above) are the same for the card and the bar
+• Problems in red — in the card and the bar, a figure of the Default view turns red when the problem is one you feel: frames lost on the network from 1%, network latency over 60 ms, decoding taking more than one frame; the thresholds are those of StreamTweak's session grade, and a figure you add beyond the Default is shown but never red and never turns the status dot red
+
+🎨 UI:
+• New in-stream overlays — the card, the bar, the Stream Settings panel and the notices are drawn with the app's own fonts and colours, follow your accent and keep their size relative to the screen, so Large is as readable at 4K as at 1080p
+• The card in sections — Stream, Network, This device and Host, a figure per row, in the top corner you choose
+• Stream Settings as tiles — the panel opens at the bottom centre, clear of the card and the bar; left and right pick a setting, up and down change it, a changed value carries a dot and the bitrate sits on a gauge; a setting that cannot change shows a padlock and why, as frame pacing does with VRR, and the button prompts are those of the controller in your hands
+• Text colour is gone from Settings → Overlay — the overlays follow the app's accent instead
+• No title bar — the app's background runs up to the top of the window, with only minimize, maximize and close at the top right, in the app's theme; dragging, double-click and Windows 11's snap layouts work as before
+• Scroll bars in your accent — a thin stroke that is always there while there is more to scroll and widens under the mouse, the same in Settings, on the host page and in the profile dialogs, and kept clear of the controls
+• New sliders — a filled track and a round handle in your accent that grows a little under the mouse or the controller, for the bitrate, the navigation sounds volume and the card opacity; in the profiles the bitrate stays neutral until the profile sets its own
+• Settings → Input says what the touchscreen does — with the trackpad off, touch and pen reach the host as they are
+• Start at sign-in — no button looks selected at first: A and B choose straight away, the D-pad shows the focus and moves it, and then A takes the focused button
+
+🐛 FIXES:
+• Host profiles — + Add no longer scrolls out of sight with many profiles: it stays beside the strip, always in reach of the mouse
+• The mouse wheel scrolls the strip of host profiles and the covers of the Library tab, which until now moved only with a drag
+• HDR streams — the in-stream overlays keep their colours and smooth text: they were drawn as for an SDR screen, so the Xbox Y turned orange and the text of the selected tile looked jagged
+• Settings → Overlay — with PyroWave the preview shows the figures it adds, such as Partial next to Frame loss, as the stream does
+
+🙏 THANKS:
+• Thanks to @caioavidal for the compact overlay (https://github.com/FoggyBytes/StreamLight/issues/47), to @kayti for reporting the hidden + Add (https://github.com/FoggyBytes/StreamLight/issues/49) and to @daniel7277 for the title bar (https://github.com/FoggyBytes/StreamLight/issues/48)
+
 ---------------------------------------
 Version 8.2.0 - Front Door (28/10/2026)
 ---------------------------------------

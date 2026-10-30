@@ -9,6 +9,7 @@ import StreamingPreferences 1.0
 import SystemProperties 1.0
 import SdlGamepadKeyNavigation 1.0
 import SignInLaunch 1.0
+import WindowChrome 1.0
 
 ApplicationWindow {
     property bool pollingActive: false
@@ -207,6 +208,9 @@ ApplicationWindow {
         Material.primary = Theme.ink
         Material.theme = Theme.light ? Material.Light : Material.Dark
         Material.background = Theme.ground
+        // 8.3.0 (#48): what Windows still draws of the frame — the border, the window menu —
+        // follows the app's theme instead of Windows'.
+        Qt.styleHints.colorScheme = Theme.light ? Qt.ColorScheme.Light : Qt.ColorScheme.Dark
     }
 
     // This function runs prior to creation of the initial StackView item
@@ -225,7 +229,13 @@ ApplicationWindow {
         function onChanged() { window.applyAccentToMaterial() }
     }
 
+    // Minimize, maximize and close on the app's floor, with no title bar under them (8.3.0, #48).
+    CaptionButtons { }
+
     Component.onCompleted: {
+        // Before the window is shown: from here on Windows' caption belongs to the page.
+        WindowChrome.attach(window)
+
         // Honor the GUI mode preference (default on first launch: maximised).
         if (SystemProperties.hasDesktopEnvironment) {
             if (StreamingPreferences.uiDisplayMode === StreamingPreferences.UI_MAXIMIZED) {

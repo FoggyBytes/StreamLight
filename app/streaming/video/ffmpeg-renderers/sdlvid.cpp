@@ -234,22 +234,17 @@ void SdlRenderer::renderOverlay(Overlay::OverlayType type)
                 SDL_DestroyTexture(m_OverlayTextures[type]);
             }
 
-            if (type == Overlay::OverlayStatusUpdate) {
-                // Bottom Left
+            // Where every overlay goes is the OverlayManager's answer (8.3.0). This renderer
+            // learns its size here, so the first surface of a stream is measured on 1080p and
+            // the next one, a second later, on the real viewport.
+            {
                 SDL_Rect viewportRect;
                 SDL_RenderGetViewport(m_Renderer, &viewportRect);
-                m_OverlayRects[type].x = 0;
-                m_OverlayRects[type].y = viewportRect.h - newSurface->h;
-            }
-            else if (type == Overlay::OverlayDebug || type == Overlay::OverlayStreamSettings) {
-                // Opposite top corners — the stats card takes the one the user chose,
-                // the settings panel the other.
-                const int kEdgeMargin = 12;
-                SDL_Rect viewportRect;
-                SDL_RenderGetViewport(m_Renderer, &viewportRect);
-                m_OverlayRects[type].x = Overlay::OverlayManager::getOverlayOriginX(
-                            type, viewportRect.w, newSurface->w, kEdgeMargin);
-                m_OverlayRects[type].y = kEdgeMargin;
+                Overlay::OverlayManager::setViewportSize(viewportRect.w, viewportRect.h);
+                const SDL_Rect place = Overlay::OverlayManager::overlayRect(type, viewportRect.w, viewportRect.h,
+                                                                            newSurface->w, newSurface->h);
+                m_OverlayRects[type].x = place.x;
+                m_OverlayRects[type].y = place.y;
             }
 
             m_OverlayRects[type].w = newSurface->w;

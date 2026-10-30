@@ -54,10 +54,11 @@
 #define SER_SHOWPERFOVERLAY "showperfoverlay"
 #define SER_OVERLAYMODE "overlaymode"
 #define SER_OVERLAYPOSITION "overlayposition"
-#define SER_OVERLAYTEXTCOLOR "overlaytextcolor"
+#define SER_OVERLAYLAYOUT "overlaylayout"
 #define SER_OVERLAYFONTSIZE "overlayfontsize"
 #define SER_OVERLAYTRANSPARENCY "overlaytransparency"
 #define SER_OVERLAYITEMS "overlayitems"
+#define SER_OVERLAYBARITEMS "overlaybaritems"
 #define SER_SWAPMOUSEBUTTONS "swapmousebuttons"
 #define SER_MUTEONFOCUSLOSS "muteonfocusloss"
 #define SER_BACKGROUNDGAMEPAD "backgroundgamepad"
@@ -154,10 +155,11 @@ StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
     p->clipboardSync = clipboardSync;
     p->showPerfOverlay = showPerfOverlay;
     p->overlayPosition = overlayPosition;
-    p->overlayTextColor = overlayTextColor;
+    p->overlayLayout = overlayLayout;
     p->overlayFontSize = overlayFontSize;
     p->overlayTransparency = overlayTransparency;
     p->overlayItems = overlayItems;
+    p->overlayBarItems = overlayBarItems;
     p->swapMouseButtons = swapMouseButtons;
     p->muteOnFocusLoss = muteOnFocusLoss;
     p->backgroundGamepad = backgroundGamepad;
@@ -308,17 +310,19 @@ void StreamingPreferences::reload()
                           ? OverlayPosition::OVP_TOP_RIGHT
                           : OverlayPosition::OVP_TOP_LEFT;
     }
-    overlayTextColor = static_cast<OverlayTextColor>(settings.value(SER_OVERLAYTEXTCOLOR,
-                                       static_cast<int>(OverlayTextColor::OTC_WHITE)).toInt());
+    overlayLayout = (settings.value(SER_OVERLAYLAYOUT, static_cast<int>(OverlayLayout::OVL_CARD)).toInt()
+                     == static_cast<int>(OverlayLayout::OVL_BAR))
+                    ? OverlayLayout::OVL_BAR
+                    : OverlayLayout::OVL_CARD;
     overlayFontSize = static_cast<OverlayFontSize>(settings.value(SER_OVERLAYFONTSIZE,
                                        static_cast<int>(OverlayFontSize::OFS_MEDIUM)).toInt());
     // 0 = the box as every build so far has drawn it. The card colour already carries
     // a little transparency of its own; this is what the user adds on top.
     overlayTransparency = settings.value(SER_OVERLAYTRANSPARENCY, 0).toInt();
-    // The set the old "Default" profile drew, so an upgrade shows what it used to.
-    overlayItems = settings.value(SER_OVERLAYITEMS,
-                                  OI_VIDEO | OI_BITRATE | OI_NET_DROPS | OI_JITTER_DROPS |
-                                  OI_LATENCY | OI_DECODE_TIME | OI_HOST_METRICS).toInt();
+    // The Default preset, the bar's too since 8.3.0. ⚠️ A mask saved by an older build is
+    // left alone: the card's old Default (Video, Bitrate, both drops, Latency, Decode, Host
+    // metrics) now shows as Custom, with nothing taken away from it.
+    overlayItems = settings.value(SER_OVERLAYITEMS, OI_DEFAULT).toInt();
     // ⚠️ Strip the two retired bits, or a mask saved by an older build carries bits no
     // item answers to any more — and a Full chosen there would no longer equal OI_ALL,
     // so the Overlay tab would report Custom to everyone who had picked Full. Bit 11 was
@@ -326,6 +330,10 @@ void StreamingPreferences::reload()
     // Clearing them first makes the Full case fall out on its own, so there is nothing
     // else to special-case.
     overlayItems &= ~((1 << 11) | (1 << 13));
+    // The bar's own lines (8.3.0): its Minimal and Full are not the card's, so neither is its
+    // choice. Starts on the shared Default, the five figures of issue #47.
+    overlayBarItems = settings.value(SER_OVERLAYBARITEMS, OI_DEFAULT).toInt();
+    overlayBarItems &= ~((1 << 11) | (1 << 13));
     packetSize = settings.value(SER_PACKETSIZE, 0).toInt();
     swapMouseButtons = settings.value(SER_SWAPMOUSEBUTTONS, false).toBool();
     muteOnFocusLoss = settings.value(SER_MUTEONFOCUSLOSS, false).toBool();
@@ -420,10 +428,11 @@ void StreamingPreferences::save()
     settings.setValue(SER_CLIPBOARDSYNC, clipboardSync);
     settings.setValue(SER_SHOWPERFOVERLAY, showPerfOverlay);
     settings.setValue(SER_OVERLAYPOSITION, static_cast<int>(overlayPosition));
-    settings.setValue(SER_OVERLAYTEXTCOLOR, static_cast<int>(overlayTextColor));
+    settings.setValue(SER_OVERLAYLAYOUT, static_cast<int>(overlayLayout));
     settings.setValue(SER_OVERLAYFONTSIZE, static_cast<int>(overlayFontSize));
     settings.setValue(SER_OVERLAYTRANSPARENCY, overlayTransparency);
     settings.setValue(SER_OVERLAYITEMS, overlayItems);
+    settings.setValue(SER_OVERLAYBARITEMS, overlayBarItems);
     // ⚠️ Removed, not left alone: reload() prefers the old key when it is present, so a
     // stale one would keep overriding the new setting on every launch and the on/off
     // switch would look like it never took. Dropping it retires the migration for good.
@@ -452,37 +461,24 @@ void StreamingPreferences::save()
     settings.setValue(SER_DATEFORMAT, static_cast<int>(dateFormat));
 }
 
-QColor StreamingPreferences::overlayTextColorValue() const
-{
-    switch (overlayTextColor) {
-    case OTC_GREEN:  return QColor(0x3B, 0xFF, 0x6E);
-    case OTC_YELLOW: return QColor(0xFF, 0xE1, 0x4D);
-    case OTC_CYAN:   return QColor(0x4D, 0xE3, 0xFF);
-    case OTC_ORANGE: return QColor(0xFF, 0x9A, 0x3C);
-    case OTC_WHITE:
-    default:         return QColor(0xFF, 0xFF, 0xFF);
-    }
-}
-
-int StreamingPreferences::overlayFontPixelSize() const
-{
-    switch (overlayFontSize) {
-    case OFS_SMALL: return 16;
-    case OFS_LARGE: return 25;
-    case OFS_MEDIUM:
-    default:        return 20;
-    }
-}
-
 QColor StreamingPreferences::overlayBoxColorValue() const
 {
-    // The card colour every build so far has drawn, with the user's transparency applied
-    // on top of the 6% the design already carried. Clamped rather than trusted: the value
-    // comes out of QSettings and a hand-edited registry is not a reason to produce an
-    // invalid alpha.
+    // The app's card colour (8.3.0; #18181a before), with the user's transparency applied on
+    // top of the 8% the design already carries. Clamped rather than trusted: the value comes
+    // out of QSettings and a hand-edited registry is not a reason to produce an invalid alpha.
     const int t = qBound(0, overlayTransparency, 95);
-    const int alpha = qRound(0xF0 * (100 - t) / 100.0);
-    return QColor(0x18, 0x18, 0x1A, alpha);
+    const int alpha = qRound(0xEB * (100 - t) / 100.0);
+    return QColor(0x0F, 0x15, 0x19, alpha);
+}
+
+qreal StreamingPreferences::overlaySizeFactor() const
+{
+    switch (overlayFontSize) {
+    case OFS_SMALL: return 0.85;
+    case OFS_LARGE: return 1.2;
+    case OFS_MEDIUM:
+    default:        return 1.0;
+    }
 }
 
 int StreamingPreferences::getMaxBitrate(int videoCodecConfig)

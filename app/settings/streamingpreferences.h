@@ -35,11 +35,18 @@ public:
      * These exist so the in-stream overlay and the preview in Settings read the SAME
      * numbers. The preview's whole job is to be believed, and a preview that keeps its
      * own copy of the palette is one edit away from lying about it.
+     *
+     * (Text colour and font size in pixels went in 8.3.0: the overlays draw in the theme's
+     * colours, and their sizes follow the viewport's height.)
      */
-    Q_INVOKABLE QColor overlayTextColorValue() const;
-    Q_INVOKABLE int    overlayFontPixelSize() const;
     /** Box background, transparency already applied. */
     Q_INVOKABLE QColor overlayBoxColorValue() const;
+    /**
+     * The card's and the bar's size as a factor on the height-based unit (8.3.0): every
+     * measure of the overlays is a fraction of the viewport's height, and Small / Medium /
+     * Large scale it — 0.85, 1, 1.2.
+     */
+    Q_INVOKABLE qreal  overlaySizeFactor() const;
 
     void reload();
 
@@ -122,10 +129,9 @@ public:
     // Asked for by @Soladus on issue #9: the block was too wide for a 1080p
     // handheld and covered the game.
 
-    // Two corners, not three. Centre was dropped so that the side is always a real
-    // choice between two halves of the screen — which is what lets the live Stream
-    // Settings overlay take the OTHER corner automatically instead of overlapping
-    // this one or needing a setting of its own.
+    // Two corners, the card's (the bar has the top centre). Until 8.2.0 the live Stream
+    // Settings overlay took the OTHER corner automatically; since 8.3.0 it opens at the bottom
+    // centre, clear of the card and the bar alike.
     enum OverlayPosition
     {
         OVP_TOP_LEFT,
@@ -133,23 +139,28 @@ public:
     };
     Q_ENUM(OverlayPosition)
 
-    // The five colours overlays of this kind have always used. Saturated on
-    // purpose: they are read against moving video, not against a page.
-    enum OverlayTextColor
+    // The overlay's shape (8.3.0, issue #47). The card is a box in the chosen top corner, its
+    // figures in sections; the bar is one line at the top centre, short entries between thin
+    // dividers, wrapping between entries when it would cross 85% of the window. Each keeps its own
+    // items (overlayItems, overlayBarItems); size and transparency are shared. ⚠️ A shape and not
+    // a third Position: the corners keep their meaning for the card.
+    enum OverlayLayout
     {
-        OTC_WHITE,
-        OTC_GREEN,
-        OTC_YELLOW,
-        OTC_CYAN,
-        OTC_ORANGE
+        OVL_CARD,
+        OVL_BAR
     };
-    Q_ENUM(OverlayTextColor)
+    Q_ENUM(OverlayLayout)
 
+    // (OverlayTextColor, the five text colours, went in 8.3.0: the overlays draw in the theme's
+    // colours and the app's accent. Its key "overlaytextcolor" may still sit in the registry.)
+
+    // Settings > Overlay > Size, for the card and the bar. Since 8.3.0 a factor on the
+    // height-based unit, not a point size: 0.85 / 1 / 1.2 (overlaySizeFactor()).
     enum OverlayFontSize
     {
-        OFS_SMALL,      // 16pt
-        OFS_MEDIUM,     // 20pt — what every build before this one used
-        OFS_LARGE       // 25pt
+        OFS_SMALL,
+        OFS_MEDIUM,
+        OFS_LARGE
     };
     Q_ENUM(OverlayFontSize)
 
@@ -184,7 +195,17 @@ public:
         // to reason about who might still have the old one set.
         OI_CADENCE      = 1 << 14,  // presentation cadence, queue depth, Present() wait
         OI_VRR          = 1 << 15,  // VRR pacing: smoothness and interval error, or why it is inactive (6.0.0)
-        OI_ALL          = ((1 << 16) - 1) & ~(1 << 11) & ~(1 << 13)
+        OI_ALL          = ((1 << 16) - 1) & ~(1 << 11) & ~(1 << 13),
+
+        // The Default preset, the SAME for the card and the bar (8.3.0), and the only items
+        // that are ever drawn red or turn the status dot red — see overlayWarnings() in
+        // ffmpeg.cpp. An item added beyond it is shown, never judged: VRR pacing, for one,
+        // runs below its target as a matter of course.
+        OI_DEFAULT      = OI_FRAMERATES | OI_BITRATE | OI_LATENCY | OI_DECODE_TIME | OI_NET_DROPS,
+
+        // The Minimal preset, also the same for both shapes (30/10/2026): is it smooth, does the
+        // network answer, is anything lost. Inside the Default, as the Default is inside Full.
+        OI_MINIMAL      = OI_FRAMERATES | OI_LATENCY | OI_NET_DROPS
     };
     Q_ENUM(OverlayItem)
 
@@ -284,10 +305,11 @@ public:
     Q_PROPERTY(bool clipboardSync MEMBER clipboardSync NOTIFY clipboardSyncChanged)
     Q_PROPERTY(bool showPerfOverlay MEMBER showPerfOverlay NOTIFY overlayChanged)
     Q_PROPERTY(OverlayPosition overlayPosition MEMBER overlayPosition NOTIFY overlayChanged)
-    Q_PROPERTY(OverlayTextColor overlayTextColor MEMBER overlayTextColor NOTIFY overlayChanged)
+    Q_PROPERTY(OverlayLayout overlayLayout MEMBER overlayLayout NOTIFY overlayChanged)
     Q_PROPERTY(OverlayFontSize overlayFontSize MEMBER overlayFontSize NOTIFY overlayChanged)
     Q_PROPERTY(int overlayTransparency MEMBER overlayTransparency NOTIFY overlayChanged)
     Q_PROPERTY(int overlayItems MEMBER overlayItems NOTIFY overlayChanged)
+    Q_PROPERTY(int overlayBarItems MEMBER overlayBarItems NOTIFY overlayChanged)
     Q_PROPERTY(AudioConfig audioConfig MEMBER audioConfig NOTIFY audioConfigChanged)
     Q_PROPERTY(VideoCodecConfig videoCodecConfig MEMBER videoCodecConfig NOTIFY videoCodecConfigChanged)
     Q_PROPERTY(bool enableHdr MEMBER enableHdr NOTIFY enableHdrChanged)
@@ -357,11 +379,14 @@ public:
     bool clipboardSync;
     bool showPerfOverlay;
     OverlayPosition overlayPosition;
-    OverlayTextColor overlayTextColor;
+    OverlayLayout overlayLayout;
     OverlayFontSize overlayFontSize;
     // Percent of the box that lets the game through: 0 = solid, 60 = barely there.
     int overlayTransparency;
     int overlayItems;
+    // The same bits for the bar (8.3.0): each layout keeps its own choice, so picking the
+    // bar's Default never changes the card's lines.
+    int overlayBarItems;
     bool swapMouseButtons;
     bool muteOnFocusLoss;
     bool backgroundGamepad;

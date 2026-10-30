@@ -320,6 +320,7 @@ D3D11VARenderer::~D3D11VARenderer()
     }
 
     m_OverlayPixelShader.Reset();
+    m_OverlayPixelShaderHdr.Reset();
 
     m_OverlayBlendState.Reset();
     m_VideoBlendState.Reset();
@@ -848,6 +849,7 @@ bool D3D11VARenderer::initialize(PDECODER_PARAMETERS params)
 
     m_DisplayWidth = swapChainDesc.Width;
     m_DisplayHeight = swapChainDesc.Height;
+    Overlay::OverlayManager::setViewportSize(m_DisplayWidth, m_DisplayHeight);
 
     // ⚠️ The swapchain is sized from the window BEFORE the launch curtain lifts, and the
     // window is created hidden (5.0.0), so with the curtain on this can run twenty seconds
@@ -1398,7 +1400,7 @@ bool D3D11VARenderer::getPacingMeasurement(PPACING_MEASUREMENT measurement)
     return haveMeasurement;
 }
 
-void D3D11VARenderer::renderOverlay(Overlay::OverlayType type)
+void D3D11VARenderer::renderOverlay(Overlay::OverlayType type, bool hdr)
 {
     if (!Session::get()->getOverlayManager().isOverlayEnabled(type)) {
         // Forget what we last drew. An overlay that has been switched off must not be able
@@ -1450,7 +1452,9 @@ void D3D11VARenderer::renderOverlay(Overlay::OverlayType type)
     m_RenderDeviceContext->IASetVertexBuffers(0, 1, overlayVertexBuffer.GetAddressOf(), &stride, &offset);
 
     // Bind pixel shader and resources
-    m_RenderDeviceContext->PSSetShader(m_OverlayPixelShader.Get(), nullptr, 0);
+    // On an HDR stream the overlays' sRGB is converted for the PQ / BT.2020 swap chain (8.3.0).
+    m_RenderDeviceContext->PSSetShader(hdr && m_OverlayPixelShaderHdr ? m_OverlayPixelShaderHdr.Get()
+                                                                      : m_OverlayPixelShader.Get(), nullptr, 0);
     m_RenderDeviceContext->PSSetShaderResources(0, 1, overlayTextureResourceView.GetAddressOf());
 
     // Draw the overlay with alpha blending
@@ -2070,21 +2074,11 @@ bool D3D11VARenderer::createOverlayVertexBuffer(Overlay::OverlayType type, int w
 {
     SDL_FRect renderRect = {};
 
-    // Small inset so the cards don't sit flush against the screen edges.
-    const int kEdgeMargin = 12;
-
-    if (type == Overlay::OverlayStatusUpdate) {
-        // Bottom-left: in this coord system y=0 is the bottom edge
-        renderRect.x = 0;
-        renderRect.y = 0;
-    }
-    else if (type == Overlay::OverlayDebug || type == Overlay::OverlayStreamSettings) {
-        // Opposite top corners — the stats card takes the one the user chose, the settings
-        // panel the other. y=0 is the bottom edge here, so the top of the screen is a full
-        // overlay height down from m_DisplayHeight.
-        renderRect.x = (float)Overlay::OverlayManager::getOverlayOriginX(type, m_DisplayWidth, width, kEdgeMargin);
-        renderRect.y = (float)(m_DisplayHeight - height - kEdgeMargin);
-    }
+    // Where every overlay goes is the OverlayManager's answer (8.3.0). It counts y from the top;
+    // here y=0 is the bottom edge, so it is flipped.
+    const SDL_Rect place = Overlay::OverlayManager::overlayRect(type, m_DisplayWidth, m_DisplayHeight, width, height);
+    renderRect.x = (float)place.x;
+    renderRect.y = (float)(m_DisplayHeight - place.y - height);
 
     renderRect.w = width;
     renderRect.h = height;
@@ -2181,6 +2175,7 @@ bool D3D11VARenderer::notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO stateInfo)
 
         m_DisplayWidth = stateInfo->width;
         m_DisplayHeight = stateInfo->height;
+        Overlay::OverlayManager::setViewportSize(m_DisplayWidth, m_DisplayHeight);
 
         // Release the video vertex buffer so we will upload a new one after resize
         m_VideoVertexBuffer.Reset();
@@ -2918,8 +2913,10 @@ bool D3D11VARenderer::prepareFrameForPresent(AVFrame* frame,
         m_RenderDeviceContext->OMSetRenderTargets(0, nullptr, nullptr);
         return false;
     }
+    // The swap chain's colour space follows the frame's transfer (just below), so does the
+    // overlays' shader.
     for (int i = 0; i < Overlay::OverlayMax; i++) {
-        renderOverlay((Overlay::OverlayType)i);
+        renderOverlay((Overlay::OverlayType)i, frame->color_trc == AVCOL_TRC_SMPTE2084);
     }
 
     if (frame->color_trc != m_LastColorTrc) {
@@ -4142,6 +4139,16 @@ bool D3D11VARenderer::setupRenderingResources()
                          "ID3D11Device::CreatePixelShader() failed: %x",
                          hr);
             return false;
+        }
+
+        // Not fatal: without it an HDR stream draws its overlays as before 8.3.0.
+        QByteArray overlayHdrBytecode = Path::readDataFile("d3d11_overlay_pixel_hdr.fxc");
+        hr = m_RenderDevice->CreatePixelShader(overlayHdrBytecode.constData(), overlayHdrBytecode.length(), nullptr, &m_OverlayPixelShaderHdr);
+        if (FAILED(hr)) {
+            m_OverlayPixelShaderHdr.Reset();
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "ID3D11Device::CreatePixelShader() failed for the HDR overlay: %x",
+                        hr);
         }
     }
 

@@ -283,7 +283,7 @@ Popup {
                 border.color: Theme.ink; border.width: 2
                 visible: s.activeFocus
             }
-            Slider {
+            ThemedSlider {
                 id: s
                 anchors.fill: parent
                 stepSize: 1
@@ -291,24 +291,6 @@ Popup {
                 onMoved: commitTimer.restart()
                 Keys.onUpPressed: function(e) { row.stepUp(); e.accepted = true }
                 Keys.onDownPressed: function(e) { row.stepDown(); e.accepted = true }
-                background: Rectangle {
-                    x: s.leftPadding
-                    y: s.topPadding + s.availableHeight / 2 - height / 2
-                    width: s.availableWidth
-                    height: dlg._px(3); radius: dlg._px(2)
-                    color: Theme.lineHigh
-                    Rectangle {
-                        width: s.visualPosition * parent.width
-                        height: parent.height; radius: parent.radius
-                        color: s.enabled ? Theme.ink : Theme.offline
-                    }
-                }
-                handle: Rectangle {
-                    x: s.leftPadding + s.visualPosition * (s.availableWidth - width)
-                    y: s.topPadding + s.availableHeight / 2 - height / 2
-                    implicitWidth: dlg._px(14); implicitHeight: dlg._px(14); radius: dlg._px(7)
-                    color: s.enabled ? Theme.ink : Theme.offline
-                }
             }
         }
         Label {

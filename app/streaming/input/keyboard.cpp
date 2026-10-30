@@ -69,7 +69,7 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Detected stats toggle combo");
 
-        // Cycle the stats overlay: Off -> Minimal -> Default -> Full -> Off ...
+        // Show or hide the stats overlay (what it shows is chosen in Settings > Overlay)
         Session::get()->togglePerfOverlay();
         break;
 
@@ -158,8 +158,13 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Detected stream settings combo");
         // Open the live Stream Settings overlay (input captured while open).
+        // Its prompts are for the first pad connected, if any: it is driven with one either way.
         if (m_StreamSettings != nullptr && !m_StreamSettings->isActive()) {
-            m_StreamSettings->open();
+            SDL_GameController* pad = nullptr;
+            for (int i = 0; i < MAX_GAMEPADS && pad == nullptr; i++) {
+                pad = m_GamepadState[i].controller;
+            }
+            m_StreamSettings->open(pad);
         }
         break;
 

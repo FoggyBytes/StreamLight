@@ -62,7 +62,8 @@ macx:!disable-prebuilts {
 
 unix:if(!macx|disable-prebuilts) {
     CONFIG += link_pkgconfig
-    PKGCONFIG += openssl sdl2 SDL2_ttf
+    # No SDL2_ttf since 8.3.0, here as on Windows: the overlays are painted with QPainter.
+    PKGCONFIG += openssl sdl2
 
     # We have our own optimized libopus.a for Steam Link
     if(!config_SL|disable-prebuilts) {
@@ -148,7 +149,9 @@ unix:if(!macx|disable-prebuilts) {
     }
 }
 win32 {
-    LIBS += -llibssl -llibcrypto -lSDL2 -lSDL2_ttf -lavcodec -lavutil -lswscale -lopus -ldxgi -ld3d11 -llibplacebo
+    # No SDL2_ttf since 8.3.0: the overlays are painted with QPainter (overlaymanager.cpp), and its
+    # DLL is no longer in libs/ (libs/README.md).
+    LIBS += -llibssl -llibcrypto -lSDL2 -lavcodec -lavutil -lswscale -lopus -ldxgi -ld3d11 -llibplacebo
     CONFIG += ffmpeg libplacebo
 }
 win32:!winrt {
@@ -156,7 +159,7 @@ win32:!winrt {
 }
 macx {
     !disable-prebuilts {
-        LIBS += -lssl.3 -lcrypto.3 -lavcodec.62 -lavutil.60 -lswscale.9 -lopus -lSDL2 -lSDL2_ttf
+        LIBS += -lssl.3 -lcrypto.3 -lavcodec.62 -lavutil.60 -lswscale.9 -lopus -lSDL2
         CONFIG += discord-rpc
     }
 
@@ -170,6 +173,7 @@ SOURCES += \
     backend/linkmatcher.cpp \
     backend/powerstatus.cpp \
     backend/windowmove.cpp \
+    backend/windowchrome.cpp \
     backend/uisound.cpp \
     backend/uianimationdriver.cpp \
     backend/logsandcache.cpp \
@@ -249,6 +253,7 @@ HEADERS += \
     backend/linkmatcher.h \
     backend/powerstatus.h \
     backend/windowmove.h \
+    backend/windowchrome.h \
     backend/uisound.h \
     backend/uianimationdriver.h \
     backend/logsandcache.h \
