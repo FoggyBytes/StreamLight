@@ -114,6 +114,13 @@ All of them are switched on **per host**, in the **Setup** tab of the host's Str
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in the section's *Setup* tab; the host has its own switch
 
+## ✨ What's New in 8.3.1 — Fair Count
+
+Works with any host.
+
+- **The right frame rate in StreamTweak** — the frame rate sent to the host's session history was about a third too low; sessions recorded before keep their figure
+- **Bar preview that follows the size** — in *Settings → Overlay* the bar's preview now changes with Small, Medium and Large
+
 ## ✨ What's New in 8.3.0 — At a Glance
 
 Works with any host.

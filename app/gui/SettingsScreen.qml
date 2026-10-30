@@ -5245,6 +5245,9 @@ FocusScope {
                         // Every figure, in the bar's order; off ones faded in place, Presentation
                         // cadence greyed to say it stays in the card. Wider than the bar may be
                         // in the stream (85% of 1920), it is scaled to fit here instead of wrapping.
+                        // ⚠️ The fit is worked out for Large (1.2, overlaySizeFactor()) and kept for
+                        // every size: fitted to its own width, a wider bar was shrunk by exactly
+                        // what the size added, and Small, Medium and Large looked the same (30/10/2026).
                         Rectangle {
                             id: barPreview
                             visible: overlayTab._isBar
@@ -5256,7 +5259,7 @@ FocusScope {
                             border.color: overlayTab._oFrame
                             border.width: Math.max(1, 1.25 * u)
                             transformOrigin: Item.TopLeft
-                            scale: Math.min(1, 1632 / Math.max(1, width))
+                            scale: Math.min(1, 1632 / Math.max(1, width * 1.2 / u))
                             x: (overlayScreen.width - width * scale) / 2
                             y: 24
 

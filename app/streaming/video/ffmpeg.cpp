@@ -3599,13 +3599,20 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
         // Accumulate these values into the global stats
         addVideoStats(m_ActiveWndVideoStats, m_GlobalVideoStats);
 
+        // The window's frame rate over its own length, stamped as it closes. The telemetry
+        // sampler reads this window up to a second later, and dividing there by "now - start"
+        // counted that wait as window time: a ~90 fps session reached StreamTweak as 62.
+        const uint64_t windowEndUs = LiGetMicroseconds();
+        const double windowSecs = (double)(windowEndUs - m_ActiveWndVideoStats.measurementStartUs) / 1000000.0;
+        m_ActiveWndVideoStats.totalFps = windowSecs > 0 ? (double)m_ActiveWndVideoStats.totalFrames / windowSecs : 0.0;
+
         // Move this window into the last window slot and clear it for next window
         // Acquire spinlock so SessionTelemetrySampler can safely read from the Qt thread
         SDL_AtomicLock(&m_LastWndLock);
         SDL_memcpy(&m_LastWndVideoStats, &m_ActiveWndVideoStats, sizeof(m_ActiveWndVideoStats));
         SDL_AtomicUnlock(&m_LastWndLock);
         SDL_zero(m_ActiveWndVideoStats);
-        m_ActiveWndVideoStats.measurementStartUs = LiGetMicroseconds();
+        m_ActiveWndVideoStats.measurementStartUs = windowEndUs;
     }
 
     // Observe before decoding or pacing can shed a frame. The measurement owns
@@ -3804,11 +3811,8 @@ TelemetryWindowStats FFmpegVideoDecoder::getLastWindowStats() const
     VIDEO_STATS snap = m_LastWndVideoStats;
     SDL_AtomicUnlock(&m_LastWndLock);
 
-    double timeDiffSecs = snap.measurementStartUs > 0
-        ? (double)(LiGetMicroseconds() - snap.measurementStartUs) / 1000000.0
-        : 1.0;
-
-    out.fpsAvg     = snap.totalFrames > 0 ? (double)snap.totalFrames / timeDiffSecs : 0.0;
+    // Stamped when the window closed — never divide by the time since its start from here.
+    out.fpsAvg     = snap.totalFrames > 0 ? snap.totalFps : 0.0;
     out.drops      = (int)(snap.networkDroppedFrames + snap.pacerDroppedFrames);
     out.decodeAvgMs = snap.decodedFrames > 0
         ? (float)(snap.totalDecodeTimeUs / 1000.0) / snap.decodedFrames

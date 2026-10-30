@@ -5,6 +5,16 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 ----------------------------------------
+Version 8.3.1 - Fair Count (30/10/2026)
+----------------------------------------
+
+No StreamTweak update required — 8.3.1 is client-side and works with any host.
+
+🐛 FIXES:
+• Frame rate in StreamTweak's session history — the frame rate StreamLight reports to the host every second came out about a third too low (a session at 90 fps was recorded as 62), because each one-second window was measured up to the moment it was sent rather than the moment it closed; sessions recorded before 8.3.1 keep the figure they have
+• Settings → Overlay — with the Bar layout, the preview now grows and shrinks with Small, Medium and Large, which it barely showed before; the bar in the stream was already right
+
+----------------------------------------
 Version 8.3.0 - At a Glance (30/10/2026)
 ----------------------------------------
 
