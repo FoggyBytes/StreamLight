@@ -7,8 +7,6 @@
 /*
  * Library search: which titles a typed query matches.
  *
- * Header-only and QtCore-only, so tests/library/ can compile it on its own.
- *
  * ⚠️ Not normaliseGameName() (nvapp.h), and must not become it. That one is an identity key:
  * play time, pins and the GAMES / APPS moves are stored under it, so changing it would orphan
  * every stored record. This one only decides what a search shows, and can be as loose as
