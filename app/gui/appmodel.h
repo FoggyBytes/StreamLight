@@ -6,6 +6,7 @@
 
 #include <QAbstractListModel>
 #include <QHash>
+#include <QStringList>
 #include <QVariant>
 
 class AppModel : public QAbstractListModel
@@ -30,6 +31,15 @@ class AppModel : public QAbstractListModel
      * the host page opens on APPS, where those two are.
      */
     Q_PROPERTY(bool remoteMonitorActive READ remoteMonitorActive NOTIFY countsChanged)
+    /**
+     * The search typed on the host page, applied on top of the category: only rows whose title
+     * matches every word stay (LibrarySearch::matchesSearch). Empty shows everything.
+     *
+     * Read-only here; set through setFilterText(), which tells the page whether the rows moved.
+     * ⚠️ The counts above ignore it. The page picks its fallback tab from them, and a search
+     * that matches no games must not send it to APPS.
+     */
+    Q_PROPERTY(QString filterText READ filterText NOTIFY filterTextChanged)
 
     enum Roles
     {
@@ -58,6 +68,14 @@ public:
     int appsCount() const { return m_AppsCount; }
     int allCount() const { return m_AllCount; }
     bool remoteMonitorActive() const { return m_RemoteMonitorActive; }
+    QString filterText() const { return m_FilterText; }
+
+    /**
+     * Sets the search. Returns true when the rows were rebuilt (a model reset, so the caller
+     * moves the cursor back to the first result), false when the text changed but its words
+     * did not — a trailing space, a capital — and the rows, with the cursor on them, stayed.
+     */
+    Q_INVOKABLE bool setFilterText(const QString& text);
 
     /// Index of a visible app by id, or -1. Used to relaunch the same entry after a host
     /// confirmation — by id, because the running-game copy shares its name with the game.
@@ -170,12 +188,16 @@ signals:
     void computerLost();
     void categoryChanged();
     void countsChanged();
+    void filterTextChanged();
 
 private:
     void updateAppList(QVector<NvApp> newList);
 
     /// Does this app belong in the current tab? Always true with no category set.
     bool matchesCategory(const NvApp& app) const;
+
+    /// Does this app's title match the search? Always true with no search set.
+    bool matchesFilter(const NvApp& app) const;
 
     /// APPS rather than GAMES: the user's choice when there is one, isAppsCategory() otherwise.
     /// ⚠️ Use this, never isAppsCategory() directly, anywhere in the model.
@@ -222,6 +244,11 @@ private:
     int m_AppsCount = 0;
     int m_AllCount = 0;
     bool m_RemoteMonitorActive = false;
+
+    // The search as typed, and its words in LibrarySearch::searchKey() form. The words are
+    // what filters; the text is kept so the property reads back what was set.
+    QString m_FilterText;
+    QStringList m_FilterTokens;
 
     // Formatted play time by app id, filled on first read of each row.
     //

@@ -1,5 +1,6 @@
 #include "appmodel.h"
 
+#include "backend/librarysearch.h"
 #include "settings/appsettings.h"
 #include "settings/playtime.h"
 #include "settings/streamingpreferences.h"
@@ -115,6 +116,25 @@ void AppModel::setCategory(const QString& category)
     emit categoryChanged();
 }
 
+bool AppModel::setFilterText(const QString& text)
+{
+    if (text == m_FilterText) {
+        return false;
+    }
+    m_FilterText = text;
+
+    // Text that changes no word leaves the rows alone. A reset would put the cursor back on
+    // the first result in the middle of typing "half life".
+    const QStringList tokens = LibrarySearch::searchTokens(text);
+    const bool rebuilt = tokens != m_FilterTokens;
+    if (rebuilt) {
+        m_FilterTokens = tokens;
+        rebuildVisibleApps();
+    }
+    emit filterTextChanged();
+    return rebuilt;
+}
+
 void AppModel::rebuildVisibleApps()
 {
     // A reset, and the visible list rebuilt from scratch: switching tabs replaces every row,
@@ -145,6 +165,11 @@ bool AppModel::matchesCategory(const NvApp& app) const
         return isAllCategory(app);
     }
     return isApp(app) == (m_Category == QLatin1String("apps"));
+}
+
+bool AppModel::matchesFilter(const NvApp& app) const
+{
+    return LibrarySearch::matchesSearch(app.name, m_FilterTokens);
 }
 
 bool AppModel::isApp(const NvApp& app) const
@@ -590,7 +615,9 @@ QVector<NvApp> AppModel::getVisibleApps(const QVector<NvApp>& appList)
         // Don't immediately hide games that were previously visible. This
         // allows users to easily uncheck the "Hide App" checkbox if they
         // check it by mistake.
-        if (!matchesCategory(app)) {
+        // The search applies here, not only on a rebuild, so a poll during a search inserts
+        // only what matches.
+        if (!matchesCategory(app) || !matchesFilter(app)) {
             continue;
         }
         if (m_ShowHiddenGames || !app.hidden || isAppCurrentlyVisible(app)) {

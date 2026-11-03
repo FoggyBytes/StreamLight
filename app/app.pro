@@ -267,6 +267,7 @@ HEADERS += \
     backend/launchgate.h \
     streaming/launchcurtain.h \
     backend/nvapp.h \
+    backend/librarysearch.h \
     cli/pair.h \
     settings/compatfetcher.h \
     settings/mappingfetcher.h \

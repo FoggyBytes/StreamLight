@@ -1,0 +1,113 @@
+name: Build modified StreamLight
+
+on:
+  workflow_dispatch:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      # Same Qt setup as upstream's build-windows.yml: Qt 6.12 needs aqtinstall from master
+      # (miurahr/aqtinstall#1000) until 3.4.0 is released.
+      - name: Install Qt 6.12.0
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125  # v4.4.1
+        with:
+          version: 6.12.0
+          arch: win64_msvc2022_64
+          cache: true
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
+
+      - name: Configure MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build StreamLight
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $buildDir = Join-Path $env:GITHUB_WORKSPACE 'build\build-x64-release'
+          New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+
+          Push-Location $buildDir
+          try {
+            & qmake.exe (Join-Path $env:GITHUB_WORKSPACE 'moonlight-qt.pro')
+            if ($LASTEXITCODE -ne 0) { throw "qmake failed with exit code $LASTEXITCODE" }
+
+            & (Join-Path $env:GITHUB_WORKSPACE 'scripts\jom.exe') -j8 release
+            if ($LASTEXITCODE -ne 0) { throw "jom failed with exit code $LASTEXITCODE" }
+          }
+          finally {
+            Pop-Location
+          }
+
+      - name: Create runnable package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:GITHUB_WORKSPACE
+          $buildDir = Join-Path $root 'build\build-x64-release'
+          $outputDir = Join-Path $root 'build\StreamLight-portable-x64'
+          $exe = Join-Path $buildDir 'app\release\StreamLight.exe'
+
+          New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+          Copy-Item (Join-Path $root 'libs\windows\lib\x64\*.dll') $outputDir
+          Copy-Item (Join-Path $buildDir 'AntiHooking\release\AntiHooking.dll') $outputDir
+          Copy-Item (Join-Path $root 'app\SDL_GameControllerDB\gamecontrollerdb.txt') $outputDir
+
+          $deployArgs = @(
+            '--release'
+            '--qmldir', (Join-Path $root 'app\gui')
+            '--no-opengl-sw'
+            '--no-sql'
+            '--no-system-d3d-compiler'
+            '--no-system-dxc-compiler'
+            '--skip-plugin-types', 'qmltooling,generic'
+            '--no-ffmpeg'
+            '--no-quickcontrols2fusion'
+            '--no-quickcontrols2imagine'
+            '--no-quickcontrols2universal'
+            '--dir', $outputDir
+            $exe
+          )
+
+          & windeployqt.exe @deployArgs
+          if ($LASTEXITCODE -ne 0) { throw "windeployqt failed with exit code $LASTEXITCODE" }
+
+          Copy-Item $exe $outputDir
+
+          $unusedQmlDirs = @(
+            'qml\QtQuick\Controls\Fusion'
+            'qml\QtQuick\Controls\Imagine'
+            'qml\QtQuick\Controls\Universal'
+            'qml\QtQuick\Controls\Windows'
+            'qml\QtQuick\Controls\FluentWinUI3'
+            'qml\QtQuick\NativeStyle'
+          )
+          foreach ($relativePath in $unusedQmlDirs) {
+            $path = Join-Path $outputDir $relativePath
+            if (Test-Path -LiteralPath $path) {
+              Remove-Item -LiteralPath $path -Recurse -Force
+            }
+          }
+
+      - name: Upload runnable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamLight-windows-x64-${{ github.sha }}
+          path: build/StreamLight-portable-x64
+          if-no-files-found: error
+          retention-days: 14

@@ -222,6 +222,10 @@ FocusScope {
             return true
         }
         if (currentPage === 1) {
+            // The host page undoes its own layers first: the on-screen keyboard, then the
+            // search. One place for Escape, pad B and the clickable B prompt alike.
+            var page = appsLoader.item
+            if (page && page.backOut && page.backOut()) return true
             currentPage = 0
             return true
         }
@@ -438,6 +442,13 @@ FocusScope {
             break
         case "stopApp":
             if (appsLoader.item) appsLoader.item.stopFocusedApp()
+            break
+        // The library search: open its on-screen keyboard, or go to the results.
+        case "oskOpen":
+            if (appsLoader.item) appsLoader.item.openKeyboard()
+            break
+        case "oskDone":
+            if (appsLoader.item) appsLoader.item.showResults()
             break
         case "prevTab":
             SdlGamepadKeyNavigation.simulateKey(Qt.Key_PageUp)
@@ -823,12 +834,33 @@ FocusScope {
         // buttons, by decision, and only while a game is selected — the APPS tab has nothing to
         // pin, so there the prompt is not drawn at all. The word follows the row: Unpin on a
         // pinned game.
+        //
+        // Library search: while its on-screen keyboard is up the bar is empty — the keyboard
+        // names its own buttons under its keys, and has them all. Searching without it, B closes
+        // the search rather than leaving for the hosts, and the bar says so. In the field with
+        // the pad, A opens the keyboard and Start goes to the results.
         readonly property var _hintsApps: {
+            var page = appsLoader.item
+            if (page && page.searchKeyboardOpen) return []
+            // Typing in the field: letters type, so only what the field itself does. Settings
+            // keeps the pad's Y, but has no key (S would type an s), so a keyboard user gets no
+            // prompt for it rather than a lone Y glyph among key caps.
+            if (page && page.searchTyping) {
+                var typing = InputHints.padActive
+                    ? [ { btn: "A",     key: "Enter", act: qsTr("Keyboard"), kind: "oskOpen" },
+                        { btn: "START", key: "",      act: qsTr("Results"),  kind: "oskDone" },
+                        { btn: "Y",     key: "",      act: qsTr("Settings"), kind: "settings" } ]
+                    : [ { btn: "A",     key: "Enter", act: qsTr("Results"),  kind: "oskDone" } ]
+                return typing.concat([
+                    { btn: "B", key: "Esc",
+                      act: page.searchHasText ? qsTr("Clear") : qsTr("Close search"), kind: "back" }
+                ])
+            }
             var h = [
                 { btn: "Y",  key: "S",    act: qsTr("Settings"), kind: "settings" },
-                { btn: "B",  key: "Esc",  act: qsTr("Hosts"),    kind: "back" }
+                { btn: "B",  key: "Esc",
+                  act: page && page.searching ? qsTr("Close search") : qsTr("Hosts"), kind: "back" }
             ]
-            var page = appsLoader.item
             if (page) {
                 h.push({ btn: "LS", key: "V", act: page.layoutActionLabel, kind: "libraryLayout" })
                 // Grid mode has no spotlight buttons, so expose their actions here.

@@ -9,6 +9,7 @@ import ComputerManager 1.0
 import StreamingPreferences 1.0
 import SdlGamepadKeyNavigation 1.0
 import WindowMove 1.0
+import InputHints 1.0
 
 /*
  * The host page — the showcase.
@@ -410,6 +411,16 @@ FocusScope {
 
     function setLibraryTab(tab, byUser) {
         if (!appGrid || !appGrid.appModel) return
+        // Search is a stop on the ring, not a tab: it is never saved, and it keeps state of its
+        // own that a plain switch would leave behind (see enterSearch / exitSearch).
+        if (tab === "search") {
+            if (!searching) enterSearch(false)
+            return
+        }
+        if (searching) {
+            exitSearch(tab, false, byUser)
+            return
+        }
         if (byUser) {
             _tabChosenByUser = true
             appGrid.appModel.saveTab(tab)
@@ -424,10 +435,164 @@ FocusScope {
     }
 
     // LB/RB, one step left or right. The ring wraps, like the tabs of Settings (SectionTabBar).
+    // It is _ring, not _tabs: search is one of its stops.
     function switchLibraryTab(dir) {
-        var n = _tabs.length
-        var i = (_tabs.indexOf(libraryTab) + (dir < 0 ? -1 : 1) + n) % n
-        setLibraryTab(_tabs[i], true)
+        var n = _ring.length
+        var i = (_ring.indexOf(libraryTab) + (dir < 0 ? -1 : 1) + n) % n
+        setLibraryTab(_ring[i], true)
+    }
+
+    // ── Search (7.1.0) ───────────────────────────────────────────────────────
+    /*
+     * Text search over the library, in both layouts. A stop at the front of the tab ring —
+     * [LB] 🔍 ALL GAMES APPS [RB] — so LB from ALL, the tab the page opens on, is search, and
+     * no button had to change meaning to make room for it. On the keyboard: '/' or Ctrl+F.
+     *
+     * It searches what ALL shows, never the 2.0 host controls: ALL's rule, and the running-game
+     * copy a 2.0 server sends carries the game's own title, which would turn up twice.
+     *
+     * The filter lives in the model (AppModel.setFilterText), so every row index the page
+     * hands back to it still means the same row. The counts ignore it — see onCountsChanged.
+     *
+     * ⚠️ _tabs stays the three real tabs. The saved tab, the opening tab, the direct-launch scan
+     * and _selectAppIdAnyTab all walk it, and none of them may ever land on search.
+     */
+    readonly property var _ring: ["search", "all", "games", "apps"]
+    readonly property bool searching: libraryTab === "search"
+    // The on-screen keyboard is up (controller typing). Only ever while searching.
+    readonly property bool searchKeyboardOpen: searchKeyboard.visible
+    // Typing in the field: the status bar names the field's keys, not the selected entry's,
+    // which would type letters here (G, S, V, P).
+    readonly property bool searchTyping: searching && searchField.activeFocus
+    readonly property bool searchHasText: searchField.text.length > 0
+    // Where B leaves search to.
+    property string _tabBeforeSearch: "all"
+
+    function enterSearch(withKeyboard) {
+        if (!appGrid || !appGrid.appModel) return
+        if (!searching) {
+            _tabBeforeSearch = libraryTab
+            libraryTab = "search"
+            appGrid.appModel.category = "all"
+            appGrid.currentIndex = appGrid.count > 0 ? 0 : -1
+            appGrid.positionViewAtBeginning()
+            appGrid.updateContinue()
+            appsRoot._playtimeEpoch++
+        }
+        if (withKeyboard) openKeyboard()
+        else {
+            closeKeyboard()
+            searchField.forceActiveFocus()
+        }
+    }
+
+    /// Leaves search for a tab. keepSelection: the cursor stays on the entry it was on, where
+    /// that tab has it — B after finding a game lands on it. byUser: the tab is remembered,
+    /// as a choice made with LB/RB is.
+    function exitSearch(toTab, keepSelection, byUser) {
+        if (!searching) return
+        var m = appGrid.appModel
+        var appId = keepSelection && appGrid.currentItem ? appGrid.currentItem._appId : -1
+        closeKeyboard()
+        // Emptying the field restarts the debounce (onTextChanged), so it stops after.
+        searchField.text = ""
+        searchDebounce.stop()
+        m.setFilterText("")
+        if (byUser) {
+            _tabChosenByUser = true
+            m.saveTab(toTab)
+        }
+        libraryTab = toTab
+        m.category = toTab
+        var i = appId >= 0 ? m.indexOfAppId(appId) : -1
+        appGrid.currentIndex = i >= 0 ? i : (appGrid.count > 0 ? 0 : -1)
+        if (i >= 0) appGrid.positionViewAtIndex(i, ListView.Contain)
+        else appGrid.positionViewAtBeginning()
+        appGrid.updateContinue()
+        appsRoot._playtimeEpoch++
+        focusLibrary()
+    }
+
+    /// The field's text, applied. A no-op unless the words changed (AppModel.setFilterText);
+    /// when they did the rows were rebuilt, so the cursor goes back to the first result.
+    function _applyQuery() {
+        if (!searching || !appGrid || !appGrid.appModel) return
+        if (!appGrid.appModel.setFilterText(searchField.text)) return
+        appGrid.currentIndex = appGrid.count > 0 ? 0 : -1
+        appGrid.positionViewAtBeginning()
+        appGrid.updateContinue()
+        appsRoot._playtimeEpoch++
+    }
+
+    /*
+     * The on-screen keyboard is the app's own (VirtualKeyboard.qml, 8.0.0), searchKeyboard
+     * below, as on every other field a pad types into. It is modal: while it is up the focus
+     * and every pad button are its own — A types, X deletes, Y adds a space, LB/RB move the
+     * text cursor, LT shift, RT symbols, Start is Done (the results), B closes it back to the
+     * field. The pad's A in the field opens it (offer(), in the field's keys); so does the ⌨
+     * button, for the mouse.
+     */
+    function openKeyboard() {
+        searchField.forceActiveFocus()
+        searchKeyboard.open()
+    }
+    function closeKeyboard() { searchKeyboard.close() }
+
+    /// Back into the search from the results. The field, with the pad too: A there opens the
+    /// keyboard, so walking up through the search bar never covers the results with it.
+    function focusSearch() {
+        closeKeyboard()
+        searchField.forceActiveFocus()
+    }
+
+    /// From the search to the results — Down or Enter in the field, Start or Done on the
+    /// keyboard. With nothing to show, the field keeps the focus.
+    function showResults() {
+        // Every Results action, including the clickable prompt, uses the latest text.
+        searchDebounce.stop()
+        _applyQuery()
+        closeKeyboard()
+        if (appGrid.count === 0) {
+            searchField.forceActiveFocus()
+            return
+        }
+        if (appGrid.currentIndex < 0) appGrid.currentIndex = 0
+        focusLibrary()
+    }
+
+    // X in the field: delete, as on the keyboard.
+    function searchBackspace() {
+        var p = searchField.cursorPosition
+        if (p > 0) searchField.remove(p - 1, p)
+    }
+
+    /// B, Escape and the B prompt, through AppShell._goBack(): the keyboard closes first (back
+    /// to the field, as its own B does), then the text being typed is cleared, then the search
+    /// closes, back to the tab it was opened from. False when there is nothing to undo here and
+    /// B should leave the page.
+    function backOut() {
+        if (searchKeyboardOpen) {
+            closeKeyboard()
+            return true
+        }
+        // Escape in the field does this itself; this is the clickable B prompt's way there.
+        if (searchTyping && searchField.text.length > 0) {
+            searchField.clear()
+            return true
+        }
+        if (searching) {
+            exitSearch(_tabBeforeSearch, true, false)
+            return true
+        }
+        return false
+    }
+
+    // Typing waits for a pause rather than filtering on every key: each change of words is a
+    // model reset, and a fast typist would otherwise rebuild the library once per letter.
+    Timer {
+        id: searchDebounce
+        interval: 150
+        onTriggered: appsRoot._applyQuery()
     }
 
     // ── GAMES / APPS by hand (6.1.0) ─────────────────────────────────────────
@@ -437,8 +602,9 @@ FocusScope {
      * where both halves are shown together and "the other tab" means nothing, and never for
      * a host control — those are not applications and stay on APPS.
      */
+    // GAMES and APPS only: search shows ALL's rows, where "the other tab" means nothing either.
     readonly property bool focusedMovable:
-        libraryTab !== "all" && appGrid && appGrid.currentItem
+        (libraryTab === "games" || libraryTab === "apps") && appGrid && appGrid.currentItem
         ? appGrid.currentItem._movable === true : false
     // Read by the status bar, beside the right-stick prompt.
     readonly property string focusedMoveLabel:
@@ -478,6 +644,16 @@ FocusScope {
     /// Selects the entry with this id on whichever tab has it, the current one first. False
     /// when no tab does.
     function _selectAppIdAnyTab(appId) {
+        // Among the results if it is there. If not, the search gives way to the tabs: it is
+        // not one of them, and a host's confirmation must still find its entry.
+        if (searching) {
+            var r = appGrid.appModel.indexOfAppId(appId)
+            if (r >= 0) {
+                appGrid.currentIndex = r
+                return true
+            }
+            exitSearch(_tabBeforeSearch, false, false)
+        }
         var order = [libraryTab].concat(_tabs.filter(function(t) { return t !== libraryTab }))
         for (var k = 0; k < order.length; ++k) {
             setLibraryTab(order[k], false)
@@ -498,6 +674,9 @@ FocusScope {
         target: (appGrid && appGrid.appModel) ? appGrid.appModel : null
         function onCountsChanged() {
             var m = appGrid.appModel
+            // A search stays put. It is the user's own doing, and the fallbacks below would end
+            // it; a Remote Monitor kept mid-search just leaves it with fewer results.
+            if (appsRoot.searching) return
             if (!appsRoot._tabChosenByUser) {
                 appsRoot._pickOpeningTab()
             } else if (m.remoteMonitorActive && appsRoot.libraryTab !== "apps") {
@@ -595,6 +774,13 @@ FocusScope {
             event.accepted = true
         } else if (event.key === Qt.Key_F15 || event.key === Qt.Key_E) {
             cycleProfile(1)
+            event.accepted = true
+        }
+        // Search (7.1.0): '/', as in browsers and launchers, and the platform's Find (Ctrl+F).
+        // Any modifiers on '/': on several layouts it needs Shift. Typing either into the
+        // search field never gets here — the field takes printable keys first.
+        else if (event.key === Qt.Key_Slash || event.matches(StandardKey.Find)) {
+            enterSearch(false)
             event.accepted = true
         }
     }
@@ -1294,14 +1480,19 @@ FocusScope {
             anchors.verticalCenterOffset: -appsRoot._px(5)   // centred on the labels, not the underline
             size: appsRoot._px(26)
             buttonKey: "LB"; keyLabel: "PgUp"
-            onTriggered: { appsRoot.switchLibraryTab(-1); appsRoot.focusLibrary() }
+            onTriggered: {
+                appsRoot.switchLibraryTab(-1)
+                if (!appsRoot.searching) appsRoot.focusLibrary()
+            }
         }
 
         Row {
         spacing: appsRoot._px(26)
 
         Repeater {
+            // Search (7.1.0) is the first stop, drawn as a magnifier rather than a word.
             model: [
+                { tab: "search", label: "" },
                 { tab: "all",   label: qsTr("ALL") },
                 { tab: "games", label: qsTr("GAMES") },
                 { tab: "apps",  label: qsTr("APPS") }
@@ -1310,14 +1501,36 @@ FocusScope {
             delegate: Item {
                 id: tabItem
                 readonly property bool _on: appsRoot.libraryTab === modelData.tab
+                readonly property bool _isSearch: modelData.tab === "search"
                 implicitWidth: tabRow.implicitWidth
                 implicitHeight: tabRow.implicitHeight + appsRoot._px(10)
+                Accessible.role: Accessible.PageTab
+                Accessible.name: _isSearch ? qsTr("Search") : modelData.label
 
                 Row {
                     id: tabRow
                     spacing: appsRoot._px(8)
 
+                    // The label's height, so the underline sits where the others' does.
+                    Item {
+                        visible: tabItem._isSearch
+                        width: appsRoot._px(18)
+                        height: tabLabel.implicitHeight
+                        Image {
+                            anchors.centerIn: parent
+                            width: appsRoot._px(18)
+                            height: width
+                            source: Theme.light ? "qrc:/res/search_dark.svg" : "qrc:/res/search.svg"
+                            sourceSize.width: width * Screen.devicePixelRatio
+                            sourceSize.height: height * Screen.devicePixelRatio
+                            smooth: true
+                            opacity: tabItem._on ? 1.0 : 0.55
+                        }
+                    }
+
                     Label {
+                        id: tabLabel
+                        visible: !tabItem._isSearch
                         text: modelData.label
                         color: tabItem._on ? Theme.text : appsRoot._text3
                         font.family: Theme.family
@@ -1344,6 +1557,11 @@ FocusScope {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
+                        // A click is the mouse: the field, not the on-screen keyboard.
+                        if (tabItem._isSearch) {
+                            appsRoot.enterSearch(false)
+                            return
+                        }
                         appsRoot.setLibraryTab(modelData.tab, true)
                         appsRoot.focusLibrary()
                     }
@@ -1357,7 +1575,182 @@ FocusScope {
             anchors.verticalCenterOffset: -appsRoot._px(5)
             size: appsRoot._px(26)
             buttonKey: "RB"; keyLabel: "PgDn"
-            onTriggered: { appsRoot.switchLibraryTab(1); appsRoot.focusLibrary() }
+            onTriggered: {
+                appsRoot.switchLibraryTab(1)
+                if (!appsRoot.searching) appsRoot.focusLibrary()
+            }
+        }
+    }
+
+    // ── Search bar (7.1.0) ───────────────────────────────────────────────────
+    // Under the tabs while searching: the library column's width in List, the grid's in Grid.
+    Item {
+        id: searchBar
+        visible: appsRoot.searching
+        anchors.top: libraryTabs.bottom
+        anchors.left: parent.left
+        anchors.topMargin: appsRoot._px(12)
+        anchors.leftMargin: appsRoot._sideMargin
+        width: appsRoot.gridLayout ? appsRoot.width - appsRoot._sideMargin * 2 : appsRoot._libraryWidth
+        height: visible ? appsRoot._px(46) : 0
+
+        TextField {
+            id: searchField
+            anchors.fill: parent
+            leftPadding: appsRoot._px(44)
+            rightPadding: searchTools.width + appsRoot._px(12)
+            maximumLength: 40
+            // No placeholderText: the Material style floats it onto the top border once the
+            // field has focus, and this background leaves no gap there. Drawn below instead.
+            color: Theme.text
+            selectionColor: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.30)
+            selectedTextColor: Theme.text
+            font.family: Theme.family
+            font.pixelSize: appsRoot._px(Theme.fontBody)
+            selectByMouse: true
+            inputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase
+            background: Rectangle {
+                color: Theme.ground
+                radius: appsRoot._px(8)
+                border.color: searchField.activeFocus ? Theme.ink : Theme.line
+                border.width: searchField.activeFocus ? 2 : 1
+            }
+            Accessible.name: qsTr("Search")
+
+            onTextChanged: if (appsRoot.searching) searchDebounce.restart()
+
+            // The keyboard is modal, so none of these arrive while it is up: they are the field's.
+            Keys.onPressed: function(event) {
+                switch (event.key) {
+                // X deletes, as on the keyboard. Y is left to main.qml: Settings.
+                case Qt.Key_Menu:
+                    appsRoot.searchBackspace()
+                    event.accepted = true
+                    break
+                case Qt.Key_Return:
+                case Qt.Key_Enter:
+                    // The pad's A opens the on-screen keyboard (offer() takes only a key the pad
+                    // sent); Enter on a keyboard goes to the results.
+                    if (searchKeyboard.offer(event)) break
+                    // fall through
+                case Qt.Key_Down:
+                    appsRoot.showResults()
+                    event.accepted = true
+                    break
+                case Qt.Key_Escape:
+                    // Accepted either way, or AppShell would take it and go Home. The text
+                    // first, then the search.
+                    if (searchField.text.length > 0) searchField.clear()
+                    else appsRoot.exitSearch(appsRoot._tabBeforeSearch, true, false)
+                    event.accepted = true
+                    break
+                // Start is Done, as on the on-screen keyboard.
+                case Qt.Key_F18:
+                    appsRoot.showResults()
+                    event.accepted = true
+                    break
+                // Select (per-game settings) and the right stick (move) act on the selected
+                // entry, which is not where the user is looking while they type.
+                case Qt.Key_F13:
+                case Qt.Key_F19:
+                    event.accepted = true
+                    break
+                }
+            }
+        }
+
+        Label {
+            anchors.left: parent.left
+            anchors.leftMargin: searchField.leftPadding
+            anchors.verticalCenter: parent.verticalCenter
+            visible: searchField.text.length === 0 && searchField.preeditText.length === 0
+            text: qsTr("Search this library")
+            color: appsRoot._text3
+            font: searchField.font
+        }
+
+        Image {
+            anchors.left: parent.left
+            anchors.leftMargin: appsRoot._px(14)
+            anchors.verticalCenter: parent.verticalCenter
+            width: appsRoot._px(18)
+            height: width
+            source: Theme.light ? "qrc:/res/search_dark.svg" : "qrc:/res/search.svg"
+            sourceSize.width: width * Screen.devicePixelRatio
+            sourceSize.height: height * Screen.devicePixelRatio
+            smooth: true
+            opacity: 0.6
+        }
+
+        // How many matched, then × to clear and ⌨ for the on-screen keyboard — both for the
+        // mouse; the pad has X on the keyboard and Up from the results.
+        Row {
+            id: searchTools
+            anchors.right: parent.right
+            anchors.rightMargin: appsRoot._px(8)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: appsRoot._px(4)
+
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: searchField.text.trim().length > 0
+                text: qsTr("%n result(s)", "", appGrid ? appGrid.count : 0)
+                color: appsRoot._text3
+                font.family: Theme.family
+                font.pixelSize: appsRoot._px(Theme.fontSmall)
+                rightPadding: appsRoot._px(6)
+            }
+
+            Repeater {
+                model: [
+                    { glyph: "×", tip: qsTr("Clear"), shown: searchField.text.length > 0 },
+                    { glyph: "⌨", tip: qsTr("On-screen keyboard"), shown: !appsRoot.searchKeyboardOpen }
+                ]
+                delegate: Rectangle {
+                    visible: modelData.shown
+                    width: appsRoot._px(30)
+                    height: width
+                    radius: appsRoot._px(6)
+                    color: toolMouse.containsMouse
+                           ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16) : "transparent"
+                    Accessible.role: Accessible.Button
+                    Accessible.name: modelData.tip
+
+                    Label {
+                        anchors.centerIn: parent
+                        text: modelData.glyph
+                        color: appsRoot._text2
+                        font.family: Theme.family
+                        font.pixelSize: appsRoot._px(Theme.fontBody)
+                    }
+                    MouseArea {
+                        id: toolMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (index === 0) {
+                                searchField.clear()
+                                searchField.forceActiveFocus()
+                            }
+                            else appsRoot.openKeyboard()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // The library search's on-screen keyboard: the app's own, at the bottom of the window over
+    // the library, which stays where it is. Done (Start) applies what was typed and goes to the
+    // results; B closes it back to the field, the query kept.
+    VirtualKeyboard {
+        id: searchKeyboard
+        target: searchField
+        mode: "text"
+        onAccepted: {
+            close()
+            appsRoot.showResults()
         }
     }
 
@@ -1368,8 +1761,9 @@ FocusScope {
         visible: !appsRoot.gridLayout
         enabled: visible
         // Straight under the tabs: the column's caption is the list's own first section
-        // header, which scrolls away with the rows it names.
-        anchors.top: libraryTabs.bottom
+        // header, which scrolls away with the rows it names. Under the search bar while
+        // searching.
+        anchors.top: appsRoot.searching ? searchBar.bottom : libraryTabs.bottom
         anchors.left: parent.left
         anchors.bottom: parent.bottom
         anchors.topMargin: appsRoot._px(8)
@@ -1417,10 +1811,11 @@ FocusScope {
                                        && !Theme.reduceAnimations
         // The rows arrive one after another when the list fills (7.0.0): each rises 8 px and
         // fades in, 18 ms after the one before; past the eighth they come together, so a long
-        // library never makes anyone wait for it.
+        // library never makes anyone wait for it. Not while searching: every change of words
+        // refills the list, and the rows would rise again on each one.
         populate: Transition {
             id: rowsIn
-            enabled: !Theme.reduceAnimations
+            enabled: !Theme.reduceAnimations && !appsRoot.searching
             SequentialAnimation {
                 PropertyAction { property: "opacity"; value: 0 }
                 PauseAnimation { duration: Math.min(rowsIn.ViewTransition.index, 8) * 18 }
@@ -1505,6 +1900,7 @@ FocusScope {
                 anchors.bottomMargin: appsRoot._px(8)
                 text: parent._isContinue ? qsTr("LAST PLAYED")
                     : section === "pinned" ? qsTr("PINNED")
+                    : appsRoot.searching ? qsTr("RESULTS")
                     : appsRoot.libraryTab === "apps" ? qsTr("ALL APPS")
                     : appsRoot.libraryTab === "games" ? qsTr("ALL GAMES") : qsTr("ALL")
                 color: parent._isContinue ? Theme.inkText : appsRoot._text3
@@ -1602,7 +1998,17 @@ FocusScope {
             edgeBounce.start()
         }
         Keys.onDownPressed: function(event) { _noteStep(); if (count > 0 && currentIndex === count - 1) _bounce(-1); event.accepted = false }
-        Keys.onUpPressed:   function(event) { _noteStep(); if (count > 0 && currentIndex === 0) _bounce(1); event.accepted = false }
+        // While searching, Up from the first row goes back to the search instead of bouncing.
+        Keys.onUpPressed: function(event) {
+            if (appsRoot.searching && currentIndex <= 0) {
+                appsRoot.focusSearch()
+                event.accepted = true
+                return
+            }
+            _noteStep()
+            if (count > 0 && currentIndex === 0) _bounce(1)
+            event.accepted = false
+        }
         Keys.onReturnPressed: function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
         Keys.onEnterPressed:  function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
         Keys.onSpacePressed:  function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
@@ -1661,7 +2067,7 @@ FocusScope {
 
     GridView {
         id: coverGrid
-        anchors.top: libraryTabs.bottom
+        anchors.top: appsRoot.searching ? searchBar.bottom : libraryTabs.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -1704,6 +2110,15 @@ FocusScope {
         Keys.onReturnPressed: function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
         Keys.onEnterPressed: function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
         Keys.onSpacePressed: function(event) { if (currentItem) currentItem.launchOrResumeSelectedApp(true); event.accepted = true }
+        // While searching, Up from the top row goes back to the search. Otherwise the grid's own.
+        Keys.onUpPressed: function(event) {
+            if (appsRoot.searching && currentIndex < columns) {
+                appsRoot.focusSearch()
+                event.accepted = true
+                return
+            }
+            event.accepted = false
+        }
 
         ScrollBar.vertical: ThemedScrollBar { }
     }
@@ -2143,10 +2558,20 @@ FocusScope {
 
     // ── Empty state ───────────────────────────────────────────────────────────
     Label {
-        anchors.centerIn: parent
-        width: parent.width * 0.6
+        // The words the model is filtering by, not the field's text: during the debounce the
+        // two differ, and the message names the rows that are actually missing.
+        readonly property string _query: appsRoot.searching && appGrid.appModel
+                                         ? appGrid.appModel.filterText.trim() : ""
+        // While searching, on the library itself: in the list layout the spotlight fills the
+        // right of the page and the message belongs beside the results it replaces.
+        anchors.centerIn: appsRoot.searching ? appGrid : parent
+        width: appsRoot.searching ? appGrid.width * 0.8 : parent.width * 0.6
         visible: appGrid.count === 0
-        text: appsRoot.libraryTab === "games"
+        // Typed text: never read as markup.
+        textFormat: Text.PlainText
+        text: _query !== ""
+              ? qsTr("No matches for “%1”").arg(_query)
+              : appsRoot.libraryTab === "games"
               ? qsTr("No games to show — some may be hidden on the host")
               : appsRoot.libraryTab === "apps"
               ? qsTr("No apps to show — some may be hidden on the host")
