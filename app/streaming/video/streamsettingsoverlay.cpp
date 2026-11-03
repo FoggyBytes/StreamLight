@@ -1,5 +1,6 @@
 #include "streamsettingsoverlay.h"
 #include "streaming/session.h"
+#include "streaming/input/input.h"
 #include "streaming/video/overlaymanager.h"
 #include "settings/appsettings.h"
 #include "settings/videooptions.h"
@@ -24,8 +25,8 @@ static const int s_PacingCount = 2;
 static const int kCustomMin = 256, kCustomMax = 7680, kCustomStep = 8;
 static const int kBitrateMinKbps = 5000, kBitrateStepKbps = 5000;
 
-StreamSettingsOverlay::StreamSettingsOverlay(StreamingPreferences* prefs)
-    : m_Prefs(prefs)
+StreamSettingsOverlay::StreamSettingsOverlay(StreamingPreferences* prefs, SdlInputHandler* input)
+    : m_Prefs(prefs), m_Input(input)
 {
 }
 
@@ -44,7 +45,7 @@ int StreamSettingsOverlay::effectiveHeight() const
     return isCustom() ? m_CustomH : m_ResValues.value(m_ResIndex).height();
 }
 
-int StreamSettingsOverlay::changeCount() const
+int StreamSettingsOverlay::reconnectCount() const
 {
     int n = 0;
     if (effectiveWidth() != m_BaseW || effectiveHeight() != m_BaseH) n++;
@@ -53,6 +54,11 @@ int StreamSettingsOverlay::changeCount() const
     if (m_Hdr != m_BaseHdr) n++;
     if (static_cast<int>(s_PacingValues[m_PacingIndex]) != m_BasePacing) n++;
     return n;
+}
+
+int StreamSettingsOverlay::changeCount() const
+{
+    return reconnectCount() + (m_PadMouse != m_BasePadMouse ? 1 : 0);
 }
 
 void StreamSettingsOverlay::rebuildRows()
@@ -67,6 +73,7 @@ void StreamSettingsOverlay::rebuildRows()
     m_Rows.append(ROW_BITRATE);
     m_Rows.append(ROW_HDR);
     m_Rows.append(ROW_PACING);
+    m_Rows.append(ROW_PADMOUSE);
     if (m_Focus >= m_Rows.size()) m_Focus = m_Rows.size() - 1;
     if (m_Focus < 0) m_Focus = 0;
 
@@ -151,7 +158,10 @@ void StreamSettingsOverlay::open(SDL_GameController* pad)
         if (s_PacingValues[i] == m_Prefs->framePacingMode) { m_PacingIndex = i; break; }
     }
 
+    m_PadMouse = m_Prefs->gamepadMouse;
+
     // Baseline = the values we'd apply right now (so opening shows "no changes").
+    m_BasePadMouse = m_PadMouse;
     m_BaseW = effectiveWidth();
     m_BaseH = effectiveHeight();
     m_BaseFps = currentFps();
@@ -268,6 +278,9 @@ void StreamSettingsOverlay::changeFocused(int delta)
     case ROW_PACING:
         m_PacingIndex = (m_PacingIndex + delta + s_PacingCount) % s_PacingCount;
         break;
+    case ROW_PADMOUSE:
+        m_PadMouse = !m_PadMouse;
+        break;
     }
     render();
 }
@@ -276,7 +289,14 @@ void StreamSettingsOverlay::apply()
 {
     if (!m_Active) return;
 
-    if (changeCount() > 0) {
+    // Mouse control (8.4.0) applies at once, on the input handler, and rides the session's
+    // preferences so a reconnect below — which builds the handler again — keeps it.
+    if (m_PadMouse != m_BasePadMouse) {
+        m_Prefs->gamepadMouse = m_PadMouse;
+        if (m_Input != nullptr) m_Input->setGamepadMouse(m_PadMouse);
+    }
+
+    if (reconnectCount() > 0) {
         // Keep the current frame pacing; only res/fps/bitrate/HDR change here.
         //
         // Do NOT "simplify" this to FP_OFF when V-Sync is off. The value passed
@@ -350,6 +370,15 @@ void StreamSettingsOverlay::writeCurrentTo(SaveTarget target, int hostSlot)
     const int pacing = static_cast<int>(s_PacingValues[m_PacingIndex]);
     const bool hdr = m_Hdr;
 
+    // Mouse control is a global preference only — no profile or game layer has it — so it is
+    // saved there whatever the target of the rest.
+    if (m_PadMouse != StreamingPreferences::get()->gamepadMouse) {
+        StreamingPreferences::get()->gamepadMouse = m_PadMouse;
+        // MEMBER properties notify only when QML writes them: Settings → Input must hear it.
+        emit StreamingPreferences::get()->gamepadMouseChanged();
+        if (target != TARGET_GLOBAL) StreamingPreferences::get()->save();
+    }
+
     if (target == TARGET_GLOBAL) {
         StreamingPreferences* g = StreamingPreferences::get();
         g->width = w;
@@ -368,7 +397,7 @@ void StreamSettingsOverlay::writeCurrentTo(SaveTarget target, int hostSlot)
         return;
     }
 
-    // Read-modify-write so codec/audio/Hue overrides aren't clobbered.
+    // Read-modify-write so the codec/audio/other overrides aren't clobbered.
     AppOverride ov = (target == TARGET_GAME)
         ? AppSettingsManager::get()->getOverride(c->uuid, a.id)
         : HostProfileManager::get()->settings(c->uuid, hostSlot);
@@ -470,6 +499,7 @@ void StreamSettingsOverlay::render()
         case ROW_BITRATE:  return m_BitrateKbps != m_BaseKbps;
         case ROW_HDR:      return m_Hdr != m_BaseHdr;
         case ROW_PACING:   return !isRowLocked(ROW_PACING) && static_cast<int>(s_PacingValues[m_PacingIndex]) != m_BasePacing;
+        case ROW_PADMOUSE: return m_PadMouse != m_BasePadMouse;
         }
         return false;
     };
@@ -549,13 +579,21 @@ void StreamSettingsOverlay::render()
                        QString::fromLatin1(s_PacingLabels[m_PacingIndex]));
             }
             break;
+        case ROW_PADMOUSE:
+            addRow(ROW_PADMOUSE, QStringLiteral("Mouse control"),
+                   m_PadMouse ? QStringLiteral("On") : QStringLiteral("Off"),
+                   QStringLiteral("hold Start"));
+            break;
         }
     }
 
     int n = changeCount();
     if (n > 0) {
-        panel.statusLine = QStringLiteral("%1 change%2 · Apply briefly reconnects")
-            .arg(n).arg(n > 1 ? QStringLiteral("s") : QString());
+        // Mouse control alone applies at once; anything else needs the reconnect.
+        panel.statusLine = QStringLiteral("%1 change%2 · %3")
+            .arg(n).arg(n > 1 ? QStringLiteral("s") : QString())
+            .arg(reconnectCount() > 0 ? QStringLiteral("Apply briefly reconnects")
+                                      : QStringLiteral("Applies at once"));
         panel.statusColor = {0xF5, 0xA6, 0x23, 0xFF};   // the theme's warning, as the tiles' dots
     } else {
         panel.statusLine = QStringLiteral("No changes");

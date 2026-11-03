@@ -32,6 +32,12 @@ class QWindow;
  * a pad keeps the gaps short; with a mouse or a keyboard almost every sound came after a gap,
  * so almost none was heard. Session::exec() releases the device for the stream with
  * setStreaming(true) and takes it back with setStreaming(false).</p>
+ *
+ * <p>⚠️ And it is let go while the screen is off (8.4.0, 03/11/2026). An open output is audio
+ * playing as far as Windows can tell: on the SER9 every exit from Modern Standby read
+ * AudioPlaying=true while StreamLight was running, false with it closed, and the machine never
+ * reached its deep idle (DripsResidencyInUs=0). The engine is rebuilt when the screen comes back
+ * on, so the first sound after the wake still finds the output awake.</p>
  */
 class UiSound : public QObject
 {
@@ -78,6 +84,9 @@ public:
      */
     void setStreaming(bool streaming);
 
+    /** The screen came on (true) or went off (false). Called on the GUI thread. */
+    void setScreenOn(bool on);
+
 signals:
     void enabledChanged();
     void volumeChanged();
@@ -101,6 +110,7 @@ private:
     bool          m_Enabled = true;
     int           m_Volume = 100;
     bool          m_Streaming = false;
+    bool          m_ScreenOff = false;
     QElapsedTimer m_Clock;
     qint64        m_LastMs[3] = { -100000, -100000, -100000 };
 };

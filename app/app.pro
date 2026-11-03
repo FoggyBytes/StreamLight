@@ -55,6 +55,10 @@ win32 {
     # taskschd, oleaut32 and secur32: the sign-in task; wtsapi32: is the session locked (8.2.0, backend/signinlaunch.cpp)
     LIBS += taskschd.lib oleaut32.lib secur32.lib wtsapi32.lib
 }
+# 8.4.0: SettingsScreen.qml, compiled to C++ by qmlcachegen, passed the 65,279 sections a plain
+# COFF object can hold when the TV tab went in (C1128). /bigobj lifts the limit; it changes the
+# object format only, not the code.
+win32-msvc: QMAKE_CXXFLAGS += /bigobj
 macx:!disable-prebuilts {
     INCLUDEPATH += $$PWD/../libs/mac/include $$PWD/../libs/mac/include/SDL2
     LIBS += -L$$PWD/../libs/mac/lib
@@ -180,6 +184,8 @@ SOURCES += \
     backend/windowslocation.cpp \
     backend/steamartwork.cpp \
     backend/signinlaunch.cpp \
+    backend/tvlink.cpp \
+    backend/huesyncclient.cpp \
     backend/pyrowavetest.cpp \
     backend/pyrowaveudpprobe.cpp \
     backend/gradientimage.cpp \
@@ -229,7 +235,6 @@ SOURCES += \
     singleinstance.cpp \
     XboxTileArtwork.cpp \
     SessionTelemetrySampler.cpp \
-    HueSyncManager.cpp \
     TailscaleManager.cpp \
     streaming/bandwidth.cpp \
     streaming/streamutils.cpp \
@@ -260,6 +265,8 @@ HEADERS += \
     backend/windowslocation.h \
     backend/steamartwork.h \
     backend/signinlaunch.h \
+    backend/tvlink.h \
+    backend/huesyncclient.h \
     backend/pyrowavetest.h \
     backend/pyrowaveudpprobe.h \
     logfile.h \
@@ -308,7 +315,6 @@ HEADERS += \
     singleinstance.h \
     XboxTileArtwork.h \
     SessionTelemetrySampler.h \
-    HueSyncManager.h \
     TailscaleManager.h \
     streaming/video/decoder.h \
     streaming/vrrratepolicy.h \

@@ -14,6 +14,7 @@ import LogsAndCache 1.0
 import UiSound 1.0
 import SteamArtwork 1.0
 import SignInLaunch 1.0
+import TvLink 1.0
 import QtQuick.Dialogs as QD
 
 // SettingsScreen — Xbox-style flat settings panel.
@@ -187,7 +188,6 @@ FocusScope {
     readonly property bool _lockCodec:       activeProfileOverride && activeProfileOverride.codec !== undefined
     readonly property bool _lockFramePacing: activeProfileOverride && activeProfileOverride.framepacing !== undefined
     readonly property bool _lockAudio:       activeProfileOverride && activeProfileOverride.audio !== undefined
-    readonly property bool _lockHue:         activeProfileOverride && activeProfileOverride.hue !== undefined
     readonly property bool _lockMatchLink:   activeProfileOverride && activeProfileOverride.matchlink !== undefined
     readonly property bool _lockDisplayMode: activeProfileOverride && activeProfileOverride.displaymode !== undefined
 
@@ -298,6 +298,11 @@ FocusScope {
             case "input":       if (swapFaceSwitch)        swapFaceSwitch.forceActiveFocus();        break
             case "network":     if (mdnsSwitch)            mdnsSwitch.forceActiveFocus();            break
             case "interface":   if (themeModeSelector)     themeModeSelector.forceActiveFocus();     break
+            // The TV's first button, whichever the state shows (none while the service starts).
+            case "tv":
+                if (tvSetupBtn && tvSetupBtn.visible)      tvSetupBtn.forceActiveFocus()
+                else if (tvPowerBtn && tvPowerBtn.visible) tvPowerBtn.forceActiveFocus()
+                break
             case "overlay":     if (perfOverlaySwitch)     perfOverlaySwitch.forceActiveFocus();     break
             case "shortcuts":
                 if (padComboRepeater.count > 0) padComboRepeater.itemAt(0).firstControl.forceActiveFocus()
@@ -446,6 +451,23 @@ FocusScope {
         appShell: settingsScreen.appShell
     }
 
+    // Settings → TV (8.4.0): pairing an LG TV. The focus goes back to the button that opened it
+    // (the Repeater above) — and when that button has gone with the pairing (Set up a TV becomes
+    // the TV's own card), to the tab's first control, a beat after the Repeater has tried.
+    TvPairDialog {
+        id: tvPairDialog
+        onClosed: {
+            TvLink.resetPair()
+            Qt.callLater(function() {
+                Qt.callLater(function() {
+                    var f = settingsScreen.Window.activeFocusItem
+                    if (settingsScreen.visible && (!f || !f.visible))
+                        settingsScreen.focusFirstControl(settingsScreen._ti("tv"))
+                })
+            })
+        }
+    }
+
     // Minutes after midnight as the clock shows them — 24-hour or AM/PM, like the header.
     function _hm(minutes) {
         var d = new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60)
@@ -542,7 +564,7 @@ FocusScope {
     Repeater {
         model: [customResDialog, customFpsDialog, accentPaletteDialog, tailscaleRestartDialog,
                 uiModeRestartDialog, pyroWaveNoticeDialog, clearLogsDialog, clearCoversDialog,
-                tailscaleStopNoticeDialog, kbCaptureDialog, padCaptureDialog]
+                tailscaleStopNoticeDialog, kbCaptureDialog, padCaptureDialog, tvPairDialog]
         delegate: Item {
             visible: false
             Connections {
@@ -632,6 +654,9 @@ FocusScope {
         // "Session" until 13/10/2026: its host rows moved to Video and StreamTweak, and what is
         // left is the interface — so it is named for that.
         { key: "interface",   label: qsTr("Interface") },
+        // 8.4.0 (31/10/2026): the LG TV follows this PC — variant B of docs/mockups/tv/, a tab of
+        // its own rather than more rows in Interface.
+        { key: "tv",          label: qsTr("TV")        },
         { key: "overlay",     label: qsTr("Overlay")   },
         { key: "about",       label: qsTr("About")     }
     ]
@@ -817,6 +842,7 @@ FocusScope {
                     case "input":       return inputTab.implicitHeight
                     case "network":     return networkTab.implicitHeight
                     case "interface":   return interfaceTab.implicitHeight
+                    case "tv":          return tvTab.implicitHeight
                     case "overlay":     return overlayTab.implicitHeight
                     case "shortcuts":   return shortcutsTab.implicitHeight
                     case "about":       return aboutTab.implicitHeight
@@ -1996,7 +2022,7 @@ FocusScope {
 
                 // ── WHILE STREAMING (13/10/2026) ──────────────────────────────
                 // What happens around a stream, on the host and on this device: the host rows
-                // that were Session → Host, and Keep display awake, Discord and Hue Sync, which
+                // that were Session → Host, and Keep display awake and Discord, which
                 // were under Interface without being interface. "Wait for the game to appear"
                 // went to the StreamTweak tab instead (Launch): it needs StreamTweak.
                 Label {
@@ -2163,46 +2189,6 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.richPresence
                                 onToggled: function(v) { StreamingPreferences.richPresence = v; StreamingPreferences.save() }
-                            }
-                        }
-                        RowSeparator { }
-
-                        // ── Launch Philips Hue Sync during streaming ──────────
-                        ProfileLockNotice { active: settingsScreen._lockHue }
-                        Item {
-                            width: parent.width
-                            height: settingsScreen._rowHeightTall
-                            enabled: !settingsScreen._lockHue
-                            opacity: enabled ? 1.0 : 0.4
-
-                            Column {
-                                anchors.left: parent.left
-                                anchors.leftMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: settingsScreen._px(3)
-
-                                Label {
-                                    text: qsTr("Launch Philips Hue Sync during streaming")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._fpx(Theme.fontBody)
-                                    font.bold: true
-                                    color: settingsScreen._text
-                                }
-                                Label {
-                                    text: qsTr("Auto-launches Hue Sync at stream start and closes it at end")
-                                    font.family: Theme.family
-                                    font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
-                                    color: settingsScreen._textDim
-                                }
-                            }
-
-                            OnOffSelector {
-                                id: hueSyncSwitch
-                                anchors.right: parent.right
-                                anchors.rightMargin: settingsScreen._px(16)
-                                anchors.verticalCenter: parent.verticalCenter
-                                checked: StreamingPreferences.hueSyncIntegration
-                                onToggled: function(v) { StreamingPreferences.hueSyncIntegration = v; StreamingPreferences.save() }
                             }
                         }
                     }
@@ -3104,7 +3090,7 @@ FocusScope {
             //                              INTERFACE TAB
             //   The client's own look and behaviour. Was "Session" until 13/10/2026, with a
             //   HOST section above: those rows are in Video (While streaming) and StreamTweak
-            //   (Launch) now, and so are Keep display awake, Discord and Hue Sync.
+            //   (Launch) now, and so are Keep display awake and Discord.
             // ──────────────────────────────────────────────────────────────────
             Column {
                 id: interfaceTab
@@ -4245,6 +4231,425 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 checked: StreamingPreferences.configurationWarnings
                                 onToggled: function(v) { StreamingPreferences.configurationWarnings = v; StreamingPreferences.save() }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ──────────────────────────────────────────────────────────────────
+            //                              TV TAB (8.4.0)
+            //   The LG TV follows this PC: on with its screen, off with sleep and shut down.
+            //   StreamLightService.exe does the work, from boot on (StreamLight/service/); TvLink
+            //   is its remote. Variant B of docs/mockups/tv/ (Marcello, 31/10/2026): the TV's own
+            //   card first, then the rules — and "LG webOS TVs only" said on the card, as he asked.
+            // ──────────────────────────────────────────────────────────────────
+            Column {
+                id: tvTab
+                anchors.left: parent.left
+                anchors.right: parent.right
+                visible: tabBar.currentIndex === settingsScreen._ti("tv")
+                spacing: settingsScreen._px(16)
+
+                readonly property bool _ready: TvLink.serviceState === TvLink.Running
+                readonly property bool _noService: TvLink.serviceState === TvLink.NotInstalled
+                                                   || TvLink.serviceState === TvLink.CannotStart
+                // "PC · 1", "LG Soundbar · 2" — the TV's own names, with the number they stand for.
+                readonly property var _inputLabels: TvLink.inputs.map(function(label, i) {
+                    return label === "HDMI " + (i + 1) ? label : label + " · " + (i + 1)
+                })
+
+                // Asked every two seconds while the tab shows: the TV moves on its own (its remote,
+                // this PC's screen), and the service may still be starting.
+                Timer {
+                    interval: 2000
+                    repeat: true
+                    triggeredOnStart: true
+                    running: tvTab.visible && settingsScreen.visible
+                    onTriggered: TvLink.refresh()
+                }
+
+                // ── THIS TV section ───────────────────────────────────────
+                Label {
+                    text: qsTr("This TV")
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
+                    font.bold: true
+                    font.letterSpacing: 1.4
+                    font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut
+                    leftPadding: settingsScreen._px(14)
+                }
+
+                Rectangle {
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: settingsScreen._px(8)
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: settingsScreen._px(148)
+
+                    // The service is starting, or cannot be reached.
+                    Column {
+                        visible: !tvTab._ready
+                        anchors.centerIn: parent
+                        width: parent.width - settingsScreen._px(48)
+                        spacing: settingsScreen._px(12)
+                        Spinner {
+                            visible: !tvTab._noService
+                            running: visible && tvTab.visible
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            implicitWidth: settingsScreen._px(34); implicitHeight: implicitWidth
+                        }
+                        Label {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.Wrap
+                            text: TvLink.serviceState === TvLink.NotInstalled
+                                  ? qsTr("The StreamLight service is not installed. Install StreamLight again to use the TV.")
+                                  : TvLink.serviceState === TvLink.CannotStart
+                                    ? qsTr("The StreamLight service could not be started.")
+                                    : qsTr("Starting the StreamLight service…")
+                            font.family: Theme.family
+                            font.pixelSize: settingsScreen._fpx(Theme.fontBody)
+                            color: tvTab._noService ? Theme.danger : settingsScreen._textDim
+                        }
+                    }
+
+                    // No TV yet: one sentence and the way in.
+                    Column {
+                        visible: tvTab._ready && !TvLink.paired
+                        anchors.centerIn: parent
+                        spacing: settingsScreen._px(12)
+                        Label {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: qsTr("No TV set up")
+                            font.family: Theme.family
+                            font.pixelSize: settingsScreen._fpx(Theme.fontTitle)
+                            font.bold: true
+                            color: settingsScreen._text
+                        }
+                        Label {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: qsTr("The TV follows this PC: on with it, off with it. LG webOS TVs only.")
+                            font.family: Theme.family
+                            font.pixelSize: settingsScreen._fpx(Theme.fontBody)
+                            color: settingsScreen._textDim
+                        }
+                        AboutLinkButton {
+                            id: tvSetupBtn
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            visible: tvTab._ready && !TvLink.paired
+                            label: qsTr("Set up a TV")
+                            navLast: true
+                            onTriggered: tvPairDialog.start()
+                        }
+                    }
+
+                    // The TV: drawn as a screen showing its input, its name and state, and the
+                    // three things to do with it.
+                    Item {
+                        visible: tvTab._ready && TvLink.paired
+                        anchors.fill: parent
+
+                        Rectangle {
+                            id: tvScreen
+                            anchors.left: parent.left
+                            anchors.leftMargin: settingsScreen._px(24)
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: settingsScreen._px(150)
+                            height: settingsScreen._px(88)
+                            radius: settingsScreen._px(6)
+                            color: TvLink.tvOn ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12)
+                                               : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.05)
+                            border.color: TvLink.tvOn ? Theme.ink : Theme.lineHigh
+                            border.width: 2
+                            Label {
+                                anchors.centerIn: parent
+                                text: !TvLink.tvOn ? qsTr("off")
+                                      : TvLink.showing > 0 ? "HDMI " + TvLink.showing : qsTr("on")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._fpx(Theme.fontTitle)
+                                font.bold: true
+                                color: TvLink.tvOn ? Theme.inkText : Theme.text3
+                            }
+                        }
+
+                        Column {
+                            anchors.left: tvScreen.right
+                            anchors.leftMargin: settingsScreen._px(22)
+                            anchors.right: tvButtons.left
+                            anchors.rightMargin: settingsScreen._px(16)
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: settingsScreen._px(6)
+
+                            Row {
+                                spacing: settingsScreen._px(8)
+                                Label {
+                                    text: TvLink.name
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontTitle)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                NewBadge { since: "8.4.0"; anchors.verticalCenter: parent.verticalCenter }
+                            }
+                            Row {
+                                spacing: settingsScreen._px(8)
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: settingsScreen._px(8); height: width; radius: width / 2
+                                    color: TvLink.tvOn ? Theme.online : Theme.text3
+                                }
+                                Label {
+                                    text: !TvLink.tvOn ? qsTr("Off")
+                                          : TvLink.showing > 0 && TvLink.showing === TvLink.input
+                                            ? qsTr("On · showing this PC (HDMI %1)").arg(TvLink.showing)
+                                          : TvLink.showing > 0 ? qsTr("On · showing HDMI %1").arg(TvLink.showing)
+                                          : qsTr("On · showing something else")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+                            Label {
+                                width: parent.width
+                                elide: Text.ElideRight
+                                text: qsTr("LG webOS TVs only") + (TvLink.ip.length > 0 ? " · " + TvLink.ip : "")
+                                font.family: Theme.family
+                                font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
+                                color: settingsScreen._textMut
+                            }
+                        }
+
+                        Row {
+                            id: tvButtons
+                            anchors.right: parent.right
+                            anchors.rightMargin: settingsScreen._px(20)
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: settingsScreen._px(10)
+
+                            AboutLinkButton {
+                                id: tvPowerBtn
+                                visible: tvTab._ready && TvLink.paired
+                                label: TvLink.tvOn ? qsTr("Turn off") : qsTr("Turn on")
+                                navDown: tvInputSelector
+                                KeyNavigation.right: tvChangeBtn
+                                onTriggered: TvLink.tvOn ? TvLink.turnOff() : TvLink.turnOn()
+                            }
+                            AboutLinkButton {
+                                id: tvChangeBtn
+                                label: qsTr("Change TV")
+                                navDown: tvInputSelector
+                                navUp: tvPowerBtn
+                                KeyNavigation.left: tvPowerBtn
+                                KeyNavigation.right: tvForgetBtn
+                                onTriggered: tvPairDialog.start()
+                            }
+                            AboutLinkButton {
+                                id: tvForgetBtn
+                                label: qsTr("Forget")
+                                navDown: tvInputSelector
+                                navUp: tvPowerBtn
+                                KeyNavigation.left: tvChangeBtn
+                                onTriggered: TvLink.forget()
+                            }
+                        }
+                    }
+                }
+
+                // ── FOLLOWS THIS PC section ───────────────────────────────
+                Label {
+                    visible: tvTab._ready && TvLink.paired
+                    text: qsTr("Follows this PC")
+                    font.family: Theme.family
+                    font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
+                    font.bold: true
+                    font.letterSpacing: 1.4
+                    font.capitalization: Font.AllUppercase
+                    color: settingsScreen._textMut
+                    leftPadding: settingsScreen._px(14)
+                }
+
+                Rectangle {
+                    visible: tvTab._ready && TvLink.paired
+                    width: parent.width
+                    color: settingsScreen._bg2
+                    radius: settingsScreen._px(8)
+                    border.color: settingsScreen._border
+                    border.width: 1
+                    implicitHeight: tvRulesCol.implicitHeight + settingsScreen._px(8)
+
+                    Column {
+                        id: tvRulesCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: settingsScreen._px(4)
+                        spacing: 0
+
+                        // ── Input ─────────────────────────────────────────
+                        // Found when pairing (the input the TV was showing, or the one it calls
+                        // "PC"); here to correct it.
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: tvInputSelector.left
+                                anchors.rightMargin: settingsScreen._px(12)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+                                Label {
+                                    text: qsTr("Input")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    width: parent.width
+                                    elide: Text.ElideRight
+                                    text: qsTr("Where this PC is plugged in; found when pairing")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            SegmentedSelector {
+                                id: tvInputSelector
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                labels: tvTab._inputLabels
+                                Binding on currentIndex { value: TvLink.input - 1 }
+                                onActivated: function(idx) { TvLink.setInput(idx + 1) }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Turn the TV on ────────────────────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: tvOnSwitch.left
+                                anchors.rightMargin: settingsScreen._px(12)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+                                Label {
+                                    text: qsTr("Turn the TV on")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    width: parent.width
+                                    elide: Text.ElideRight
+                                    text: qsTr("When this PC starts, at the sign-in screen too")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: tvOnSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: TvLink.onAtStart
+                                onToggled: function(v) { TvLink.setOnAtStart(v) }
+                            }
+                        }
+                        RowSeparator { }
+
+                        // ── Turn the TV off ───────────────────────────────
+                        Item {
+                            width: parent.width
+                            height: settingsScreen._rowHeightTall
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: tvOffSwitch.left
+                                anchors.rightMargin: settingsScreen._px(12)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+                                Label {
+                                    text: qsTr("Turn the TV off")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    width: parent.width
+                                    elide: Text.ElideRight
+                                    text: qsTr("When this PC shuts down. A restart or sleep leaves it on")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            // An Off/On pair like the row above (03/11/2026): the TV no longer
+                            // follows the screen, so "With the screen / Never" became just this.
+                            OnOffSelector {
+                                id: tvOffSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: TvLink.offAtShutdown
+                                onToggled: function(v) { TvLink.setOffAtShutdown(v) }
+                            }
+                        }
+                        RowSeparator { visible: TvLink.offAtShutdown }
+
+                        // ── Only when it shows this PC ────────────────────
+                        Item {
+                            width: parent.width
+                            height: visible ? settingsScreen._rowHeightTall : 0
+                            visible: TvLink.offAtShutdown
+
+                            Column {
+                                anchors.left: parent.left
+                                anchors.leftMargin: settingsScreen._px(16)
+                                anchors.right: tvOnlyPcSwitch.left
+                                anchors.rightMargin: settingsScreen._px(12)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: settingsScreen._px(3)
+                                Label {
+                                    text: qsTr("Only when it shows this PC")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontBody)
+                                    font.bold: true
+                                    color: settingsScreen._text
+                                }
+                                Label {
+                                    width: parent.width
+                                    elide: Text.ElideRight
+                                    text: qsTr("Leaves the TV alone if it is on another input or app")
+                                    font.family: Theme.family
+                                    font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
+                                    color: settingsScreen._textDim
+                                }
+                            }
+
+                            OnOffSelector {
+                                id: tvOnlyPcSwitch
+                                anchors.right: parent.right
+                                anchors.rightMargin: settingsScreen._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: TvLink.offOnlyIfShowingPc
+                                onToggled: function(v) { TvLink.setOffOnlyIfShowingPc(v) }
                             }
                         }
                     }
@@ -5473,7 +5878,11 @@ FocusScope {
                                   value: panelCard._pacing,
                                   hint: !StreamingPreferences.enableVsync ? "Locked: V-Sync off"
                                       : settingsScreen._vrrActive ? "Locked by VRR" : "",
-                                  locked: !StreamingPreferences.enableVsync || settingsScreen._vrrActive, gauge: -1 }
+                                  locked: !StreamingPreferences.enableVsync || settingsScreen._vrrActive, gauge: -1 },
+                                // 8.4.0: the panel's sixth tile, last on the right (ROW_PADMOUSE).
+                                { label: "Mouse control",
+                                  value: StreamingPreferences.gamepadMouse ? "On" : "Off",
+                                  hint: "hold Start", locked: false, gauge: -1 }
                             ]
 
                             x: (overlayScreen.width - width) / 2

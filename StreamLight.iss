@@ -1,4 +1,4 @@
-; StreamLight 8.3.1 — Moonlight fork with StreamTweak integration.
+; StreamLight 8.4.0 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
@@ -11,7 +11,7 @@
 ; Reading version.txt from here was considered and left alone: that file carries a UTF-8
 ; BOM and no trailing newline, so an ISPP FileRead would have to skip three bytes by
 ; position, which is a more fragile thing than one line to remember at release time.
-#define AppVersion "8.3.1"
+#define AppVersion "8.4.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -185,6 +185,11 @@ Filename: "{app}\{#AppExeName}"; Parameters: "--register-xbox-tile"; \
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; \
     Flags: nowait postinstall skipifsilent
 
+[UninstallDelete]
+; 8.4.0: the TV service's pairing (it holds the key the TV granted) and its log. The service
+; itself is stopped and deleted in CurUninstallStepChanged, before this runs.
+Type: filesandordirs; Name: "{commonappdata}\FoggyBytes\StreamLight\service"
+
 [UninstallRun]
 ; 8.2.0: the sign-in task (Settings → Interface → Start at sign-in, app/backend/signinlaunch.cpp).
 ; Left behind, it would try to start an exe that is gone at every sign-in, forever. Same name
@@ -355,6 +360,7 @@ begin
     '•  Session quality grading and charts, bitrate against your set target' + #13#10 +
     '•  Shared clipboard while you stream — encrypted, passwords cleared' + #13#10 +
     '•  Remote host sleep, restart, power-off and Windows Update' + #13#10 +
+    '•  Hue Sync keeps the lights on this device when the host wakes' + #13#10 +
     '•  Tailscale presence for remote streaming over the internet';
 
   StreamTweakOutroLabel := TNewStaticText.Create(StreamTweakPage);
@@ -475,10 +481,79 @@ begin
     'Redistributable (x64), then open StreamLight again.', mbError, MB_OK, IDOK);
 end;
 
+// ── The TV service (8.4.0) ───────────────────────────────────────────────────
+// StreamLightService.exe keeps an LG TV in step with this PC, from boot on (StreamLight/service/).
+// It runs as LOCAL SERVICE, not LocalSystem: talking to a TV on the LAN needs nothing more.
+// Stopped before the files are replaced (it holds its exe and Qt6Core.dll open), registered or
+// re-pointed after, removed at uninstall. With no TV paired it stops by itself after ten minutes,
+// and StreamLight starts it again when Settings → TV needs it — which the signed-in user may do
+// because of the service's own permissions below (RP = start, for INTERACTIVE).
+const
+  TvServiceName = 'StreamLight';
+  // Windows' default service permissions, plus RP (start) for the signed-in user.
+  TvServiceSddl = 'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)' +
+                  '(A;;CCLCSWRPLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)';
+  ERROR_SERVICE_DOES_NOT_EXIST = 1060;
+
+function RunHidden(const Exe, Params: String): Integer;
+begin
+  if not Exec(Exe, Params, '', SW_HIDE, ewWaitUntilTerminated, Result) then
+    Result := -1;
+  Log('TV service: ' + ExtractFileName(Exe) + ' ' + Params + ' -> ' + IntToStr(Result));
+end;
+
+// net stop waits until the service has stopped (sc stop would only ask).
+procedure StopTvService;
+begin
+  RunHidden(ExpandConstant('{sys}\net.exe'), 'stop ' + TvServiceName);
+end;
+
+procedure RegisterTvService;
+var
+  Exe, DataDir, Common: String;
+begin
+  Exe := ExpandConstant('{app}\StreamLightService.exe');
+  Common := 'binPath= "\"' + Exe + '\"" obj= "NT AUTHORITY\LocalService" start= auto';
+  if RunHidden(ExpandConstant('{sys}\sc.exe'), 'query ' + TvServiceName) = ERROR_SERVICE_DOES_NOT_EXIST then
+    RunHidden(ExpandConstant('{sys}\sc.exe'), 'create ' + TvServiceName + ' ' + Common + ' DisplayName= "StreamLight"')
+  else
+    RunHidden(ExpandConstant('{sys}\sc.exe'), 'config ' + TvServiceName + ' ' + Common);
+  RunHidden(ExpandConstant('{sys}\sc.exe'), 'description ' + TvServiceName + ' "Turns an LG webOS TV on and off with this PC."');
+  RunHidden(ExpandConstant('{sys}\sc.exe'), 'failure ' + TvServiceName + ' reset= 86400 actions= restart/5000/restart/5000//0');
+  RunHidden(ExpandConstant('{sys}\sc.exe'), 'sdset ' + TvServiceName + ' "' + TvServiceSddl + '"');
+
+  // Its pairing (tv.json) and log. LOCAL SERVICE (S-1-5-19) must write there; the rest is
+  // ProgramData's own inheritance.
+  DataDir := ExpandConstant('{commonappdata}\FoggyBytes\StreamLight\service');
+  ForceDirectories(DataDir);
+  RunHidden(ExpandConstant('{sys}\icacls.exe'), '"' + DataDir + '" /grant *S-1-5-19:(OI)(CI)M');
+
+  // Started now so a TV already paired is followed from this moment, not from the next boot.
+  RunHidden(ExpandConstant('{sys}\sc.exe'), 'start ' + TvServiceName);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  // An update: the running service holds files about to be replaced.
+  StopTvService;
+  Result := '';
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
     InstallVCRedist;
+  if CurStep = ssPostInstall then
+    RegisterTvService;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  // Before the files go: a running service would keep its exe.
+  if CurUninstallStep = usUninstall then begin
+    StopTvService;
+    RunHidden(ExpandConstant('{sys}\sc.exe'), 'delete ' + TvServiceName);
+  end;
 end;
 
 function NeedRestart: Boolean;

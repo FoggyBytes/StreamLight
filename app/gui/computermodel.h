@@ -307,6 +307,19 @@ public:
     Q_INVOKABLE void requestHostSection(int computerIndex, const QString& verb);
     Q_INVOKABLE void setHostSetting(int computerIndex, const QString& command);
 
+    /**
+     * The Hue Sync tab (8.4.0). Hue Sync on THIS device: whether it is installed and open, and
+     * "take the lights back" — restart it, which makes it sync again (hueTakeBackDone tells how
+     * it went). The automatic take-back is stored per host, since it is that host's StreamTweak
+     * (10.1.0) that says who holds the bridge; see watchHueLights().
+     */
+    Q_INVOKABLE bool hueClientInstalled() const;
+    Q_INVOKABLE bool hueClientRunning() const;
+    Q_INVOKABLE QString thisDeviceName() const;
+    Q_INVOKABLE void hueTakeBack();
+    Q_INVOKABLE bool hueAutoTakeBack(int computerIndex) const;
+    Q_INVOKABLE void setHueAutoTakeBack(int computerIndex, bool on);
+
     /** True if Tailscale is installed on THIS (client) PC (so the host's Tailscale
      *  endpoint is actually usable from here). Drives the greyed "Tailscale" option. */
     Q_INVOKABLE bool clientHasTailscale() const;
@@ -339,7 +352,7 @@ public:
     Q_INVOKABLE void removeHostProfile(int computerIndex, int slot);
 
     // The active profile's override as a QVariantMap (keys: width/height/fps/
-    // bitrate/hdr/codec/framepacing/audio/hue). Empty when no profile is active.
+    // bitrate/hdr/codec/framepacing/audio/…). Empty when no profile is active.
     Q_INVOKABLE QVariantMap hostActiveOverride(int computerIndex) const;
 
     // ── Last played (5.7.0) ──────────────────────────────────────────────────────────────
@@ -415,6 +428,7 @@ signals:
     void hostSectionReceived(int computerIndex, QString verb, QVariantMap data);
     void hostSettingResult(int computerIndex, QString command, QString reply);
     void libraryCoverReady(int computerIndex);
+    void hueTakeBackDone(bool ok);
     // From the CAPS reply that starts every authorisation check: whether the host has the
     // host-section verbs ("host=1", StreamTweak 10.0.0) and its version ("ver=", "" before it).
     void streamTweakCapsReceived(int computerIndex, bool hostSection, QString version);
@@ -441,6 +455,11 @@ private:
     QTimer m_LibraryJobTimer;
     void noteLibraryState(const QString& uuid, const QVariantMap& state);
     void pollLibraryJobs();
+
+    // Hue Sync (8.4.0): the automatic take-back's check, and when Hue Sync was last restarted.
+    QTimer m_HueWatchTimer;
+    qint64 m_HueTakenBackMs = 0;
+    void watchHueLights();
 
     QVector<NvComputer*> m_Computers;
     int m_LayoutRevision = 0;

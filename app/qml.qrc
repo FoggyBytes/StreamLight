@@ -42,6 +42,7 @@
         <file>gui/SessionsTab.qml</file>
         <file>gui/LibraryTab.qml</file>
         <file>gui/SyncRestartDialog.qml</file>
+        <file>gui/TvPairDialog.qml</file>
         <file>gui/SessionReport.qml</file>
         <file>gui/SessionTimeline.qml</file>
         <file>gui/SessionCompare.qml</file>

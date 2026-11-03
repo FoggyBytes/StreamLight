@@ -25,7 +25,6 @@ static AppOverride readOverrideGroup(const QSettings& s)
     if (s.contains("codec"))       { ov.hasCodec = true;       ov.videoCodecConfig = s.value("codec").toInt(); }
     if (s.contains("framepacing")) { ov.hasFramePacing = true; ov.framePacingMode = s.value("framepacing").toInt(); }
     if (s.contains("audio"))       { ov.hasAudio = true;       ov.audioConfig = s.value("audio").toInt(); }
-    if (s.contains("hue"))         { ov.hasHue = true;         ov.hueSync = s.value("hue").toBool(); }
     if (s.contains("matchlink"))   { ov.hasMatchLink = true;   ov.matchLinkSpeed = s.value("matchlink").toBool(); }
     if (s.contains("waitgame"))      { ov.hasWaitForGame = true; ov.waitForGame = s.value("waitgame").toBool(); }
     if (s.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = s.value("displaymode").toInt(); }
@@ -45,7 +44,6 @@ static void writeOverrideGroup(QSettings& s, const AppOverride& ov)
     if (ov.hasCodec)       s.setValue("codec", ov.videoCodecConfig);
     if (ov.hasFramePacing) s.setValue("framepacing", ov.framePacingMode);
     if (ov.hasAudio)       s.setValue("audio", ov.audioConfig);
-    if (ov.hasHue)         s.setValue("hue", ov.hueSync);
     if (ov.hasMatchLink)   s.setValue("matchlink", ov.matchLinkSpeed);
     if (ov.hasWaitForGame) s.setValue("waitgame", ov.waitForGame);
     if (ov.hasDisplayMode) s.setValue("displaymode", ov.windowMode);
@@ -65,7 +63,6 @@ QVariantMap appOverrideToMap(const AppOverride& ov)
     if (ov.hasCodec)       m["codec"] = ov.videoCodecConfig;
     if (ov.hasFramePacing) m["framepacing"] = ov.framePacingMode;
     if (ov.hasAudio)       m["audio"] = ov.audioConfig;
-    if (ov.hasHue)         m["hue"] = ov.hueSync;
     if (ov.hasMatchLink)   m["matchlink"] = ov.matchLinkSpeed;
     if (ov.hasWaitForGame) m["waitgame"] = ov.waitForGame;
     if (ov.hasDisplayMode) m["displaymode"] = ov.windowMode;
@@ -90,7 +87,6 @@ AppOverride appOverrideFromMap(const QVariantMap& m)
     if (m.contains("codec"))       { ov.hasCodec = true;       ov.videoCodecConfig = m.value("codec").toInt(); }
     if (m.contains("framepacing")) { ov.hasFramePacing = true; ov.framePacingMode = m.value("framepacing").toInt(); }
     if (m.contains("audio"))       { ov.hasAudio = true;       ov.audioConfig = m.value("audio").toInt(); }
-    if (m.contains("hue"))         { ov.hasHue = true;         ov.hueSync = m.value("hue").toBool(); }
     if (m.contains("matchlink"))   { ov.hasMatchLink = true;   ov.matchLinkSpeed = m.value("matchlink").toBool(); }
     if (m.contains("waitgame"))      { ov.hasWaitForGame = true; ov.waitForGame = m.value("waitgame").toBool(); }
     if (m.contains("displaymode"))   { ov.hasDisplayMode = true; ov.windowMode = m.value("displaymode").toInt(); }
@@ -129,7 +125,6 @@ QVariantMap inheritedValueLabels(const StreamingPreferences* p)
 
     m.insert(QStringLiteral("hdr"),          p->enableHdr ? on : off);
     m.insert(QStringLiteral("yuv444"),       p->enableYUV444 ? on : off);
-    m.insert(QStringLiteral("hue"),          p->hueSyncIntegration ? on : off);
     m.insert(QStringLiteral("matchlink"),    p->matchHostLinkSpeed ? on : off);
     m.insert(QStringLiteral("waitgame"),     p->waitForGameOnScreen ? on : off);
     m.insert(QStringLiteral("vsync"),        p->enableVsync ? on : off);
@@ -212,7 +207,6 @@ void applyAppOverride(StreamingPreferences* p, const AppOverride& ov)
         p->framePacingMode = (StreamingPreferences::FramePacingMode)stored;
     }
     if (ov.hasAudio)       p->audioConfig = (StreamingPreferences::AudioConfig)ov.audioConfig;
-    if (ov.hasHue)         p->hueSyncIntegration = ov.hueSync;
     if (ov.hasMatchLink)   p->matchHostLinkSpeed = ov.matchLinkSpeed;
     if (ov.hasWaitForGame) p->waitForGameOnScreen = ov.waitForGame;
     // No migration to do here, unlike frame pacing above: this key is new in 5.2.1 and

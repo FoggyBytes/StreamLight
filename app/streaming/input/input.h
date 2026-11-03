@@ -109,6 +109,10 @@ public:
 
     int getAttachedGamepadMask();
 
+    // 8.4.0: Mouse control from the Stream Settings panel, while streaming. Off also ends a
+    // mouse emulation already running, as holding Start again would.
+    void setGamepadMouse(bool on);
+
     void raiseAllKeys();
 
     void notifyMouseLeave();

@@ -47,8 +47,10 @@ Everything below is in the current release, whichever version first introduced i
 - **Moving background** *(6.0.0+)* — waves in your accent colour rise over the lower three quarters of Home, Settings and the PIN pad, twice as fast while a host is streaming. Still with *Reduce animations*, paused behind dialogs
 - **Opening animation** *(6.0.0+)* — the waves rise, the icon fades in and a band of light writes STREAMLIGHT before Home appears; any button skips it, and *Settings → Interface* turns it off
 - **Start at sign-in** *(8.2.0+)* — StreamLight opens when you sign in to Windows and asks where to go: **A** for StreamLight, **B** for the Windows desktop, StreamLight by itself after 10 seconds. No host is contacted before you choose. Switched on in *Settings → Interface*
+- **The TV follows this PC** *(8.4.0+)* — with an LG webOS TV, *Settings → TV* pairs it once and then the TV comes on and switches to this PC's input when the PC starts, and goes off when it shuts down; a restart or sleep leaves it on. A small StreamLight service does it from boot, so the TV is on at the Windows sign-in screen too. A TV showing another input or app is left alone, and a soundbar on HDMI goes off with it. LG webOS TVs only
 - **The host page** puts the library down the left at full height and the game in the spotlight beside it — cover, name, store, and the right verb (*Resume* if it is already running, *Play* if not)
 - **Grid of covers** *(8.1.0+)* — the left stick click or **V** turns the host page's list into a wall of covers, keeping the selected game; in the grid the bottom bar carries Play, Per-game settings and Stop, and the covers mark the game streaming now, the last one played and the pinned ones. *Settings → Interface* picks the layout, the cover size and whether titles show
+- **Library search** *(8.4.0+)* — a magnifier before *ALL* on the host page (**LB** from ALL, **/** or **Ctrl+F**, a click) searches the library in both layouts as you type, ignoring case, accents and punctuation; with a controller **A** opens the on-screen keyboard, and **B** goes back to the tab you came from with the game found selected
 - **All, Games and Apps** *(5.9.0+, All 6.1.0+)* — **LB / RB** switch the host page between everything you can launch, the games, and everything else: Desktop, Virtual Display, Steam Big Picture and the host's controls, which open with *Open* and never count hours. The page reopens on the tab you last chose on that host *(6.3.0+)*, All the first time; **LT / RT** move the host's profile
 - **Move between Games and Apps** *(6.1.0+)* — the **right stick click** or **M** moves the selected entry to the other tab, remembered per host. The host's own controls stay on Apps
 - **Remote Input and Remote Monitor** *(5.9.0+)* — the host controls of Vibeshine and Vibepollo 2.0 open beside a running game, and their results and confirmation requests appear as messages and Yes/No questions rather than errors
@@ -64,7 +66,7 @@ Everything below is in the current release, whichever version first introduced i
 
 **🎬 In-stream**
 - **Performance overlay, built line by line** — thirteen lines to choose from, switched on and off *on the overlay itself* in Settings, plus corner, size and transparency. Minimal / Default / Full remain as starting points. *(8.3.0+)* A card in sections or a **bar** at the top centre with its own presets, in the app's fonts and accent, sized to the screen; a figure turns red when it signals a problem
-- **Stream Settings panel** — change resolution, frame rate, bitrate, HDR and frame pacing **while streaming**, applied with a brief reconnect and host-agnostic. *(8.3.0+)* A row of tiles at the bottom centre, clear of the performance overlay
+- **Stream Settings panel** — change resolution, frame rate, bitrate, HDR and frame pacing **while streaming**, applied with a brief reconnect and host-agnostic. *(8.3.0+)* A row of tiles at the bottom centre, clear of the performance overlay. *(8.4.0+)* A sixth tile turns controller mouse control (hold Start) on or off, at once and without the reconnect
 - **Custom resolutions and frame rates** — any width and height, and any rate, not just the presets, from Settings or the in-stream panel
 - **Your display's own values are offered too** *(5.5.0+)* — the resolution and refresh rate this machine reports appear in the pickers, so a 165 Hz or 16:10 screen needs nothing typed in. Marked with a dot in *Settings* and with the words *this display* in the in-stream panel, which offers the same list
 - **Frame pacing** — Off or On, evening frames out with the same software pacer Moonlight uses
@@ -75,7 +77,7 @@ Everything below is in the current release, whichever version first introduced i
 
 **⚙️ Settings and profiles**
 - Nine tabs, pill-style selectors instead of dropdowns, inline subtitles instead of tooltips, and a bitrate slider with hold-to-accelerate and a **Default** prompt
-- **Per-host profiles** — as many named profiles per host as you like *(three before 8.0.0)*, each overriding resolution, frame rate, bitrate, HDR, YUV 4:4:4, codec, display mode, V-Sync, frame pacing, fractional V-Sync, VRR, audio, link matching, launch wait and Hue. Switchable from Home or the host page
+- **Per-host profiles** — as many named profiles per host as you like *(three before 8.0.0)*, each overriding resolution, frame rate, bitrate, HDR, YUV 4:4:4, codec, display mode, V-Sync, frame pacing, fractional V-Sync, VRR, audio, link matching and launch wait. Switchable from Home or the host page
 - **Per-game overrides** on top of the active profile, for the settings that vary by title
 - **Profiles in tabs** *(6.0.0+)* — the host profile and per-game dialogs are split into Settings' own tabs, one section at a time, switched with **LB / RB** drawn at the ends of the strip, each tab showing how many of its values are changed
 - **Inherited values look inherited** *(6.0.0+)* — the accent marks only what a profile or a game changes, every row says where its value comes from, **Y** gives a row back, and **LT / RT** switch profile anywhere in the dialog. **X** names a profile from eight ready-made names, or your own — with a controller, through the on-screen keyboard *(8.0.0+)*
@@ -88,14 +90,11 @@ Everything below is in the current release, whichever version first introduced i
 - Branded tile artwork in the Windows 11 Xbox app's "My apps" section, seeded during setup and re-applied automatically whenever the Xbox app overwrites it
 - **Steam artwork** *(7.0.0+)* — added to Steam as a non-Steam game, StreamLight gets its own cover, header, background and logo in the library and in Big Picture from *Settings → Interface → Steam artwork*, on every Steam account on the PC; pictures you chose yourself are left alone. The images are also in the *Steam artwork* folder of the install, for assigning by hand
 
-**💡 Philips Hue Sync**
-- Optional: starts Hue Sync on this PC when a session begins and closes it when it ends, silently, with the install path resolved from the registry
-
 ## 🔗 Paired Features (with StreamTweak)
 
 These cross the bridge and need both apps. The version shown is the **minimum StreamTweak** on the host.
 
-- **StreamTweak section** *(10.0.0+)* — StreamTweak's logo on the host card opens the host's own pages, on the pad: a **Dashboard** of the host at rest (GPU, temperature, VRAM, CPU and RAM over the last minute, who is streaming from it, link speed with Match and Restore, spatial audio, Windows Update), its **Sessions** — the history with each verdict, its four checks and a timeline read with the right stick (from 10.0.4 with every series of Host compute and Host power), two sessions side by side, and *(8.2.0+, StreamTweak 10.0.6)* a session deleted with the right stick click —, its **Library** — the games the streaming server lists, and *Sync and restart* to add new ones without going to the host —, its **Apps** managed by StreamTweak and **NVIDIA Sentinel**. Changing anything needs **Host management** for this device, granted on the host; without it the pages are read-only, and only switches ever travel — no path, no command
+- **StreamTweak section** *(10.0.0+)* — StreamTweak's logo on the host card opens the host's own pages, on the pad: a **Dashboard** of the host at rest (GPU, temperature, VRAM, CPU and RAM as they are now, who is streaming from it, link speed with Match and Restore, spatial audio, Windows Update), its **Sessions** — the history with each verdict, its four checks and a timeline read with the right stick (from 10.0.4 with every series of Host compute and Host power), two sessions side by side, and *(8.2.0+, StreamTweak 10.0.6)* a session deleted with the right stick click —, its **Library** — the games the streaming server lists, and *Sync and restart* to add new ones without going to the host —, its **Apps** managed by StreamTweak and **NVIDIA Sentinel**. Changing anything needs **Host management** for this device, granted on the host; without it the pages are read-only, and only switches ever travel — no path, no command
 
 All of them are switched on **per host**, in the **Setup** tab of the host's StreamTweak section *(Settings → StreamTweak before 8.0.0)* — a host added from StreamLight 5.2.0 on starts off, and hosts you were already using StreamTweak with are switched on for you on first run. Streaming itself is never affected either way.
 
@@ -113,25 +112,20 @@ All of them are switched on **per host**, in the **Setup** tab of the host's Str
 - **Remote session pause** *(6.0.0+)* — the Pause button on StreamTweak's dashboard ends the stream client-side
 - **Tailscale in one tile** *(6.3.0+)* — a host reachable both on the LAN and over Tailscale stays a single tile that tracks both addresses and uses whichever is available, with an option to force the `100.x` endpoint. Pairs with the **Auto-start Tailscale** toggle, so opening StreamLight is enough to stream from anywhere
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in the section's *Setup* tab; the host has its own switch
+- **Hue Sync keeps the lights** *(10.1.0+)* — a Hue bridge syncs one area at a time, so the host's Hue Sync starting after a wake used to take the lights from this device's for good. The section's **Hue Sync** tab shows the bridge's areas and who has the lights, and sets the host to wait while they are in use — for any device, or only this one; StreamTweak then starts Hue Sync on the host itself, and only reads the bridge. **Take back** restarts Hue Sync here, by hand or by itself, and works with any host
 
-## ✨ What's New in 8.3.1 — Fair Count
+## ✨ What's New in 8.4.0 — Big Screen
 
-Works with any host.
+The TV works with any host; Hue Sync pairs with StreamTweak 10.1.0.
 
-- **The right frame rate in StreamTweak** — the frame rate sent to the host's session history was about a third too low; sessions recorded before keep their figure
-- **Bar preview that follows the size** — in *Settings → Overlay* the bar's preview now changes with Small, Medium and Large
-
-## ✨ What's New in 8.3.0 — At a Glance
-
-Works with any host.
-
-- **New in-stream overlays** — the card, the bar and the Stream Settings panel drawn with the app's fonts and your accent, sized to the screen: Large is as readable at 4K as at 1080p
-- **Overlay as a bar** — *Settings → Overlay → Layout: Bar* puts the performance overlay on one line at the top centre (FPS · Bandwidth · Network · Decode · Frame loss) — the same five as the card's Default, and the same Minimal too
-- **The card in sections** — Stream, Network, This device and Host, in the top corner you choose
-- **Stream Settings as tiles** — at the bottom centre, clear of the overlay; left and right pick a setting, up and down change it
-- **Problems in red** — a figure of the Default view turns red when it is a problem you feel: frames lost from 1%, latency over 60 ms, decoding slower than one frame; figures you add are shown, never red
-- **No title bar** — the background runs up to the top of the window, with only minimize, maximize and close, in the app's theme; snap layouts still work
-- **Scroll bars and sliders in your accent** — one thin scroll bar and one slider for the whole app
+- **The TV follows this PC** — pair an LG webOS TV in the new *Settings → TV* tab, and it comes on when the PC starts, on the PC's input, and goes off when the PC shuts down; a restart or sleep leaves it on
+- **From the sign-in screen** — a small StreamLight service does it from boot, so the TV is on before you sign in, with your Windows password where it is
+- **Polite with the TV** — a TV switched to another input or app is left alone, and a soundbar on HDMI goes off with it
+- **LG webOS TVs only** — other brands are not supported
+- **Hue Sync keeps the lights here** — a new tab in the host's StreamTweak section: with StreamTweak 10.1.0 the host waits while this device syncs the lights, and *Take back* gets them back when another device took them. *Launch Philips Hue Sync during streaming* is gone
+- **Mouse control while streaming** — a sixth tile in Stream Settings turns controller mouse control on or off, at once
+- **Search the library** — a magnifier before *ALL* on the host page searches it as you type, in List and Grid; thanks to [@Noklef](https://github.com/FoggyBytes/StreamLight/pull/50)
+- **The curtain waits for games only** — the Desktop and the other entries under APPS open without waiting for a game window
 
 *Older releases are in [changelog.txt](changelog.txt).*
 

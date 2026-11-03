@@ -10,6 +10,9 @@ app.depends = qmdnsengine moonlight-common-c h264bitstream
 win32:!winrt {
     SUBDIRS += AntiHooking
     app.depends += AntiHooking
+
+    # 8.4.0: StreamLightService.exe, the LG TV service (QtCore only, nothing of the app's).
+    SUBDIRS += service
 }
 
 # PyroWave codec library (6.4.0, from Nonary's vrr18; see pyrowave/VENDOR.txt). Must match

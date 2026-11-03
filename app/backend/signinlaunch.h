@@ -60,6 +60,16 @@ public:
     // The argument the task passes.
     static const char* argument();
 
+    /**
+     * 8.4.0 (03/11/2026): called by main() before the window exists, at a sign-in launch only.
+     * When Windows is still on its fallback display — the TV not yet up on the GPU's output,
+     * Microsoft's Basic Render Driver first in the adapter list — it waits for the GPU's, up to
+     * 20 s. Measured on the SER9 on 01/11, twice: a window created on the fallback display and
+     * carried over to the GPU's 5 s later stopped presenting. Its QML went on (the countdown ran,
+     * a key stopped it, StreamLight was chosen) behind a frozen first frame, the floor only.
+     */
+    static void waitForDisplay();
+
     bool enabled() const { return m_Enabled; }
     QString lastError() const { return m_LastError; }
     bool launchedAtSignIn() const;

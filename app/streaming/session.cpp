@@ -758,6 +758,14 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
         m_StreamTweakEnabled = computer->streamTweakEnabled;
         // 6.3.0: rejoining what is already running, not launching it — see m_RejoinsRunningApp.
         m_RejoinsRunningApp = computer->currentGameId != 0 && computer->currentGameId == app.id;
+        // 8.4.0: GAMES or APPS as the host page shows it — the user's move first, except for the
+        // host controls, which never leave APPS (AppModel::isApp()).
+        m_IsAppEntry = isAppsCategory(app);
+        if (!isHostControlEntry(app)) {
+            const auto moved = PlaytimeManager::get()->categoryOverridesOn(computer->uuid);
+            auto it = moved.constFind(normaliseGameName(app.name));
+            if (it != moved.constEnd()) m_IsAppEntry = *it;
+        }
         // 8.3.0: the name on the overlay card's chip, taken once here under the computer's lock.
         // The card is built on the decoder thread every second, and reading the name there
         // would race the polling thread that can rewrite it.
@@ -2874,30 +2882,6 @@ void Session::exec()
         ~UiSoundHold() { if (on) UiSound::get()->setStreaming(false); }
     } uiSoundHold(!m_UnlockMode);
 
-    // Launch Hue Sync minimized on the client if the feature is enabled.
-    //
-    // Never during an unlock. That session is plumbing for a PIN pad: the window stays hidden,
-    // nobody is watching anything, and it lasts as long as typing four digits — so lighting the
-    // room for it is wrong twice over. The setting, global or per-host, means "a real streaming
-    // session is starting". Guarded here rather than at the setting, which the unlock path
-    // inherits like every other preference.
-    if (m_Preferences->hueSyncIntegration && !m_UnlockMode) {
-        QString huePath = HueSyncManager::discoverExecutable();
-        if (!huePath.isEmpty()) {
-            m_HueSyncManager = new HueSyncManager();
-            if (!m_HueSyncManager->launch(huePath)) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                            "HueSyncManager: launch failed for %s",
-                            huePath.toUtf8().constData());
-                delete m_HueSyncManager;
-                m_HueSyncManager = nullptr;
-            }
-        } else {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                        "HueSyncManager: Hue Sync executable not found");
-        }
-    }
-
     // Pump the Qt event loop one last time before we create our SDL window
     // This is sometimes necessary for the QML code to process any signals
     // we've emitted from the async connection thread.
@@ -3722,13 +3706,6 @@ DispatchDeferredCleanup:
     }
 
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
-
-    // Terminate Hue Sync if it was launched for this session.
-    if (m_HueSyncManager) {
-        m_HueSyncManager->terminate();
-        delete m_HueSyncManager;
-        m_HueSyncManager = nullptr;
-    }
 
     // Cleanup can take a while, so dispatch it to a worker thread.
     // When it is complete, it will release our s_ActiveSessionSemaphore

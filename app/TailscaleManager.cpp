@@ -1,7 +1,9 @@
 #include "TailscaleManager.h"
 
+#include <QCoreApplication>
 #include <QFile>
 #include <QProcessEnvironment>
+#include <QTimer>
 #include <QSettings>
 #include <QStringList>
 
@@ -162,4 +164,54 @@ bool TailscaleManager::launch(const QString& exePath)
     Q_UNUSED(exePath);
 #endif
     return false;
+}
+
+#ifdef Q_OS_WIN32
+// Explorer's taskbar: until it exists no program can add an icon to the notification area.
+static bool taskbarReady()
+{
+    return FindWindowW(L"Shell_TrayWnd", nullptr) != nullptr;
+}
+#endif
+
+void TailscaleManager::autoStart()
+{
+    if (isAlreadyRunning()) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "TailscaleManager: already running, skipping auto-start");
+        return;
+    }
+    const QString exePath = discoverExecutable();
+    if (exePath.isEmpty()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "TailscaleManager: executable not found, auto-start skipped "
+                    "(install Tailscale from https://tailscale.com/download)");
+        return;
+    }
+#ifdef Q_OS_WIN32
+    if (taskbarReady()) {
+        launch(exePath);
+        return;
+    }
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "TailscaleManager: waiting for the taskbar before starting Tailscale");
+    QTimer* timer = new QTimer(QCoreApplication::instance());
+    timer->setInterval(500);
+    QObject::connect(timer, &QTimer::timeout, timer, [timer, exePath, tries = 0]() mutable {
+        if (!taskbarReady() && ++tries < 120)
+            return;
+        timer->stop();
+        timer->deleteLater();
+        if (!taskbarReady()) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TailscaleManager: no taskbar after 60 s, Tailscale not started");
+            return;
+        }
+        // Its own entry in Windows' startup list may have started it meanwhile.
+        if (isAlreadyRunning()) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "TailscaleManager: started meanwhile, skipping auto-start");
+            return;
+        }
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "TailscaleManager: taskbar ready after %d ms", tries * 500);
+        launch(exePath);
+    });
+    timer->start();
+#endif
 }

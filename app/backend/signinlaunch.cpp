@@ -1,8 +1,13 @@
 #include "signinlaunch.h"
 
+#include "../TailscaleManager.h"
+#include "../settings/streamingpreferences.h"
+
 #include <QCoreApplication>
+#include <QEventLoop>
 #include <QDir>
 #include <QFileInfo>
+#include <QThread>
 #include <QTimer>
 
 #include <SDL.h>
@@ -14,6 +19,7 @@
 #include <taskschd.h>
 #include <wtsapi32.h>
 #include <wrl/client.h>
+#include <dxgi.h>
 
 using Microsoft::WRL::ComPtr;
 #endif
@@ -286,7 +292,58 @@ bool sessionLocked()
 #endif
 }
 
+/**
+ * Windows is still on its fallback display: the first adapter is Microsoft's Basic Render Driver
+ * while a real GPU is there too, without a monitor yet. False when it cannot tell.
+ */
+bool onFallbackDisplay()
+{
+#ifdef Q_OS_WIN32
+    // A new factory each time: one keeps the adapter list it was created with.
+    ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return false;
+    ComPtr<IDXGIAdapter1> adapter;
+    if (factory->EnumAdapters1(0, &adapter) != S_OK) return false;
+    DXGI_ADAPTER_DESC1 desc {};
+    if (FAILED(adapter->GetDesc1(&desc)) || desc.VendorId != 0x1414 || desc.DeviceId != 0x8c) return false;
+    for (UINT i = 1; ; i++) {
+        ComPtr<IDXGIAdapter1> other;
+        if (factory->EnumAdapters1(i, &other) != S_OK) return false;
+        DXGI_ADAPTER_DESC1 otherDesc {};
+        if (SUCCEEDED(other->GetDesc1(&otherDesc)) && !(otherDesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
+                && otherDesc.VendorId != 0x1414) {
+            return true;
+        }
+    }
+#else
+    return false;
+#endif
+}
+
 } // namespace
+
+void SignInLaunch::waitForDisplay()
+{
+    if (!onFallbackDisplay()) return;
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "[signin] Windows is still on its fallback display (Basic Render Driver): waiting for the GPU's");
+    QElapsedTimer waited;
+    waited.start();
+    constexpr qint64 capMs = 20000;
+    while (waited.elapsed() < capMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        QThread::msleep(200);
+        if (!onFallbackDisplay()) {
+            // Windows still moves windows and modes around for a moment after the switch.
+            QThread::msleep(500);
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[signin] the GPU's display is there after %lld ms",
+                        static_cast<long long>(waited.elapsed()));
+            return;
+        }
+    }
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "[signin] still on the fallback display after %lld ms: going on",
+                static_cast<long long>(waited.elapsed()));
+}
 
 SignInLaunch* SignInLaunch::get(QQmlEngine*)
 {
@@ -379,4 +436,8 @@ void SignInLaunch::release()
     m_Holding = false;
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[signin] StreamLight chosen: hosts released");
     emit holdingChanged();
+    // Auto-start Tailscale was held back for the choice (main.cpp, 8.4.0): now is its turn, and
+    // autoStart() still waits for Explorer's taskbar if it is not up yet.
+    if (StreamingPreferences::get()->tailscaleAutoStart)
+        TailscaleManager::autoStart();
 }

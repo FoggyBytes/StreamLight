@@ -2,6 +2,7 @@
 #include "linkspeed.h"
 #include "singleinstance.h"
 #include "storereset.h"
+#include "tvlink.h"
 #include "utils.h"
 #include "streaming/vrrratepolicy.h"
 
@@ -15,6 +16,8 @@
 #include <QFile>
 #include <QRegularExpression>
 #include <QVersionNumber>
+
+#include <thread>
 
 #include "settings/videooptions.h"
 #include "streaming/session.h"
@@ -657,6 +660,8 @@ void SystemProperties::powerClient(const QString& mode, bool installUpdates)
     enableShutdownPrivilege();
 
     if (mode == QLatin1String("restart")) {
+        // The TV service (8.4.0) leaves the TV on through a restart it is told about.
+        TvLink::announceRestart();
         DWORD rc = InitiateShutdownW(nullptr, nullptr, 0,
                                      SHUTDOWN_RESTART | SHUTDOWN_FORCE_SELF
                                      | (installUpdates ? SHUTDOWN_INSTALL_UPDATES : 0),
@@ -691,13 +696,23 @@ void SystemProperties::powerClient(const QString& mode, bool installUpdates)
                 return;
         }
 
-        // Modern Standby (S0 low-power idle) has no suspend call: Windows enters it when the
-        // display goes off, so that is what we ask for. ⚠️ Not verifiable on the dev machine
-        // (it has S3) — this is the path the Ally takes, and it is to be confirmed there.
+        // Modern Standby (S0 low-power idle) has no suspend call: the display goes off and Windows
+        // enters standby behind it (Kernel-Power 506, reason "SC_MONITORPOWER").
+        // ⚠️ Not the Sleep key: 8.4.0 tried VK_SLEEP through SendInput, and on the SER9 it did
+        // nothing at all — "sent" twice in the log, no screen off in the service's (31/10/2026,
+        // 11:13:50 and 11:13:59). And not SetSuspendState: with no S1-S3 it may hibernate.
+        // The SER9 leaves this standby by itself on "Input Mouse" after 9-25 s, but so it does
+        // when the Start menu puts it to sleep: that is not this call (see the inputwatch tool
+        // in StreamLightService, docs/piano-streamlight-8.4.0-tv.md).
+        // ⚠️ From a thread of its own: the broadcast waits for every top-level window in turn,
+        // up to 2 s each, and on the SER9 it held the GUI for 30 s (03/11/2026) — the screen
+        // was off at once, but the navigation sounds kept the audio output open meanwhile.
         if (caps.AoAc) {
-            DWORD_PTR result = 0;
-            SendMessageTimeoutW(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, 2,
-                                SMTO_ABORTIFHUNG, 2000, &result);
+            std::thread([]() {
+                DWORD_PTR result = 0;
+                SendMessageTimeoutW(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, 2,
+                                    SMTO_ABORTIFHUNG, 2000, &result);
+            }).detach();
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SystemProperties: Modern Standby, display turned off");
         }
         return;

@@ -324,7 +324,6 @@ public:
     Q_PROPERTY(bool reverseScrollDirection MEMBER reverseScrollDirection NOTIFY reverseScrollDirectionChanged)
     Q_PROPERTY(bool swapFaceButtons MEMBER swapFaceButtons NOTIFY swapFaceButtonsChanged)
     Q_PROPERTY(bool keepAwake MEMBER keepAwake NOTIFY keepAwakeChanged)
-    Q_PROPERTY(bool hueSyncIntegration MEMBER hueSyncIntegration NOTIFY hueSyncIntegrationChanged)
     Q_PROPERTY(bool hideHostIps MEMBER hideHostIps NOTIFY hideHostIpsChanged)
     Q_PROPERTY(bool tailscaleAutoStart MEMBER tailscaleAutoStart NOTIFY tailscaleAutoStartChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
@@ -393,7 +392,6 @@ public:
     bool reverseScrollDirection;
     bool swapFaceButtons;
     bool keepAwake;
-    bool hueSyncIntegration;
     bool hideHostIps;
     bool tailscaleAutoStart;
     int packetSize;
@@ -456,7 +454,6 @@ signals:
     void swapFaceButtonsChanged();
     void captureSysKeysModeChanged();
     void keepAwakeChanged();
-    void hueSyncIntegrationChanged();
     void hideHostIpsChanged();
     void tailscaleAutoStartChanged();
     void glyphSetChanged();

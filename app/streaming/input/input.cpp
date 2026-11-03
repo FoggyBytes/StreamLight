@@ -116,7 +116,7 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     m_PadStreamSettingsMask = ShortcutManager::loadPad(ShortcutManager::PAD_STREAM_SETTINGS).buttonMask;
 
     // Live "Stream Settings" overlay (seeded from the session's preferences).
-    m_StreamSettings = new StreamSettingsOverlay(&prefs);
+    m_StreamSettings = new StreamSettingsOverlay(&prefs, this);
 
     m_OldIgnoreDevices = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES);
     m_OldIgnoreDevicesExcept = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT);
@@ -249,6 +249,19 @@ void SdlInputHandler::attachAlreadyConnectedGamepads()
     // Whatever SDL queued while the other holder was running is stale for us: we have just
     // taken stock of reality, and a duplicate add would be logged and dropped anyway.
     SDL_FlushEvent(SDL_CONTROLLERDEVICEADDED);
+}
+
+void SdlInputHandler::setGamepadMouse(bool on)
+{
+    m_GamepadMouse = on;
+    if (on) return;
+    for (int i = 0; i < MAX_GAMEPADS; i++) {
+        if (m_GamepadState[i].mouseEmulationTimer != 0) {
+            SDL_RemoveTimer(m_GamepadState[i].mouseEmulationTimer);
+            m_GamepadState[i].mouseEmulationTimer = 0;
+            Session::get()->notifyMouseEmulationMode(false);
+        }
+    }
 }
 
 SdlInputHandler::~SdlInputHandler()

@@ -4,7 +4,7 @@
 
 // TailscaleManager — fire-and-forget Tailscale launcher.
 //
-// Unlike HueSyncManager, this class holds no process state and never terminates
+// This class holds no process state and never terminates
 // Tailscale. The "Auto-start Tailscale" preference controls only whether
 // StreamLight launches Tailscale at boot when it is not already running. Once
 // launched, Tailscale lives independently of StreamLight: closing StreamLight
@@ -30,4 +30,12 @@ public:
     // Returns true on success. Fire-and-forget: StreamLight does not keep a handle
     // to the spawned process and is not responsible for its lifetime.
     static bool launch(const QString& exePath);
+
+    // The "Auto-start Tailscale" preference carried out (8.4.0): unless Tailscale is already
+    // running, launches it — but only once Explorer's taskbar exists. Tailscale's GUI quits with
+    // "Unable to set up Tailscale client: walk.NewNotifyIcon: Shell_NotifyIcon…" when it cannot
+    // put its icon in the tray, which is what happened when StreamLight, started by the sign-in
+    // task ahead of Explorer, launched it at once. Polls every half second for up to a minute;
+    // needs the Qt event loop.
+    static void autoStart();
 };

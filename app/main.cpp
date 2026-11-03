@@ -1,4 +1,5 @@
 #include <QGuiApplication>
+#include <QScreen>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QIcon>
@@ -50,6 +51,7 @@
 #include "backend/logsandcache.h"
 #include "backend/steamartwork.h"
 #include "backend/signinlaunch.h"
+#include "backend/tvlink.h"
 #include "backend/pyrowavetest.h"
 #include "storereset.h"
 #include "utils.h"
@@ -862,6 +864,22 @@ int main(int argc, char *argv[])
     // installed runs first) and never sounds a Steam echo they have already swallowed.
     UiSound::get();
 
+    // 8.4.0: screens coming and going, for the log — a sign-in launch on the SER9 started on
+    // Windows' fallback display and froze when the TV's came up (SignInLaunch::waitForDisplay).
+    auto describeScreen = [](QScreen* screen) {
+        return QStringLiteral("%1 %2x%3 @ %4 Hz").arg(screen->name()).arg(screen->size().width())
+                .arg(screen->size().height()).arg(qRound(screen->refreshRate()));
+    };
+    QObject::connect(&app, &QGuiApplication::screenAdded, &app, [describeScreen](QScreen* screen) {
+        qInfo() << "[screen] added:" << describeScreen(screen);
+    });
+    QObject::connect(&app, &QGuiApplication::screenRemoved, &app, [describeScreen](QScreen* screen) {
+        qInfo() << "[screen] removed:" << describeScreen(screen);
+    });
+    QObject::connect(&app, &QGuiApplication::primaryScreenChanged, &app, [describeScreen](QScreen* screen) {
+        if (screen != nullptr) qInfo() << "[screen] primary:" << describeScreen(screen);
+    });
+
 #ifdef Q_OS_UNIX
     // Register signal handlers to arbitrate between SDL and Qt.
     // NB: This has to be done after the QGuiApplication is constructed to
@@ -954,23 +972,15 @@ int main(int argc, char *argv[])
         // Settings > Network. We launch unconditionally if not already running;
         // we never terminate it (the OFF toggle only affects the next launch).
         // Requires the official tailscale.com Windows installer.
+        //
+        // ⚠️ 8.4.0: started by the sign-in task (8.2.0), StreamLight runs ahead of Explorer, and a
+        // Tailscale launched here found no taskbar for its icon and quit with an error. Then it
+        // waits for the choice — SignInLaunch::release() starts it, and choosing the desktop
+        // never does — and autoStart() waits for the taskbar in every case.
         StreamingPreferences* bootPrefs = StreamingPreferences::get();
-        if (bootPrefs->tailscaleAutoStart) {
-            if (TailscaleManager::isAlreadyRunning()) {
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                            "TailscaleManager: already running, skipping auto-start");
-            }
-            else {
-                const QString tsPath = TailscaleManager::discoverExecutable();
-                if (tsPath.isEmpty()) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                                "TailscaleManager: executable not found, auto-start skipped "
-                                "(install Tailscale from https://tailscale.com/download)");
-                }
-                else {
-                    TailscaleManager::launch(tsPath);
-                }
-            }
+        if (bootPrefs->tailscaleAutoStart
+                && !app.arguments().contains(QString::fromLatin1(SignInLaunch::argument()))) {
+            TailscaleManager::autoStart();
         }
     }
 
@@ -1164,6 +1174,11 @@ int main(int argc, char *argv[])
                                            [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
                                                return SignInLaunch::get(qmlEngine);
                                            });
+    qmlRegisterSingletonType<TvLink>("TvLink", 1, 0,
+                                     "TvLink",
+                                     [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
+                                         return TvLink::get(qmlEngine);
+                                     });
     qmlRegisterSingletonType<PyroWaveTest>("PyroWaveTest", 1, 0,
                                            "PyroWaveTest",
                                            [](QQmlEngine* qmlEngine, QJSEngine*) -> QObject* {
@@ -1207,6 +1222,9 @@ int main(int argc, char *argv[])
         // 8.2.0: started by the sign-in task — the opening animation stops on a choice, and no
         // host is contacted until the user picks StreamLight (backend/signinlaunch.h).
         SignInLaunch::setLaunchedAtSignIn(app.arguments().contains(QString::fromLatin1(SignInLaunch::argument())));
+        // 8.4.0: not on Windows' fallback display — the window would freeze when the TV comes up.
+        if (app.arguments().contains(QString::fromLatin1(SignInLaunch::argument())))
+            SignInLaunch::waitForDisplay();
         break;
     case GlobalCommandLineParser::StreamRequested:
         {

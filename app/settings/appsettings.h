@@ -22,7 +22,6 @@ struct AppOverride
     bool hasCodec = false;      int videoCodecConfig = 0;   // StreamingPreferences::VideoCodecConfig
     bool hasFramePacing = false;int framePacingMode = 0;    // StreamingPreferences::FramePacingMode
     bool hasAudio = false;      int audioConfig = 0;        // StreamingPreferences::AudioConfig
-    bool hasHue = false;        bool hueSync = false;       // StreamingPreferences::hueSyncIntegration
     // Host link matching (4.6.0). A profile is a *situation*, not just a quality preset —
     // "docked" and "handheld" differ here as much as they do in resolution — so this is
     // worth overriding per profile. Exposed only in the host-profile UI: the value never
@@ -89,7 +88,7 @@ struct AppOverride
     bool isEmpty() const
     {
         return !(hasResolution || hasFps || hasBitrate || hasHdr ||
-                 hasCodec || hasFramePacing || hasAudio || hasHue || hasMatchLink ||
+                 hasCodec || hasFramePacing || hasAudio || hasMatchLink ||
                  hasWaitForGame || hasDisplayMode || hasVsync || hasFractionalVsync ||
                  hasVrr || hasYuv444);
     }

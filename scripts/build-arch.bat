@@ -200,6 +200,12 @@ echo Copying AntiHooking.dll
 copy %BUILD_FOLDER%\AntiHooking\%BUILD_CONFIG%\AntiHooking.dll %DEPLOY_FOLDER%
 if !ERRORLEVEL! NEQ 0 goto Error
 
+rem StreamLight 8.4.0: the service that keeps an LG TV in step with this PC (service\service.pro).
+rem It needs only Qt6Core.dll, which windeployqt puts here for StreamLight.exe anyway.
+echo Copying StreamLightService.exe
+copy %BUILD_FOLDER%\service\%BUILD_CONFIG%\StreamLightService.exe %DEPLOY_FOLDER%
+if !ERRORLEVEL! NEQ 0 goto Error
+
 echo Copying GC mapping list
 copy %SOURCE_ROOT%\app\SDL_GameControllerDB\gamecontrollerdb.txt %DEPLOY_FOLDER%
 if !ERRORLEVEL! NEQ 0 goto Error

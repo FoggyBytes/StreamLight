@@ -8,7 +8,9 @@
 #  define _WIN32_WINNT 0x0A00
 #  include <windows.h>
 #  include <xaudio2.h>
+#  include <powrprof.h>
 #  pragma comment(lib, "xaudio2.lib")
+#  pragma comment(lib, "PowrProf.lib")
 #endif
 
 #include "uisound.h"
@@ -110,6 +112,24 @@ namespace
         void STDMETHODCALLTYPE OnCriticalError(HRESULT) override { broken = true; }
     };
 
+    // GUID_CONSOLE_DISPLAY_STATE, spelled out so no import library has to provide it.
+    const GUID k_ConsoleDisplayState = { 0x6fe69556, 0x704a, 0x47a0, { 0x8f, 0x24, 0xc2, 0x8d, 0x93, 0x6f, 0xda, 0x47 } };
+
+    // The screen went off or on (0 off, 1 on, 2 dimmed). On a thread of Windows': the change is
+    // handed to the GUI thread, where the engine lives.
+    ULONG CALLBACK displayStateCallback(PVOID context, ULONG type, PVOID data)
+    {
+        const auto* setting = static_cast<const POWERBROADCAST_SETTING*>(data);
+        if (type != PBT_POWERSETTINGCHANGE || setting == nullptr
+                || !IsEqualGUID(setting->PowerSetting, k_ConsoleDisplayState) || setting->DataLength < sizeof(DWORD)) {
+            return ERROR_SUCCESS;
+        }
+        const bool on = *reinterpret_cast<const DWORD*>(setting->Data) != 0;
+        auto* sound = static_cast<UiSound*>(context);
+        QMetaObject::invokeMethod(sound, [sound, on]() { sound->setScreenOn(on); }, Qt::QueuedConnection);
+        return ERROR_SUCCESS;
+    }
+
     struct Clip
     {
         WAVEFORMATEX                fmt {};
@@ -156,6 +176,8 @@ struct UiSound::Impl
     EngineCallback          callback;
     Clip                    clips[3];
     bool                    loaded = false;
+    HPOWERNOTIFY            displayNotify = nullptr;
+    DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS displayParams {};
 };
 #else
 struct UiSound::Impl {};
@@ -186,12 +208,27 @@ UiSound::UiSound(QObject* parent)
     // The output is opened now, while the app starts, so that it is already awake when the
     // first sound comes — see the header.
     QTimer::singleShot(0, this, [this]() {
-        if (m_Enabled && !m_Streaming) ensureEngine();
+        if (m_Enabled && !m_Streaming && !m_ScreenOff) ensureEngine();
     });
+
+#ifdef _WIN32
+    // 8.4.0: the output is let go while the screen is off (see the header). Windows calls back
+    // at once with the current state, then on every change.
+    m_Impl->displayParams.Callback = displayStateCallback;
+    m_Impl->displayParams.Context = this;
+    if (PowerSettingRegisterNotification(&k_ConsoleDisplayState, DEVICE_NOTIFY_CALLBACK,
+                                         &m_Impl->displayParams, &m_Impl->displayNotify) != ERROR_SUCCESS) {
+        m_Impl->displayNotify = nullptr;
+        qWarning() << "UiSound: no screen state notifications; the output stays open with the screen off";
+    }
+#endif
 }
 
 UiSound::~UiSound()
 {
+#ifdef _WIN32
+    if (m_Impl->displayNotify) PowerSettingUnregisterNotification(m_Impl->displayNotify);
+#endif
     teardown();
     delete m_Impl;
 }
@@ -203,7 +240,7 @@ void UiSound::setEnabled(bool on)
     QSettings().setValue(SER_ENABLED, m_Enabled);
     // Off lets the device go; On takes it again at once, for the same reason as at startup.
     if (!m_Enabled) teardown();
-    else if (!m_Streaming) ensureEngine();
+    else if (!m_Streaming && !m_ScreenOff) ensureEngine();
     emit enabledChanged();
 }
 
@@ -234,7 +271,21 @@ void UiSound::setStreaming(bool streaming)
     // The stream's audio gets the device to itself; the interface takes it back as soon as the
     // stream is over, so the first step after it is heard.
     if (m_Streaming) teardown();
-    else if (m_Enabled) ensureEngine();
+    else if (m_Enabled && !m_ScreenOff) ensureEngine();
+}
+
+void UiSound::setScreenOn(bool on)
+{
+    if (on == !m_ScreenOff) return;
+    m_ScreenOff = !on;
+    if (m_ScreenOff) {
+        teardown();
+        qInfo() << "[sound] screen off: audio output released";
+    }
+    else if (m_Enabled && !m_Streaming) {
+        ensureEngine();
+        qInfo() << "[sound] screen on: audio output open again";
+    }
 }
 
 void UiSound::play(int kind)
@@ -371,7 +422,7 @@ bool UiSound::eventFilter(QObject* watched, QEvent* event)
 
 void UiSound::playNow(int kind)
 {
-    if (m_Streaming || m_Volume == 0) return;
+    if (m_Streaming || m_ScreenOff || m_Volume == 0) return;
     const qint64 now = m_Clock.elapsed();
     if (now - m_LastMs[kind] < MinGapMs[kind]) return;
     m_LastMs[kind] = now;

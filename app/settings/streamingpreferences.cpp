@@ -66,7 +66,6 @@
 #define SER_SWAPFACEBUTTONS "swapfacebuttons"
 #define SER_CAPTURESYSKEYS "capturesyskeys"
 #define SER_KEEPAWAKE "keepawake"
-#define SER_HUESYNC "huesync"
 #define SER_HIDEHOSTIPS "hidehostips"
 #define SER_TAILSCALE_AUTOSTART "tailscaleautostart"
 #define SER_GLYPHSET "glyphset"
@@ -166,7 +165,6 @@ StreamingPreferences* StreamingPreferences::clone(QObject* parent) const
     p->reverseScrollDirection = reverseScrollDirection;
     p->swapFaceButtons = swapFaceButtons;
     p->keepAwake = keepAwake;
-    p->hueSyncIntegration = hueSyncIntegration;
     p->hideHostIps = hideHostIps;
     p->tailscaleAutoStart = tailscaleAutoStart;
     p->packetSize = packetSize;
@@ -341,7 +339,6 @@ void StreamingPreferences::reload()
     reverseScrollDirection = settings.value(SER_REVERSESCROLL, false).toBool();
     swapFaceButtons = settings.value(SER_SWAPFACEBUTTONS, false).toBool();
     keepAwake = settings.value(SER_KEEPAWAKE, true).toBool();
-    hueSyncIntegration = settings.value(SER_HUESYNC, false).toBool();
     hideHostIps = settings.value(SER_HIDEHOSTIPS, false).toBool();
     tailscaleAutoStart = settings.value(SER_TAILSCALE_AUTOSTART, false).toBool();
     enableHdr = settings.value(SER_HDR, false).toBool();
@@ -452,7 +449,6 @@ void StreamingPreferences::save()
     settings.setValue(SER_SWAPFACEBUTTONS, swapFaceButtons);
     settings.setValue(SER_CAPTURESYSKEYS, captureSysKeysMode);
     settings.setValue(SER_KEEPAWAKE, keepAwake);
-    settings.setValue(SER_HUESYNC, hueSyncIntegration);
     settings.setValue(SER_HIDEHOSTIPS, hideHostIps);
     settings.setValue(SER_TAILSCALE_AUTOSTART, tailscaleAutoStart);
     settings.setValue(SER_GLYPHSET, static_cast<int>(glyphSet));

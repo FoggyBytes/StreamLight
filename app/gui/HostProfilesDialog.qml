@@ -201,7 +201,6 @@ Popup {
     readonly property var _vrrLabels:       ["", "On", "Off"]
     readonly property var _linkLabels:    ["", "On", "Off"]
     readonly property var _waitLabels:    ["", "On", "Off"]
-    readonly property var _hueLabels:     ["", "On", "Off"]
     // PyroWave (6.4.0) only where this build can decode it, as in Settings.
     readonly property var _codecLabels: SystemProperties.hasPyroWave
                                         ? ["", "H.264", "HEVC", "AV1", "PyroWave"]
@@ -308,8 +307,9 @@ Popup {
      * so an option sits under the label it has there. Only tabs with at least one row: Input,
      * Overlay, Shortcuts, Interface and About have nothing a profile can override.
      * 13/10/2026 (7.0.0): Settings' Session tab became Interface and lost its host rows, so
-     * the dialog's Session tab went too — Philips Hue to Video → While streaming, Wait for the
-     * game to appear to the StreamTweak tab (Launch), exactly where Settings has them.
+     * the dialog's Session tab went too — Wait for the game to appear to the StreamTweak tab
+     * (Launch), exactly where Settings has it. The Philips Hue row that went to Video → While
+     * streaming was removed in 8.4.0, with the whole Hue Sync integration.
      *
      * ⚠️ The row -> tab map was MEASURED on SettingsScreen.qml, not assumed: link matching sits
      * under Network there. Move a row in Settings and it moves here too — and so do
@@ -335,8 +335,7 @@ Popup {
         _n(resSel.currentIndex !== 0 || _customResW > 0) + _n(fpsSel.currentIndex !== 0 || _customFps > 0)
             + _n(codecSel.currentIndex > 0) + _n(hdrSel.currentIndex > 0) + _n(yuv444Sel.currentIndex > 0)
             + _n(_bitrateOverridden) + _n(dmSel.currentIndex > 0) + _n(vsyncSel.currentIndex > 0)
-            + _n(fpSel.currentIndex > 0) + _n(fracVsyncSel.currentIndex > 0) + _n(vrrSel.currentIndex > 0)
-            + _n(hueSel.currentIndex > 0),
+            + _n(fpSel.currentIndex > 0) + _n(fracVsyncSel.currentIndex > 0) + _n(vrrSel.currentIndex > 0),
         _n(audSel.currentIndex > 0),
         _n(linkSel.currentIndex > 0),
         _n(waitGameSel.currentIndex > 0)
@@ -353,7 +352,7 @@ Popup {
 
     // Where the D-pad enters and leaves each tab: down from Name, up from the footer.
     function _firstOfSection(i) { return [resSel, audSel, linkSel, waitGameSel][i] || resSel }
-    function _lastOfSection(i)  { return [hueSel, audSel, linkSel, waitGameSel][i] || hueSel }
+    function _lastOfSection(i)  { return [vrrSel, audSel, linkSel, waitGameSel][i] || vrrSel }
 
     // Whether the pad focus was inside the rows, kept by the Flickable below.
     property bool _focusInBody: false
@@ -565,7 +564,6 @@ Popup {
         codecSel.currentIndex = (ov.codec !== undefined) ? _idxByVal(_codecVals, ov.codec) : 0
         fpSel.currentIndex    = (ov.framepacing !== undefined) ? _idxByVal(_fpVals, ov.framepacing) : 0
         audSel.currentIndex   = (ov.audio !== undefined) ? _idxByVal(_audVals, ov.audio) : 0
-        hueSel.currentIndex   = (ov.hue !== undefined) ? (ov.hue ? 1 : 2) : 0
         linkSel.currentIndex  = (ov.matchlink !== undefined) ? (ov.matchlink ? 1 : 2) : 0
         waitGameSel.currentIndex = (ov.waitgame !== undefined) ? (ov.waitgame ? 1 : 2) : 0
         dmSel.currentIndex    = (ov.displaymode !== undefined) ? _idxByVal(_dmVals, ov.displaymode) : 0
@@ -610,7 +608,6 @@ Popup {
         if (codecSel.currentIndex > 0) m.codec = _codecVals[codecSel.currentIndex]
         if (fpSel.currentIndex > 0)    m.framepacing = _fpVals[fpSel.currentIndex]
         if (audSel.currentIndex > 0)   m.audio = _audVals[audSel.currentIndex]
-        if (hueSel.currentIndex > 0)   m.hue = (hueSel.currentIndex === 1)
         if (linkSel.currentIndex > 0)  m.matchlink = (linkSel.currentIndex === 1)
         if (waitGameSel.currentIndex > 0) m.waitgame = (waitGameSel.currentIndex === 1)
         if (dmSel.currentIndex > 0)    m.displaymode = _dmVals[dmSel.currentIndex]
@@ -1832,27 +1829,8 @@ Popup {
                             inheritStrip: true
                             inheritIndex: dlg._inheritIdx(dlg._vrrLabels, "vrr")
                             KeyNavigation.up: fracVsyncSel
-                            KeyNavigation.down: hueSel
-                            onActivated: { dlg._applyVrrRate(); dlg.saveOverride() }
-                        }
-                    }
-
-                    // While streaming (13/10/2026): where Settings keeps Hue Sync since its
-                    // Session tab became Interface — the last card of Video.
-                    GroupHeader { text: qsTr("While streaming") }
-
-                    SettingRow {
-                        label: qsTr("Philips Hue")
-                        overridden: hueSel.currentIndex > 0
-                        source: dlg._srcText("hue", overridden)
-                        onResetRequested: { hueSel.currentIndex = 0; dlg.saveOverride() }
-                        SegmentedSelector {
-                            id: hueSel; labels: dlg._hueLabels
-                            inheritStrip: true
-                            inheritIndex: dlg._inheritIdx(dlg._hueLabels, "hue")
-                            KeyNavigation.up: vrrSel
                             KeyNavigation.down: doneBtn
-                            onActivated: dlg.saveOverride()
+                            onActivated: { dlg._applyVrrRate(); dlg.saveOverride() }
                         }
                     }
                 }

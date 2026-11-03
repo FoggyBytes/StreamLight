@@ -3,6 +3,7 @@
 #include "backend/linkspeed.h"
 #include "backend/linkmatcher.h"
 #include "../TailscaleManager.h"
+#include "backend/huesyncclient.h"
 #include "settings/appsettings.h"
 #include "settings/playtime.h"
 #include "settings/streamingpreferences.h"
@@ -14,7 +15,9 @@
 #include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QFileInfo>
+#include <QDateTime>
 #include <QSettings>
+#include <QSysInfo>
 #include <QThreadPool>
 #include <QTimer>
 #include <QUrl>
@@ -24,6 +27,9 @@ ComputerModel::ComputerModel(QObject* object)
 {
     m_LibraryJobTimer.setInterval(2000);
     connect(&m_LibraryJobTimer, &QTimer::timeout, this, &ComputerModel::pollLibraryJobs);
+    m_HueWatchTimer.setInterval(20000);
+    connect(&m_HueWatchTimer, &QTimer::timeout, this, &ComputerModel::watchHueLights);
+    m_HueWatchTimer.start();
     connect(&m_BoxArtManager, &BoxArtManager::boxArtLoadComplete, this,
             [this](NvComputer* computer, NvApp, QUrl) {
                 int index = m_Computers.indexOf(computer);
@@ -537,7 +543,9 @@ void ComputerModel::requestHostSection(int computerIndex, const QString& verb)
     // The reads the host section knows. Anything else would go out as a command of its own.
     static const QStringList kReads = { QStringLiteral("DASHBOARD"), QStringLiteral("APPS"),
                                         QStringLiteral("NVIDIA"),    QStringLiteral("STATS"),
-                                        QStringLiteral("UPDATESTATE"), QStringLiteral("LIBRARY") };
+                                        QStringLiteral("UPDATESTATE"), QStringLiteral("LIBRARY"),
+                                        // The Hue Sync tab (8.4.0, StreamTweak 10.1.0).
+                                        QStringLiteral("HUESYNC") };
     // The Sessions tab's reads (8.0.0), in their only shapes: numbers, a hex session id and a
     // fixed track name — never a game name or a path (the host upper-cases the line anyway).
     static const QRegularExpression kSessionReads(QStringLiteral(
@@ -587,7 +595,10 @@ void ComputerModel::setHostSetting(int computerIndex, const QString& command)
         // Sync and restart (8.0.0, Library tab): no argument, so nothing to choose but the action.
         "|LIBSYNC"
         // One session out of the host's history (8.2.0, Sessions tab; StreamTweak 10.0.6).
-        "|DELETESESSION [0-9A-Fa-f]{6,32})$"));
+        "|DELETESESSION [0-9A-Fa-f]{6,32}"
+        // The Hue Sync tab (8.4.0, StreamTweak 10.1.0): pairing has no argument, the rules are
+        // two switches — no address, key or area ever goes on the wire.
+        "|HUEPAIR|SETHUE HOLD (ON|OFF)|SETHUE GIVEWAY (ANY|THIS))$"));
     if (!kWrite.match(command).hasMatch()) {
         emit hostSettingResult(computerIndex, command, QStringLiteral("ERR"));
         return;
@@ -621,6 +632,76 @@ void ComputerModel::setHostSetting(int computerIndex, const QString& command)
         }
         emit hostSettingResult(computerIndex, command, reply);
     });
+}
+
+// ── Hue Sync (8.4.0) ────────────────────────────────────────────────────────
+
+bool ComputerModel::hueClientInstalled() const { return !HueSyncClient::executable().isEmpty(); }
+
+bool ComputerModel::hueClientRunning() const { return HueSyncClient::running(); }
+
+QString ComputerModel::thisDeviceName() const { return QSysInfo::machineHostName(); }
+
+void ComputerModel::hueTakeBack()
+{
+    // Off the GUI thread: closing Hue Sync waits for it to exit.
+    m_HueTakenBackMs = QDateTime::currentMSecsSinceEpoch();
+    QThreadPool::globalInstance()->start([this]() {
+        const bool ok = HueSyncClient::restart();
+        QMetaObject::invokeMethod(this, [this, ok]() { emit hueTakeBackDone(ok); }, Qt::QueuedConnection);
+    });
+}
+
+bool ComputerModel::hueAutoTakeBack(int computerIndex) const
+{
+    const QString uuid = uuidAt(computerIndex);
+    return !uuid.isEmpty() && QSettings().value(QStringLiteral("huesync/autoback/") + uuid, false).toBool();
+}
+
+void ComputerModel::setHueAutoTakeBack(int computerIndex, bool on)
+{
+    const QString uuid = uuidAt(computerIndex);
+    if (uuid.isEmpty()) return;
+    QSettings().setValue(QStringLiteral("huesync/autoback/") + uuid, on);
+}
+
+/*
+ * "Take them back by itself": while Hue Sync runs here, ask each host that has the option on who
+ * holds the bridge; if another device does, restart Hue Sync here once. A minute between two
+ * restarts, so two devices with the option on cannot pass the lights to and fro every 20 s.
+ */
+void ComputerModel::watchHueLights()
+{
+    if (QDateTime::currentMSecsSinceEpoch() - m_HueTakenBackMs < 60000) return;
+    bool any = false;
+    for (int i = 0; i < m_Computers.count() && !any; i++) any = hueAutoTakeBack(i);
+    if (!any || !HueSyncClient::running()) return;
+
+    const QString me = QSysInfo::machineHostName();
+    for (int i = 0; i < m_Computers.count(); i++) {
+        if (!hueAutoTakeBack(i) || !bridgeAllowed(i)) continue;
+        NvComputer* computer = m_Computers[i];
+        QString address;
+        {
+            QReadLocker lock(&computer->lock);
+            address = computer->activeAddress.address();
+        }
+        if (address.isEmpty()) continue;
+        m_streamTweakBridge.requestHostSection(address, QStringLiteral("HUESYNC"), [this, me](const QString& reply) {
+            const QJsonObject o = QJsonDocument::fromJson(reply.toUtf8()).object();
+            for (const QJsonValue& v : o.value(QStringLiteral("areas")).toArray()) {
+                const QJsonObject a = v.toObject();
+                const QString device = a.value(QStringLiteral("device")).toString();
+                if (!a.value(QStringLiteral("active")).toBool() || device.isEmpty()
+                        || device.compare(me, Qt::CaseInsensitive) == 0)
+                    continue;
+                if (QDateTime::currentMSecsSinceEpoch() - m_HueTakenBackMs < 60000) return;
+                qInfo() << "Hue Sync: the lights went to" << device << "— taking them back";
+                hueTakeBack();
+                return;
+            }
+        });
+    }
 }
 
 void ComputerModel::noteLibraryState(const QString& uuid, const QVariantMap& state)

@@ -95,6 +95,13 @@ FocusScope {
     property bool _nvLoaded:   false
     // UPDATESTATE: {"pending": bool}, updates waiting for a restart on the host. Empty when unknown.
     property var upd: ({})
+    // HUESYNC (8.4.0, StreamTweak 10.1.0): the bridge's areas, who streams to them, the host's
+    // Hue Sync and the rules. SECURITY.md of StreamTweak, "Hue Sync (10.1.0)".
+    property var hue: ({})
+    property bool _hueLoaded: false
+    // The host half of the Hue Sync tab needs StreamTweak 10.1.0; taking the lights back on this
+    // device needs nothing from the host, so the tab is listed for every host.
+    readonly property bool _hueOk: _full && _versionAtLeast(host && host.hostVersion ? host.hostVersion : "", "10.1.0")
 
     // Host management for THIS device, as the last reply said. Unknown counts as no: a switch
     // that turns out to be refused is worse than one that waits a second to light up.
@@ -107,13 +114,11 @@ FocusScope {
     property var _pendingAt: ({})
     function _shown(key, value) { return _pending[key] !== undefined ? _pending[key] : value }
 
-    // The numbers of the Dashboard, last 60 s kept here (nothing is stored on the host).
+    // The numbers of the Dashboard, the last STATS. Encoder and network out were here and went
+    // (20/10/2026): at rest they sit at zero; system RAM took their place (StreamTweak 10.0.0).
+    // The last minute is no longer kept: the charts it fed went on 03/11/2026.
     property var stats: ({})
     property bool _statsLoaded: false
-    // Encoder and network out were here and went (20/10/2026): at rest they sit at zero. System
-    // RAM took their place (StreamTweak 10.0.0 sends it in STATS).
-    property var _hist: ({ gpu: [], gpu_temp: [], vram_used: [], cpu: [], ram_used: [] })
-    property int _histRev: 0
 
     // ── Tabs ───────────────────────────────────────────────────────────────────────────
     // Every tab is always listed; without StreamTweak at work they are greyed (`dim`) but can be
@@ -128,16 +133,19 @@ FocusScope {
                   { key: "library",   label: qsTr("Library"),   dim: d },
                   { key: "apps",      label: qsTr("Apps"),      dim: d } ]
         if (_nvidiaHost) t.push({ key: "nvidia", label: qsTr("NVIDIA Sentinel"), dim: d })
+        t.push({ key: "hue", label: qsTr("Hue Sync"), dim: !_hueOk })
         t.push({ key: "setup", label: qsTr("Setup") })
         return t
     }
     readonly property string _tab: tabBar.currentIndex >= 0 && tabBar.currentIndex < _tabs.length
                                    ? _tabs[tabBar.currentIndex].key : "dashboard"
-    readonly property bool _dimTab: !_full && _tab !== "setup"
+    // Hue Sync is greyed on a host before StreamTweak 10.1.0 too, with its own reason.
+    readonly property bool _dimTab: (!_full && _tab !== "setup") || (_tab === "hue" && !_hueOk)
     function _setupIndex() { return _tabs.length - 1 }
 
     // Why the greyed tabs have nothing to show, in one line — the same states as Setup's.
     readonly property string _lockReason: {
+        if (_full && _tab === "hue")          return qsTr("Hue Sync needs StreamTweak 10.1 on %1.").arg(hostName)
         if (!_online)                         return qsTr("%1 is offline.").arg(hostName)
         if (setupPage.presence === "missing") return qsTr("StreamTweak was not found on %1.").arg(hostName)
         if (host && host.stEnabled === false) return qsTr("StreamTweak is off for %1 on this device.").arg(hostName)
@@ -181,12 +189,6 @@ FocusScope {
         _pending = p
     }
 
-    function _pushHist(key, v) {
-        var a = _hist[key]
-        a.push(v)
-        if (a.length > 60) a.shift()
-    }
-
     Connections {
         target: root.computerModel
         function onHostSectionReceived(idx, verb, data) {
@@ -199,16 +201,14 @@ FocusScope {
                 root.upd = data
             } else if (verb === "NVIDIA") {
                 root.nv = data; root._nvLoaded = true; root._clearPending("sentinel")
+            } else if (verb === "HUESYNC") {
+                root.hue = data; root._hueLoaded = true; root._clearPending("hue")
             } else if (verb === "STATS") {
                 root.stats = data
                 // The first answer can arrive cold, while the host is still discovering its
                 // counters (every field -1): it is waited out, not drawn as "not available".
-                if (data.gpu !== undefined && (data.gpu >= 0 || data.cpu >= 0)) {
+                if (data.gpu !== undefined && (data.gpu >= 0 || data.cpu >= 0))
                     root._statsLoaded = true
-                    for (var k in root._hist)
-                        root._pushHist(k, data[k] !== undefined ? data[k] : -1)
-                    root._histRev++
-                }
             }
         }
         function onHostSettingResult(idx, command, reply) {
@@ -220,7 +220,8 @@ FocusScope {
             // Read the tab back either way: the host is the only source of truth, and a write
             // it applied on its UI thread shows up a moment later.
             settleTimer.verb = command.indexOf("SETAPP") === 0 ? "APPS"
-                             : command.indexOf("SETSENTINEL") === 0 ? "NVIDIA" : "DASHBOARD"
+                             : command.indexOf("SETSENTINEL") === 0 ? "NVIDIA"
+                             : (command.indexOf("SETHUE") === 0 || command === "HUEPAIR") ? "HUESYNC" : "DASHBOARD"
             settleTimer.restart()
         }
     }
@@ -231,6 +232,8 @@ FocusScope {
         if (reply === "ERR_NO_PROFILE")  return qsTr("Save your profile first: Save current as my profile, in StreamTweak on the host.")
         if (reply === "ERR_UNKNOWN_APP") return qsTr("That app is no longer in the host's list.")
         if (reply === "ERR_UNSUPPORTED") return qsTr("The host cannot do that.")
+        if (reply === "ERR_BUSY")        return qsTr("Pairing is already under way.")
+        if (reply === "ERR_NO_BRIDGE")   return qsTr("No Hue bridge found on %1's network.").arg(hostName)
         if (reply === "")                return qsTr("%1 did not answer.").arg(hostName)
         return qsTr("%1 refused the change.").arg(hostName)
     }
@@ -271,6 +274,13 @@ FocusScope {
         running: root._full && root._tab === "nvidia"
         onTriggered: root._ask("NVIDIA")
     }
+    // Who has the lights changes in a second: every 3 s, only while the tab is on screen (the
+    // host reads the bridge at most once in 3 s however many clients ask).
+    Timer {
+        interval: 3000; repeat: true; triggeredOnStart: true
+        running: root._hueOk && root._tab === "hue"
+        onTriggered: root._ask("HUESYNC")
+    }
 
     // ── Keys ───────────────────────────────────────────────────────────────────────────
     // LB/RB (F16/F17) and PgUp/PgDn switch tabs, wrapping as in Settings. Up/Down walk the
@@ -305,7 +315,7 @@ FocusScope {
     // The focusable controls of the current tab, in reading order.
     function _focusables() {
         var page = _tab === "apps" ? appsPage : _tab === "nvidia" ? nvPage
-                 : _tab === "setup" ? setupPage : dashPage
+                 : _tab === "hue" ? huePage : _tab === "setup" ? setupPage : dashPage
         var out = _dimTab ? [ lockRow.button ] : []
         function walk(item) {
             if (!item || !item.visible) return
@@ -666,6 +676,8 @@ FocusScope {
         ButtonRow {
             id: lockRow
             title: root._lockReason
+            // On the Hue Sync tab one thing still works without the host: see huePage.
+            hint: root._tab === "hue" ? qsTr("Taking the lights back still works from this device") : ""
             buttonText: qsTr("Open Setup")
             onActivated: tabBar.currentIndex = root._setupIndex()
         }
@@ -748,7 +760,7 @@ FocusScope {
         boundsBehavior: Flickable.OvershootBounds
         contentWidth: width
         contentHeight: (root._tab === "apps" ? appsPage : root._tab === "nvidia" ? nvPage
-                       : root._tab === "setup" ? setupPage : dashPage).height
+                       : root._tab === "hue" ? huePage : root._tab === "setup" ? setupPage : dashPage).height
         Keys.forwardTo: [root]
 
         // Keep the focused control in view as the D-pad walks.
@@ -838,9 +850,9 @@ FocusScope {
                     }
                 }
 
-                // The numbers, from STATS, each with its last minute on two labelled axes: the
-                // value on the left (0, half, full scale) and the time underneath. The scale is
-                // fixed — 100 % or 100 °C, memory to its installed size in whole GB.
+                // The numbers, from STATS, as figures (Marcello, 03/11/2026): the minute-long
+                // charts that were here went — nobody read them on this page — and the row is about
+                // half as tall. Memory shows its installed size in whole GB after the value.
                 GridLayout {
                     width: parent.width
                     columns: root._metricCols
@@ -850,28 +862,27 @@ FocusScope {
 
                     Repeater {
                         model: [
-                            { key: "gpu",       label: qsTr("GPU load"),        unit: "%",  max: 100 },
-                            { key: "gpu_temp",  label: qsTr("GPU temp"),        unit: "°C", max: 100 },
-                            { key: "vram_used", label: qsTr("VRAM"),            unit: "GB", max: 0 },
-                            { key: "cpu",       label: qsTr("CPU"),             unit: "%",  max: 100 },
-                            { key: "ram_used",  label: qsTr("RAM"),             unit: "GB", max: 0 }
+                            { key: "gpu",       label: qsTr("GPU load"), unit: "%"  },
+                            { key: "gpu_temp",  label: qsTr("GPU temp"), unit: "°C" },
+                            { key: "vram_used", label: qsTr("VRAM"),     unit: "GB" },
+                            { key: "cpu",       label: qsTr("CPU"),      unit: "%"  },
+                            { key: "ram_used",  label: qsTr("RAM"),      unit: "GB" }
                         ]
                         Rectangle {
                             id: tile
                             Layout.fillWidth: true
-                            Layout.preferredHeight: root._px(128)
+                            Layout.preferredHeight: tileCol.implicitHeight + root._px(24)
                             radius: root._px(12)
                             color: Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, 0.75)
                             border.color: Theme.line
 
-                            readonly property string unit: modelData.unit
                             readonly property real _raw: root.stats[modelData.key] !== undefined
                                                          ? root.stats[modelData.key] : -1
                             // Memory's total rides next to its value: vram_total, ram_total (MB).
                             readonly property real _totalMb: modelData.unit === "GB"
                                 ? (root.stats[modelData.key.replace("_used", "_total")] || 0) : 0
                             // ⚠️ Installed memory in whole GB: Windows reports a little less than the
-                            // modules (31.8 for 32), and the scale names what is installed.
+                            // modules (31.8 for 32), and the figure names what is installed.
                             readonly property int _totalGb: _totalMb > 0 ? Math.round(_totalMb / 1024) : 0
                             readonly property string _value: {
                                 if (!root._statsLoaded) return root._full ? "…" : "—"
@@ -880,118 +891,35 @@ FocusScope {
                                     return (_raw / 1024).toFixed(1) + (_totalGb > 0 ? " / " + _totalGb : "")
                                 return Math.round(_raw)
                             }
-                            // The top of the value axis, in the unit shown.
-                            readonly property real _top: modelData.max > 0 ? modelData.max : _totalGb
-                            function _axis(f) {
-                                if (_top <= 0) return f === 0 ? "0" : ""
-                                var v = _top * f
-                                return v % 1 !== 0 ? v.toFixed(1) : String(v)
-                            }
-
-                            // Label and value on one line, to leave the height to the chart.
-                            Text {
-                                x: root._px(12); y: root._px(10)
-                                text: modelData.label
-                                color: Theme.text2
-                                font.family: Theme.family
-                                font.pixelSize: root._fpx(Theme.fontCaption)
-                            }
-                            Row {
-                                anchors.right: parent.right
-                                anchors.rightMargin: root._px(12)
-                                y: root._px(6)
-                                spacing: root._px(4)
+                            Column {
+                                id: tileCol
+                                x: root._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - root._px(32)
+                                spacing: root._px(2)
                                 Text {
-                                    id: valueText
-                                    text: tile._value
-                                    color: Theme.text
-                                    font.family: Theme.family
-                                    font.pixelSize: root._fpx(Theme.fontBody)
-                                    font.bold: true
-                                }
-                                Text {
-                                    anchors.baseline: valueText.baseline
-                                    visible: tile._raw >= 0 && root._statsLoaded
-                                    text: modelData.unit
+                                    text: modelData.label
                                     color: Theme.text2
                                     font.family: Theme.family
                                     font.pixelSize: root._fpx(Theme.fontCaption)
                                 }
-                            }
-
-                            // ── The chart: value axis on the left, time axis underneath ──
-                            Item {
-                                id: plotArea
-                                x: root._px(12) + axisW
-                                y: root._px(36)
-                                width: parent.width - x - root._px(12)
-                                height: parent.height - y - root._px(22)
-                                readonly property int axisW: root._px(30)
-
-                                Repeater {
-                                    model: [1, 0.5, 0]
+                                Row {
+                                    spacing: root._px(5)
                                     Text {
-                                        x: -plotArea.axisW
-                                        width: plotArea.axisW - root._px(6)
-                                        y: plotArea.height * (1 - modelData) - height / 2
-                                        horizontalAlignment: Text.AlignRight
-                                        text: tile._axis(modelData) + (modelData === 1 && tile._top > 0 ? " " + tile.unit : "")
-                                        visible: text.length > 0
-                                        color: Theme.text3
+                                        id: valueText
+                                        text: tile._value
+                                        color: Theme.text
                                         font.family: Theme.family
-                                        font.pixelSize: root._fpx(Theme.fontCaption - 1)
+                                        font.pixelSize: root._fpx(Theme.fontH1)
+                                        font.bold: true
                                     }
-                                }
-                                Repeater {
-                                    model: [ { f: 0, t: qsTr("60 s") }, { f: 0.5, t: qsTr("30 s") }, { f: 1, t: qsTr("now") } ]
                                     Text {
-                                        y: plotArea.height + root._px(3)
-                                        x: modelData.f === 0 ? 0
-                                         : modelData.f === 1 ? plotArea.width - width
-                                         : plotArea.width / 2 - width / 2
-                                        text: modelData.t
-                                        color: Theme.text3
+                                        anchors.baseline: valueText.baseline
+                                        visible: tile._raw >= 0 && root._statsLoaded
+                                        text: modelData.unit
+                                        color: Theme.text2
                                         font.family: Theme.family
-                                        font.pixelSize: root._fpx(Theme.fontCaption - 1)
-                                    }
-                                }
-
-                                Canvas {
-                                    anchors.fill: parent
-                                    readonly property int _rev: root._histRev
-                                    readonly property real _scale: tile._top
-                                    on_RevChanged: requestPaint()
-                                    on_ScaleChanged: requestPaint()
-                                    onWidthChanged: requestPaint()
-                                    onHeightChanged: requestPaint()
-                                    onPaint: {
-                                        var ctx = getContext("2d")
-                                        ctx.reset()
-                                        ctx.strokeStyle = Theme.line
-                                        ctx.lineWidth = 1
-                                        for (var g = 0; g <= 2; g++) {
-                                            var gy = g === 2 ? height - 0.5 : Math.round(height * g / 2) + 0.5
-                                            ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(width, gy); ctx.stroke()
-                                        }
-                                        var a = root._hist[modelData.key]
-                                        if (!a || a.length < 2) return
-                                        // The history is in the host's units (MB for memory).
-                                        var top = modelData.max > 0 ? modelData.max : tile._totalGb * 1024
-                                        if (!(top > 0)) {
-                                            top = 1
-                                            for (var i = 0; i < a.length; i++) top = Math.max(top, a[i])
-                                        }
-                                        ctx.strokeStyle = Theme.ink
-                                        ctx.lineWidth = Math.max(1, root._px(2))
-                                        ctx.beginPath()
-                                        var step = width / 59
-                                        var x0 = width - step * (a.length - 1)
-                                        for (var j = 0; j < a.length; j++) {
-                                            var v = Math.min(top, Math.max(0, a[j]))
-                                            var y = height - (v / top) * (height - 2) - 1
-                                            if (j === 0) ctx.moveTo(x0, y); else ctx.lineTo(x0 + step * j, y)
-                                        }
-                                        ctx.stroke()
+                                        font.pixelSize: root._fpx(Theme.fontBody)
                                     }
                                 }
                             }
@@ -1193,6 +1121,271 @@ FocusScope {
                         buttonText: nvPage._showAll ? qsTr("Show fewer")
                                                     : qsTr("Show all %1").arg((nvPage._profile.settings || []).length)
                         onActivated: nvPage._showAll = !nvPage._showAll
+                    }
+                }
+            }
+            // ── Hue Sync (8.4.0) ───────────────────────────────────────────────────────
+            /*
+             * Variant B of docs/mockups/huesync (Marcello, 03/11/2026): the bridge's areas as tiles,
+             * the one streaming lit with who streams to it, a sentence on what the host does, the
+             * rules in one card. The host half is StreamTweak 10.1.0's (HUESYNC / HUEPAIR / SETHUE);
+             * taking the lights back is this device's alone — restart its own Hue Sync, which then
+             * syncs again — so it stays live on any host. A bridge streams to one area at a time, and
+             * a displaced Hue Sync does not resume by itself (measured 03/11/2026).
+             */
+            Column {
+                id: huePage
+                width: parent.width
+                spacing: root._px(16)
+                visible: root._tab === "hue"
+
+                readonly property var _bridge: root.hue.bridge || ({})
+                readonly property var _rules: root.hue.rules || ({})
+                readonly property var _areas: root.hue.areas || []
+                readonly property bool _paired: _bridge.paired === true
+                readonly property var _active: {
+                    for (var i = 0; i < _areas.length; i++) if (_areas[i].active) return _areas[i]
+                    return null
+                }
+                readonly property string _me: root.computerModel ? root.computerModel.thisDeviceName() : ""
+                readonly property bool _mine: _active !== null
+                    && String(_active.device || "").toLowerCase() === _me.toLowerCase()
+                readonly property bool _hostHas: _active !== null
+                    && String(_active.device || "").toLowerCase() === String(root.hue.host_device || "").toLowerCase()
+                readonly property bool _hold: root._shown("huehold", _rules.hold === true)
+                readonly property string _giveWay: root._shown("huegiveway", _rules.give_way === "this" ? "this" : "any")
+                // Who the host gives way to now, as the rule reads: every stream, or this device's.
+                // With "this device" the host gives way only to the device the rule names — the name
+                // it enrolled with, which is also the computer name Hue Sync writes on the bridge.
+                readonly property bool _hostWaits: _hold && _active !== null && !_hostHas
+                    && (_giveWay === "any"
+                        || String(_active.device || "").toLowerCase() === String(_rules.give_way_device || "").toLowerCase())
+                property bool _installed: root.computerModel ? root.computerModel.hueClientInstalled() : false
+                property bool _autoBack: root.computerModel && root.hostIndex >= 0 ? root.computerModel.hueAutoTakeBack(root.hostIndex) : false
+                property bool _takingBack: false
+
+                function _owner(a) {
+                    return (a.app ? a.app : qsTr("An app")) + (a.device ? qsTr(" on %1").arg(a.device) : "")
+                }
+                function _takeBack() {
+                    if (!root.computerModel || _takingBack) return
+                    _takingBack = true
+                    root.computerModel.hueTakeBack()
+                }
+                Connections {
+                    target: root.computerModel
+                    function onHueTakeBackDone(ok) {
+                        huePage._takingBack = false
+                        if (!ok) root.appShell && root.appShell.notice(qsTr("Hue Sync could not be started on this device."))
+                        settleTimer.verb = "HUESYNC"; settleTimer.restart()
+                    }
+                }
+
+                Line {
+                    text: qsTr("Read-only · Host management is off for this device in StreamTweak")
+                    dim: true
+                    visible: root._hueOk && root._hueLoaded && !root.hostManagement && !root.hue.host_management
+                }
+                Line {
+                    text: qsTr("Hue Sync is not installed on this device.")
+                    dim: true
+                    visible: !huePage._installed
+                }
+
+                // ── The bridge ──
+                Card {
+                    title: huePage._paired ? (huePage._bridge.model || qsTr("Hue bridge")) : qsTr("Hue bridge")
+                    enabled: root._hueOk
+                    opacity: root._hueOk ? 1 : 0.4
+
+                    ButtonRow {
+                        visible: !huePage._paired
+                        title: qsTr("Not paired")
+                        hint: huePage._bridge.pairing === true ? qsTr("Press the button on the bridge now…")
+                            : huePage._bridge.pair_result === "timeout"   ? qsTr("The button was not pressed in time. Try again.")
+                            : huePage._bridge.pair_result === "no_bridge" ? qsTr("No Hue bridge found on %1's network.").arg(root.hostName)
+                            : huePage._bridge.pair_result === "bad_cert"  ? qsTr("That device did not identify itself as a Hue bridge.")
+                            : qsTr("Pair, then press the button on the bridge within a minute")
+                        buttonText: qsTr("Pair")
+                        live: root.hostManagement && huePage._bridge.pairing !== true
+                        onActivated: root._set("huepair", "HUEPAIR", true)
+                    }
+
+                    // The areas, the one streaming lit — three to a row, fewer as the window narrows.
+                    Flow {
+                        visible: huePage._paired
+                        width: parent.width
+                        spacing: root._px(14)
+                        topPadding: root._px(6)
+                        bottomPadding: root._px(6)
+                        readonly property int _cols: Math.max(1, Math.min(3, huePage._areas.length, Math.floor(width / root._px(240))))
+                        Repeater {
+                            model: huePage._areas
+                            Rectangle {
+                                id: areaTile
+                                required property var modelData
+                                readonly property bool on: modelData.active === true
+                                readonly property bool mineArea: String(modelData.device || "").toLowerCase() === huePage._me.toLowerCase()
+                                width: Math.floor((parent.width - (parent._cols - 1) * root._px(14)) / parent._cols)
+                                height: tileCol.implicitHeight + root._px(28)
+                                radius: root._px(10)
+                                color: on ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, Theme.light ? 0.16 : 0.10)
+                                          : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.03)
+                                border.color: on ? Theme.ink : Theme.line
+                                border.width: on ? 2 : 1
+                                Column {
+                                    id: tileCol
+                                    x: root._px(16); y: root._px(14)
+                                    width: parent.width - root._px(32)
+                                    spacing: root._px(6)
+                                    Text {
+                                        width: parent.width
+                                        elide: Text.ElideRight
+                                        text: areaTile.modelData.name
+                                        color: Theme.text
+                                        font.family: Theme.family
+                                        font.pixelSize: root._fpx(Theme.fontTitle)
+                                        font.bold: true
+                                    }
+                                    Text {
+                                        text: areaTile.modelData.lights === 1 ? qsTr("1 light")
+                                            : areaTile.modelData.lights === 0 ? qsTr("No lights")
+                                            : qsTr("%1 lights").arg(areaTile.modelData.lights)
+                                        color: Theme.text3
+                                        font.family: Theme.family
+                                        font.pixelSize: root._fpx(Theme.fontSmall)
+                                    }
+                                    Row {
+                                        spacing: root._px(8)
+                                        width: parent.width
+                                        Rectangle {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: root._px(8); height: width; radius: width / 2
+                                            color: !areaTile.on ? Theme.text3 : areaTile.mineArea ? Theme.online : Theme.warning
+                                        }
+                                        Text {
+                                            width: parent.width - root._px(16)
+                                            elide: Text.ElideRight
+                                            text: areaTile.on ? huePage._owner(areaTile.modelData) : qsTr("Not syncing")
+                                            color: Theme.text2
+                                            font.family: Theme.family
+                                            font.pixelSize: root._fpx(Theme.fontSmall)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // What the host will do, in a sentence — and the way to get the lights back.
+                    ButtonRow {
+                        visible: huePage._paired
+                        title: huePage._hostHas ? qsTr("Hue Sync is syncing on %1").arg(root.hostName)
+                             : huePage._hostWaits ? qsTr("%1 waits: the lights are in use").arg(root.hostName)
+                             : huePage._active === null ? qsTr("Free: Hue Sync on %1 can start").arg(root.hostName)
+                             : qsTr("%1 takes the lights when Hue Sync starts there").arg(root.hostName)
+                        hint: huePage._hostWaits ? qsTr("Hue Sync starts there when they are free") : ""
+                        buttonText: huePage._takingBack ? qsTr("Taking back…") : qsTr("Take back")
+                        button.visible: !huePage._mine
+                        live: huePage._installed && !huePage._takingBack
+                        onActivated: huePage._takeBack()
+                    }
+                }
+
+                // ── Rules ──
+                Card {
+                    title: qsTr("Rules")
+
+                    Column {
+                        width: parent.width
+                        enabled: root._hueOk
+                        opacity: root._hueOk ? 1 : 0.4
+
+                        SwitchRow {
+                            title: qsTr("Wait while the lights are in use")
+                            hint: qsTr("StreamTweak starts Hue Sync on %1 only when no other device is syncing").arg(root.hostName)
+                            checked: huePage._hold
+                            live: root.hostManagement && huePage._paired
+                            onToggled: function(value) { root._set("huehold", value ? "SETHUE HOLD ON" : "SETHUE HOLD OFF", value) }
+                        }
+
+                        // Give way to: any device, or only this one.
+                        Item {
+                            width: parent.width
+                            implicitHeight: Math.max(gwTexts.implicitHeight, gwSel.height, root._px(58))
+                            height: implicitHeight
+                            Column {
+                                id: gwTexts
+                                anchors.left: parent.left
+                                anchors.right: gwSel.left
+                                anchors.rightMargin: root._px(16)
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: root._px(3)
+                                Text {
+                                    width: parent.width
+                                    text: qsTr("Give way to")
+                                    color: Theme.text
+                                    font.family: Theme.family
+                                    font.pixelSize: root._fpx(Theme.fontBody)
+                                    font.bold: true
+                                }
+                                Text {
+                                    width: parent.width
+                                    wrapMode: Text.WordWrap
+                                    text: huePage._giveWay === "any" ? qsTr("Any device: this one, another PC, a TV")
+                                        : huePage._rules.give_way_mine === true || root._pending["huegiveway"] !== undefined
+                                          ? qsTr("Only this device; any other is taken over as before")
+                                          : qsTr("Only %1, chosen from that device").arg(huePage._rules.give_way_device || qsTr("another device"))
+                                    color: Theme.text2
+                                    font.family: Theme.family
+                                    font.pixelSize: root._fpx(Theme.fontSmall)
+                                }
+                            }
+                            SegmentedSelector {
+                                id: gwSel
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                labels: [qsTr("Any device"), qsTr("This device")]
+                                currentIndex: huePage._giveWay === "this" ? 1 : 0
+                                enabled: root.hostManagement && huePage._paired && huePage._hold
+                                opacity: enabled ? 1.0 : 0.45
+                                onActivated: function(index) {
+                                    root._set("huegiveway", index === 1 ? "SETHUE GIVEWAY THIS" : "SETHUE GIVEWAY ANY",
+                                              index === 1 ? "this" : "any")
+                                }
+                            }
+                        }
+
+                        // Hue Sync's own start with Windows would beat StreamTweak to the lights:
+                        // read on the host, never changed from here (Marcello, 03/11/2026).
+                        Line {
+                            visible: huePage._hold && root.hue.startup_task === true
+                            text: qsTr("Hue Sync also starts with Windows on %1: turn it off there, in Settings › Apps › Startup, or it takes the lights first.").arg(root.hostName)
+                            color: Theme.warning
+                            topPadding: root._px(4)
+                            bottomPadding: root._px(12)
+                        }
+                    }
+
+                    // This device's own half: alive on any host.
+                    SwitchRow {
+                        title: qsTr("Take them back by itself")
+                        hint: root._hueOk ? qsTr("When another device takes the lights while Hue Sync runs here")
+                                          : qsTr("Needs StreamTweak 10.1 on %1, which tells this device who has the lights").arg(root.hostName)
+                        checked: huePage._autoBack && root._hueOk
+                        live: root._hueOk && huePage._installed
+                        onToggled: function(value) {
+                            root.computerModel.setHueAutoTakeBack(root.hostIndex, value)
+                            huePage._autoBack = value
+                        }
+                    }
+                    ButtonRow {
+                        visible: !root._hueOk
+                        title: qsTr("Take the lights back")
+                        hint: qsTr("Restarts Hue Sync on this device")
+                        buttonText: huePage._takingBack ? qsTr("Taking back…") : qsTr("Take back")
+                        live: huePage._installed && !huePage._takingBack
+                        onActivated: huePage._takeBack()
                     }
                 }
             }

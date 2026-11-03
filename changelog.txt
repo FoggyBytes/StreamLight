@@ -5,6 +5,38 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 ----------------------------------------
+Version 8.4.0 - Big Screen (03/11/2026)
+----------------------------------------
+
+The TV works with any host; the Hue Sync tab pairs with StreamTweak 10.1.0. An LG TV now comes on when the PC it is plugged into starts, from the Windows sign-in screen on, and goes off when it shuts down; and the host's Hue Sync no longer takes the lights from this device.
+
+✨ NEW FEATURES:
+• The TV follows this PC — Settings → TV pairs an LG webOS TV on the same network (one Allow with the TV's remote); the TV then comes on and switches to this PC's input when the PC starts, and goes off when it shuts down; a restart leaves it on, and so does sleep, because a wireless keyboard or mouse can wake a PC by itself a few seconds later and the TV would follow it
+• From boot — a small StreamLight service does it, so the TV comes on at the Windows sign-in screen too, with no need to remove your password; it runs with the fewest rights Windows gives a service and stops by itself when no TV is paired
+• Leaves the TV alone — a TV switched to another input or app is not turned off with the PC (Only when it shows this PC, on by default), and a soundbar on HDMI goes off with the TV, as with the TV's own remote
+• Hue Sync keeps the lights here — a Hue bridge syncs one area at a time, so the host's Hue Sync starting after a wake took the lights from this device's, which never got them back; with StreamTweak 10.1.0 the host can wait while the lights are in use (any device, or only this one), and this device can take them back, by hand or by itself
+• Search the host's library — a magnifier before ALL on the host page ([LB] from ALL, / or Ctrl+F on the keyboard, a click with the mouse), in both List and Grid layouts; results update as you type, case, accents and punctuation do not matter and "halflife" finds Half-Life; with a controller A opens the on-screen keyboard, B closes it, then the search, back to the tab you came from with the game found still selected
+
+🐛 FIXES:
+• Tailscale at sign-in — with Start at sign-in and Auto-start Tailscale both on, Tailscale could stop with "Unable to set up Tailscale client", because StreamLight started it before Windows had a taskbar for its icon; it now starts once you choose StreamLight, and only when the taskbar is there
+• Start at sign-in on a TV — when Windows was still on its fallback display at sign-in (the TV not yet up on the graphics card's output), StreamLight could open on an empty screen that never moved; it now waits for the real display, up to 20 s
+• Sleep from the Power popup on Modern Standby PCs — StreamLight could freeze for up to 30 s after the screen went off, because it waited for every open window to answer; it now turns the screen off without waiting
+• Sleep on Modern Standby PCs — the navigation sounds kept the audio output open, which Windows counts as audio playing, so the PC never reached its lowest-power idle while asleep; the output is now let go while the screen is off
+• The launch curtain waits for games only — with Wait for the game to appear on, opening the Desktop or another entry under APPS held the curtain up until See the host, waiting for a game window that never comes; moving an entry between GAMES and APPS moves this too
+
+🎨 UI:
+• Settings → TV — a new tab between Interface and Overlay: the TV with what it is showing, Turn on / Turn off, Change TV and Forget, then this PC's input (found when pairing), Turn the TV on (when the PC starts), Turn the TV off (when it shuts down) and Only when it shows this PC; LG webOS TVs only
+• Hue Sync in the StreamTweak section — a tab before Setup: the bridge's areas, the one syncing lit with who syncs it, what the host will do, Take back, and the rules; pairing the bridge takes its button; on a host without StreamTweak 10.1 the tab is greyed and Take back still works
+• Dashboard figures — GPU load, GPU temp, VRAM, CPU and RAM are big bold numbers in a lower row, without the minute-long charts
+• Mouse control in Stream Settings — a sixth tile, at the far right, turns controller mouse control (hold Start) on or off while streaming; it applies at once, without the reconnect, and Save keeps it in Settings → Input
+
+🙏 THANKS:
+• Thanks to @Noklef for the library search (https://github.com/FoggyBytes/StreamLight/pull/50)
+
+⚠️ COMPATIBILITY:
+• Launch Philips Hue Sync during streaming has been removed — StreamLight no longer starts Hue Sync when a stream begins or closes it when it ends, and the setting is gone from Settings, host profiles and per-game settings; start Hue Sync with Windows on this device instead, and use the new Hue Sync tab to keep the lights
+
+----------------------------------------
 Version 8.3.1 - Fair Count (30/10/2026)
 ----------------------------------------
 

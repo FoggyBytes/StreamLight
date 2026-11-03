@@ -442,7 +442,7 @@ FocusScope {
         setLibraryTab(_ring[i], true)
     }
 
-    // ── Search (7.1.0) ───────────────────────────────────────────────────────
+    // ── Search (8.4.0) ───────────────────────────────────────────────────────
     /*
      * Text search over the library, in both layouts. A stop at the front of the tab ring —
      * [LB] 🔍 ALL GAMES APPS [RB] — so LB from ALL, the tab the page opens on, is search, and
@@ -776,7 +776,7 @@ FocusScope {
             cycleProfile(1)
             event.accepted = true
         }
-        // Search (7.1.0): '/', as in browsers and launchers, and the platform's Find (Ctrl+F).
+        // Search (8.4.0): '/', as in browsers and launchers, and the platform's Find (Ctrl+F).
         // Any modifiers on '/': on several layouts it needs Shift. Typing either into the
         // search field never gets here — the field takes printable keys first.
         else if (event.key === Qt.Key_Slash || event.matches(StandardKey.Find)) {
@@ -1490,7 +1490,7 @@ FocusScope {
         spacing: appsRoot._px(26)
 
         Repeater {
-            // Search (7.1.0) is the first stop, drawn as a magnifier rather than a word.
+            // Search (8.4.0) is the first stop, drawn as a magnifier rather than a word.
             model: [
                 { tab: "search", label: "" },
                 { tab: "all",   label: qsTr("ALL") },
@@ -1582,7 +1582,7 @@ FocusScope {
         }
     }
 
-    // ── Search bar (7.1.0) ───────────────────────────────────────────────────
+    // ── Search bar (8.4.0) ───────────────────────────────────────────────────
     // Under the tabs while searching: the library column's width in List, the grid's in Grid.
     Item {
         id: searchBar
@@ -1694,7 +1694,10 @@ FocusScope {
             Label {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: searchField.text.trim().length > 0
-                text: qsTr("%n result(s)", "", appGrid ? appGrid.count : 0)
+                // Plural by hand: no translation is ever loaded, so qsTr's %n would print
+                // "result(s)" as written.
+                readonly property int _n: appGrid ? appGrid.count : 0
+                text: _n === 1 ? qsTr("1 result") : qsTr("%1 results").arg(_n)
                 color: appsRoot._text3
                 font.family: Theme.family
                 font.pixelSize: appsRoot._px(Theme.fontSmall)
@@ -1720,7 +1723,8 @@ FocusScope {
                         anchors.centerIn: parent
                         text: modelData.glyph
                         color: appsRoot._text2
-                        font.family: Theme.family
+                        // ⌨ is not in DM Sans; JetBrains Mono has both glyphs (measured).
+                        font.family: Theme.monoFamily
                         font.pixelSize: appsRoot._px(Theme.fontBody)
                     }
                     MouseArea {
@@ -1832,7 +1836,9 @@ FocusScope {
         highlight: Item {
             z: 0
             Rectangle {
-                visible: appGrid._glide && appGrid.currentItem !== null
+                // === true: while the page is torn down _glide reads undefined, and a bool will
+                // not take it (a warning in every log that left the host page).
+                visible: appGrid._glide === true && appGrid.currentItem !== null
                 width: parent.width
                 height: appGrid._rowH - appGrid._gap
                 radius: appsRoot._px(10)

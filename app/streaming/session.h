@@ -22,7 +22,6 @@
 #include "../backend/launchgate.h"
 #include "launchcurtain.h"
 #include "../SessionTelemetrySampler.h"
-#include "../HueSyncManager.h"
 
 class SupportedVideoFormatList : public QList<int>
 {
@@ -166,7 +165,8 @@ public:
         // on the host's screen, and the host's launch watcher is still reporting on the launch
         // that started it — a phase that has nothing to do with this connection, and that kept
         // the curtain up over a picture ready from the first frame.
-        return !m_UnlockMode && !m_RejoinsRunningApp
+        // 8.4.0: never for an entry under APPS (the Desktop above all) — see m_IsAppEntry.
+        return !m_UnlockMode && !m_RejoinsRunningApp && !m_IsAppEntry
             && m_StreamTweakEnabled && m_Preferences->waitForGameOnScreen
             && hostControlKind(m_App.id, m_App.uuid, m_App.name) == HostControl::None;
     }
@@ -653,7 +653,6 @@ private:
     bool                     m_EndedWithQuit          = false;
     LaunchCurtain            m_Curtain;
     SessionTelemetrySampler* m_TelemetrySampler       = nullptr;
-    HueSyncManager*          m_HueSyncManager         = nullptr;
 
     // ── Play time (5.7.0) ────────────────────────────────────────────────────────────────
     /*
@@ -694,6 +693,11 @@ private:
     // and the launch that follows is a real one. The /resume-or-/launch choice on the wire,
     // in startConnectionAsync(), is untouched.
     bool m_RejoinsRunningApp = false;
+    // 8.4.0: the entry sits under APPS on the host page — the Desktop, Steam Big Picture, a
+    // tool — with the user's moves between GAMES and APPS honoured, as AppModel::isApp() does.
+    // The launch curtain waits for a GAME window; an app has none to wait for, and the wait
+    // only ran to its cap, or to "See the host" (Marcello, 03/11/2026). Fixed in the constructor.
+    bool m_IsAppEntry = false;
 
     // Remote PIN unlock. The buffer is fixed and small: a Windows Hello PIN is a handful of
     // digits, and a fixed array is something we can actually overwrite afterwards.

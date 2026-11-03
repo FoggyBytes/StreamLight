@@ -19,10 +19,16 @@
 // as the other rows rather than changing live. It is shown read-only (greyed, with a
 // padlock) when V-Sync is off, since the decoder ignores the mode entirely in that case,
 // and while VRR paces the session.
+//
+// 8.4.0: a sixth tile, Mouse control (Settings → Input → Mouse control with controller), at the
+// far right. It is an input setting, so it applies at once through the input handler that owns
+// this panel — no reconnect — and Save writes it to the global preference, the only place it lives.
+class SdlInputHandler;
+
 class StreamSettingsOverlay
 {
 public:
-    explicit StreamSettingsOverlay(StreamingPreferences* prefs);
+    StreamSettingsOverlay(StreamingPreferences* prefs, SdlInputHandler* input);
 
     bool isActive() const { return m_Active; }
 
@@ -56,6 +62,7 @@ private:
         ROW_BITRATE,
         ROW_HDR,
         ROW_PACING,
+        ROW_PADMOUSE,   // 8.4.0, always last: applied live, never part of a reconnect
     };
 
     void rebuildRows();
@@ -66,9 +73,11 @@ private:
     bool isCustom() const;
     int  effectiveWidth() const;
     int  effectiveHeight() const;
-    int  changeCount() const;
+    int  changeCount() const;       // every tile that differs from what runs now
+    int  reconnectCount() const;    // the ones only a reconnect can apply (all but Mouse control)
 
     StreamingPreferences* m_Prefs;
+    SdlInputHandler* m_Input;
     bool m_Active = false;
     // The prompts' family, resolved at open(): never GS_AUTO.
     StreamingPreferences::GlyphSet m_Glyphs = StreamingPreferences::GS_XBOX;
@@ -95,11 +104,13 @@ private:
     int m_BitrateKbps = 20000;
     bool m_Hdr = false;
     int m_PacingIndex = 0;  // index into s_PacingValues (FP_OFF / FP_ON)
+    bool m_PadMouse = true;
 
     // committed baseline (seeded values) for change detection
     int m_BaseW = 0, m_BaseH = 0, m_BaseFps = 0, m_BaseKbps = 0;
     bool m_BaseHdr = false;
     int m_BasePacing = 0;
+    bool m_BasePadMouse = true;
 
     int m_Focus = 0;
     QVector<int> m_Rows;    // visible RowId order
