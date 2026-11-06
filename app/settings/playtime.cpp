@@ -38,6 +38,10 @@
 // The host page's tab the user last chose (6.3.0).
 #define SER_LASTTAB     "lastTab"
 
+// The Power popup's last confirmed choice (8.5.1): the host's mode, then this device's.
+#define SER_POWERHOST   "powerHost"
+#define SER_POWERCLIENT "powerClient"
+
 // How long each game took to come on screen (7.0.2), in its own group per game ('l' prefix):
 // reset() clears a game's HOURS by removing its 'g' group, and a start-up time is not hours.
 #define SER_LAUNCHMS    "launchMs"
@@ -365,6 +369,29 @@ void PlaytimeManager::setLastTab(const QString& hostUuid, const QString& tab)
 
     QSettings settings;
     settings.setValue(hostGroup(hostUuid) + QStringLiteral("/" SER_LASTTAB), tab);
+}
+
+QStringList PlaytimeManager::powerChoiceOn(const QString& hostUuid) const
+{
+    if (hostUuid.isEmpty())
+        return { QString(), QString() };
+
+    QSettings settings;
+    const QString group = hostGroup(hostUuid);
+    return { settings.value(group + QStringLiteral("/" SER_POWERHOST)).toString(),
+             settings.value(group + QStringLiteral("/" SER_POWERCLIENT)).toString() };
+}
+
+void PlaytimeManager::setPowerChoice(const QString& hostUuid, const QString& hostMode,
+                                     const QString& clientMode)
+{
+    if (hostUuid.isEmpty() || hostMode.isEmpty() || clientMode.isEmpty())
+        return;
+
+    QSettings settings;
+    const QString group = hostGroup(hostUuid);
+    settings.setValue(group + QStringLiteral("/" SER_POWERHOST), hostMode);
+    settings.setValue(group + QStringLiteral("/" SER_POWERCLIENT), clientMode);
 }
 
 QString PlaytimeManager::launchGroup(const QString& hostUuid, const QString& appName)

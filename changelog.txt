@@ -5,6 +5,18 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 -----------------------------------------
+Version 8.5.1 - Same Again (06/11/2026)
+-----------------------------------------
+
+No StreamTweak update required — 8.5.1 is client-side and works with any host. The Power popup now remembers what you chose for each host.
+
+✨ IMPROVEMENTS:
+• The Power popup remembers — it opens on what you last confirmed for that host, for the host and for this device alike (Host: Sleep · This device: Keep on, say), instead of Keep on / Shut down every time; a mode the machine no longer offers falls back to Keep on, the Install updates boxes always start off, the focus stays on Cancel, and with no host (offline, or + Add) the popup still opens on Shut down for this device
+
+🙏 THANKS:
+• Thanks to @kayti for asking for it (https://github.com/FoggyBytes/StreamLight/issues/51)
+
+-----------------------------------------
 Version 8.5.0 - Clear Glass (06/11/2026)
 -----------------------------------------
 

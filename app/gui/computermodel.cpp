@@ -1245,6 +1245,21 @@ void ComputerModel::requestLockState(int computerIndex)
         });
 }
 
+QVariantMap ComputerModel::hostPowerChoice(const QString& hostUuid) const
+{
+    const QStringList choice = PlaytimeManager::get()->powerChoiceOn(hostUuid);
+    QVariantMap out;
+    out[QStringLiteral("host")]   = choice.value(0);
+    out[QStringLiteral("client")] = choice.value(1);
+    return out;
+}
+
+void ComputerModel::setHostPowerChoice(const QString& hostUuid, const QString& hostMode,
+                                       const QString& clientMode)
+{
+    PlaytimeManager::get()->setPowerChoice(hostUuid, hostMode, clientMode);
+}
+
 void ComputerModel::checkGameAfterQuit(const QString& hostUuid, const QString& appName)
 {
     // Eight seconds: a host that CAN close the game needs a moment — Sunshine and its forks ask

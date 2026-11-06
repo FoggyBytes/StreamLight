@@ -175,6 +175,20 @@ public:
     QString lastTabOn(const QString& hostUuid) const;
     void setLastTab(const QString& hostUuid, const QString& tab);
 
+    // ── The Power popup's last choice (8.5.1, issue #51) ─────────────────────────────────
+    /*
+     * What the user last CONFIRMED in the Power popup opened on this host: one mode for the
+     * host and one for this device ("keep", "sleep", "restart", "shutdown"), so the popup
+     * reopens on it instead of "Keep on / Shut down" every time. A pair per host, because what
+     * this device does depends on the host: "host sleeps, this device stays on" is a choice
+     * made about THAT host, and the popup opened with no host (host offline, "+ Add") is there
+     * to switch this device off, so it never reads this. The update boxes are not kept: they
+     * depend on what is pending at that moment. In the host node, so forgetHost() takes it.
+     */
+    /// { host, client }; both empty when nothing was ever confirmed on this host.
+    QStringList powerChoiceOn(const QString& hostUuid) const;
+    void setPowerChoice(const QString& hostUuid, const QString& hostMode, const QString& clientMode);
+
     // ── How long each game takes to come on screen (7.0.2) ───────────────────────────────
     /*
      * The launch screen says "Taking longer than usual" when the game is late. Until 7.0.2

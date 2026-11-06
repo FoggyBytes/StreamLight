@@ -234,6 +234,15 @@ public:
     Q_INVOKABLE bool setHostWakeMac(int computerIndex, const QString& text);
 
     /**
+     * The Power popup's last confirmed choice on this host (8.5.1, issue #51): { host, client }
+     * as PowerDialog's mode keys, empty when none. By uuid, like everything the popup keeps
+     * past one call (§80.2). The popup checks each mode against what the machine offers now.
+     */
+    Q_INVOKABLE QVariantMap hostPowerChoice(const QString& hostUuid) const;
+    Q_INVOKABLE void setHostPowerChoice(const QString& hostUuid, const QString& hostMode,
+                                        const QString& clientMode);
+
+    /**
      * The last three pictures chosen as a host background, newest first, for any host
      * (7.0.0) — the Background panel offers them so a pad can pick a picture without the
      * file dialog. Files that no longer exist are dropped on read.

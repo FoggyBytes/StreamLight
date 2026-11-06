@@ -69,6 +69,17 @@ Popup {
     property string hostUpdateState: "unavailable"
     property string clientUpdateState: "none"
 
+    // 8.5.1, issue #51: the modes last confirmed on this host (ComputerModel.hostPowerChoice),
+    // set by HomeScreen before open(); empty = none, and always empty in clientOnly mode. The
+    // popup opens on them where the machine still offers them — the host's only once POWERCAPS
+    // has answered — and on the old Keep on / Shut down otherwise. Focus stays on Cancel.
+    property string rememberedHost: ""
+    property string rememberedClient: ""
+    // Whether hostMode / clientMode are a choice the user could make, so the caller does not
+    // store a "keep" that only meant "this row had nothing to offer".
+    readonly property bool hostChoiceMade:   _hostSelectable
+    readonly property bool clientChoiceMade: clientModes.length > 0
+
     // Emitted on confirm. A mode is one of _keys; "keep" means leave that machine alone.
     // The update flags are only ever true for restart/shutdown on a side with updates pending.
     signal confirmed(string hostMode, bool hostUpdates, string clientMode, bool clientUpdates)
@@ -446,12 +457,50 @@ Popup {
     readonly property var hostUpd:   hostUpdRow.selector
     readonly property var clientUpd: clientUpdRow.selector
 
-    // Every open starts from the same safe state: the host kept on, this device shut down
-    // (the old default target, Client), no updates, focus on Cancel (§22).
+    // Where a remembered mode lands: its index when this machine offers it now, else -1.
+    // "keep" is always offered.
+    function _rememberedIndex(key, offer) {
+        if (key === "keep") return 0
+        var i = pop._keys.indexOf(key)
+        return i > 0 && offer.indexOf(key) >= 0 ? i : -1
+    }
+
+    // The host's row is set once per open, as soon as it has something to offer: POWERCAPS
+    // may answer before onOpened (fast LAN, the enter animation still running) or after it.
+    // ⚠️ Worked out here from hostCaps / hostModes / hostAllowed, NOT from _hostSelectable and
+    // _hostOffer: inside onHostCapsChanged those bindings may not have been re-evaluated yet,
+    // so they still said "checking" — the row was skipped and nothing called it again (the
+    // host stayed on Keep on while this device's row, which waits for nothing, was right).
+    property bool _hostRowSet: false
+    function _setHostRow() {
+        if (pop._hostRowSet || pop.clientOnly || !pop.hostAllowed)
+            return
+        var offer = pop.hostCaps === "legacy" ? ["shutdown"]
+                  : pop.hostCaps === "ready"  ? pop.hostModes : []
+        if (offer.length === 0)
+            return
+        pop._hostRowSet = true
+        var i = pop._rememberedIndex(pop.rememberedHost, offer)
+        hostSel.currentIndex = i >= 0 ? i : 0
+    }
+    onHostCapsChanged:  if (pop.opened) pop._setHostRow()
+    onHostModesChanged: if (pop.opened) pop._setHostRow()
+
+    // Every open starts from the last choice confirmed on this host (8.5.1, issue #51), or
+    // without one from the old safe state: the host kept on, this device shut down. Never
+    // the update boxes, and focus always on Cancel (§22), so a press out of habit does nothing.
     onOpened: {
         hostSel.currentIndex = 0
-        var off = pop._keys.indexOf("shutdown")
-        clientSel.currentIndex = pop.clientModes.indexOf("shutdown") >= 0 ? off : 0
+        pop._hostRowSet = false
+        pop._setHostRow()
+
+        var c = pop._rememberedIndex(pop.rememberedClient, pop.clientModes)
+        if (c < 0) {
+            var off = pop._keys.indexOf("shutdown")
+            c = pop.clientModes.indexOf("shutdown") >= 0 ? off : 0
+        }
+        clientSel.currentIndex = c
+
         hostUpd.checked = false
         clientUpd.checked = false
         cancelBtn.forceActiveFocus()

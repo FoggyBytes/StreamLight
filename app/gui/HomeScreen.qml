@@ -189,6 +189,9 @@ FocusScope {
         powerDialog.clientModes        = SystemProperties.clientPowerModes()
         powerDialog.clientUpdateState  = SystemProperties.updatesPending() ? "pending" : "none"
         powerDialog.hostUpdateState    = "unavailable"
+        // Without a host the popup is there to switch this device off: no memory (8.5.1).
+        powerDialog.rememberedHost     = ""
+        powerDialog.rememberedClient   = ""
         powerDialog.open()
     }
 
@@ -2505,6 +2508,10 @@ FocusScope {
             } else {
                 powerDialog.hostUpdateState = "unavailable"
             }
+            // 8.5.1, issue #51: the popup opens on what was last confirmed on this host.
+            var choice = computerModel.hostPowerChoice(powerDialog.pcUuid)
+            powerDialog.rememberedHost    = choice.host
+            powerDialog.rememberedClient  = choice.client
             powerDialog.open()
             break
 
@@ -2903,6 +2910,15 @@ FocusScope {
         pcIndex: homeScreen.hostIndexOf(pcUuid)
         onClosed: navRoot.forceActiveFocus()
         onConfirmed: function(hostMode, hostUpdates, clientMode, clientUpdates) {
+            // 8.5.1, issue #51: remember the choice for this host, before anything is sent. A
+            // row that had nothing to offer (no access, no modes) keeps what was remembered.
+            if (!powerDialog.clientOnly && powerDialog.pcUuid !== "") {
+                var prev = homeScreen.computerModel.hostPowerChoice(powerDialog.pcUuid)
+                homeScreen.computerModel.setHostPowerChoice(powerDialog.pcUuid,
+                    powerDialog.hostChoiceMade   ? hostMode   : (prev.host   !== "" ? prev.host   : "keep"),
+                    powerDialog.clientChoiceMade ? clientMode : (prev.client !== "" ? prev.client : "shutdown"))
+            }
+
             if (hostMode === "keep") {
                 if (clientMode !== "keep")
                     SystemProperties.powerClient(clientMode, clientUpdates)
