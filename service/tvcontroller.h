@@ -44,6 +44,9 @@ public:
         std::lock_guard<std::mutex> lock(m_ShowingLock);
         return m_Showing;
     }
+    // 8.5.0: the TV at this MAC presented a certificate other than the one kept at pairing, so
+    // nothing was sent to it. Cleared by a connection that matches; pairing again replaces it.
+    bool certChanged() const { return m_CertChanged; }
 
 private:
     enum class Action { On, Off };
@@ -82,6 +85,7 @@ private:
     std::mutex m_Lock;
     std::condition_variable m_Wake;
     std::optional<Job> m_Pending;
+    std::atomic<bool> m_CertChanged { false };
     std::atomic<bool> m_Cancel { false };
     std::atomic<bool> m_Stop { false };
 };

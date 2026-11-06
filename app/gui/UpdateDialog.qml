@@ -75,6 +75,8 @@ Popup {
 
         // Eyebrow
         Label {
+            // Plain text: a name from the host, never markup (8.5.0, security review).
+            textFormat: Text.PlainText
             text: qsTr("WINDOWS UPDATE") + (pop.hostName.length ? "  ·  " + pop.hostName : "")
             font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall); font.bold: true; font.letterSpacing: 1.6
             color: Theme.text3
@@ -161,6 +163,8 @@ Popup {
                                     spacing: pop._px(2)
                                     // Full title — wraps instead of truncating.
                                     Label {
+                                        // Plain text: a name from the host, never markup (8.5.0, security review).
+                                        textFormat: Text.PlainText
                                         text: modelData.title
                                         font.family: Theme.family; font.pixelSize: pop._px(Theme.fontSmall)
                                         color: modelData.category === "upgrade" ? Qt.lighter(Theme.warning, 1.35) : Theme.text

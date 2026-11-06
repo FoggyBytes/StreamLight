@@ -45,13 +45,34 @@ QStringList WebOsTv::permissions()
     };
 }
 
-bool WebOsTv::connect(const QString& ip, int timeoutMs, QString* error)
+bool WebOsTv::connect(const QString& ip, int timeoutMs, QString* error, const QString& pinnedCert,
+                      bool* certChanged)
 {
     m_Subscriptions.clear();
+    m_Host = ip;
+    if (certChanged)
+        *certChanged = false;
     QString secureError;
     if (m_Ws.open(ip, 3001, true, timeoutMs, &secureError)) {
+        if (!pinnedCert.isEmpty() && m_Ws.certHash().compare(pinnedCert, Qt::CaseInsensitive) != 0) {
+            // Not the certificate this TV was paired with: nothing is sent, the key least of all.
+            m_Ws.close();
+            m_Endpoint.clear();
+            if (certChanged)
+                *certChanged = true;
+            *error = QStringLiteral("the TV presented a different certificate");
+            return false;
+        }
         m_Endpoint = QStringLiteral("wss://%1:3001").arg(ip);
         return true;
+    }
+    // ⚠️ A TV paired over TLS is never reached in clear (8.5.0, security review): the register
+    // message carries its key, and anyone able to block port 3001 on the LAN would otherwise have
+    // had it sent to port 3000 in plain text.
+    if (!pinnedCert.isEmpty()) {
+        m_Endpoint.clear();
+        *error = QStringLiteral("wss:3001 %1").arg(secureError);
+        return false;
     }
     QString plainError;
     if (m_Ws.open(ip, 3000, false, timeoutMs, &plainError)) {
@@ -230,6 +251,11 @@ bool WebOsTv::pressButton(const QString& name, QString* error)
     const QUrl url(socket.payload.value(QStringLiteral("socketPath")).toString());
     if (!url.isValid() || url.host().isEmpty()) {
         *error = QStringLiteral("pointer channel: no socket path");
+        return false;
+    }
+    // The channel is the TV's own: an address elsewhere in the answer is not followed (8.5.0).
+    if (url.host() != m_Host) {
+        *error = QStringLiteral("pointer channel: not on the TV (%1)").arg(url.host());
         return false;
     }
     const bool secure = url.scheme() == QLatin1String("wss");

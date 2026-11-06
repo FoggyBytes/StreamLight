@@ -4,6 +4,7 @@
 #include <ControllerHaptics.h>
 #include "SDL_compat.h"
 #include "streaming/input/dualsensehaptics.h"
+#include "backend/uisound.h"
 #include "settings/mappingmanager.h"
 #include "utils.h"
 #include "streaming/video/streamsettingsoverlay.h"
@@ -507,18 +508,31 @@ void SdlInputHandler::handleControllerButtonEvent(SDL_ControllerButtonEvent* eve
                 default: break;
                 }
                 if (key != 0) {
-                    // The Qt window is the one on screen — the stream window is hidden and has
-                    // no focus. postEvent is thread-safe, which matters: we are on SDL's pump.
-                    QWindow* w = QGuiApplication::focusWindow();
-                    if (w == nullptr && !QGuiApplication::topLevelWindows().isEmpty()) {
-                        w = QGuiApplication::topLevelWindows().first();
-                    }
-                    if (w != nullptr) {
-                        QCoreApplication::postEvent(
-                            w, new QKeyEvent(QEvent::KeyPress, key, Qt::NoModifier));
-                        QCoreApplication::postEvent(
-                            w, new QKeyEvent(QEvent::KeyRelease, key, Qt::NoModifier));
-                    }
+                    /*
+                     * The Qt window is the one on screen — the stream window is hidden and has
+                     * no focus. We are on SDL's pump, so the delivery is queued to the GUI
+                     * thread, and there it is SENT rather than posted (05/11/2026): only a sent
+                     * event says afterwards whether a control took it, which is what the
+                     * navigation sound needs — the same rule as SdlGamepadKeyNavigation::sendKey,
+                     * which this path never went through, so the PIN pad had no sounds at all.
+                     * UiSound's own filter only hears the real keyboard, so this is one sound.
+                     */
+                    QMetaObject::invokeMethod(qApp, [key]() {
+                        QWindow* w = QGuiApplication::focusWindow();
+                        if (w == nullptr && !QGuiApplication::topLevelWindows().isEmpty()) {
+                            w = QGuiApplication::topLevelWindows().first();
+                        }
+                        if (w == nullptr) {
+                            return;
+                        }
+                        const bool wasText = UiSound::focusIsText(w);
+                        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
+                        QCoreApplication::sendEvent(w, &press);
+                        UiSound::get()->noteKey(w, key, Qt::NoModifier, false,
+                                                press.isAccepted(), wasText);
+                        QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
+                        QCoreApplication::sendEvent(w, &release);
+                    }, Qt::QueuedConnection);
                 }
             }
             return;

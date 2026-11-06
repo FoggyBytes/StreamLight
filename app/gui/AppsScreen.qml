@@ -1033,6 +1033,8 @@ FocusScope {
 
             Label {
                 anchors.verticalCenter: parent.verticalCenter
+                // Plain text: a name from the host, never markup (8.5.0, security review).
+                textFormat: Text.PlainText
                 text: appsRoot.hostName
                 color: Theme.text
                 font.family: Theme.family
@@ -1401,12 +1403,13 @@ FocusScope {
                             radius: appsRoot._px(9)
 
                             // On a Plate like the card's buttons on Home (09/10/2026; the same
-                            // wash since 14/10); the pointer gives it the ink outline.
+                            // wash since 14/10); the pointer brightens the wash (05/11/2026 —
+                            // it was an ink outline, the one hover in the app drawn that way).
                             color: "transparent"
                             Plate {
                                 anchors.fill: parent; radius: parent.radius
                                 button: true
-                                outline: heroBtn._hovered ? Theme.ink : "transparent"
+                                hovered: heroBtn._hovered
                             }
 
                             Row {
@@ -1549,7 +1552,8 @@ FocusScope {
                     anchors.bottom: parent.bottom
                     height: appsRoot._px(2)
                     radius: height / 2
-                    color: Theme.ink
+                    // The accent at 55%, like the underline of Settings' tabs (05/11/2026).
+                    color: Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.55)
                     visible: tabItem._on
                 }
 
@@ -2252,6 +2256,8 @@ FocusScope {
 
                     Label {
                         width: parent.width
+                        // Plain text: a name from the host, never markup (8.5.0, security review).
+                        textFormat: Text.PlainText
                         text: model.name
                         color: Theme.text
                         font.family: Theme.family
@@ -2365,6 +2371,8 @@ FocusScope {
                         anchors.fill: parent
                         anchors.margins: appsRoot._px(12)
                         visible: tileArt.status !== Image.Ready
+                        // Plain text: a name from the host, never markup (8.5.0, security review).
+                        textFormat: Text.PlainText
                         text: model.name
                         color: Theme.text2
                         font.family: Theme.family
@@ -2461,6 +2469,8 @@ FocusScope {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: appsRoot._px(42)
+                    // Plain text: a name from the host, never markup (8.5.0, security review).
+                    textFormat: Text.PlainText
                     text: model.name
                     color: appDelegate._lit ? Theme.text : appsRoot._text2
                     font.family: Theme.family
@@ -2598,7 +2608,9 @@ FocusScope {
         property string nextAppName: ""
         property string nextBoxArt: ""
         property int nextAppId: 0
-        text: qsTr("Are you sure you want to quit %1? Any unsaved progress will be lost.").arg(appName)
+        // The game's name comes from the host: a "<" in it would let the dialog read it as markup
+        // (8.5.0, security review). The look-alike ‹ cannot open a tag.
+        text: qsTr("Are you sure you want to quit %1? Any unsaved progress will be lost.").arg(String(appName).replace(/</g, "‹"))
         standardButtons: Dialog.Yes | Dialog.No
 
         function quitApp() {

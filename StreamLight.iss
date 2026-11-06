@@ -1,4 +1,4 @@
-; StreamLight 8.4.0 — Moonlight fork with StreamTweak integration.
+; StreamLight 8.5.0 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
@@ -11,7 +11,7 @@
 ; Reading version.txt from here was considered and left alone: that file carries a UTF-8
 ; BOM and no trailing newline, so an ISPP FileRead would have to skip three bytes by
 ; position, which is a more fragile thing than one line to remember at release time.
-#define AppVersion "8.4.0"
+#define AppVersion "8.5.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -186,9 +186,10 @@ Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; \
     Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; 8.4.0: the TV service's pairing (it holds the key the TV granted) and its log. The service
-; itself is stopped and deleted in CurUninstallStepChanged, before this runs.
+; 8.4.0: the TV service's pairing (it holds the key the TV granted) and, since 8.5.0, its log
+; folder. The service itself is stopped and deleted in CurUninstallStepChanged, before this runs.
 Type: filesandordirs; Name: "{commonappdata}\FoggyBytes\StreamLight\service"
+Type: filesandordirs; Name: "{commonappdata}\FoggyBytes\StreamLight\logs"
 
 [UninstallRun]
 ; 8.2.0: the sign-in task (Settings → Interface → Start at sign-in, app/backend/signinlaunch.cpp).
@@ -510,9 +511,23 @@ end;
 
 procedure RegisterTvService;
 var
-  Exe, DataDir, Common: String;
+  Exe, DataDir, LogDir, Common, AppDir, Icacls: String;
 begin
   Exe := ExpandConstant('{app}\StreamLightService.exe');
+  Icacls := ExpandConstant('{sys}\icacls.exe');
+
+  // ⚠️ 8.5.0 (security review): the service runs StreamLightService.exe and Qt6Core.dll from
+  // {app}, as LOCAL SERVICE, from boot. Under Program Files only administrators can change them;
+  // a folder chosen elsewhere (D:\…) inherits write access for every signed-in user from its
+  // drive, and whoever replaced a DLL there would run as the service. Such a folder gets
+  // Program Files' rights: SYSTEM and administrators full, users and app packages read.
+  AppDir := ExpandConstant('{app}');
+  if Pos(Lowercase(ExpandConstant('{commonpf}')) + '\', Lowercase(AppDir) + '\') <> 1 then begin
+    RunHidden(Icacls, '"' + AppDir + '" /setowner *S-1-5-32-544 /T /C /Q');
+    RunHidden(Icacls, '"' + AppDir + '" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F' +
+                      ' *S-1-5-32-545:(OI)(CI)RX *S-1-15-2-1:(OI)(CI)RX /C /Q');
+    RunHidden(Icacls, '"' + AppDir + '\*" /reset /T /C /Q');
+  end;
   Common := 'binPath= "\"' + Exe + '\"" obj= "NT AUTHORITY\LocalService" start= auto';
   if RunHidden(ExpandConstant('{sys}\sc.exe'), 'query ' + TvServiceName) = ERROR_SERVICE_DOES_NOT_EXIST then
     RunHidden(ExpandConstant('{sys}\sc.exe'), 'create ' + TvServiceName + ' ' + Common + ' DisplayName= "StreamLight"')
@@ -522,11 +537,32 @@ begin
   RunHidden(ExpandConstant('{sys}\sc.exe'), 'failure ' + TvServiceName + ' reset= 86400 actions= restart/5000/restart/5000//0');
   RunHidden(ExpandConstant('{sys}\sc.exe'), 'sdset ' + TvServiceName + ' "' + TvServiceSddl + '"');
 
-  // Its pairing (tv.json) and log. LOCAL SERVICE (S-1-5-19) must write there; the rest is
-  // ProgramData's own inheritance.
+  // Its pairing (tv.json). LOCAL SERVICE (S-1-5-19) must write there.
+  // ⚠️ 8.5.0 (security review): its own rights, not ProgramData's. Inherited, every user could
+  // read tv.json — the TV's client key — and create files in the folder; and a folder made
+  // beforehand by a user stayed theirs. Now owned by administrators, with SYSTEM and
+  // administrators full and LOCAL SERVICE modify, and nothing for anyone else: StreamLight
+  // itself never reads here, it asks the service through its pipe.
   DataDir := ExpandConstant('{commonappdata}\FoggyBytes\StreamLight\service');
   ForceDirectories(DataDir);
-  RunHidden(ExpandConstant('{sys}\icacls.exe'), '"' + DataDir + '" /grant *S-1-5-19:(OI)(CI)M');
+  RunHidden(Icacls, '"' + DataDir + '" /setowner *S-1-5-32-544 /T /C /Q');
+  RunHidden(Icacls, '"' + DataDir + '" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F' +
+                    ' *S-1-5-19:(OI)(CI)M /C /Q');
+  RunHidden(Icacls, '"' + DataDir + '\*" /reset /T /C /Q');
+
+  // ⚠️ 8.5.0: its log, in a folder of its own (service/tvstore.cpp, TvStore::logFolder). In the
+  // closed folder above, users could not open it any more; here they may read but not write, so
+  // the app copies it next to its own logs (LogsAndCache::copyServiceLog). It never holds the
+  // key or the certificate. Owned by administrators for the same reason as the folder above.
+  // The log the 8.4.0 service left beside tv.json goes.
+  LogDir := ExpandConstant('{commonappdata}\FoggyBytes\StreamLight\logs');
+  ForceDirectories(LogDir);
+  RunHidden(Icacls, '"' + LogDir + '" /setowner *S-1-5-32-544 /T /C /Q');
+  RunHidden(Icacls, '"' + LogDir + '" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F' +
+                    ' *S-1-5-19:(OI)(CI)M *S-1-5-32-545:(OI)(CI)RX /C /Q');
+  RunHidden(Icacls, '"' + LogDir + '\*" /reset /T /C /Q');
+  DeleteFile(DataDir + '\service.log');
+  DeleteFile(DataDir + '\service.log.1');
 
   // Started now so a TV already paired is followed from this moment, not from the next boot.
   RunHidden(ExpandConstant('{sys}\sc.exe'), 'start ' + TvServiceName);

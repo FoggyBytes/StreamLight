@@ -26,6 +26,12 @@ QString folder()
     return QDir::fromNativeSeparators(programData) + QStringLiteral("/FoggyBytes/StreamLight/service");
 }
 
+QString logFolder()
+{
+    const QString programData = qEnvironmentVariable("ProgramData", QStringLiteral("C:/ProgramData"));
+    return QDir::fromNativeSeparators(programData) + QStringLiteral("/FoggyBytes/StreamLight/logs");
+}
+
 TvRecord load()
 {
     TvRecord record;
@@ -37,6 +43,7 @@ TvRecord load()
     record.ip = o.value(QStringLiteral("ip")).toString();
     record.mac = o.value(QStringLiteral("mac")).toString();
     record.key = o.value(QStringLiteral("key")).toString();
+    record.cert = o.value(QStringLiteral("cert")).toString();
     record.input = o.value(QStringLiteral("input")).toInt();
     for (const QJsonValue& label : o.value(QStringLiteral("inputs")).toArray())
         record.inputs.append(label.toString());
@@ -58,6 +65,7 @@ bool save(const TvRecord& record, QString* error)
         { QStringLiteral("ip"), record.ip },
         { QStringLiteral("mac"), record.mac },
         { QStringLiteral("key"), record.key },
+        { QStringLiteral("cert"), record.cert },
         { QStringLiteral("input"), record.input },
         { QStringLiteral("inputs"), QJsonArray::fromStringList(record.inputs) },
         { QStringLiteral("onAtStart"), record.onAtStart },

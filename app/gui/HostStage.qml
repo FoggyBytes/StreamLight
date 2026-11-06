@@ -281,12 +281,12 @@ Item {
      * And the chips, badges and buttons are back to 6.5.1's transparency: a wash of the
      * reading colour (8%) under a hairline, not the neutral Plate they stood on from 09/10.
      */
-    // The hairlines, the wash and the dark glass of the profile badge, picked like the words.
+    // The hairlines and the wash, picked like the words. (`_glass`, the profile badge's dark
+    // glass, went on 05/11/2026: the badge is the accent-tinted glass of a chosen value now.)
     readonly property color _line:     _hasPicture ? Theme.stageLine     : Theme.line
     readonly property color _lineHigh: _hasPicture ? Theme.stageLineHigh : Theme.lineHigh
     readonly property color _wash:     Qt.rgba(_onBg.r, _onBg.g, _onBg.b, 0.08)   // 6.5.1's #14ffffff
     readonly property color _washHigh: Qt.rgba(_onBg.r, _onBg.g, _onBg.b, 0.15)   // 6.5.1's #26ffffff
-    readonly property color _glass:    _hasPicture ? "#06080a" : Theme.ground
     readonly property color _onBg: _hasPicture ? Theme.stageText : Theme.text
 
     // The secondary and tertiary tones have to flip with it, or a dark-on-light card keeps
@@ -835,6 +835,8 @@ Item {
                     // Its own line if need be, and ellipsis only past the WHOLE card width —
                     // never to make room for the profile, which wraps instead.
                     width: Math.min(implicitWidth, nameFlow.width)
+                    // Plain text: a name from the host, never markup (8.5.0, security review).
+                    textFormat: Text.PlainText
                     text: stage.addMode ? qsTr("Add a host") : stage.hostName
                     color: stage._onBg
                     font.family: Theme.family
@@ -918,17 +920,23 @@ Item {
                         // 7.0.0: over a picture 6.5.1's dark glass, in either theme; on the bare
                         // card the theme's own ground, so a light card is not stamped with a
                         // near-black block — with the accent as a line (ink) and as text (inkText).
-                        color: Qt.rgba(stage._glass.r, stage._glass.g, stage._glass.b, 0.80)
-                        border.color: stage._hasPicture ? Theme.accent : Theme.ink
-                        border.width: Math.max(1, stage._px(2))
+                        //
+                        // ⚠️ 05/11/2026 (Marcello, with variant A of docs/mockups/pulsanti): the
+                        // glass of a chosen value instead — the wash tinted by the accent (18%)
+                        // under a 1 px accent hairline at 55%, the name in the reading colour.
+                        // The 18/09 problem does not come back: it was accent text on an accent
+                        // tint; the words are the card's own light (or dark) now, not the accent.
+                        readonly property color _hue: stage._hasPicture ? Theme.accent : Theme.accentFill
+                        color: Qt.rgba(_hue.r, _hue.g, _hue.b, 0.18)
+                        border.color: Qt.rgba(_hue.r, _hue.g, _hue.b, 0.55)
+                        border.width: 1
 
                         Text {
                             id: profileBadgeText
                             anchors.centerIn: parent
                             text: stage.activeProfileSlot >= 0 && stage.activeProfileName.length > 0
                                       ? stage.activeProfileName : qsTr("Global")
-                            // The full accent on the dark glass; on a bare Light card deepened to 4.5:1.
-                            color: stage._hasPicture ? Theme.accent : Theme.inkText
+                            color: stage._onBg
                             font.family: Theme.family
                             // Below the host name, clearly above everything else: this is the
                             // second-most important thing on the card, not the first.
@@ -1244,7 +1252,6 @@ Item {
                     readonly property bool _focused:
                         stage.zoneActive && index === stage.actionIndex && !stage.pointerMode
                     readonly property bool _hovered: actionMouse.containsMouse && stage.pointerMode
-                    readonly property bool _lit: _focused || _hovered
 
                     height: stage._px(58)
                     // The mark is square at rest; with the focus it widens for the A beside it,
@@ -1280,14 +1287,21 @@ Item {
                      * ⚠️ Fades, not a ring that expands past the button: an outline blooming
                      * outside its own edges reads as an alarm going off, and on a row of four
                      * it fires every time the stick is nudged.
+                     *
+                     * ⚠️ Glass when lit (05/11/2026, Marcello, variant A of docs/mockups/pulsanti):
+                     * the focus is the wash TINTED by the accent (26% over a picture, 22% on the
+                     * bare card) under a 2 px accent border, with the words staying in the
+                     * reading colour; the pointer only brightens the wash. Until then both filled
+                     * the button with the accent and turned the words dark.
                      */
-                    color: !_lit                ? stage._wash
-                         : modelData.danger     ? Theme.danger
-                         :                        Theme.accentFill
+                    readonly property color _hue: modelData.danger
+                                                  ? (stage._hasPicture ? Theme.stageDanger : Theme.danger)
+                                                  : (stage._hasPicture ? Theme.accent : Theme.accentFill)
+                    color: _focused ? Qt.rgba(_hue.r, _hue.g, _hue.b, stage._hasPicture ? 0.26 : 0.22)
+                         : _hovered ? stage._washHigh
+                         :            stage._wash
                     border.width: _focused ? 2 : 1
-                    border.color: !_lit            ? stage._lineHigh
-                                : modelData.danger ? Theme.danger
-                                :                    Theme.accentFill
+                    border.color: _focused ? _hue : stage._lineHigh
 
                     Behavior on color {
                         enabled: !Theme.reduceAnimations
@@ -1354,17 +1368,13 @@ Item {
                                             : Math.max(stage._px(26), actionBadgeText.implicitWidth + stage._px(14))
                             height: stage._px(26)
                             radius: _padMode ? width / 2 : stage._px(7)
-                            color: actionBtn._lit
-                                   ? (modelData.danger ? "#1a0505" : Theme.onAccent)
-                                   : stage._washHigh
+                            color: stage._washHigh
 
                             Text {
                                 id: actionBadgeText
                                 anchors.centerIn: parent
                                 text: actionBadge._letter
-                                color: actionBtn._lit
-                                       ? (modelData.danger ? Theme.danger : Theme.accentFill)
-                                       : stage._onBg
+                                color: stage._onBg
                                 font.family: Theme.family
                                 font.pixelSize: stage._px(Theme.fontSmall)
                                 font.weight: Font.Bold
@@ -1390,19 +1400,10 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             visible: modelData.mark !== true
                             text: modelData.label
-                            color: actionBtn._lit
-                                   ? (modelData.danger ? "#1a0505" : Theme.onAccent)
-                                   : stage._onBg
+                            color: stage._onBg
                             font.family: Theme.family
                             font.pixelSize: stage._px(Theme.fontTitle)
-                            font.weight: actionBtn._lit ? Font.Bold : Font.Normal
-
-                            // Crossed over with the fill behind it, or the label would flip
-                            // to dark ink a frame before the accent is there to sit on.
-                            Behavior on color {
-                                enabled: !Theme.reduceAnimations
-                                ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
-                            }
+                            font.weight: actionBtn._focused ? Font.Bold : Font.Normal
                         }
                     }
 
@@ -1555,7 +1556,6 @@ Item {
         readonly property bool _focused:
             stage.zoneActive && stage.actionIndex === stage.actions.length && !stage.pointerMode
         readonly property bool _hovered: panelActionMouse.containsMouse && stage.pointerMode
-        readonly property bool _lit: _focused || _hovered
 
         height: stage._px(58)
         width: panelActionRow.implicitWidth + stage._px(54)
@@ -1574,9 +1574,16 @@ Item {
 
         // 6.5.1's wash and hairline, like the card's own buttons — in the theme's colours, since
         // this one stands on the app's floor and never on the picture.
-        color: _lit ? Theme.accentFill : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+        //
+        // ⚠️ Glass when lit too (05/11/2026, Marcello, variant A of docs/mockups/pulsanti): the
+        // focus is the same wash TINTED by the accent (22%) under a 2 px accent border, the
+        // pointer only brightens the wash. It used to fill with the accent like the action row
+        // — that row keeps its fill, by decision; every other button in the app is glass.
+        color: _focused ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22)
+             : _hovered ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.15)
+             :            Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
         border.width: _focused ? 2 : 1
-        border.color: _lit ? Theme.accentFill : Theme.lineHigh
+        border.color: _focused ? Theme.accentFill : Theme.lineHigh
         Behavior on color {
             enabled: !Theme.reduceAnimations
             ColorAnimation { duration: 140; easing.type: Easing.OutCubic }
@@ -1616,7 +1623,7 @@ Item {
                                 : Math.max(stage._px(26), playBadgeText.implicitWidth + stage._px(14))
                 height: stage._px(26)
                 radius: _padMode ? width / 2 : stage._px(7)
-                color: panelActionBtn._lit ? Theme.onAccent : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.15)
+                color: Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.15)
 
                 Text {
                     id: playBadgeText
@@ -1624,7 +1631,7 @@ Item {
                     text: playBadge._letter
                     // Theme.text, not the card's reading colour (_onBg): this button stands on
                     // the app's floor now, not on the host's backdrop.
-                    color: panelActionBtn._lit ? Theme.accentFill : Theme.text
+                    color: Theme.text
                     font.family: Theme.family
                     font.pixelSize: stage._px(Theme.fontSmall)
                     font.weight: Font.Bold
@@ -1634,10 +1641,10 @@ Item {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: stage._hasRunning ? qsTr("Resume") : qsTr("Play again")
-                color: panelActionBtn._lit ? Theme.onAccent : Theme.text
+                color: Theme.text
                 font.family: Theme.family
                 font.pixelSize: stage._px(Theme.fontTitle)
-                font.weight: panelActionBtn._lit ? Font.Bold : Font.Normal
+                font.weight: panelActionBtn._focused ? Font.Bold : Font.Normal
 
                 Behavior on color {
                     enabled: !Theme.reduceAnimations
@@ -1708,6 +1715,8 @@ Item {
         Text {
             id: hintText
             anchors.horizontalCenter: parent.horizontalCenter
+            // Plain text: a name from the host, never markup (8.5.0, security review).
+            textFormat: Text.PlainText
             text: qsTr("Your last game on %1 will show up here").arg(stage.hostName)
             // A long host name wraps within the block's width instead of running off the edge.
             width: Math.min(implicitWidth, lastPanel.width)

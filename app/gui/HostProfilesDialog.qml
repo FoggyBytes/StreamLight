@@ -36,7 +36,6 @@ Popup {
     // 7.0.0: the accent as a line (ink) and as text (inkText) — see Theme. _accent stays for fills.
     readonly property color _ink: Theme.ink
     readonly property color _inkText: Theme.inkText
-    readonly property color _danger: Theme.danger
     readonly property color _text:   Theme.text
     readonly property color _dim:    Theme.text2
     readonly property color _line:   Theme.line
@@ -1088,19 +1087,23 @@ Popup {
                     Rectangle {
                         anchors.fill: parent
                         radius: dlg._px(8)
+                        // Glass (05/11/2026, variant A of docs/mockups/pulsanti): the wash, tinted
+                        // by the accent when chosen; the cursor is a 2 px accent border.
                         color: offBtn.selected
-                               ? dlg._accent
-                               : Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-                        border.color: offBtn.activeFocus ? (offBtn.selected ? Theme.text : dlg._ink)
-                                    : offBtn.selected    ? dlg._ink
-                                    :                      Theme.line
-                        border.width: offBtn.activeFocus ? 3 : 1
+                               ? Qt.rgba(dlg._accent.r, dlg._accent.g, dlg._accent.b, offBtn.activeFocus ? 0.26 : 0.18)
+                               : offBtn.activeFocus
+                                 ? Qt.rgba(dlg._accent.r, dlg._accent.g, dlg._accent.b, 0.10)
+                                 : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                        border.color: offBtn.activeFocus ? dlg._accent
+                                    : offBtn.selected    ? Qt.rgba(dlg._accent.r, dlg._accent.g, dlg._accent.b, 0.55)
+                                    :                      Theme.lineHigh
+                        border.width: offBtn.activeFocus ? 2 : 1
                     }
                     Label {
                         id: offLabel
                         anchors.centerIn: parent
                         text: qsTr("Off")
-                        color: offBtn.selected ? Theme.onAccent : Theme.text2
+                        color: offBtn.selected ? Theme.text : Theme.text2
                         font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall)
                         font.bold: offBtn.selected
                     }
@@ -1152,15 +1155,18 @@ Popup {
                                 property bool _active: index === dlg.editingSlot
                                 property bool _cursor: profileTabs.activeFocus && index === profileTabs.currentIndex
                                 property int  _count: dlg._chipCount(index)
-                                // Accent-filled when active — see the note on offBtn — and a
-                                // Theme.text ring for the cursor on top of it.
+                                // Glass tinted by the accent when active, a 2 px accent border
+                                // for the cursor (05/11/2026, variant A of docs/mockups/pulsanti —
+                                // it was a solid accent fill with a Theme.text ring on top).
                                 color: ptTile._active
-                                       ? dlg._accent
-                                       : Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-                                border.color: ptTile._cursor ? (ptTile._active ? Theme.text : dlg._ink)
-                                            : ptTile._active ? dlg._ink
-                                            :                  Theme.line
-                                border.width: ptTile._cursor ? 3 : 1
+                                       ? Qt.rgba(dlg._accent.r, dlg._accent.g, dlg._accent.b, ptTile._cursor ? 0.26 : 0.18)
+                                       : ptTile._cursor
+                                         ? Qt.rgba(dlg._accent.r, dlg._accent.g, dlg._accent.b, 0.10)
+                                         : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                                border.color: ptTile._cursor ? dlg._accent
+                                            : ptTile._active ? Qt.rgba(dlg._accent.r, dlg._accent.g, dlg._accent.b, 0.55)
+                                            :                  Theme.lineHigh
+                                border.width: ptTile._cursor ? 2 : 1
 
                                 Column {
                                     anchors.left: parent.left
@@ -1170,23 +1176,21 @@ Popup {
                                     Label {
                                         id: ptLabel
                                         text: modelData
-                                        color: ptTile._active ? Theme.onAccent : Theme.text2
+                                        color: ptTile._active ? Theme.text : Theme.text2
                                         font.family: Theme.family
                                         font.pixelSize: dlg._px(Theme.fontSmall)
                                         font.bold: ptTile._active
                                     }
                                     // The one number that says whether this profile does
                                     // anything at all. Accent, because it counts overrides —
-                                    // except on the active chip, which is accent already:
-                                    // there it is the chip's own text colour, a shade quieter.
+                                    // on the active chip too, since 05/11/2026 the chip is glass
+                                    // and no longer a solid accent the count would vanish into.
                                     Label {
                                         id: ptCount
                                         text: ptTile._count === 0 ? qsTr("No changes")
                                             : ptTile._count === 1 ? qsTr("1 change")
                                             :                       qsTr("%1 changes").arg(ptTile._count)
-                                        color: ptTile._active ? Qt.rgba(Theme.onAccent.r, Theme.onAccent.g,
-                                                                        Theme.onAccent.b, 0.72)
-                                             : ptTile._count > 0 ? dlg._inkText
+                                        color: ptTile._count > 0 ? dlg._inkText
                                              :                     Theme.text3
                                         font.family: Theme.family
                                         font.pixelSize: dlg._px(Theme.fontCaption)
@@ -1262,9 +1266,11 @@ Popup {
                     Rectangle {
                         anchors.fill: parent
                         radius: dlg._px(8)
-                        color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-                        border.color: addBtn.activeFocus ? dlg._ink : Theme.line
-                        border.width: addBtn.activeFocus ? 3 : 1
+                        // Glass, like the profile chips beside it (05/11/2026).
+                        color: addBtn.activeFocus ? Qt.rgba(dlg._accent.r, dlg._accent.g, dlg._accent.b, 0.22)
+                                                  : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                        border.color: addBtn.activeFocus ? dlg._accent : Theme.lineHigh
+                        border.width: addBtn.activeFocus ? 2 : 1
                     }
                     Item {
                         id: addPill

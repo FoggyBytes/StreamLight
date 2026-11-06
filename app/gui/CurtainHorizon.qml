@@ -76,6 +76,8 @@ Item {
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
+                    // Plain text: a name from the host, never markup (8.5.0, security review).
+                    textFormat: Text.PlainText
                     text: root.hostName.toUpperCase()
                     color: Theme.stageText2
                     font.family: Theme.family
@@ -148,6 +150,8 @@ Item {
 
             Text {
                 width: parent.width
+                // Plain text: a name from the host, never markup (8.5.0, security review).
+                textFormat: Text.PlainText
                 text: root.gameName
                 color: Theme.stageText
                 font.family: Theme.family

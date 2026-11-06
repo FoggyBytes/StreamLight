@@ -117,19 +117,17 @@ FocusScope {
     function isSkipped(i) { return isDisabled(i) || isHidden(i) }
 
     readonly property color _accent:    Theme.accentFill
-    // The container carries a trace of the accent, the same way the page background does, so
-    // the control belongs to the palette instead of sitting on it as a grey box.
-    readonly property color _bgPillSolid: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
-                                                                      Theme.accent.b, 0.07))
-    // 50% opaque (09/10/2026, Marcello, after trying 90/80/60): at full strength the light controls
-    // were a bright white; half of what is behind takes the glare off, and Dark gets the same.
-    readonly property color _bgPill:    Qt.rgba(_bgPillSolid.r, _bgPillSolid.g, _bgPillSolid.b, 0.5)
-    readonly property color _border:    Theme.line
-    // Was a hardcoded near-black green. That was only ever legible because the accent was
-    // green too: on an amber or lime accent it is dark green on yellow, and on a deep blue one
-    // it is black on navy. Theme decides this from the accent's luminance, which is the whole
-    // reason a user-chosen accent can be allowed at all.
-    readonly property color _textOn:    Theme.onAccent
+    /*
+     * ⚠️ Glass since 05/11/2026 (Marcello, variant A of docs/mockups/pulsanti): the strip is a
+     * wash of the reading colour under Theme.lineHigh, the hairline of the host card's buttons,
+     * and the selection the same glass tinted by the accent (18%) under a 55% accent hairline,
+     * words in Theme.text. Until then the strip was a solid card-coloured pill (the card tinted
+     * 7% by the accent, 50% opaque) and the selection a solid accent with dark words.
+     */
+    readonly property color _bgPill:    Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.05)
+    readonly property color _border:    Theme.lineHigh
+    // (`_textOn`, the dark words on the solid selection, went with it on 05/11/2026: on glass
+    // the selected words are Theme.text.)
     readonly property color _textOff:   Theme.text2
 
     /*
@@ -166,9 +164,12 @@ FocusScope {
     Rectangle {
         anchors.fill: parent
         radius: selector._px(8)
-        color: selector._bgPill
-        border.color: selector._keyFocused ? Theme.ink : selector._border
-        border.width: selector._keyFocused ? 3 : 1
+        // Focused: the strip's border turns to the accent (2 px, like every focused button) and
+        // the selection inside it deepens — see the slider.
+        color: selector._keyFocused ? Qt.rgba(selector._accent.r, selector._accent.g, selector._accent.b, 0.06)
+                                    : selector._bgPill
+        border.color: selector._keyFocused ? selector._accent : selector._border
+        border.width: selector._keyFocused ? 2 : 1
     }
 
     /*
@@ -191,9 +192,15 @@ FocusScope {
         width: selector._selItem ? selector._selItem.width - selector._px(4) : 0
         height: selector._px(30) - selector._px(4)
         radius: selector._px(5)
-        color: selector._inheritedSel ? Theme.cardHigh : selector._accent
-        border.color: Theme.lineHigh
-        border.width: selector._inheritedSel ? 1 : 0
+        // Inherited = neutral glass (a raised wash), chosen = glass tinted by the accent.
+        color: selector._inheritedSel
+               ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.12)
+               : Qt.rgba(selector._accent.r, selector._accent.g, selector._accent.b,
+                         selector._keyFocused ? 0.26 : 0.18)
+        border.color: selector._inheritedSel ? Theme.lineHigh
+                    : Qt.rgba(selector._accent.r, selector._accent.g, selector._accent.b,
+                              selector._keyFocused ? 1.0 : 0.55)
+        border.width: 1
         opacity: (selector._selItem && selector.isDisabled(selector._visualIndex)) ? 0.4 : 1.0
         Behavior on x {
             enabled: selector._slideReady && !Theme.reduceAnimations
@@ -281,18 +288,16 @@ FocusScope {
                     anchors.right: parent.right
                     anchors.topMargin: selector._px(5)
                     anchors.rightMargin: selector._px(6)
-                    color: (pill._selected && !pill._inherited) ? selector._textOn
-                                                                : Theme.ink
-                    opacity: pill._disabled ? 0.4
-                           : (pill._selected && !pill._inherited) ? 0.5 : 1.0
+                    // The selection is glass now (05/11/2026), so the accent dot shows on it.
+                    color: Theme.ink
+                    opacity: pill._disabled ? 0.4 : 1.0
                 }
                 Label {
                     id: pillLabel
                     anchors.centerIn: parent
                     text: modelData
                     color: pill._disabled  ? Theme.offline
-                         : pill._inherited ? Theme.text
-                         : pill._selected  ? selector._textOn
+                         : pill._selected  ? Theme.text
                          :                   selector._textOff
                     font.family: Theme.family
                     font.pixelSize: selector._px(Theme.fontSmall * Theme.textScale)
@@ -303,15 +308,13 @@ FocusScope {
                 // two pixels away is noise. A pill is a filled shape, so it lightens.
                 //
                 // ⚠️ The SELECTED pill does not light up. Hovering the option you already have
-                // chosen has nothing to say, and five percent of white over a full accent
-                // moves red from 0 to 13 and leaves green and blue where they are — it would
-                // have been a promise the pixels could not keep. The cursor still says it is
-                // clickable.
+                // chosen has nothing to say, and the selection is already a tinted glass the wash
+                // would only muddy. The cursor still says it is clickable.
                 Rectangle {
                     anchors.fill: parent
                     anchors.margins: selector._px(2)
                     radius: selector._px(5)
-                    color: Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.05)
+                    color: Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
                     opacity: (hov.active && !pill._selected) ? 1 : 0
 
                     Behavior on opacity {

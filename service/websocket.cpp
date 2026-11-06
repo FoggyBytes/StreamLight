@@ -1,5 +1,7 @@
 #include "websocket.h"
 
+#include <wincrypt.h>
+
 #include <vector>
 
 namespace
@@ -74,6 +76,26 @@ bool WebSocket::open(const QString& host, quint16 port, bool secure, int timeout
         WinHttpCloseHandle(request);
         close();
         return false;
+    }
+    // The certificate behind this connection, for WebOsTv to compare with the one kept (8.5.0).
+    m_CertHash.clear();
+    if (secure) {
+        PCCERT_CONTEXT certificate = nullptr;
+        DWORD size = sizeof(certificate);
+        if (WinHttpQueryOption(request, WINHTTP_OPTION_SERVER_CERT_CONTEXT, &certificate, &size) && certificate) {
+            BYTE hash[32];
+            DWORD hashSize = sizeof(hash);
+            if (CertGetCertificateContextProperty(certificate, CERT_SHA256_HASH_PROP_ID, hash, &hashSize))
+                m_CertHash = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(hash), static_cast<int>(hashSize)).toHex().toUpper());
+            CertFreeCertificateContext(certificate);
+        }
+        if (m_CertHash.isEmpty()) {
+            // A TLS connection whose certificate cannot be read cannot be checked: not used.
+            *error = QStringLiteral("could not read the server's certificate");
+            WinHttpCloseHandle(request);
+            close();
+            return false;
+        }
     }
 
     m_Socket = WinHttpWebSocketCompleteUpgrade(request, 0);

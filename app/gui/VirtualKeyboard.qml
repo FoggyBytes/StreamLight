@@ -405,13 +405,18 @@ Popup {
                         width: vk._keyW(rowItem.r, index)
                         height: vk._keyH
                         radius: vk._px(8)
-                        color: _flash ? Theme.accentFill
-                             : _lit   ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.22)
-                             : modelData.k === "done" ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.14)
-                             : _special ? Theme.cardHigh
-                             : Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.06))
-                        border.color: _cur ? Theme.ink : Theme.line
-                        border.width: _cur ? 3 : 1
+                        // Glass keys (05/11/2026, variant A of docs/mockups/pulsanti): a wash under
+                        // Theme.lineHigh, tinted by the accent for the cursor (22% + 2 px border),
+                        // a latched Shift/Sym and Done; a press flashes a deeper tint, never a
+                        // solid accent.
+                        color: _flash ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.38)
+                             : _cur   ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22)
+                             : _lit   ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.18)
+                             : modelData.k === "done" ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.14)
+                             : _special ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.12)
+                             : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                        border.color: _cur ? Theme.accentFill : Theme.lineHigh
+                        border.width: _cur ? 2 : 1
                         scale: _flash && !Theme.reduceAnimations ? 0.94 : 1
                         Behavior on scale { NumberAnimation { duration: 90 } }
                         Text {
@@ -422,8 +427,7 @@ Popup {
                                 if (vk.mode === "hex") return l.toUpperCase()
                                 return l
                             }
-                            color: parent._flash ? Theme.onAccent
-                                 : modelData.k === "done" ? Theme.inkText : Theme.text
+                            color: modelData.k === "done" && !parent._flash ? Theme.inkText : Theme.text
                             font.family: Theme.family
                             font.pixelSize: vk._fpx(modelData.l.length > 1 ? Theme.fontSmall : Theme.fontTitle)
                             font.bold: modelData.k === "done"

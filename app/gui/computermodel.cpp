@@ -538,6 +538,40 @@ void ComputerModel::restoreHostLink(int computerIndex)
     m_streamTweakBridge.sendRestore(address, [](const QString&) {});
 }
 
+/*
+ * ⚠️ 8.5.0 (security review): every string the StreamTweak section shows comes from the host —
+ * game and app names, devices, Windows Update titles, Hue area names read from the bridge — and a
+ * QML Text left in its default AutoText reads a string that starts like a tag as markup: an <img>
+ * in a game's name would have made StreamLight fetch a picture from wherever it pointed. Here, at
+ * the one door all of the section's replies come through, every "<" becomes the look-alike "‹",
+ * which cannot open a tag. Ids are hex and covers base64: neither ever holds one.
+ */
+static QVariant neutraliseMarkup(const QVariant& value)
+{
+    switch (value.typeId()) {
+    case QMetaType::QString: {
+        QString text = value.toString();
+        if (text.contains(QLatin1Char('<')))
+            text.replace(QLatin1Char('<'), QChar(0x2039));
+        return text;
+    }
+    case QMetaType::QVariantMap: {
+        QVariantMap map = value.toMap();
+        for (auto it = map.begin(); it != map.end(); ++it)
+            it.value() = neutraliseMarkup(it.value());
+        return map;
+    }
+    case QMetaType::QVariantList: {
+        QVariantList list = value.toList();
+        for (QVariant& item : list)
+            item = neutraliseMarkup(item);
+        return list;
+    }
+    default:
+        return value;
+    }
+}
+
 void ComputerModel::requestHostSection(int computerIndex, const QString& verb)
 {
     // The reads the host section knows. Anything else would go out as a command of its own.
@@ -580,7 +614,7 @@ void ComputerModel::requestHostSection(int computerIndex, const QString& verb)
         // "ERR" from a host older than 10.0.0, "STATS_UNAVAILABLE", or nothing on a timeout:
         // all of them are "no answer", which the page shows as such rather than as zeros.
         const QJsonDocument doc = QJsonDocument::fromJson(reply.toUtf8());
-        if (doc.isObject()) data = doc.object().toVariantMap();
+        if (doc.isObject()) data = neutraliseMarkup(doc.object().toVariantMap()).toMap();
         if (verb == QStringLiteral("LIBRARY") && !data.isEmpty()) noteLibraryState(uuid, data);
         emit hostSectionReceived(computerIndex, verb, data);
     });

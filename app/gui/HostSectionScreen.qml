@@ -1241,6 +1241,9 @@ FocusScope {
                                     Text {
                                         width: parent.width
                                         elide: Text.ElideRight
+                                        // ⚠️ Plain text: the area's name comes from the Hue bridge,
+                                        // through the host — never markup (05/11/2026, security review).
+                                        textFormat: Text.PlainText
                                         text: areaTile.modelData.name
                                         color: Theme.text
                                         font.family: Theme.family
@@ -1266,6 +1269,8 @@ FocusScope {
                                         Text {
                                             width: parent.width - root._px(16)
                                             elide: Text.ElideRight
+                                            // Plain text: app and device are the bridge's whitelist names.
+                                            textFormat: Text.PlainText
                                             text: areaTile.on ? huePage._owner(areaTile.modelData) : qsTr("Not syncing")
                                             color: Theme.text2
                                             font.family: Theme.family
@@ -1332,6 +1337,8 @@ FocusScope {
                                 Text {
                                     width: parent.width
                                     wrapMode: Text.WordWrap
+                                    // Plain text: give_way_device is a device's own name, sent by the host.
+                                    textFormat: Text.PlainText
                                     text: huePage._giveWay === "any" ? qsTr("Any device: this one, another PC, a TV")
                                         : huePage._rules.give_way_mine === true || root._pending["huegiveway"] !== undefined
                                           ? qsTr("Only this device; any other is taken over as before")

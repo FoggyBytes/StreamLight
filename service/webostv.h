@@ -47,8 +47,14 @@ public:
     static QStringList permissions();
 
     // wss://ip:3001 first, ws://ip:3000 as the fallback for older TVs.
-    bool connect(const QString& ip, int timeoutMs, QString* error);
+    // ⚠️ 8.5.0: with pinnedCert (the certificate kept for this TV) only wss:// is tried, and the
+    // TV must present that same certificate — *certChanged says when it did not. A TV paired over
+    // TLS never falls back to ws://, where its key would travel in clear.
+    bool connect(const QString& ip, int timeoutMs, QString* error, const QString& pinnedCert = QString(),
+                 bool* certChanged = nullptr);
     QString endpoint() const { return m_Endpoint; }
+    // The certificate of this connection (see WebSocket::certHash), "" on ws://.
+    QString certHash() const { return m_Ws.certHash(); }
     bool isOpen() const { return m_Ws.isOpen(); }
 
     // Pairs, or reuses the pairing in *key. Without a key (or with one the TV no longer knows) the
@@ -86,6 +92,7 @@ private:
 
     WebSocket m_Ws;
     QString m_Endpoint;
+    QString m_Host;     // the TV's address for this session: pressButton() opens its channel only there
     int m_Counter = 0;
     std::map<QString, std::function<void(const QJsonObject&)>> m_Subscriptions;
 };

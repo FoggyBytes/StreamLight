@@ -448,11 +448,17 @@ FocusScope {
             Rectangle {
                 readonly property bool _on: tab.filter === modelData[0]
                 width: fText.implicitWidth + tab._px(30); height: tab._px(36); radius: tab._px(8)
-                color: _on ? Theme.accentFill : Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, 0.75)
-                border.color: tab.zone === "filter" && _on && tab.activeFocus ? Theme.ink : Theme.line
-                border.width: tab.zone === "filter" && _on && tab.activeFocus ? 3 : 1
+                // Glass (05/11/2026, variant A of docs/mockups/pulsanti): the chosen filter is
+                // the wash tinted by the accent, the focus a 2 px accent border on it.
+                readonly property bool _focus: tab.zone === "filter" && _on && tab.activeFocus
+                color: _on ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, _focus ? 0.22 : 0.18)
+                           : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                border.color: _focus ? Theme.accentFill
+                            : _on    ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.55)
+                            :          Theme.lineHigh
+                border.width: _focus ? 2 : 1
                 Text { id: fText; anchors.centerIn: parent; text: modelData[1] + "  " + modelData[2]
-                       color: parent._on ? Theme.onAccent : Theme.text
+                       color: Theme.text
                        font.family: Theme.family; font.pixelSize: tab._fpx(Theme.fontSmall); font.bold: parent._on }
                 MouseArea { anchors.fill: parent; onClicked: { tab.filter = modelData[0]; tab.forceActiveFocus() } }
             }

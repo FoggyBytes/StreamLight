@@ -140,6 +140,8 @@ Item {
         id: titleProbe
         visible: false
         width: root._textW
+        // Plain text: a name from the host, never markup (8.5.0, security review).
+        textFormat: Text.PlainText
         text: root.title
         font.family: Theme.family
         font.pixelSize: root._px(Theme.fontDisplay)
@@ -277,6 +279,8 @@ Item {
                 id: titleText
                 width: parent.width
                 height: root._titleBoxH
+                // Plain text: a name from the host, never markup (8.5.0, security review).
+                textFormat: Text.PlainText
                 text: root.title
                 color: Theme.text
                 font.family: Theme.family

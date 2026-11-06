@@ -13,6 +13,7 @@
 #include <QElapsedTimer>
 #include <QTemporaryFile>
 #include <QRegularExpression>
+#include <QTimer>
 #include <QWindow>
 
 #ifdef Q_OS_UNIX
@@ -488,6 +489,51 @@ void configureSignalHandlers()
 }
 
 #endif
+
+/*
+ * ⚠️ 8.5.0: the window laid out again for the screen it is on now, when that screen has changed
+ * under it. At a sign-in on the SER9 (05/11/2026) the TV came up a second after the window was
+ * created on Windows' fallback display (640x480 at 100 %), as 1920x1080 at 200 % — and the
+ * window stayed sized for the old screen: twice the TV, only its top-left quarter on it. Its
+ * state (maximised, full screen) is applied again, so Windows and Qt size it afresh. Nothing is
+ * done when it already fits, and nothing while it is hidden (a stream).
+ */
+static void refitWindowToScreen(QWindow* win)
+{
+    if (win == nullptr || !win->isVisible()) {
+        return;
+    }
+    QScreen* screen = win->screen();
+    if (screen == nullptr) {
+        return;
+    }
+    const QWindow::Visibility state = win->visibility();
+    const QRect geometry = win->geometry();
+    const QRect target = state == QWindow::FullScreen ? screen->geometry() : screen->availableGeometry();
+    // A maximised frameless window hangs a few pixels off its work area (windowchrome.cpp).
+    const int slack = 24;
+    const bool fits = geometry.width() <= target.width() + slack && geometry.height() <= target.height() + slack
+                      && (state == QWindow::Windowed
+                          || (geometry.width() >= target.width() - slack && geometry.height() >= target.height() - slack));
+    qInfo() << "[screen] window on" << screen->name() << "at" << win->devicePixelRatio() << "x:" << geometry
+            << "for" << target << (fits ? "— fits" : "— laid out again");
+    if (fits) {
+        return;
+    }
+    if (state == QWindow::Maximized) {
+        win->showNormal();
+        QTimer::singleShot(0, win, [win]() { win->showMaximized(); });
+    }
+    else if (state == QWindow::FullScreen) {
+        win->showNormal();
+        QTimer::singleShot(0, win, [win]() { win->showFullScreen(); });
+    }
+    else if (state == QWindow::Windowed) {
+        QRect inside(target.topLeft(), geometry.size().boundedTo(target.size()));
+        inside.moveCenter(target.center());
+        win->setGeometry(inside);
+    }
+}
 
 int main(int argc, char *argv[])
 {
@@ -995,6 +1041,13 @@ int main(int argc, char *argv[])
     }
 #endif
 
+    // 8.5.0: the TV service's log, copied next to ours as StreamLightService.log. A few seconds
+    // in, so a launch at sign-in already finds the boot's lines (the TV turned on, Fast Startup).
+    QTimer::singleShot(3000, &app, [] { LogsAndCache::copyServiceLog(); });
+    // And on the way out: a launch at sign-in that picks the desktop closes in under a second,
+    // before the timer — on the SER9 (05/11/2026) the copy then stayed one boot behind.
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, [] { LogsAndCache::copyServiceLog(); });
+
     SDL_version compileVersion;
     SDL_VERSION(&compileVersion);
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -1284,6 +1337,23 @@ int main(int argc, char *argv[])
         engine.load(QUrl(QStringLiteral("qrc:/gui/main.qml")));
         if (engine.rootObjects().isEmpty())
             return -1;
+
+        // 8.5.0: a screen that comes, goes or replaces the window's — see refitWindowToScreen().
+        // Once things have settled: Windows moves the window and changes modes for a moment.
+        for (QObject* obj : engine.rootObjects()) {
+            QWindow* win = qobject_cast<QWindow*>(obj);
+            if (win == nullptr) {
+                continue;
+            }
+            auto* refit = new QTimer(win);
+            refit->setSingleShot(true);
+            refit->setInterval(700);
+            QObject::connect(refit, &QTimer::timeout, win, [win]() { refitWindowToScreen(win); });
+            QObject::connect(win, &QWindow::screenChanged, refit, [refit](QScreen*) { refit->start(); });
+            QObject::connect(&app, &QGuiApplication::screenAdded, refit, [refit](QScreen*) { refit->start(); });
+            QObject::connect(&app, &QGuiApplication::screenRemoved, refit, [refit](QScreen*) { refit->start(); });
+            QObject::connect(&app, &QGuiApplication::primaryScreenChanged, refit, [refit](QScreen*) { refit->start(); });
+        }
 
         // Bring our window to the foreground when a second instance asks.
         if (singleInstance != nullptr) {

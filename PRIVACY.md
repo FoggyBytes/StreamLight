@@ -33,7 +33,7 @@ With the theme set to **Auto**, StreamLight asks Windows for this PC's position,
 
 - **Settings, paired hosts and the client certificate** — in the Windows registry, `HKCU\Software\FoggyBytes\StreamLight`, for the current Windows user.
 - **Play time and last played** — per host and per game, in the same place. They stay on this PC.
-- **Logs and crash dumps** — in the folder chosen in Settings → About (temporary files by default); **never uploaded**. If you attach a log to an issue, read it first: it contains host names and IP addresses.
+- **Logs and crash dumps** — in the folder chosen in Settings → About (temporary files by default); **never uploaded**. If you attach a log to an issue, read it first: it contains host names and IP addresses. Since 8.5.0 the folder also holds `StreamLightService.log`, a copy of the TV service's log, with the TV's name, IP and MAC address (never its key).
 - **Cover cache** — `%LOCALAPPDATA%\FoggyBytes\StreamLight\cache`, clearable from Settings → About.
 - **Steam artwork** — only when you apply it from Settings, pictures are written into Steam's own folder on this PC (`userdata\<account>\config\grid`); nothing is sent to Steam.
 

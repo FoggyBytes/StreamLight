@@ -4,6 +4,29 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-----------------------------------------
+Version 8.5.0 - Clear Glass (06/11/2026)
+-----------------------------------------
+
+No StreamTweak update required — 8.5.0 works with any host; StreamTweak 10.1.1, out the same day, fixes its own setup and checks the Hue bridge's certificate before pairing. Every button in the app is now glass, like the host card's, and a security review of the TV service and of what the host sends closed the holes it found.
+
+🎨 UI:
+• Glass buttons everywhere — every button, selector and tile wears the host card's look: a faint wash under a thin border, and with the focus the same glass tinted by your accent under an accent border, instead of a solid accent fill with dark text; the host card's own buttons, dialogs, Settings, the profile dialogs, the host page, the on-screen keyboard, the PIN pad and the choice at sign-in included
+• The profile badge on the host card — the active profile's name stands on the same accent-tinted glass, in the card's own text colour
+
+🐛 FIXES:
+• Start at sign-in with a TV that comes on late — when the TV came up a moment after StreamLight had opened on Windows' fallback display, StreamLight stayed sized for that screen, twice too big, with only its top-left corner on the TV; it now waits for the TV's screen as Windows hands it over, and lays itself out again whenever the screen under it changes
+• The TV sooner after a shut down with Fast Startup — Windows' Fast Startup does not restart the TV service, so the TV came on only when Windows logged the boot, sometimes after the sign-in screen; the service now knows the boot as soon as Windows comes back and turns the TV on at once
+• Shut down like the Start menu — shutting this PC down from the Power popup was always a full shut down, so it started up more slowly than after a Shut down from Start; with Windows' Fast Startup on, it now uses it too ("Update and shut down" stays a full one, as in Start)
+• The TV service's log beside StreamLight's —the service keeps its log where StreamLight cannot write, so it was missing from the log folder; StreamLight now copies it there as StreamLightService.log at every launch and when the folder is opened from Settings → About
+• Navigation sounds on the PIN pad — after a wake, moving across the PIN pad with a controller made no sound, because its presses reached the pad without the check the rest of the app uses; they sound as everywhere else now, and pushing past the edge stays silent
+• The TV's key never travels in clear — when the TV's secure port did not answer, the TV service tried its old unencrypted one and sent the TV's key there; a TV paired over TLS is now reached over TLS only, and the certificate it showed is kept: a TV that later shows another one is sent nothing until it is paired again, and Settings → TV says so
+• The TV service's files are its own — the pairing file, with the TV's key, could be read by every user of the PC; the setup now gives the folder to the service and the administrators only, and the service's log a folder of its own that users can read
+• Settings → TV talks to StreamLight's service only — while the service was stopped, another program could have taken its name and answered in its place; StreamLight now checks who is at the other end, and connects in a way that never lets it act as you
+• Installed outside Program Files — in a folder elsewhere (D:\…), the setup gives StreamLight's folder the permissions of Program Files, so no other user can replace the files the TV service runs
+• TV search reads the TV only — any device answering the search could make the service fetch an address of its choosing, this PC included; the TV's name is now read only from the device that answered
+• Names from the host shown as text — a game, app or device name from the host that looked like markup could be read as such, and a picture in it fetched from anywhere; names are always shown as plain text now
+
 ----------------------------------------
 Version 8.4.0 - Big Screen (03/11/2026)
 ----------------------------------------

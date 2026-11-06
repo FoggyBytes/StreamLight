@@ -21,7 +21,7 @@ win32 {
     QMAKE_TARGET_DESCRIPTION = StreamLight service
 
     DEFINES += WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE
-    LIBS += -lwinhttp -lws2_32 -liphlpapi -ladvapi32 -luser32 -lwevtapi
+    LIBS += -lwinhttp -lws2_32 -liphlpapi -ladvapi32 -luser32 -lwevtapi -lcrypt32
 }
 
 SOURCES += \

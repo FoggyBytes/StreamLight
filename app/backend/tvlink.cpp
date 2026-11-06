@@ -1,5 +1,7 @@
 #include "tvlink.h"
 
+#include <QCoreApplication>
+#include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLocalSocket>
@@ -26,6 +28,93 @@ QJsonObject failure(const QString& error)
 {
     return { { QStringLiteral("ok"), false }, { QStringLiteral("error"), error } };
 }
+
+#ifdef Q_OS_WIN32
+const wchar_t k_PipePath[] = L"\\\\.\\pipe\\StreamLight";
+
+/*
+ * ⚠️ Whether the process at the other end of the pipe IS the StreamLight service (8.5.0, security
+ * review). The service stops by itself when no TV is paired, and while it is stopped any local
+ * process could create a pipe with its name; StreamLight would then have talked to that.
+ *
+ * The holder must be the process the service manager runs as "StreamLight" — or, for a build
+ * started by hand with --run, a process running that very same executable (with no service
+ * registered, the one beside StreamLight.exe), which only an administrator can replace under
+ * Program Files.
+ */
+bool pipeServerIsService(HANDLE pipe)
+{
+    ULONG serverPid = 0;
+    if (!GetNamedPipeServerProcessId(pipe, &serverPid) || serverPid == 0)
+        return false;
+
+    bool ok = false;
+    QString servicePath;
+    if (SC_HANDLE manager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT)) {
+        if (SC_HANDLE service = OpenServiceW(manager, k_ServiceName, SERVICE_QUERY_STATUS | SERVICE_QUERY_CONFIG)) {
+            SERVICE_STATUS_PROCESS status = {};
+            DWORD needed = 0;
+            if (QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO, reinterpret_cast<LPBYTE>(&status),
+                                     sizeof(status), &needed)
+                    && status.dwCurrentState == SERVICE_RUNNING && status.dwProcessId == serverPid)
+                ok = true;
+            if (!ok) {
+                QueryServiceConfigW(service, nullptr, 0, &needed);
+                if (needed > 0) {
+                    QByteArray buffer(static_cast<int>(needed), 0);
+                    auto* config = reinterpret_cast<QUERY_SERVICE_CONFIGW*>(buffer.data());
+                    if (QueryServiceConfigW(service, config, needed, &needed) && config->lpBinaryPathName)
+                        servicePath = QString::fromWCharArray(config->lpBinaryPathName).trimmed().remove(QLatin1Char('"'));
+                }
+            }
+            CloseServiceHandle(service);
+        }
+        CloseServiceHandle(manager);
+    }
+    if (ok)
+        return ok;
+    // Not registered at all (a development build): the service's executable is the one beside
+    // this StreamLight.exe, which only an administrator can replace in an installed copy.
+    if (servicePath.isEmpty())
+        servicePath = QDir::toNativeSeparators(QCoreApplication::applicationDirPath() + QStringLiteral("/StreamLightService.exe"));
+
+    // Not the running service: the same executable started by hand still counts.
+    if (HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, serverPid)) {
+        wchar_t image[MAX_PATH * 2];
+        DWORD length = sizeof(image) / sizeof(image[0]);
+        if (QueryFullProcessImageNameW(process, 0, image, &length))
+            ok = QString::fromWCharArray(image, static_cast<int>(length)).compare(servicePath, Qt::CaseInsensitive) == 0;
+        CloseHandle(process);
+    }
+    return ok;
+}
+
+/*
+ * The pipe, opened by hand rather than by QLocalSocket::connectToServer (8.5.0): Qt opens it with
+ * no security quality of service, which lets the server impersonate this user. Identification
+ * level lets it learn who connected and nothing more. *impostor: a pipe of that name was there,
+ * but not the service's.
+ */
+HANDLE openServicePipe(bool* impostor)
+{
+    *impostor = false;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        HANDLE pipe = CreateFileW(k_PipePath, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                                  FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
+        if (pipe != INVALID_HANDLE_VALUE) {
+            if (pipeServerIsService(pipe))
+                return pipe;
+            CloseHandle(pipe);
+            *impostor = true;
+            return INVALID_HANDLE_VALUE;
+        }
+        // One instance, one client at a time: wait for it to be free once.
+        if (GetLastError() != ERROR_PIPE_BUSY || !WaitNamedPipeW(k_PipePath, 2000))
+            break;
+    }
+    return INVALID_HANDLE_VALUE;
+}
+#endif
 
 }
 
@@ -75,10 +164,12 @@ void TvLink::sendNext()
     m_Buffer.clear();
 
     m_Socket = new QLocalSocket(this);
+#ifndef Q_OS_WIN32
     connect(m_Socket, &QLocalSocket::connected, this, [this] {
         m_StartAttempts = 0;
         m_Socket->write(QJsonDocument(m_Queue.front().message).toJson(QJsonDocument::Compact) + '\n');
     });
+#endif
     connect(m_Socket, &QLocalSocket::readyRead, this, [this] {
         m_Buffer.append(m_Socket->readAll());
         int newline;
@@ -103,7 +194,34 @@ void TvLink::sendNext()
         else
             finishCurrent(failure(QStringLiteral("the service closed the connection")));
     });
+#ifdef Q_OS_WIN32
+    // See openServicePipe(): the handle is opened here and handed to the socket, already connected.
+    bool impostor = false;
+    HANDLE pipe = openServicePipe(&impostor);
+    if (impostor) {
+        // Once: Settings asks every two seconds.
+        static bool warned = false;
+        if (!warned)
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TvLink: the pipe \\\\.\\pipe\\StreamLight is not the service's — not used");
+        warned = true;
+        setServiceState(CannotStart);
+        finishCurrent(failure(QStringLiteral("another program holds the service's pipe")));
+        return;
+    }
+    if (pipe == INVALID_HANDLE_VALUE) {
+        onConnectFailed();
+        return;
+    }
+    if (!m_Socket->setSocketDescriptor(reinterpret_cast<qintptr>(pipe))) {
+        CloseHandle(pipe);
+        onConnectFailed();
+        return;
+    }
+    m_StartAttempts = 0;
+    m_Socket->write(QJsonDocument(m_Queue.front().message).toJson(QJsonDocument::Compact) + '\n');
+#else
     m_Socket->connectToServer(QString::fromLatin1(k_PipeName));
+#endif
 }
 
 void TvLink::finishCurrent(const QJsonObject& reply)
@@ -329,12 +447,18 @@ void TvLink::forget()
 void TvLink::announceRestart()
 {
 #ifdef Q_OS_WIN32
-    const wchar_t* pipeName = L"\\\\.\\pipe\\StreamLight";
-    if (!WaitNamedPipeW(pipeName, 300))
+    if (!WaitNamedPipeW(k_PipePath, 300))
         return;
-    HANDLE pipe = CreateFileW(pipeName, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    // Identification only, and to the service only — see openServicePipe().
+    HANDLE pipe = CreateFileW(k_PipePath, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                              SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
     if (pipe == INVALID_HANDLE_VALUE)
         return;
+    if (!pipeServerIsService(pipe)) {
+        CloseHandle(pipe);
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "TvLink: the pipe is not the service's — restart not announced");
+        return;
+    }
     const char request[] = "{\"cmd\":\"restart\"}\n";
     DWORD done = 0;
     if (WriteFile(pipe, request, sizeof(request) - 1, &done, nullptr)) {

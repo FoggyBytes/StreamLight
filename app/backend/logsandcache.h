@@ -43,6 +43,12 @@ public:
     // For "custom" it is the folder picked last time, or empty if there was never one.
     Q_INVOKABLE QString choicePath(int choice) const;
 
+    // 8.5.0: the TV service's log (%ProgramData%\FoggyBytes\StreamLight\logs\service.log, the
+    // rolled-over service.log.1 first) copied into the log folder as StreamLightService.log,
+    // replacing the last copy. The service cannot write here, and its folder is readable but not
+    // writable by users (StreamLight.iss). At launch and before the log folder is opened.
+    static void copyServiceLog();
+
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void openLogFolder();
     Q_INVOKABLE void openCoverFolder();

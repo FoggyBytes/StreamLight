@@ -111,12 +111,12 @@ Popup {
                     implicitWidth: pop._px(140)
                     implicitHeight: pop._px(42)
                     radius: pop._px(8)
-                    color: okBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
-                         : okBtn.hovered     ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.05)
-                         :                     Theme.card
-                    border.color: okBtn.activeFocus ? Theme.ink
+                    color: okBtn.activeFocus ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22)
+                         : okBtn.hovered     ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.15)
+                         :                     Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                    border.color: okBtn.activeFocus ? Theme.accentFill
                                 : okBtn.hovered     ? Theme.lineHigh
-                                :                     Theme.line
+                                :                     Theme.lineHigh
                     border.width: okBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {
@@ -145,12 +145,12 @@ Popup {
                     implicitWidth: pop._px(140)
                     implicitHeight: pop._px(42)
                     radius: pop._px(8)
-                    color: cancelBtn.activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20)
-                         : cancelBtn.hovered     ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.05)
-                         :                         Theme.card
-                    border.color: cancelBtn.activeFocus ? Theme.ink
+                    color: cancelBtn.activeFocus ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22)
+                         : cancelBtn.hovered     ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.15)
+                         :                         Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                    border.color: cancelBtn.activeFocus ? Theme.accentFill
                                 : cancelBtn.hovered     ? Theme.lineHigh
-                                :                         Theme.line
+                                :                         Theme.lineHigh
                     border.width: cancelBtn.activeFocus ? 2 : 1
                 }
                 contentItem: Label {

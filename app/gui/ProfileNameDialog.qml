@@ -137,15 +137,19 @@ Popup {
                         readonly property bool _cursor: nameGrid.activeFocus
                                                         && nameGrid.cursor === index
                         readonly property bool _isCurrent: modelData === pop.initName
-                        color: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
-                                                           Theme.accent.b, 0.07))
-                        border.color: chip._cursor ? Theme.ink : Theme.line
-                        border.width: chip._cursor ? 3 : 1
+                        // Glass (05/11/2026, variant A of docs/mockups/pulsanti): the cursor is the
+                        // wash tinted by the accent under a 2 px accent border; the current name
+                        // a raised neutral wash inside.
+                        color: chip._cursor ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22)
+                                            : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                        border.color: chip._cursor ? Theme.accentFill : Theme.lineHigh
+                        border.width: chip._cursor ? 2 : 1
 
                         Rectangle {
                             anchors.fill: parent; anchors.margins: pop._px(3)
                             radius: pop._px(5)
-                            color: chip._isCurrent ? Theme.cardHigh : "transparent"
+                            color: chip._isCurrent ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.10)
+                                                   : "transparent"
                             border.color: Theme.lineHigh
                             border.width: chip._isCurrent ? 1 : 0
                         }

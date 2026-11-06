@@ -166,8 +166,21 @@ bool TvController::ensureSession(int timeoutMs, bool allowSsdp)
         if (!TvNetwork::sameMac(TvNetwork::arpResolve(ip), m_Tv.mac))
             continue;
         QString error;
-        if (!m_Session.connect(ip, qMax(left, 1000), &error))
+        bool certChanged = false;
+        if (!m_Session.connect(ip, qMax(left, 1000), &error, m_Tv.cert, &certChanged)) {
+            if (certChanged) {
+                // The same MAC, another certificate: the key is not sent until the TV is paired
+                // again from StreamLight, which shows why (8.5.0, security review).
+                if (!m_CertChanged.exchange(true))
+                    ServiceLog::write(QStringLiteral("tv: %1 presented a different certificate — not connecting; "
+                                                     "pair the TV again from StreamLight").arg(ip));
+                return false;
+            }
             continue;
+        }
+        m_CertChanged = false;
+        // A pairing from 8.4.0 kept no certificate: the first TLS connection records it.
+        const bool pinNow = m_Tv.cert.isEmpty() && !m_Session.certHash().isEmpty();
         QString key = m_Tv.key;
         bool prompted = false;
         if (!m_Session.registerClient(&key, 4000, [&prompted] { prompted = true; }, &error)) {
@@ -176,14 +189,20 @@ bool TvController::ensureSession(int timeoutMs, bool allowSsdp)
                 ServiceLog::write(QStringLiteral("tv: the TV is asking to allow StreamLight again — pair it again from StreamLight"));
             return false;   // in standby the TV closes the connection here
         }
-        if (key != m_Tv.key || ip != m_Tv.ip) {
+        if (key != m_Tv.key || ip != m_Tv.ip || pinNow) {
             m_Tv.key = key;
             m_Tv.ip = ip;
-            // Only these two fields: the rules in the file may have changed since this copy was made.
+            if (pinNow) {
+                m_Tv.cert = m_Session.certHash();
+                ServiceLog::write(QStringLiteral("tv: certificate recorded for this TV"));
+            }
+            // Only these fields: the rules in the file may have changed since this copy was made.
             TvRecord stored = TvStore::load();
             if (TvNetwork::sameMac(stored.mac, m_Tv.mac)) {
                 stored.key = key;
                 stored.ip = ip;
+                if (stored.cert.isEmpty())
+                    stored.cert = m_Tv.cert;
                 QString saveError;
                 if (!TvStore::save(stored, &saveError))
                     ServiceLog::write(QStringLiteral("tv: could not save the new address: %1").arg(saveError));
@@ -226,7 +245,12 @@ bool TvController::doTurnOn(const Job& job)
         }
         // SSDP every fifth round: the TV may have a new address the ARP cache does not know yet.
         if (!m_Session.isOpen() && !ensureSession(2000, ++attempts % 5 == 0)) {
-            packets += TvNetwork::sendWakeOnLan(m_Tv.mac);
+            const int sent = TvNetwork::sendWakeOnLan(m_Tv.mac);
+            // 8.5.0: with no network up yet nothing goes out at all, silently — say when it does.
+            if (sent > 0 && packets == 0)
+                ServiceLog::write(QStringLiteral("tv: first Wake-on-LAN out %1 ms into turning on (%2 s after Windows started)")
+                                          .arg(clock.elapsed()).arg(GetTickCount64() / 1000));
+            packets += sent;
             if (!pause(k_WolEveryMs))
                 return false;
             continue;

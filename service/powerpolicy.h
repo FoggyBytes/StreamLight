@@ -36,6 +36,8 @@ public:
 
     // A sleep begins / ends. Nothing is done to the TV; they only close a shutdown that did not
     // happen (a Fast Startup "shut down" is a suspend for the service, and it ends with a boot).
+    // 8.5.0: a suspend that follows a shut down IS that Fast Startup shut down, and its resume
+    // turns the TV on at once, without waiting for Kernel-Boot 27.
     void suspending();
     void resumed();
     // A shutdown or restart is on its way. Several notices arrive for one (event 1074, then
@@ -48,4 +50,11 @@ private:
     TvController m_Tv;
     std::mutex m_ShutdownLock;
     qint64 m_ShutdownHandledAt = 0;
+    // 8.5.0: a Fast Startup boot is known at the resume, not only when Kernel-Boot 27 is
+    // delivered (seconds later, or late enough that the TV came on after the sign-in screen).
+    // The last notice was a shut down (not a restart), the suspend came right after it, so the
+    // resume is the next boot: the TV comes on there, and the boot event later finds it done.
+    bool m_LastWasShutdown = false;
+    bool m_SuspendedAfterShutdown = false;
+    bool m_OnForThisBoot = false;
 };

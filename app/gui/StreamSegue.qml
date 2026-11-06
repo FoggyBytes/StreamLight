@@ -619,11 +619,25 @@ Item {
         onTriggered: {
             if (!session) return
             session.unlockClick()          // dismiss the shade
+            // 8.5.0: the pad's keys reach only the window Windows has active — the controller's
+            // presses go to the focused Qt window, and an inactive one has no item with the
+            // focus. The hidden stream window or the wake popup closing must not leave it so.
+            var w = streamSegue.Window.window
+            if (w && !w.active) {
+                console.info("[unlock] the window is not active as the PIN pad opens — asking for it")
+                w.requestActivate()
+            }
             // Made visible and nothing else: the pad puts the focus on its first key itself,
             // and forcing focus onto the pad's root afterwards would take it straight back
             // off that key — leaving the arrows with nothing to move.
             unlockPad.visible = true
             _contentShown = false
+            // Where the focus landed, for the log: the one thing a controller on the pad needs.
+            Qt.callLater(function() {
+                var win = streamSegue.Window.window
+                console.info("[unlock] PIN pad shown — window active: " + (win ? win.active : "?")
+                             + ", focus on: " + (win && win.activeFocusItem ? String(win.activeFocusItem) : "nothing"))
+            })
         }
     }
 

@@ -51,12 +51,10 @@ Item {
 
     // Sized off the window height, like the launch curtain, so one layout holds from a
     // handheld to a TV.
+    // ⚠️ Every measure of the pad is a fraction of _h. A width-based scale (`_u`, the 1330 divisor
+    // of AppsScreen and Theme.uiScale) sat here from 7.0.0 to 8.5.0 and nothing ever read it, so
+    // the pad has always been sized by height alone; it was removed rather than switched on.
     readonly property real _h : height > 0 ? height : 1080
-    // ⚠️ 1330, the same divisor as AppsScreen, HostStage and Theme.uiScale. This was left on
-    // 1450 when that reference changed, so the pad came out about 9% smaller than the page it
-    // opens from — scaling, but to a scale of its own.
-    // Times the user's Interface scale (7.0.0), like Theme.uiScale for the dialogs.
-    readonly property real _u : Math.max(0.62, Math.min(1.6, width / 1330, Theme.heightFit)) * Theme.scaleFactor
 
     function _press(index) {
         if (_busy) return
@@ -184,12 +182,19 @@ Item {
                     // At rest, the wash and hairline of Play again on Home (HostStage's
                     // panelActionBtn): the pad stands on the same moving floor, and the opaque
                     // Theme.card it had made its keys solid tiles beside that button's glass.
-                    color: activeFocus ? Qt.rgba(Theme.accent.r, Theme.accent.g,
-                                                 Theme.accent.b, 0.20)
+                    //
+                    // 05/11/2026 (variant A of docs/mockups/pulsanti): the focus is the wash
+                    // tinted by the accent at 22% under a 2 px accentFill border and the digit
+                    // stays in the reading colour, as on every focused button; the pointer
+                    // brightens the wash.
+                    color: activeFocus ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g,
+                                                 Theme.accentFill.b, 0.22)
+                         : keyMouse.containsMouse ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g,
+                                                            Theme.tintBase.b, 0.15)
                                        : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g,
                                                  Theme.tintBase.b, 0.08)
                     border.width: activeFocus ? 2 : 1
-                    border.color: activeFocus ? Theme.ink : Theme.lineHigh
+                    border.color: activeFocus ? Theme.accentFill : Theme.lineHigh
                     scale: activeFocus ? 1.06 : 1.0
                     Behavior on scale {
                         enabled: !Theme.reduceAnimations
@@ -203,16 +208,22 @@ Item {
                         anchors.centerIn: parent
                         text: key.glyph
                         font.pointSize: Math.max(12, Math.round(root._h * 0.024))
-                        color: key.activeFocus ? Theme.inkText
+                        color: key.activeFocus ? Theme.text
                              : key.isAction    ? Theme.text2 : Theme.text
+                        font.bold: key.activeFocus
                     }
 
                     // keys.itemAt(), not pad.children[]: the Repeater is itself a child of the
                     // Grid, so the children list is offset from the delegate index.
-                    Keys.onLeftPressed:  if (index % 3 > 0) keys.itemAt(index - 1).forceActiveFocus()
-                    Keys.onRightPressed: if (index % 3 < 2 && index + 1 < 12) keys.itemAt(index + 1).forceActiveFocus()
-                    Keys.onUpPressed:    if (index >= 3) keys.itemAt(index - 3).forceActiveFocus()
-                    Keys.onDownPressed:  if (index + 3 < 12) keys.itemAt(index + 3).forceActiveFocus()
+                    //
+                    // ⚠️ Pushing past an edge leaves the key UNaccepted (05/11/2026): the pad's
+                    // navigation sound plays only for a key a control took (UiSound::noteKey,
+                    // called from the unlock branch of gamepad.cpp), so the edge is silent, as
+                    // at the end of a list. Nothing above the pad handles the arrows.
+                    Keys.onLeftPressed:  function(event) { if (index % 3 > 0) keys.itemAt(index - 1).forceActiveFocus(); else event.accepted = false }
+                    Keys.onRightPressed: function(event) { if (index % 3 < 2 && index + 1 < 12) keys.itemAt(index + 1).forceActiveFocus(); else event.accepted = false }
+                    Keys.onUpPressed:    function(event) { if (index >= 3) keys.itemAt(index - 3).forceActiveFocus(); else event.accepted = false }
+                    Keys.onDownPressed:  function(event) { if (index + 3 < 12) keys.itemAt(index + 3).forceActiveFocus(); else event.accepted = false }
 
                     // Return and Enter sign in from wherever the cursor is, as on the screen
                     // this stands in for (7.0.0, #35); they used to press the focused key, so
@@ -223,7 +234,9 @@ Item {
                     Keys.onSpacePressed:  root._press(index)
 
                     MouseArea {
+                        id: keyMouse
                         anchors.fill: parent
+                        hoverEnabled: true
                         onClicked: { key.forceActiveFocus(); root._press(index) }
                     }
                 }

@@ -20,11 +20,13 @@ FocusScope {
     readonly property color _accent: Theme.accentFill
     // Same tokens as one SegmentedSelector pill — the two are meant to be indistinguishable,
     // so they have to derive their colours the same way rather than each hardcoding them.
-    readonly property color _bgPillSolid: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
-                                                                      Theme.accent.b, 0.07))
-    // 50% opaque (09/10/2026, Marcello, after trying 90/80/60): at full strength the light controls
-    // were a bright white; half of what is behind takes the glare off, and Dark gets the same.
-    readonly property color _bgPill: Qt.rgba(_bgPillSolid.r, _bgPillSolid.g, _bgPillSolid.b, 0.5)
+    //
+    // ⚠️ Glass since 05/11/2026 (Marcello, variant A of docs/mockups/pulsanti): the container is
+    // a wash of the reading colour under Theme.lineHigh, the selection the same glass tinted by
+    // the accent (18%) under a 55% accent hairline, with the words in Theme.text. It was a solid
+    // card-coloured pill (tinted 7%, 50% opaque) with a solid accent selection and dark words.
+    readonly property color _bgPill: Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b,
+                                             hov.active ? 0.08 : 0.05)
 
     // Same scale, read the same way, as SegmentedSelector — read the note there. These two
     // are meant to be indistinguishable, so they cannot take it from different places.
@@ -44,11 +46,9 @@ FocusScope {
     Rectangle {
         anchors.fill: parent
         radius: btn._px(8)
-        color: btn._bgPill
-        border.color: hov.keyFocused ? Theme.ink
-                    : hov.active     ? Theme.lineHigh
-                    :                  Theme.line
-        border.width: hov.keyFocused ? 3 : 1
+        color: hov.keyFocused ? Qt.rgba(btn._accent.r, btn._accent.g, btn._accent.b, 0.10) : btn._bgPill
+        border.color: hov.keyFocused ? btn._accent : Theme.lineHigh
+        border.width: hov.keyFocused ? 2 : 1
 
         Behavior on border.color {
             enabled: !Theme.reduceAnimations
@@ -67,7 +67,9 @@ FocusScope {
 
         Rectangle {
             anchors.fill: parent; anchors.margins: btn._px(2); radius: btn._px(5)
-            color: btn.selected ? btn._accent : "transparent"
+            color: btn.selected ? Qt.rgba(btn._accent.r, btn._accent.g, btn._accent.b, 0.18) : "transparent"
+            border.width: btn.selected ? 1 : 0
+            border.color: Qt.rgba(btn._accent.r, btn._accent.g, btn._accent.b, 0.55)
         }
         Row {
             id: content
@@ -86,8 +88,7 @@ FocusScope {
                 id: lbl
                 anchors.verticalCenter: parent.verticalCenter
                 text: btn.text
-                color: btn.selected ? Theme.onAccent
-                     : btn._hasSwatch ? Theme.text : Theme.text2
+                color: (btn.selected || btn._hasSwatch) ? Theme.text : Theme.text2
                 font.family: Theme.family; font.pixelSize: btn._px(Theme.fontSmall * Theme.textScale)
                 font.bold: btn.selected || btn._hasSwatch
             }

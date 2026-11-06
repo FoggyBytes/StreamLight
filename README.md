@@ -3,7 +3,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue.svg)](https://github.com/FoggyBytes/StreamLight) [![Framework](https://img.shields.io/badge/Framework-Qt%206-brightgreen.svg)](https://www.qt.io/) [![Downloads](.badges/downloads.svg)](https://github.com/FoggyBytes/StreamLight/releases) [![Built on Moonlight](https://img.shields.io/badge/built%20on-Moonlight-blue?&logo=github)](https://github.com/moonlight-stream/moonlight-qt) [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-brightgreen.svg)](https://claude.ai/code) [![Support on Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/foggybytes)
 
 <div align="center">
-  <img width="3840" height="2160" alt="Immagine 2026-10-23 111104" src="https://github.com/user-attachments/assets/07a53f15-7233-4798-9b7b-12572e66a905" />
+  <img width="3840" height="2160" alt="StreamLight in the light theme" src=".github/images/streamlight.png" />
 </div>
 
 **StreamLight** is the client half of the FoggyBytes streaming duo: a fork of [Moonlight](https://github.com/moonlight-stream/moonlight-qt) with a gamepad-first interface and native integration with its host-side companion, [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak).
@@ -11,7 +11,7 @@
 The streaming engine is upstream Moonlight's — FFmpeg, D3D11VA, DXVA2, libplacebo, `moonlight-common-c` — with Nonary's VRR pacing added in 6.0.0 and his PyroWave codec in 6.4.0. What is new sits around it: the interface, and everything the two apps can do together over a local TCP bridge — host link matching, host metrics in the overlay, the store each game comes from, session quality reports, remote power-off and Windows Update, Tailscale, and signing a woken host in with its PIN from the sofa.
 
 <div align="center">
-  <img width="3840" height="2160" alt="Immagine 2026-10-23 111129" src="https://github.com/user-attachments/assets/055fc116-9a57-450f-864a-4624a8122f24" />
+  <img width="3840" height="2160" alt="StreamLight in the dark theme" src=".github/images/streamdark.png" />
 </div>
 
 ## ✅ Compatibility
@@ -114,18 +114,15 @@ All of them are switched on **per host**, in the **Setup** tab of the host's Str
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in the section's *Setup* tab; the host has its own switch
 - **Hue Sync keeps the lights** *(10.1.0+)* — a Hue bridge syncs one area at a time, so the host's Hue Sync starting after a wake used to take the lights from this device's for good. The section's **Hue Sync** tab shows the bridge's areas and who has the lights, and sets the host to wait while they are in use — for any device, or only this one; StreamTweak then starts Hue Sync on the host itself, and only reads the bridge. **Take back** restarts Hue Sync here, by hand or by itself, and works with any host
 
-## ✨ What's New in 8.4.0 — Big Screen
+## ✨ What's New in 8.5.0 — Clear Glass
 
-The TV works with any host; Hue Sync pairs with StreamTweak 10.1.0.
+No StreamTweak update required; StreamTweak 10.1.1 comes out the same day.
 
-- **The TV follows this PC** — pair an LG webOS TV in the new *Settings → TV* tab, and it comes on when the PC starts, on the PC's input, and goes off when the PC shuts down; a restart or sleep leaves it on
-- **From the sign-in screen** — a small StreamLight service does it from boot, so the TV is on before you sign in, with your Windows password where it is
-- **Polite with the TV** — a TV switched to another input or app is left alone, and a soundbar on HDMI goes off with it
-- **LG webOS TVs only** — other brands are not supported
-- **Hue Sync keeps the lights here** — a new tab in the host's StreamTweak section: with StreamTweak 10.1.0 the host waits while this device syncs the lights, and *Take back* gets them back when another device took them. *Launch Philips Hue Sync during streaming* is gone
-- **Mouse control while streaming** — a sixth tile in Stream Settings turns controller mouse control on or off, at once
-- **Search the library** — a magnifier before *ALL* on the host page searches it as you type, in List and Grid; thanks to [@Noklef](https://github.com/FoggyBytes/StreamLight/pull/50)
-- **The curtain waits for games only** — the Desktop and the other entries under APPS open without waiting for a game window
+- **Glass buttons everywhere** — every button, selector and tile now has the host card's look, a faint wash under a thin border, and stays glass when it has the focus: tinted by your accent, under an accent border, instead of a solid fill
+- **Sounds on the PIN pad** — moving across it with a controller after a wake sounds like everywhere else
+- **Shut down like the Start menu** — with Windows' Fast Startup on, shutting this PC down from the Power popup uses it, so the next start is as quick as after a Shut down from Start
+- **The TV's key stays safe** — a TV paired over TLS is never reached in clear again, its certificate is kept at pairing, and the pairing file is the TV service's alone
+- **Safer links to the TV service and the host** — Settings → TV checks it is talking to StreamLight's own service, and names that come from the host are always shown as plain text
 
 *Older releases are in [changelog.txt](changelog.txt).*
 

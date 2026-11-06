@@ -6,6 +6,7 @@
 
 #include <QCoreApplication>
 #include <QJsonArray>
+#include <QUrl>
 
 namespace
 {
@@ -27,10 +28,13 @@ ServiceCore::~ServiceCore()
 
 bool ServiceCore::start(bool echo)
 {
-    ServiceLog::open(TvStore::folder() + QStringLiteral("/service.log"), echo);
-    ServiceLog::write(QStringLiteral("service: start, version %1, %2")
+    ServiceLog::open(TvStore::logFolder() + QStringLiteral("/service.log"), echo);
+    // 8.5.0: how long after Windows started, so a TV that comes on late at boot says whether the
+    // wait was the service's start or the TV's own wake.
+    ServiceLog::write(QStringLiteral("service: start, version %1, %2, %3 s after Windows started")
                               .arg(QCoreApplication::applicationVersion(),
-                                   echo ? QStringLiteral("in the foreground") : QStringLiteral("as a service")));
+                                   echo ? QStringLiteral("in the foreground") : QStringLiteral("as a service"))
+                              .arg(GetTickCount64() / 1000));
     if (!TvNetwork::startup()) {
         ServiceLog::write(QStringLiteral("service: Winsock did not start"));
         return false;
@@ -158,6 +162,7 @@ QJsonObject ServiceCore::status() const
     if (m_Policy) {
         reply.insert(QStringLiteral("on"), m_Policy->tv().connected());
         reply.insert(QStringLiteral("showing"), Ssap::hdmiFromAppId(m_Policy->tv().showing()));
+        reply.insert(QStringLiteral("certChanged"), m_Policy->tv().certChanged());
     }
     return reply;
 }
@@ -168,7 +173,12 @@ QJsonObject ServiceCore::discover()
     for (const TvNetwork::Candidate& c : TvNetwork::ssdpSearch(3000)) {
         if (c.mac.isEmpty())
             continue;
-        QString name = TvNetwork::friendlyName(c.location, 1500);
+        // ⚠️ The description is fetched only from the device that answered (05/11/2026, security
+        // review): LOCATION is whatever a responder on the LAN writes, and followed blindly it
+        // made this service — LOCAL SERVICE, on every adapter — send a GET to any host and port,
+        // 127.0.0.1 included, and hand back a piece of the reply as the TV's name.
+        const bool ownLocation = QUrl(c.location).host() == c.ip;
+        QString name = ownLocation ? TvNetwork::friendlyName(c.location, 1500) : QString();
         tvs.append(QJsonObject {
             { QStringLiteral("ip"), c.ip },
             { QStringLiteral("mac"), c.mac },
@@ -196,8 +206,11 @@ QJsonObject ServiceCore::pair(const QJsonObject& request, const ControlPipe::Sen
     QString key;
     {
         std::lock_guard<std::recursive_mutex> lock(m_Lock);
-        if (TvNetwork::sameMac(m_Tv.mac, mac))
-            key = m_Tv.key;     // the same TV again: it may not even ask
+        // The same TV again: it may not even ask. ⚠️ Not if its certificate is not the one kept
+        // (8.5.0): the old key is not offered to whoever answers now, and the TV asks again.
+        if (TvNetwork::sameMac(m_Tv.mac, mac)
+                && (m_Tv.cert.isEmpty() || m_Tv.cert.compare(session.certHash(), Qt::CaseInsensitive) == 0))
+            key = m_Tv.key;
     }
     if (!session.registerClient(&key, 180000, [&event] { event({ { QStringLiteral("event"), QStringLiteral("prompt") } }); },
                                 &error, [this] { return m_Pipe && m_Pipe->clientGone(); })) {
@@ -216,6 +229,7 @@ QJsonObject ServiceCore::pair(const QJsonObject& request, const ControlPipe::Sen
     tv.ip = ip;
     tv.mac = mac;
     tv.key = key;
+    tv.cert = session.certHash();   // "" for a TV reached on ws:// only
     tv.name = request.value(QStringLiteral("name")).toString(tv.name.isEmpty() ? QStringLiteral("LG TV") : tv.name);
 
     const WebOsTv::Reply inputs = session.request(QString::fromLatin1(Ssap::InputList));

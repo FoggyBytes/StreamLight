@@ -20,7 +20,7 @@ StreamLight is a fork of [Moonlight-Qt](https://github.com/moonlight-stream/moon
 
 - **Streaming protocol and decoders** — `moonlight-common-c`, FFmpeg, D3D11VA/DXVA2, libplacebo — are upstream Moonlight's, plus Nonary's VRR pacing and PyroWave codec, imported unchanged. Upstream's security fixes are carried over as they land.
 - **Third-party DLLs** — the 13 libraries in the install folder (FFmpeg, SDL, OpenSSL, opus, dav1d, libplacebo, discord-rpc) are the **signed copies from the official Moonlight release** with the same library versions, byte for byte; the Qt DLLs and plugins are signed by The Qt Company. See [`libs/README.md`](libs/README.md).
-- **Ours** — the interface, `StreamLight.exe`'s application code, the bridge to StreamTweak, the self-updater and the installer.
+- **Ours** — the interface, `StreamLight.exe`'s application code, the bridge to StreamTweak, the TV service (`StreamLightService.exe`), the self-updater and the installer.
 
 ## Security-relevant design
 
@@ -54,10 +54,23 @@ When both sides turn it on, clipboard text travels over the bridge **encrypted w
 
 The updater looks up the latest release through the GitHub API and downloads the installer asset from GitHub. **It refuses to run any installer without a SHA-256 digest published by GitHub for that asset**, checks the downloaded file against it, and checks it again immediately before launching it. The installer runs visibly; nothing is installed silently.
 
+### The TV service (8.4.0)
+
+`StreamLightService.exe` keeps a paired LG webOS TV in step with the PC, from boot on. It runs as **LOCAL SERVICE**, not LocalSystem, and the signed-in user may only start it, not stop or reconfigure it. With no TV paired it stops by itself.
+
+- **Its pipe** (`\\.\pipe\StreamLight`) refuses remote clients, holds one instance, takes one JSON line of at most 16 KB per request from a fixed set of commands, and never returns the TV's key. StreamLight opens it at *identification* level, so the service cannot act as the user, and talks to it only when the process at the other end is the registered service (8.5.0).
+- **Its data** (`%ProgramData%\FoggyBytes\StreamLight\service`) is readable and writable by the service and administrators only (8.5.0); StreamLight itself never reads it.
+- **Its log** (`%ProgramData%\FoggyBytes\StreamLight\logs`) is a folder of its own, written by the service and readable by users (8.5.0), so StreamLight can copy it into its log folder as `StreamLightService.log`. It never contains the TV's key or certificate.
+- **The TV** is identified by its MAC address before anything is sent. LG TVs present a certificate no system store knows, the same on every TV, so the one seen at pairing is kept: a TV that later presents another is sent nothing until it is paired again, and a TV paired over TLS is never reached over the unencrypted port (8.5.0). The TV's search over SSDP reads a device's description only from the device that answered.
+
+### What the host sends
+
+Names that come from the host — games, apps, devices, Windows Update titles, the Hue bridge's areas — are always shown as plain text, never as markup (8.5.0).
+
 ### Local data
 
 Settings, paired hosts and the client certificate's private key are stored per Windows user in `HKCU\Software\FoggyBytes\StreamLight`. Logs, crash dumps and the cover cache stay on the PC (folders listed in Settings → About) and are never uploaded. See [PRIVACY.md](PRIVACY.md).
 
 ### Installer
 
-The installer is built with Inno Setup on GitHub Actions from this repository ([`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml)); release assets carry a SHA-256 digest on the release page. It installs to Program Files, installs the Microsoft Visual C++ runtime when the one on the PC is older than required, and includes an uninstaller (*Settings → Apps*).
+The installer is built with Inno Setup on GitHub Actions from this repository ([`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml)); release assets carry a SHA-256 digest on the release page. It installs to Program Files — a folder chosen elsewhere is given Program Files' permissions, since the TV service runs from it (8.5.0) — installs the Microsoft Visual C++ runtime when the one on the PC is older than required, registers the TV service with a quoted path, and includes an uninstaller (*Settings → Apps*).

@@ -467,8 +467,8 @@ FocusScope {
     }
 
     // ── 8.2.0: the choice ─────────────────────────────────────────────────────────────────
-    // A button with its prompt: the pad glyph while a pad is in use, the key otherwise. Filled
-    // with the accent only when the D-pad has focused it (8.3.0).
+    // A button with its prompt: the pad glyph while a pad is in use, the key otherwise. Tinted
+    // by the accent only when the D-pad has focused it (8.3.0; glass, not a fill, since 05/11/2026).
     component ChoiceButton: Rectangle {
         id: btn
         property string buttonKey: "A"
@@ -484,15 +484,20 @@ FocusScope {
         // Where the pointer is, in scene coordinates — see splash._pointerAt().
         signal touched(real x, real y)
 
-        readonly property color _fg: focused ? Theme.onAccent : Theme.text
+        readonly property color _fg: Theme.text
 
         height: Math.round(58 * btn.u)
         width: btnRow.implicitWidth + Math.round(48 * btn.u)
         radius: height / 2
-        color: focused ? (btnMouse.containsMouse ? Qt.lighter(Theme.accentFill, 1.12) : Theme.accentFill)
-                       : (btnMouse.containsMouse ? Theme.cardHigh : "transparent")
-        border.color: focused ? "transparent" : Theme.lineHigh
-        border.width: focused ? 0 : Math.max(1, 1.5 * btn.u)
+        // Glass (05/11/2026, variant A of docs/mockups/pulsanti): a wash under Theme.lineHigh,
+        // brighter under the pointer; focused, the wash tinted by the accent (22%) under a
+        // 2 px accent border. It used to fill with the accent when focused.
+        color: focused ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b,
+                                 btnMouse.containsMouse ? 0.28 : 0.22)
+                       : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b,
+                                 btnMouse.containsMouse ? 0.15 : 0.08)
+        border.color: focused ? Theme.accentFill : Theme.lineHigh
+        border.width: focused ? Math.max(2, 2 * btn.u) : Math.max(1, 1.5 * btn.u)
 
         Row {
             id: btnRow

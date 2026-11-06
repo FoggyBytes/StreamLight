@@ -7,6 +7,8 @@
 #include <QEventLoop>
 #include <QDir>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QScreen>
 #include <QThread>
 #include <QTimer>
 
@@ -330,14 +332,30 @@ void SignInLaunch::waitForDisplay()
     QElapsedTimer waited;
     waited.start();
     constexpr qint64 capMs = 20000;
+    // ⚠️ 8.5.0: Qt's own screen too. DXGI sees the GPU's adapter before Qt is told about the
+    // monitor behind it: on the SER9 (05/11/2026) the window was created 0.5 s after the GPU
+    // showed up and still landed on the fallback "DISPLAY1 640x480", replaced by the TV at 200 %
+    // one second later — and stayed laid out for it. So after the GPU, up to 5 s more for the
+    // primary screen to stop being the one there at the start.
+    QScreen* fallbackScreen = QGuiApplication::primaryScreen();
     while (waited.elapsed() < capMs) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         QThread::msleep(200);
         if (!onFallbackDisplay()) {
+            QElapsedTimer screenWait;
+            screenWait.start();
+            while (QGuiApplication::primaryScreen() == fallbackScreen && screenWait.elapsed() < 5000) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+                QThread::msleep(100);
+            }
             // Windows still moves windows and modes around for a moment after the switch.
             QThread::msleep(500);
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[signin] the GPU's display is there after %lld ms",
-                        static_cast<long long>(waited.elapsed()));
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            QScreen* now = QGuiApplication::primaryScreen();
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[signin] the GPU's display is there after %lld ms (screen %s%s)",
+                        static_cast<long long>(waited.elapsed()),
+                        now ? qPrintable(now->name()) : "none",
+                        now == fallbackScreen ? ", Qt still on the first one" : "");
             return;
         }
     }

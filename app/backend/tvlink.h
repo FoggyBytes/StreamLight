@@ -53,6 +53,9 @@ private:
     Q_PROPERTY(bool tvOn READ tvOn NOTIFY changed)
     // The HDMI input the TV is showing, 0 for anything else (an app, live TV).
     Q_PROPERTY(int showing READ showing NOTIFY changed)
+    // 8.5.0: the TV presented another certificate than at pairing, and the service sends it
+    // nothing until it is paired again (service/webostv.h).
+    Q_PROPERTY(bool certChanged READ certChanged NOTIFY changed)
 
     Q_PROPERTY(bool searching READ searching NOTIFY foundChanged)
     // [{ name, ip, mac }]
@@ -74,6 +77,7 @@ public:
     bool offOnlyIfShowingPc() const { return m_Status.value(QStringLiteral("offOnlyIfShowingPc")).toBool(true); }
     bool tvOn() const { return m_Status.value(QStringLiteral("on")).toBool(); }
     int showing() const { return m_Status.value(QStringLiteral("showing")).toInt(); }
+    bool certChanged() const { return m_Status.value(QStringLiteral("certChanged")).toBool(); }
     bool searching() const { return m_Searching; }
     QVariantList found() const { return m_Found; }
     PairState pairState() const { return m_PairState; }

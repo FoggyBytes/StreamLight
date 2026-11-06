@@ -112,18 +112,23 @@ FocusScope {
      */
     readonly property int   _focusBd:   3
 
-    // The fill every button and picker in this screen sits on: the card colour with a trace of
-    // the accent in it, which is what makes them read as a family rather than as grey chrome.
+    // The fill every button in this screen sits on, so they read as one family.
     // ⚠️ Here rather than repeated, because it had been written out twice — in MiniButton and in
     // SegmentedSelector — and AboutLinkButton, which never got the memo, used a plain neutral
     // grey and was visibly the odd one out in the StreamTweak and About tabs.
-    // (SegmentedSelector is a separate file and keeps its own copy; if this changes, so does
-    // its _bgPill.)
-    readonly property color _btnBgSolid: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g,
-                                                                     Theme.accent.b, 0.07))
-    // 50% opaque (09/10/2026, Marcello, after trying 90/80/60): at full strength the light controls
-    // were a bright white; half of what is behind takes the glare off, and Dark gets the same.
-    readonly property color _btnBg: Qt.rgba(_btnBgSolid.r, _btnBgSolid.g, _btnBgSolid.b, 0.5)
+    // (SegmentedSelector is a separate file with its own strip: the same recipe at 5%, the wash a
+    // strip of choices wears rather than a button's; if the recipe changes, change it there too.)
+    //
+    // ⚠️ Glass since 05/11/2026 (Marcello, variant A of docs/mockups/pulsanti): the host card's
+    // recipe — a wash of the reading colour at 8% under Theme.lineHigh; 15% under the pointer;
+    // focused, the wash tinted by the accent (22%) under a 2 px accent border; selected, tinted
+    // 18% under a 55% accent hairline. It was the card tinted 7% by the accent, 50% opaque.
+    readonly property color _btnBg:      Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+    readonly property color _btnBgHover: Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.15)
+    readonly property color _btnBgFocus: Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22)
+    readonly property color _btnBgSel:   Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.18)
+    readonly property color _btnLineSel: Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.55)
+    readonly property int   _btnFocusBd: 2
     // The leverage: these two are read 57 times across the tabs, so scaling the definitions
     // scales 57 rows without touching one of them.
     readonly property int   _rowHeight: _px(58)
@@ -502,17 +507,17 @@ FocusScope {
         height: implicitHeight
 
         readonly property bool _keyFocused: activeFocus && SdlGamepadKeyNavigation.inputMode !== "pointer"
-        readonly property color _bgSolid: Qt.tint(Theme.card, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
-
         Keys.onLeftPressed:  function(event) { ts._step(-1); event.accepted = true }
         Keys.onRightPressed: function(event) { ts._step(1);  event.accepted = true }
 
+        // The strip of a SegmentedSelector, in glass (05/11/2026).
         Rectangle {
             anchors.fill: parent
             radius: ts._px(8)
-            color: Qt.rgba(ts._bgSolid.r, ts._bgSolid.g, ts._bgSolid.b, 0.5)
-            border.color: ts._keyFocused ? Theme.ink : Theme.line
-            border.width: ts._keyFocused ? 3 : 1
+            color: ts._keyFocused ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.06)
+                                  : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.05)
+            border.color: ts._keyFocused ? Theme.accentFill : Theme.lineHigh
+            border.width: ts._keyFocused ? 2 : 1
         }
 
         Row {
@@ -4399,17 +4404,20 @@ FocusScope {
                                 Rectangle {
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: settingsScreen._px(8); height: width; radius: width / 2
-                                    color: TvLink.tvOn ? Theme.online : Theme.text3
+                                    color: TvLink.certChanged ? Theme.warning : TvLink.tvOn ? Theme.online : Theme.text3
                                 }
                                 Label {
-                                    text: !TvLink.tvOn ? qsTr("Off")
+                                    // 8.5.0: the TV answered with another certificate than at pairing,
+                                    // and the service sends it nothing until it is paired again.
+                                    text: TvLink.certChanged ? qsTr("The TV's identity changed · use Change TV to pair it again")
+                                          : !TvLink.tvOn ? qsTr("Off")
                                           : TvLink.showing > 0 && TvLink.showing === TvLink.input
                                             ? qsTr("On · showing this PC (HDMI %1)").arg(TvLink.showing)
                                           : TvLink.showing > 0 ? qsTr("On · showing HDMI %1").arg(TvLink.showing)
                                           : qsTr("On · showing something else")
                                     font.family: Theme.family
                                     font.pixelSize: settingsScreen._fpx(Theme.fontSmall)
-                                    color: settingsScreen._textDim
+                                    color: TvLink.certChanged ? Theme.warning : settingsScreen._textDim
                                 }
                             }
                             Label {
@@ -6634,14 +6642,13 @@ FocusScope {
 
                     background: Rectangle {
                         radius: settingsScreen._px(8)
-                        color: settingsScreen._btnBg
-                        // Rest is Theme.line, not the "#2a2a2a" this used to hardcode: the
-                        // pair only reads as a progression if both ends come from the same
-                        // scale. Hover is neutral — the accent stays with the focus.
-                        border.color: miniHov.keyFocused ? Theme.ink
-                                    : miniHov.active     ? Theme.lineHigh
-                                    :                      Theme.line
-                        border.width: miniHov.keyFocused ? 3 : 1
+                        // Glass (05/11/2026): hover brightens the wash and stays neutral — the
+                        // accent stays with the focus.
+                        color: miniHov.keyFocused ? settingsScreen._btnBgFocus
+                             : miniHov.active     ? settingsScreen._btnBgHover
+                             :                      settingsScreen._btnBg
+                        border.color: miniHov.keyFocused ? Theme.accentFill : Theme.lineHigh
+                        border.width: miniHov.keyFocused ? settingsScreen._btnFocusBd : 1
 
                         Behavior on border.color {
                             enabled: !Theme.reduceAnimations
@@ -6990,28 +6997,25 @@ FocusScope {
             // accent; the outline is what carries state here, as it does on every other button
             // in the app. Following the accent comes for free: _btnBg is a binding on
             // Theme.accent, so picking a new accent moves this live.
-            color: settingsScreen._btnBg
-            // The outline carries both, and cannot be confused: the ACCENT is the focus, a
-            // neutral Theme.lineHigh is the pointer. Lending the accent to the mouse was the
-            // thing that had to stop — not lending it the outline. And the two cannot collide,
-            // because in pointer mode the app draws no focus ring at all (`_keyFocused`).
-            //
-            // Rest is Theme.line, not the "#2a2a2a" this used to hardcode: rest and hover only
-            // read as a progression if both ends come from the same scale.
-            border.color: btn._keyFocused ? Theme.ink
-                        : hov.active      ? Theme.lineHigh
-                        :                   Theme.line
-            // ⚠️ Three, matching SegmentedSelector, which is the control this has to look like:
-            // it draws its focus the same way — its own border, on its own outline — at
-            // `border.width: activeFocus ? 3 : 1`. This carried a hardcoded 2 and read visibly
-            // thinner beside it.
+            // ⚠️ 05/11/2026: glass, with a state of its own again — the wash brightens under the
+            // pointer and is tinted by the accent with the focus, as on every button in the app
+            // (variant A of docs/mockups/pulsanti). The accent is still the focus alone, the
+            // pointer stays neutral, and the two cannot collide, because in pointer mode the
+            // app draws no focus at all (`_keyFocused`).
+            color: btn._keyFocused ? settingsScreen._btnBgFocus
+                 : hov.active      ? settingsScreen._btnBgHover
+                 :                   settingsScreen._btnBg
+            border.color: btn._keyFocused ? Theme.accentFill : Theme.lineHigh
+            // ⚠️ The same width as SegmentedSelector, which is the control this has to look
+            // like: it draws its focus the same way — its own border, on its own outline. Three
+            // until 05/11/2026, two since every focused button is glass under a 2 px border.
             //
             // ⚠️ And NOT a FocusFrame. That was tried: it is a separate ring three pixels
             // OUTSIDE the target, which is how the switches and the pickers show focus, and
             // putting it here made this button the odd one out in the other direction. Two
             // idioms exist in this file on purpose; the one to copy is whichever the control
             // beside you uses.
-            border.width: btn._keyFocused ? settingsScreen._focusBd : 1
+            border.width: btn._keyFocused ? settingsScreen._btnFocusBd : 1
 
             // Colour only: the width never moves under the pointer, so nothing shifts.
             Behavior on border.color {
@@ -7074,11 +7078,16 @@ FocusScope {
         background: Rectangle {
             implicitHeight: settingsScreen._px(48)
             radius: settingsScreen._px(8)
-            color: choiceBtn.selected ? settingsScreen._btnBg : "transparent"
-            border.color: choiceHov.keyFocused || choiceBtn.selected ? Theme.ink
-                        : choiceHov.active                          ? Theme.lineHigh
-                        :                                             Theme.line
-            border.width: choiceHov.keyFocused ? settingsScreen._focusBd : 1
+            // Glass (05/11/2026): selected = tinted by the accent, focus = the 2 px accent border.
+            color: choiceHov.keyFocused ? settingsScreen._btnBgFocus
+                 : choiceBtn.selected   ? settingsScreen._btnBgSel
+                 : choiceHov.active     ? settingsScreen._btnBg
+                 :                        "transparent"
+            border.color: choiceHov.keyFocused ? Theme.accentFill
+                        : choiceBtn.selected   ? settingsScreen._btnLineSel
+                        : choiceHov.active     ? Theme.lineHigh
+                        :                        Theme.line
+            border.width: choiceHov.keyFocused ? settingsScreen._btnFocusBd : 1
         }
         contentItem: Column {
             spacing: settingsScreen._px(2)

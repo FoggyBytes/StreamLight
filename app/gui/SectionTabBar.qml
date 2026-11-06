@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.Controls.Material 2.15
 
 import Theme 1.0
 
@@ -109,6 +110,16 @@ Item {
          * pixels apart. Sizing through the bar moves buttons and highlight together.
          */
         contentHeight: bar.availableHeight
+
+        /*
+         * The sliding underline stays Material's own highlight, animated as before — only
+         * quieter (05/11/2026, Marcello, with the glass buttons of docs/mockups/pulsanti): the
+         * accent at 55%, the hairline a chosen value wears, instead of the full accent. The
+         * highlight is drawn in Material.accentColor, so the colour is set here and the
+         * template is not touched. A glass pill on the current tab was tried and turned down:
+         * the underline and its slide are what Marcello wants on tabs.
+         */
+        Material.accent: Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.55)
 
         background: Rectangle {
             color: "transparent"

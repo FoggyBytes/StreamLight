@@ -2133,10 +2133,17 @@ FocusScope {
                     height: homeScreen._px(40)
                     width: tabContent.implicitWidth + homeScreen._px(40)
                     radius: homeScreen._px(9)
-                    color: _selected || _hovered ? Theme.cardHigh : "transparent"
+                    // Glass (05/11/2026, variant A of docs/mockups/pulsanti): the selected host
+                    // is the wash tinted by the accent under a 55% hairline, the focus 22% under a
+                    // 2 px accent border, the pointer a plain wash. It was a solid Theme.cardHigh.
+                    color: _focused  ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22)
+                         : _selected ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.18)
+                         : _hovered  ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                         :             "transparent"
                     border.width: _focused ? 2 : 1
-                    border.color: _focused  ? Theme.ink
-                                : _selected ? Theme.lineHigh
+                    border.color: _focused  ? Theme.accentFill
+                                : _selected ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.55)
+                                : _hovered  ? Theme.lineHigh
                                 :             "transparent"
 
                     Row {
@@ -2779,6 +2786,8 @@ FocusScope {
             }
 
             Label {
+                // Plain text: a name from the host, never markup (8.5.0, security review).
+                textFormat: Text.PlainText
                 text: renamePcDialog.label
                 font.family: Theme.family
                 font.pixelSize: renamePcDialog._px(Theme.fontTitle)

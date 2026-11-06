@@ -354,9 +354,13 @@ Popup {
                     Rectangle {
                         width: dlg._px(80); height: dlg._px(45)
                         radius: dlg._px(7)
-                        color: Theme.cardHigh
-                        border.color: pictureRow.activeFocus && pictureRow.cursor === 0 ? Theme.ink : Theme.lineHigh
-                        border.width: pictureRow.activeFocus && pictureRow.cursor === 0 ? 3 : 1
+                        // Glass (05/11/2026): the wash, tinted by the accent under a 2 px border
+                        // with the cursor on it.
+                        readonly property bool _cur: pictureRow.activeFocus && pictureRow.cursor === 0
+                        color: _cur ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22)
+                                    : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                        border.color: _cur ? Theme.accentFill : Theme.lineHigh
+                        border.width: _cur ? 2 : 1
                         Column {
                             anchors.centerIn: parent
                             Label { anchors.horizontalCenter: parent.horizontalCenter; text: "+"; color: Theme.text; font.pixelSize: dlg._px(Theme.fontTitle); font.bold: true }

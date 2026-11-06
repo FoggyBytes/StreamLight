@@ -227,14 +227,18 @@ Popup {
                         height: dlg._px(44)
                         radius: dlg._px(10)
                         opacity: dlg._running && !sel ? 0.45 : 1
-                        color: sel ? Theme.accentFill : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.05)
-                        border.color: sel ? Theme.accentFill : Theme.line
+                        // Glass (05/11/2026, variant A of docs/mockups/pulsanti): the chosen level is
+                        // the wash tinted by the accent, never a solid fill.
+                        color: sel ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.18)
+                                   : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                        border.color: sel ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.55)
+                                          : Theme.lineHigh
                         border.width: 1
                         Label {
                             anchors.centerIn: parent
                             text: modelData.name
                             font.family: Theme.family; font.pixelSize: dlg._px(Theme.fontSmall); font.bold: true
-                            color: parent.sel ? Theme.onAccent : Theme.text2
+                            color: parent.sel ? Theme.text : Theme.text2
                         }
                         MouseArea {
                             anchors.fill: parent

@@ -46,6 +46,9 @@
 #ifndef SHUTDOWN_RESTART
 #define SHUTDOWN_RESTART         0x00000004
 #endif
+#ifndef EWX_HYBRID_SHUTDOWN
+#define EWX_HYBRID_SHUTDOWN      0x00400000
+#endif
 #endif
 
 #ifdef Q_OS_WIN32
@@ -528,6 +531,31 @@ void SystemProperties::shutdownClient(bool installUpdates)
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "SystemProperties: InitiateShutdown(install updates) failed (rc %lu); plain power-off",
                     rc);
+    }
+
+    /*
+     * ⚠️ 8.5.0: with Fast Startup on, a Fast Startup shut down, as the Start menu's — until then
+     * this was always a full one, and the next boot a cold, slower one (05/11/2026). On means
+     * "Turn on fast startup" (HiberbootEnabled = 1) and a hibernation file to write the kernel to;
+     * either one missing, or the call refused, and it is the full shut down as before. Never with
+     * updates: the Start menu's "Update and shut down" is a full one too.
+     */
+    bool fastStartup = false;
+    if (!installUpdates) {   // also when the update path above was refused: still a full one
+        const QSettings power(QStringLiteral("HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power"),
+                              QSettings::NativeFormat);
+        SYSTEM_POWER_CAPABILITIES caps = {};
+        fastStartup = power.value(QStringLiteral("HiberbootEnabled")).toInt() == 1
+                      && GetPwrCapabilities(&caps) && caps.HiberFilePresent;
+    }
+    if (fastStartup) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SystemProperties: a Fast Startup shut down");
+        if (ExitWindowsEx(EWX_SHUTDOWN | EWX_POWEROFF | EWX_HYBRID_SHUTDOWN, SHTDN_REASON_MAJOR_OTHER)) {
+            return;
+        }
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "SystemProperties: ExitWindowsEx(Fast Startup) failed (err %lu); a full shut down instead",
+                    GetLastError());
     }
 
     if (ExitWindowsEx(EWX_SHUTDOWN | EWX_POWEROFF, SHTDN_REASON_MAJOR_OTHER)) {

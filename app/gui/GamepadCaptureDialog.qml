@@ -110,11 +110,15 @@ Popup {
 
                     background: Rectangle {
                         radius: pop._px(8)
-                        color: chip._sel ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16) : Theme.card
-                        border.color: chip.activeFocus ? Theme.ink
-                                    : chip._sel        ? Qt.darker(Theme.accent, 1.55)
-                                    :                     Theme.line
-                        border.width: (chip.activeFocus || chip._sel) ? 2 : 1
+                        // Glass (05/11/2026, variant A of docs/mockups/pulsanti): chosen = the wash
+                        // tinted by the accent under a 55% hairline, focus = 22% + 2 px accent.
+                        color: chip.activeFocus ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22)
+                             : chip._sel        ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.18)
+                             :                    Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                        border.color: chip.activeFocus ? Theme.accentFill
+                                    : chip._sel        ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.55)
+                                    :                     Theme.lineHigh
+                        border.width: chip.activeFocus ? 2 : 1
                     }
                     contentItem: Item {
                         // Center the glyph (+ optional caption) block vertically so

@@ -9,6 +9,7 @@
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QLocale>
+#include <QSaveFile>
 #include <QSettings>
 #include <QUrl>
 
@@ -117,8 +118,31 @@ void LogsAndCache::refresh()
     emit changed();
 }
 
+void LogsAndCache::copyServiceLog()
+{
+#ifdef Q_OS_WIN32
+    // Same folder as TvStore::logFolder() in service/tvstore.cpp.
+    const QString programData = qEnvironmentVariable("ProgramData", QStringLiteral("C:/ProgramData"));
+    const QString source = QDir::fromNativeSeparators(programData)
+                           + QStringLiteral("/FoggyBytes/StreamLight/logs/service.log");
+
+    QByteArray text;
+    for (const QString& path : { source + QStringLiteral(".1"), source }) {
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly)) text += file.readAll();
+    }
+    if (text.isEmpty()) return;   // no service here, or nothing logged yet
+
+    QSaveFile copy(QDir(Path::getLogDir()).filePath(QStringLiteral("StreamLightService.log")));
+    if (!copy.open(QIODevice::WriteOnly) || copy.write(text) != text.size() || !copy.commit()) {
+        qWarning() << "Could not copy the TV service's log into" << Path::getLogDir();
+    }
+#endif
+}
+
 void LogsAndCache::openLogFolder()
 {
+    copyServiceLog();
     openFolder(Path::getLogDir());
 }
 

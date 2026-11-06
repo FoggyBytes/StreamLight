@@ -2,9 +2,10 @@ import Theme 1.0
 import QtQuick 2.15
 import QtQuick.Controls 2.5
 
-// Small reusable dialog button following the app convention (§22): green accent reserved
-// for FOCUS; affirmative role shown by green text at rest, the focused button gets a green
-// 2px border + faint tint. Emits activated() on click / Return / Enter / Space.
+// Small reusable dialog button following the app convention (§22): the accent reserved for
+// FOCUS; affirmative role shown by accent text at rest, the focused button gets a 2 px accent
+// border over the glass tinted by the accent (8.5.0). Emits activated() on click / Return /
+// Enter / Space.
 Button {
     id: btn
     property bool affirmative: false
@@ -50,18 +51,31 @@ Button {
          * app that needed to be greyed out would otherwise have carried its own opacity, and
          * the second one a different opacity.
          */
+        /*
+         * Glass (05/11/2026, Marcello, variant A of docs/mockups/pulsanti): the recipe of the
+         * host card's buttons — a wash of the reading colour at 8% under Theme.lineHigh — and,
+         * focused, the same wash tinted by the accent (22%) under a 2 px accent border. The
+         * pointer brightens the wash (15%). The hairline used to be Theme.line, fainter than
+         * the card's, and the focus border the 3:1 ink; both now match the other buttons.
+         */
         opacity: btn.enabled ? 1.0 : 0.45
+        readonly property color _hue: btn.danger ? Theme.danger : Theme.accentFill
         color: !btn.enabled   ? "transparent"
-             : hov.keyFocused ? (btn.danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.20)
-                                             : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20))
-             :                   Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+             : hov.keyFocused ? Qt.rgba(_hue.r, _hue.g, _hue.b, 0.22)
+             : hov.active     ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.15)
+             :                  Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
         border.color: !btn.enabled    ? Theme.line
-                    : hov.keyFocused ? (btn.danger ? Theme.danger : Theme.ink)
-                    : hov.active      ? Theme.lineHigh
-                    :                   Theme.line
+                    : hov.keyFocused ? _hue
+                    :                   Theme.lineHigh
         border.width: (btn.enabled && hov.keyFocused) ? 2 : 1
 
-        // Colour only, so the width never moves and the pointer cannot nudge the geometry.
+        Behavior on color {
+            enabled: !Theme.reduceAnimations
+            ColorAnimation { duration: 120; easing.type: Easing.OutQuad }
+        }
+
+        // The border's colour only, so the width moves with the focus alone and the pointer
+        // cannot nudge the geometry.
         Behavior on border.color {
             enabled: !Theme.reduceAnimations
             ColorAnimation { duration: 120; easing.type: Easing.OutQuad }

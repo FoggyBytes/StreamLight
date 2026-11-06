@@ -31,14 +31,36 @@ PowerPolicy::PowerPolicy(const TvRecord& tv, bool startedAtBoot)
 
 void PowerPolicy::suspending()
 {
-    ServiceLog::write(QStringLiteral("policy: going to sleep, TV left as it is"));
+    std::lock_guard<std::mutex> lock(m_ShutdownLock);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    // A suspend right after a shut down is Fast Startup's way of shutting down (8.5.0).
+    m_SuspendedAfterShutdown = m_LastWasShutdown && m_ShutdownHandledAt
+                               && now - m_ShutdownHandledAt < k_ShutdownWindowMs;
+    // A new suspend ends the boot before it: a "TV already on for this boot" left over from it
+    // (a Kernel-Boot 27 that never came) must not stop the next boot from turning the TV on.
+    m_OnForThisBoot = false;
+    ServiceLog::write(m_SuspendedAfterShutdown
+                              ? QStringLiteral("policy: suspending after a shut down — Fast Startup; the TV comes on at the resume")
+                              : QStringLiteral("policy: going to sleep, TV left as it is"));
 }
 
 void PowerPolicy::resumed()
 {
-    ServiceLog::write(QStringLiteral("policy: resumed, TV left as it is"));
     std::lock_guard<std::mutex> lock(m_ShutdownLock);
     m_ShutdownHandledAt = 0;
+    m_LastWasShutdown = false;
+    const bool boot = m_SuspendedAfterShutdown;
+    m_SuspendedAfterShutdown = false;
+    if (!boot) {
+        ServiceLog::write(QStringLiteral("policy: resumed, TV left as it is"));
+        return;
+    }
+    // 8.5.0: the Fast Startup boot, recognised here rather than when Kernel-Boot 27 is delivered.
+    ServiceLog::write(QStringLiteral("policy: resumed from a Fast Startup shut down — a boot"));
+    if (m_Rules.onAtStart) {
+        m_OnForThisBoot = true;
+        m_Tv.turnOn(QStringLiteral("Fast Startup boot, at the resume"));
+    }
 }
 
 void PowerPolicy::shutdownRequested(const QString& source, bool restart, const QString& type)
@@ -51,6 +73,7 @@ void PowerPolicy::shutdownRequested(const QString& source, bool restart, const Q
             return;
         }
         m_ShutdownHandledAt = now;
+        m_LastWasShutdown = !restart;
     }
     if (restart) {
         ServiceLog::write(QStringLiteral("policy: %1: restart (\"%2\"), TV left on").arg(source, type));
@@ -81,12 +104,20 @@ void PowerPolicy::restartAnnounced()
 
 void PowerPolicy::booted(int bootType)
 {
+    bool alreadyOn = false;
     {
         std::lock_guard<std::mutex> lock(m_ShutdownLock);
         m_ShutdownHandledAt = 0;
+        alreadyOn = m_OnForThisBoot;
+        m_OnForThisBoot = false;
     }
     // 1 = a Fast Startup boot: for the service it is a resume, with no start, so this is where the
-    // TV comes on. 2 = back from hibernation: a wake, left alone like any other.
-    if (bootType == 1 && m_Rules.onAtStart)
-        m_Tv.turnOn(QStringLiteral("Fast Startup boot"));
+    // TV comes on — unless the resume already recognised it (8.5.0). 2 = back from hibernation: a
+    // wake, left alone like any other.
+    if (bootType == 1 && m_Rules.onAtStart) {
+        if (alreadyOn)
+            ServiceLog::write(QStringLiteral("policy: Fast Startup boot — the TV was already turned on at the resume"));
+        else
+            m_Tv.turnOn(QStringLiteral("Fast Startup boot"));
+    }
 }

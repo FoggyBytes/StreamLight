@@ -107,9 +107,14 @@ Popup {
         Keys.onSpacePressed:  flip()
         background: Rectangle {
             radius: Math.round(8 * Theme.uiScale)
-            color: mt.on ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16) : Theme.card
-            border.color: mt.activeFocus ? Theme.ink : mt.on ? Qt.darker(Theme.accent, 1.55) : Theme.line
-            border.width: (mt.activeFocus || mt.on) ? 2 : 1
+            // Glass (05/11/2026, variant A of docs/mockups/pulsanti).
+            color: mt.activeFocus ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22)
+                 : mt.on          ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.18)
+                 :                  Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+            border.color: mt.activeFocus ? Theme.accentFill
+                        : mt.on ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.55)
+                        : Theme.lineHigh
+            border.width: mt.activeFocus ? 2 : 1
         }
         contentItem: Label {
             text: mt.lbl
@@ -190,8 +195,11 @@ Popup {
 
             background: Rectangle {
                 radius: pop._px(10)
-                color: pop._keyListening ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.12) : Theme.ground
-                border.color: (pop._keyListening || keyBtn.activeFocus) ? Theme.ink : Theme.line
+                // Glass (05/11/2026): listening or focused = the wash tinted by the accent.
+                color: (pop._keyListening || keyBtn.activeFocus)
+                       ? Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22)
+                       : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                border.color: (pop._keyListening || keyBtn.activeFocus) ? Theme.accentFill : Theme.lineHigh
                 border.width: (pop._keyListening || keyBtn.activeFocus) ? 2 : 1
             }
             contentItem: Item {

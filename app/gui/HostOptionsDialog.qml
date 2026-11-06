@@ -112,9 +112,11 @@ Popup {
                 anchors.fill: parent
                 anchors.margins: 8
                 radius: dlg._px(10)
-                color: grid._curDanger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.18)
-                                       : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16)
-                border.color: grid._curDanger ? Theme.danger : Theme.ink
+                // The focused tile's glass, as on every focused button (05/11/2026, variant A
+                // of docs/mockups/pulsanti): the wash tinted 22% under a 2 px border.
+                color: grid._curDanger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.22)
+                                       : Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22)
+                border.color: grid._curDanger ? Theme.danger : Theme.accentFill
                 border.width: 2
               }
             }
@@ -164,12 +166,14 @@ Popup {
                     anchors.margins: 8
                     radius: dlg._px(10)
                     opacity: _disabled ? 0.4 : 1.0
-                    color: (_sel && grid._glide) ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.04)
-                         : _sel ? (_danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.18)
-                                           : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16))
-                                : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.04)
-                    border.color: (_sel && !grid._glide) ? (_danger ? Theme.danger : Theme.ink)
-                                       : Theme.line
+                    // At rest the host card's wash and hairline (05/11/2026; it was 4% under
+                    // Theme.line, fainter than every other button).
+                    color: (_sel && grid._glide) ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                         : _sel ? (_danger ? Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.22)
+                                           : Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, 0.22))
+                                : Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08)
+                    border.color: (_sel && !grid._glide) ? (_danger ? Theme.danger : Theme.accentFill)
+                                       : Theme.lineHigh
                     border.width: (_sel && !grid._glide) ? 2 : 1
 
                     // Same snap as every other focusable thing in the app.
