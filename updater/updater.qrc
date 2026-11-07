@@ -1,0 +1,11 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <!-- What the update screen draws with: the app's own fonts and icon, embedded here so that
+         nothing is ever read from a folder the user can write (see screen.cpp). -->
+    <qresource prefix="/">
+        <file alias="DMSans-Medium.ttf">../app/res/fonts/DMSans-Medium.ttf</file>
+        <file alias="DMSans-SemiBold.ttf">../app/res/fonts/DMSans-SemiBold.ttf</file>
+        <file alias="JetBrainsMono-Regular.ttf">../app/res/fonts/JetBrainsMono-Regular.ttf</file>
+        <file alias="icon.png">../installer/resources/streamlight.png</file>
+    </qresource>
+</RCC>

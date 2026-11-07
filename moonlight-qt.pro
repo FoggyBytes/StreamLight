@@ -13,6 +13,10 @@ win32:!winrt {
 
     # 8.4.0: StreamLightService.exe, the LG TV service (QtCore only, nothing of the app's).
     SUBDIRS += service
+
+    # 8.6.0: StreamLightUpdater.exe, which installs an update without the Windows prompt
+    # (QtCore only; see updater/updater.pro and SECURITY.md).
+    SUBDIRS += updater
 }
 
 # PyroWave codec library (6.4.0, from Nonary's vrr18; see pyrowave/VENDOR.txt). Must match

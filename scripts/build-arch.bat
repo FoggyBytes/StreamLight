@@ -206,6 +206,12 @@ echo Copying StreamLightService.exe
 copy %BUILD_FOLDER%\service\%BUILD_CONFIG%\StreamLightService.exe %DEPLOY_FOLDER%
 if !ERRORLEVEL! NEQ 0 goto Error
 
+rem StreamLight 8.6.0: the updater that installs an update without the Windows prompt
+rem (updater\updater.pro). It too needs only Qt6Core.dll.
+echo Copying StreamLightUpdater.exe
+copy %BUILD_FOLDER%\updater\%BUILD_CONFIG%\StreamLightUpdater.exe %DEPLOY_FOLDER%
+if !ERRORLEVEL! NEQ 0 goto Error
+
 echo Copying GC mapping list
 copy %SOURCE_ROOT%\app\SDL_GameControllerDB\gamecontrollerdb.txt %DEPLOY_FOLDER%
 if !ERRORLEVEL! NEQ 0 goto Error

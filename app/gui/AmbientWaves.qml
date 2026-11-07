@@ -59,6 +59,14 @@ Item {
      */
     property real rise: 1.0
 
+    /**
+     * Held where they are (8.6.0): the update screen stops them when it hands over to
+     * StreamLightUpdater.exe, which redraws them at `flowTime` — the same frame, from another
+     * program — so nothing moves at the moment one window replaces the other.
+     */
+    property bool frozen: false
+    readonly property real flowTime: _t
+
     readonly property int _layers: 5
     // Designed at 1280 wide, like everything else, and grown with the window.
     readonly property real _u: Theme.uiScale
@@ -115,7 +123,7 @@ Item {
      */
     FrameAnimation {
         running: waves.visible && !Theme.reduceAnimations && !waves._dialogInFront
-                 && !WindowMove.moving
+                 && !WindowMove.moving && !waves.frozen
                  && Qt.application.state === Qt.ApplicationActive
         // Clamped: the first frame after a pause reports the whole time it was away, and
         // every layer would leap.

@@ -11,7 +11,7 @@ The portal is the source of truth: changing these files does not change what get
 
 | File | Signed by |
 | --- | --- |
-| `StreamLight.exe`, `StreamLightService.exe`, `AntiHooking.dll` | SignPath, request 1 (`binaries`) — built from this repository |
+| `StreamLight.exe`, `StreamLightService.exe`, `StreamLightUpdater.exe`, `AntiHooking.dll` | SignPath, request 1 (`binaries`) — built from this repository |
 | Inno Setup uninstaller (`unins000.exe`, and the Setup program the installer runs from `%TEMP%`) | SignPath, request 1 (`binaries`) |
 | `StreamLight_X.Y.Z_Installer.exe` | SignPath, request 2 (`installer`) |
 | Qt DLLs and plugins | The Qt Company, as shipped |
@@ -24,9 +24,10 @@ The portal is the source of truth: changing these files does not change what get
 2. A first ISCC pass with `/DSignUninstaller` writes `uninst-<inno>-<hash>.e64` and stops, asking for it to
    be signed (Inno Setup's `SignedUninstaller` without a sign tool). That binary is the uninstaller and
    also the Setup program the installer unpacks and runs, so it cannot stay unsigned.
-3. `StreamLight.exe`, `StreamLightService.exe`, `AntiHooking.dll` and that file (as `Uninstaller.exe`) go to
-   SignPath in one zip. ⚠️ `StreamLightService.exe` joined in 8.4.0: the `binaries` configuration in the portal
-   must list it too, or the request fails.
+3. `StreamLight.exe`, `StreamLightService.exe`, `StreamLightUpdater.exe`, `AntiHooking.dll` and that file (as
+   `Uninstaller.exe`) go to SignPath in one zip. ⚠️ `StreamLightService.exe` joined in 8.4.0 and
+   `StreamLightUpdater.exe` in 8.6.0: the `binaries` configuration in the portal must list them too, or the
+   request fails.
 4. The signed files go back in place, and a second ISCC pass builds the installer around the signed
    uninstaller.
 5. The installer goes to SignPath on its own.

@@ -9,7 +9,7 @@ name: Build Windows
 # also needs the variable SIGNPATH_ORGANIZATION_ID (Settings -> Secrets and variables ->
 # Actions). Without the secret the run is the unsigned build it was before. With it, two
 # signing requests, each one approved by hand in the SignPath portal when the policy asks:
-#   1. StreamLight.exe, StreamLightService.exe, AntiHooking.dll and the Inno Setup uninstaller - which is also the Setup
+#   1. StreamLight.exe, StreamLightService.exe, StreamLightUpdater.exe, AntiHooking.dll and the Inno Setup uninstaller - which is also the Setup
 #      program the installer unpacks to %TEMP% and runs (see StreamLight.iss, SignedUninstaller);
 #   2. the finished installer, compiled again around the signed uninstaller.
 # The artifact configurations they refer to are kept for review in docs/signpath/.
@@ -164,11 +164,11 @@ jobs:
           $uninst = @(Get-ChildItem $uninstDir -Filter 'uninst-*.e64')
           if ($uninst.Count -ne 1) { throw "Expected one uninst-*.e64 in $uninstDir, found $($uninst.Count)" }
 
-          # The four files go to SignPath in one zip. The uninstaller travels as Uninstaller.exe,
+          # The five files go to SignPath in one zip. The uninstaller travels as Uninstaller.exe,
           # the name the artifact configuration names; it goes back under its own name afterwards.
           $stage = Join-Path $PWD 'build\signing\to-sign'
           New-Item -ItemType Directory -Force $stage | Out-Null
-          Copy-Item build\deploy-x64-release\StreamLight.exe, build\deploy-x64-release\StreamLightService.exe, build\deploy-x64-release\AntiHooking.dll $stage
+          Copy-Item build\deploy-x64-release\StreamLight.exe, build\deploy-x64-release\StreamLightService.exe, build\deploy-x64-release\StreamLightUpdater.exe, build\deploy-x64-release\AntiHooking.dll $stage
           Copy-Item $uninst[0].FullName (Join-Path $stage 'Uninstaller.exe')
           "uninstaller=$($uninst[0].Name)" >> $env:GITHUB_OUTPUT
           "uninstaller_dir=$uninstDir" >> $env:GITHUB_OUTPUT
@@ -186,7 +186,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      - name: Sign StreamLight.exe, StreamLightService.exe, AntiHooking.dll and the uninstaller (SignPath)
+      - name: Sign StreamLight.exe, StreamLightService.exe, StreamLightUpdater.exe, AntiHooking.dll and the uninstaller (SignPath)
         if: env.SIGNPATH_ENABLED == 'true'
         uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627  # v2
         with:
@@ -209,14 +209,14 @@ jobs:
           UNINSTALLER_DIR: ${{ steps.tosign.outputs.uninstaller_dir }}
         run: |
           $signed = 'build\signing\signed'
-          foreach ($name in 'StreamLight.exe', 'StreamLightService.exe', 'AntiHooking.dll', 'Uninstaller.exe') {
+          foreach ($name in 'StreamLight.exe', 'StreamLightService.exe', 'StreamLightUpdater.exe', 'AntiHooking.dll', 'Uninstaller.exe') {
             $sig = Get-AuthenticodeSignature (Join-Path $signed $name)
             if ($null -eq $sig.SignerCertificate) { throw "$name came back without a signature" }
             # A test-signing certificate is not trusted by Windows; only release-signing must be Valid.
             if ($env:SIGNPATH_POLICY -eq 'release-signing' -and $sig.Status -ne 'Valid') { throw "$name signature is $($sig.Status)" }
             Write-Host "$name signed by $($sig.SignerCertificate.Subject) ($($sig.Status))"
           }
-          Copy-Item "$signed\StreamLight.exe", "$signed\StreamLightService.exe", "$signed\AntiHooking.dll" build\deploy-x64-release -Force
+          Copy-Item "$signed\StreamLight.exe", "$signed\StreamLightService.exe", "$signed\StreamLightUpdater.exe", "$signed\AntiHooking.dll" build\deploy-x64-release -Force
           Copy-Item "$signed\Uninstaller.exe" (Join-Path $env:UNINSTALLER_DIR $env:UNINSTALLER) -Force
 
       - name: Build installer around the signed uninstaller (StreamLight.iss, second pass)

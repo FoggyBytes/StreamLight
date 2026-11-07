@@ -5,6 +5,19 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 -----------------------------------------
+Version 8.6.0 - Hands Free (07/11/2026)
+-----------------------------------------
+
+No StreamTweak update required — 8.6.0 is client-side and works with any host. Updating from Settings no longer needs a mouse or a keyboard.
+
+✨ IMPROVEMENTS:
+• Update with the controller alone — Install now no longer opens the setup wizard behind a Windows permission prompt: a full-screen page in the app's own look follows the update from the check to the restart, and StreamLight reopens by itself and says "Updated to StreamLight 8.6.0"; the same with mouse and keyboard
+• No Windows prompt — the setup registers an update task for your account, and the new StreamLightUpdater checks the release against GitHub itself before it installs anything; on another account or a standard user the page says first that Windows will ask, and that a keyboard or mouse is needed to answer
+
+⚠️ COMPATIBILITY:
+• From the next update on — the update to 8.6.0 still opens the usual setup, since it is started by the version before it
+
+-----------------------------------------
 Version 8.5.1 - Same Again (06/11/2026)
 -----------------------------------------
 

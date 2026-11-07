@@ -84,7 +84,7 @@ Everything below is in the current release, whichever version first introduced i
 - A setting that cannot act says so wherever you meet it — greyed, with the reason on the line beneath, in Settings, in the profile and in the per-game dialog alike
 - Every change is written to disk the moment you make it
 - **Logs and cache** *(6.5.0+)* — *Settings → About* shows where logs, crash dumps and covers are kept and how much space they take, opens each folder and clears them after a confirmation. Logs and crash dumps can move to another folder, and the running log follows at once
-- **Update from the app** *(5.8.0+)* — *Settings → About* downloads a newer release when there is one and checks it against GitHub's checksum; *Install now* opens the installer, which reopens StreamLight when it finishes, after a single Windows permission prompt. A newer version is also announced at startup
+- **Update from the app** *(5.8.0+)* — *Settings → About* downloads a newer release when there is one and checks it against GitHub's checksum. *(8.6.0+)* *Install now* installs it with the controller alone: no setup wizard and no Windows permission prompt, a full-screen page follows the update, and StreamLight reopens by itself. A newer version is also announced at startup
 
 **🎯 Xbox app and Steam integration**
 - Branded tile artwork in the Windows 11 Xbox app's "My apps" section, seeded during setup and re-applied automatically whenever the Xbox app overwrites it
@@ -114,21 +114,11 @@ All of them are switched on **per host**, in the **Setup** tab of the host's Str
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in the section's *Setup* tab; the host has its own switch
 - **Hue Sync keeps the lights** *(10.1.0+)* — a Hue bridge syncs one area at a time, so the host's Hue Sync starting after a wake used to take the lights from this device's for good. The section's **Hue Sync** tab shows the bridge's areas and who has the lights, and sets the host to wait while they are in use — for any device, or only this one; StreamTweak then starts Hue Sync on the host itself, and only reads the bridge. **Take back** restarts Hue Sync here, by hand or by itself, and works with any host
 
-## ✨ What's New in 8.5.1 — Same Again
+## ✨ What's New in 8.6.0 — Hands Free
 
 Works with any host.
 
-- **The Power popup remembers** — it opens on what you last chose for that host and for this device, instead of Keep on / Shut down every time
-
-## ✨ What's New in 8.5.0 — Clear Glass
-
-No StreamTweak update required; StreamTweak 10.1.1 comes out the same day.
-
-- **Glass buttons everywhere** — every button, selector and tile now has the host card's look, a faint wash under a thin border, and stays glass when it has the focus: tinted by your accent, under an accent border, instead of a solid fill
-- **Sounds on the PIN pad** — moving across it with a controller after a wake sounds like everywhere else
-- **Shut down like the Start menu** — with Windows' Fast Startup on, shutting this PC down from the Power popup uses it, so the next start is as quick as after a Shut down from Start
-- **The TV's key stays safe** — a TV paired over TLS is never reached in clear again, its certificate is kept at pairing, and the pairing file is the TV service's alone
-- **Safer links to the TV service and the host** — Settings → TV checks it is talking to StreamLight's own service, and names that come from the host are always shown as plain text
+- **Update with the controller alone** — *Install now* no longer opens the setup wizard behind a Windows prompt: a full-screen page in the app's look follows the update to the end, and StreamLight reopens by itself. The release is checked against GitHub again before anything installs. From the next update on: the one to 8.6.0 still opens the usual setup
 
 *Older releases are in [changelog.txt](changelog.txt).*
 
@@ -170,7 +160,7 @@ StreamLight is free, with no ads and no telemetry. If it made your streaming bet
 
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
-- **What is signed** — `StreamLight.exe`, `StreamLightService.exe`, `AntiHooking.dll`, the installer and its uninstaller. They are built from this repository by GitHub Actions ([`build-windows.yml`](.github/workflows/build-windows.yml)) and signed through SignPath; nothing built elsewhere is signed. The other DLLs ship with their own publishers' signatures: Qt's by The Qt Company, the libraries from Moonlight's official release by its maintainer (see [`libs/README.md`](libs/README.md))
+- **What is signed** — `StreamLight.exe`, `StreamLightService.exe`, `StreamLightUpdater.exe`, `AntiHooking.dll`, the installer and its uninstaller. They are built from this repository by GitHub Actions ([`build-windows.yml`](.github/workflows/build-windows.yml)) and signed through SignPath; nothing built elsewhere is signed. The other DLLs ship with their own publishers' signatures: Qt's by The Qt Company, the libraries from Moonlight's official release by its maintainer (see [`libs/README.md`](libs/README.md))
 - **Team roles** — Authors, reviewers and approvers: [@FoggyBytes](https://github.com/FoggyBytes). Changes from other contributors are reviewed before they are merged, and every release is approved by hand before it is signed
 - **Privacy** — StreamLight sends nothing to FoggyBytes. Every connection it makes on its own, and how to turn off the ones that can be, is listed in [PRIVACY.md](PRIVACY.md)
 

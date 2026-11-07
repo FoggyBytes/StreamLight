@@ -52,7 +52,36 @@ When both sides turn it on, clipboard text travels over the bridge **encrypted w
 
 ### Self-update
 
-The updater looks up the latest release through the GitHub API and downloads the installer asset from GitHub. **It refuses to run any installer without a SHA-256 digest published by GitHub for that asset**, checks the downloaded file against it, and checks it again immediately before launching it. The installer runs visibly; nothing is installed silently.
+The updater looks up the latest release through the GitHub API and downloads the installer asset from GitHub. **It refuses to run any installer without a SHA-256 digest published by GitHub for that asset**, checks the downloaded file against it, and checks it again immediately before launching it.
+
+### Updating without the Windows permission prompt (8.6.0)
+
+StreamLight is meant to be used with a controller only, and the Windows permission prompt (UAC) appears on a secure desktop that a controller cannot answer. So from 8.6.0 an update started from Settings installs without it, through a scheduled task that the installer — which already runs with administrator rights — registers. Skipping that prompt on purpose is the most sensitive thing StreamLight does, so it is fenced on four levels.
+
+**What can be asked.** The task is called *StreamLight Update*. It runs one fixed program, `StreamLightUpdater.exe`, from the install folder, **with no arguments**. The task's action takes no `$(Arg…)`, so arguments passed when it is started are ignored. It is registered for the Windows account that ran the setup, with that account's highest rights, and only that account (plus administrators and SYSTEM) may start it. Starting it is the only thing StreamLight can do. It cannot choose *which* installer, version, folder or options; it can only ask for "the latest official release, if it is newer".
+
+**What the updater checks, itself, before anything runs.** It trusts nothing that StreamLight computed:
+
+- it runs elevated, or it stops at once. StreamLight starts the task only for an account that can elevate and that the task was registered for; otherwise (another account, a standard user, an install from before 8.6.0) it says on screen that Windows will ask, and starts the same updater through the ordinary prompt;
+- its folders are checked before every use. `%ProgramData%\FoggyBytes` and `…\StreamLight` must belong to SYSTEM or the administrators (anyone may create folders in ProgramData, and an owner can give itself the right to rename what is inside); `…\update` and its `run` and `tmp` folders must give no write, delete or permission change to anyone else; none of them may be a junction or other reparse point. The installer sets those rights and removes a junction it finds there;
+- it first copies itself (and `Qt6Core.dll`) into `…\update\run` and continues from there, so it holds nothing open in the install folder that Setup has to replace;
+- it asks the GitHub API for the latest release itself, over HTTPS to `api.github.com` only, without redirects. The server's certificate must also chain to a root in the **machine's** store: a root added to the user's own store does not count. The reply may be at most 1 MB;
+- it picks the installer asset with the same rule as the app (name `StreamLight_<version>_Installer.exe`, version equal to the release tag) and requires the SHA-256 digest GitHub publishes for it;
+- that version must be **newer** than `StreamLight.exe` in the install folder, which it finds through the uninstall entry under `HKLM` — only administrators write either. No reinstall, no downgrade;
+- it takes the file StreamLight downloaded, by that exact asset name, from the user's download folder and **copies** it into `…\update`, then hashes **the copy** against the digest through a handle that stays open, without write or delete sharing, until Setup has finished — so the file that was checked is the one that runs. A mismatch deletes the copy, and nothing runs;
+- once release builds are signed (SignPath), checking the copy's signature is the next step; until then the digest is the check.
+
+**How the installer is run.** From the protected folder, by full path, with its working folder and `TEMP`/`TMP` pointed at `…\update\tmp`, so nothing the user can write is in its way. The options are fixed: `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /APPUPDATE`, and a log into the status folder. The install folder and the optional icons are the ones chosen at the last install. With `/APPUPDATE` Setup only posts its progress to the updater's window. One update runs at a time.
+
+**The screen while StreamLight is closed.** The updater shows a full-screen window that redraws StreamLight's last frame, so the hand-over is not seen. It is drawn from `look.json`, which StreamLight leaves in the user's download folder: a file the user can write, read by an elevated process, so it is only **numbers and colours**, each one checked against a range, and at most 16 KB. The fonts and the icon are embedded in the updater; no picture is ever decoded and no text is ever taken from that file. A `cancel` file there can only stop an update before the screen is taken over.
+
+**StreamLight never runs elevated.** The installer, started elevated, cannot reopen the app as the user. So the updater reopens `StreamLight.exe` from the install folder through Explorer's shell, with the user's ordinary rights. If that is not possible, it leaves StreamLight closed and does not start it elevated.
+
+**What StreamLight sees.** The updater writes its progress (checking → ready → covering → installing → starting → done, or failed or cancelled, with the versions and a reason) to `%ProgramData%\FoggyBytes\StreamLight\update-status`, which users may read but not write. StreamLight closes only once the updater's window is over it. A failed check therefore leaves the app open, saying what went wrong. The update is still started only from Settings, and only when nothing is in progress that closing the app would leave half done (a stream, a wake, the link-speed question).
+
+**What someone running as the user gains.** At most, the latest official release installed when it is newer than the one on the PC, exactly what pressing *Install now* does. They cannot choose the file, the version, the options or the folder; at worst they make an update fail, or draw its screen in odd colours. The trust anchor is the same as for a manual download, GitHub's release and its published digest, now checked by the elevated side rather than by the app.
+
+The uninstaller deletes the task and both folders.
 
 ### The TV service (8.4.0)
 
@@ -73,4 +102,4 @@ Settings, paired hosts and the client certificate's private key are stored per W
 
 ### Installer
 
-The installer is built with Inno Setup on GitHub Actions from this repository ([`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml)); release assets carry a SHA-256 digest on the release page. It installs to Program Files — a folder chosen elsewhere is given Program Files' permissions, since the TV service runs from it (8.5.0) — installs the Microsoft Visual C++ runtime when the one on the PC is older than required, registers the TV service with a quoted path, and includes an uninstaller (*Settings → Apps*).
+The installer is built with Inno Setup on GitHub Actions from this repository ([`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml)); release assets carry a SHA-256 digest on the release page. It installs to Program Files — a folder chosen elsewhere is given Program Files' permissions, since the TV service runs from it (8.5.0) — installs the Microsoft Visual C++ runtime when the one on the PC is older than required, registers the TV service with a quoted path, registers the *StreamLight Update* task (8.6.0, see above), and includes an uninstaller (*Settings → Apps*).

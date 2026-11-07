@@ -45,6 +45,18 @@ Item {
      */
     property bool dark: false
 
+    /** The waves held still, and how far they had travelled — see AmbientWaves.frozen (8.6.0). */
+    property bool frozen: false
+    readonly property real flowTime: wavesLayer.flowTime
+
+    // The three stops below, for the update screen to hand over (8.6.0).
+    readonly property color topColor: _floor
+    readonly property color midColor: Qt.tint(_floor, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07))
+    readonly property color footColor: Qt.tint(_floor, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b,
+                                                               (Theme.light && !dark) ? 0.08 : 0.20))
+    // What the waves are drawn in (AmbientWaves._ink).
+    readonly property color waveColor: dark ? Theme.accent : Theme.ink
+
     readonly property color _floor: dark ? "#151515" : Theme.floor
 
     DitheredGradient {
@@ -54,16 +66,16 @@ Item {
             // Theme.floor (7.0.0): #151515 in Dark as before, grey-blue in Light. The foot takes
             // half the accent in Light (8% against 20%): on a light floor the same share reads as
             // a coloured wash rather than a hint — it turned the lower third pink with Rose.
-            { pos: 0.0, color: ambient._floor },
-            { pos: 0.7, color: Qt.tint(ambient._floor, Qt.rgba(Theme.accent.r, Theme.accent.g,
-                                                            Theme.accent.b, 0.07)) },
-            { pos: 1.0, color: Qt.tint(ambient._floor, Qt.rgba(Theme.accent.r, Theme.accent.g,
-                                                            Theme.accent.b, (Theme.light && !ambient.dark) ? 0.08 : 0.20)) }
+            { pos: 0.0, color: ambient.topColor },
+            { pos: 0.7, color: ambient.midColor },
+            { pos: 1.0, color: ambient.footColor }
         ]
     }
 
     AmbientWaves {
+        id: wavesLayer
         anchors.fill: parent
+        frozen: ambient.frozen
         visible: ambient.waves
         speed: ambient.streaming ? 2.0 : 1.0
         rise: ambient.rise

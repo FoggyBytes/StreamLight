@@ -16,6 +16,7 @@
         <file>gui/AmbientBackground.qml</file>
         <file>gui/AmbientWaves.qml</file>
         <file>gui/StartupSplash.qml</file>
+        <file>gui/UpdateScreen.qml</file>
         <file>gui/Spinner.qml</file>
         <file>gui/CoverAmbient.qml</file>
         <file>gui/HeroCover.qml</file>

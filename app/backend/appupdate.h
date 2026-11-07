@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <QVariantMap>
 
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -36,12 +37,17 @@ class QSaveFile;
  *     so an app that quits before asking leaves it there. Every one of those came from the app
  *     choosing the moment; the user pressing a button in Settings is the only moment used now,
  *     and HomeScreen can still hold it (installBlocked).</li>
- * <li><b>The installer runs visibly</b>, with no switches. ArtMoon ran it /VERYSILENT, and so did
- *     this until the first runtime test (14/09/2026): silent, the user saw none of the steps, and
- *     the app could only come back through a [Run] entry of our own. Visible, Setup's own
- *     "Launch StreamLight" box on its last page reopens it — the entry that already runs as the
- *     original user after a manual install. The silent relaunch entry and its /SELFUPDATE
- *     switch were removed from StreamLight.iss with it.</li>
+ * <li><b>The installer is run by StreamLightUpdater.exe (8.6.0)</b>, not by the app. From 5.8.0
+ *     to 8.5.x Install now ran Setup visibly, and its wizard and the Windows prompt before it
+ *     wanted a mouse and keyboard, the one place a controller could not go. Now the app starts
+ *     the scheduled task "StreamLight Update", which the installer registered with the user's
+ *     highest rights — or, with no usable task, the same updater through the ordinary prompt,
+ *     said beforehand on screen (PhaseAsk). The updater checks everything again itself, takes
+ *     over the screen (it redraws this app's last frame from look.json, see writeLook), closes
+ *     nothing it did not have to, runs Setup /VERYSILENT and reopens the app as the user. The
+ *     design and its checks are in SECURITY.md; the updater is updater/ in this repository.
+ *     ⚠️ This replaces the decision of 14/09/2026 (installer visible, §71.4): Marcello asked
+ *     for the same screen with the pad and with mouse and keyboard (07/11/2026).</li>
  * <li>A failure stays in the app and says what went wrong. ArtMoon opened the releases page and
  *     quit on every error, which from the user's side is the app disappearing.</li>
  * <li>Streamed to disk with progress, rather than read whole into memory, with a stall watchdog
@@ -68,6 +74,30 @@ public:
         Failed          // updateNow() gave up; failureReason says why
     };
     Q_ENUM(State)
+
+    /**
+     * Where the update screen is (8.6.0, UpdateScreen.qml), from Install now until the app
+     * closes, or until the user goes back to Settings:
+     *   PhaseCheck      the updater is checking the release and its copy of the installer;
+     *   PhaseAsk        there is no usable task: Windows will ask, and a pad cannot answer it;
+     *   PhaseClosing    the updater is ready — the screen freezes and hands over (writeLook);
+     *   PhaseFailed     stopped before anything was installed; installMessage says why;
+     *   PhaseCancelled  the user went back.
+     */
+    enum InstallPhase { PhaseNone, PhaseCheck, PhaseAsk, PhaseClosing, PhaseFailed, PhaseCancelled };
+    Q_ENUM(InstallPhase)
+
+    Q_PROPERTY(InstallPhase installPhase READ installPhase NOTIFY installPhaseChanged)
+    Q_PROPERTY(QString installMessage READ installMessage NOTIFY installPhaseChanged)
+    /** "8.5.1" and "8.6.0", for the screen. */
+    Q_PROPERTY(QString installFrom READ installFrom CONSTANT)
+    Q_PROPERTY(QString installTo READ installTo NOTIFY latestChanged)
+
+    /**
+     * After the updater reopened the app: "Updated to StreamLight 8.6.0", or why it did not
+     * install. Empty otherwise, and once acknowledgeAfterUpdate() has been called.
+     */
+    Q_PROPERTY(QString afterUpdateNotice READ afterUpdateNotice NOTIFY afterUpdateNoticeChanged)
 
     /** Latest release tags as GitHub reports them ("v5.8.0"); empty until known. */
     Q_PROPERTY(QString latestStreamLight READ latestStreamLight NOTIFY latestChanged)
@@ -104,6 +134,25 @@ public:
     QString failureReason() const { return m_FailureReason; }
     bool installBlocked() const { return m_InstallBlocked; }
     void setInstallBlocked(bool blocked);
+    InstallPhase installPhase() const { return m_Phase; }
+    QString installMessage() const { return m_PhaseMessage; }
+    QString installFrom() const;
+    QString installTo() const;
+    QString afterUpdateNotice() const { return m_AfterUpdateNotice; }
+
+    /** PhaseAsk, A: start the updater through the Windows prompt. */
+    Q_INVOKABLE void confirmPermission();
+    /** PhaseAsk or PhaseCheck, B: back to Settings, nothing installed. */
+    Q_INVOKABLE void cancelInstall();
+    /** PhaseFailed or PhaseCancelled, A: the screen goes, Settings shows the outcome. */
+    Q_INVOKABLE void closeInstallScreen();
+    /**
+     * PhaseClosing: the screen as it stands, for the updater to redraw (look.json in the user's
+     * update folder). `look` is in the window's logical pixels; this turns it into physical
+     * pixels and adds where the window is. Only numbers and colours: see updater/screen.h.
+     */
+    Q_INVOKABLE void writeLook(QObject* window, const QVariantMap& look);
+    Q_INVOKABLE void acknowledgeAfterUpdate();
 
     /** Looks up the latest StreamLight and StreamTweak releases. Ignored mid-update. */
     Q_INVOKABLE void checkLatest();
@@ -136,9 +185,27 @@ signals:
     void stateChanged();
     void progressChanged();
     void installBlockedChanged();
+    void installPhaseChanged();
+    void afterUpdateNoticeChanged();
 
 private:
     bool m_InstallBlocked = false;
+
+    // ---- the updater (8.6.0) ----
+    void setPhase(InstallPhase phase, const QString& message = QString());
+    void startUpdater();
+    void pollStatus();
+    void readAfterUpdate();
+    static QString statusFile();
+    static QString messageFor(const QString& reason);
+
+    InstallPhase m_Phase = PhaseNone;
+    QString m_PhaseMessage;
+    QString m_AfterUpdateNotice;
+    qint64 m_AfterUpdateStarted = 0;
+    QTimer m_StatusPoll;
+    qint64 m_TriggeredAt = 0;       // ms since the epoch, when the updater was asked to start
+    qint64 m_PhaseSince = 0;
 
     struct Asset {
         QString url;

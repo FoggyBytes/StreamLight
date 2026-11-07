@@ -54,6 +54,8 @@ FocusScope {
         _splashOnLaunch = atSignIn || (animate && !cli)
         if (_splashOnLaunch)
             startupSplash.start(atSignIn, animate)
+        else
+            Qt.callLater(_maybeShowUpdateNotice)        // 8.6.0: no animation to wait for
         // The release lookup behind the startup update prompt (see _maybePromptUpdate at the
         // bottom). Settings runs the same lookup again when it opens.
         AppUpdate.checkLatest()
@@ -1119,6 +1121,7 @@ FocusScope {
                 homeLoader.item.forceActiveFocus()
         }
         onFinished: {
+            appShell._maybeShowUpdateNotice()
             appShell._maybePromptUpdate()
             appShell._maybeShowSteamBanner()
         }
@@ -1256,6 +1259,21 @@ FocusScope {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.topMargin: appShell.titleInset + Math.round(72 * Theme.uiScale)
+    }
+
+    // ── The update (8.6.0) ───────────────────────────────────────────────────────
+    // Over everything, the opening animation included: from Install now until the app
+    // closes and StreamLightUpdater.exe takes the screen (see UpdateScreen).
+    UpdateScreen {
+        anchors.fill: parent
+        z: 1000
+    }
+
+    // Reopened by the updater: say how it went, once, after the opening animation.
+    function _maybeShowUpdateNotice() {
+        if (AppUpdate.afterUpdateNotice.length === 0) return
+        notice(AppUpdate.afterUpdateNotice, 4000)
+        AppUpdate.acknowledgeAfterUpdate()
     }
 
     UpdatePromptDialog {

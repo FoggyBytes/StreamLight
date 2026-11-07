@@ -1,4 +1,4 @@
-; StreamLight 8.5.1 — Moonlight fork with StreamTweak integration.
+; StreamLight 8.6.0 — Moonlight fork with StreamTweak integration.
 ; SourceDir is the self-contained runtime built by build-arch.bat +
 ; manual windeployqt (see CLAUDE.md §3).
 #define AppName "StreamLight"
@@ -11,7 +11,7 @@
 ; Reading version.txt from here was considered and left alone: that file carries a UTF-8
 ; BOM and no trailing newline, so an ISPP FileRead would have to skip three bytes by
 ; position, which is a more fragile thing than one line to remember at release time.
-#define AppVersion "8.5.1"
+#define AppVersion "8.6.0"
 #define AppPublisher "FoggyBytes"
 #define AppURL "https://github.com/FoggyBytes/StreamLight"
 #define AppExeName "StreamLight.exe"
@@ -178,10 +178,11 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: deskto
 Filename: "{app}\{#AppExeName}"; Parameters: "--register-xbox-tile"; \
     Tasks: xboxtile; \
     Flags: runhidden waituntilterminated runasoriginaluser
-; This entry is also how the in-app update (app/backend/appupdate.cpp) reopens the app: the
-; update runs this setup visibly, with no switches, so its last page carries this box. There
-; used to be a second, silent-only entry gated on a /SELFUPDATE switch; it went when the update
-; stopped running Setup /VERYSILENT (14/09/2026).
+; The box on the last page of a manual install. ⚠️ Not how the in-app update reopens the app
+; (5.8.0–8.5.x it was): since 8.6.0 StreamLightUpdater.exe runs this setup /VERYSILENT /APPUPDATE
+; and reopens StreamLight itself, as the user — started by the updater, this setup is already
+; elevated, and its runasoriginaluser would start StreamLight elevated too. skipifsilent keeps
+; this entry out of it.
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; \
     Flags: nowait postinstall skipifsilent
 
@@ -190,8 +191,14 @@ Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; \
 ; folder. The service itself is stopped and deleted in CurUninstallStepChanged, before this runs.
 Type: filesandordirs; Name: "{commonappdata}\FoggyBytes\StreamLight\service"
 Type: filesandordirs; Name: "{commonappdata}\FoggyBytes\StreamLight\logs"
+; 8.6.0: the updater's work folder and its status (RegisterUpdater in [Code]).
+Type: filesandordirs; Name: "{commonappdata}\FoggyBytes\StreamLight\update"
+Type: filesandordirs; Name: "{commonappdata}\FoggyBytes\StreamLight\update-status"
 
 [UninstallRun]
+; 8.6.0: the update task (RegisterUpdater in [Code], updater/task.cpp). Same name as k_TaskName.
+Filename: "schtasks.exe"; Parameters: "/Delete /TN ""StreamLight Update"" /F"; \
+    Flags: runhidden waituntilterminated; RunOnceId: "DeleteUpdateTask"
 ; 8.2.0: the sign-in task (Settings → Interface → Start at sign-in, app/backend/signinlaunch.cpp).
 ; Left behind, it would try to start an exe that is gone at every sign-in, forever. Same name
 ; as k_TaskName; harmless when the switch was never turned on.
@@ -568,6 +575,111 @@ begin
   RunHidden(ExpandConstant('{sys}\sc.exe'), 'start ' + TvServiceName);
 end;
 
+// ── The updater (8.6.0) ──────────────────────────────────────────────────────
+// StreamLightUpdater.exe installs an update started from Settings → About without the Windows
+// prompt, which a controller cannot answer (updater/, and SECURITY.md for what it checks). Here:
+// its folders with their rights, and its task, "StreamLight Update", for the account running
+// this setup. When the updater itself runs this setup it passes /APPUPDATE, and the progress
+// goes to its screen instead of a wizard.
+const
+  UpdaterScreenClass = 'StreamLightUpdaterScreen';   // updater/common.cpp, k_ScreenClass
+  WM_APP_SETUPPROGRESS = $8001;                      // WM_APP + 1, k_MsgSetupProgress
+  // FILE_ATTRIBUTE_REPARSE_POINT ($400) is Inno Setup's own.
+  NO_FILE_ATTRIBUTES = $FFFFFFFF;                    // INVALID_FILE_ATTRIBUTES
+
+function GetFileAttributes(lpFileName: String): Cardinal;
+  external 'GetFileAttributesW@kernel32.dll stdcall';
+
+var
+  AppUpdateRunChecked, AppUpdateRunValue: Boolean;
+
+function IsAppUpdate: Boolean;
+var
+  I: Integer;
+begin
+  if not AppUpdateRunChecked then begin
+    AppUpdateRunChecked := True;
+    AppUpdateRunValue := False;
+    for I := 1 to ParamCount do
+      if CompareText(ParamStr(I), '/APPUPDATE') = 0 then
+        AppUpdateRunValue := True;
+  end;
+  Result := AppUpdateRunValue;
+end;
+
+// The updater's screen draws the bar; nothing is drawn here (/VERYSILENT).
+procedure CurInstallProgressChanged(CurProgress, MaxProgress: Integer);
+var
+  Wnd: HWND;
+begin
+  if not IsAppUpdate then
+    Exit;
+  Wnd := FindWindowByClassName(UpdaterScreenClass);
+  if Wnd <> 0 then
+    PostMessage(Wnd, WM_APP_SETUPPROGRESS, CurProgress, MaxProgress);
+end;
+
+// A junction or symbolic link where a folder of ours should be is removed, not followed: the
+// updater writes in these folders with administrator rights. (RemoveDir on a junction removes
+// the junction only.)
+procedure DropReparsePoint(const Dir: String);
+var
+  Attrs: Cardinal;
+begin
+  Attrs := GetFileAttributes(Dir);
+  if (Attrs <> NO_FILE_ATTRIBUTES) and ((Attrs and FILE_ATTRIBUTE_REPARSE_POINT) <> 0) then begin
+    Log('Updater: removing the reparse point at ' + Dir);
+    RemoveDir(Dir);
+  end;
+end;
+
+procedure RegisterUpdater;
+var
+  Icacls, Parent, Base, WorkDir, StatusDir, User: String;
+  ResultCode: Integer;
+begin
+  Icacls := ExpandConstant('{sys}\icacls.exe');
+  Parent := ExpandConstant('{commonappdata}\FoggyBytes');
+  Base := Parent + '\StreamLight';
+  WorkDir := Base + '\update';
+  StatusDir := Base + '\update-status';
+
+  // ⚠️ The two parents belong to the administrators. Anyone may create folders in ProgramData,
+  // and whoever owns a folder can give themselves the right to rename what is inside it — the
+  // updater's folders included. Their rights go back to what ProgramData passes down.
+  ForceDirectories(Base);
+  RunHidden(Icacls, '"' + Parent + '" /setowner *S-1-5-32-544 /C /Q');
+  RunHidden(Icacls, '"' + Parent + '" /reset /C /Q');
+  RunHidden(Icacls, '"' + Base + '" /setowner *S-1-5-32-544 /C /Q');
+  RunHidden(Icacls, '"' + Base + '" /reset /C /Q');
+
+  // The work folder: SYSTEM and administrators only. The updater copies itself and the
+  // installer here, and gives Setup a TEMP here (updater/common.cpp, foldersAreSafe).
+  DropReparsePoint(WorkDir);
+  ForceDirectories(WorkDir);
+  RunHidden(Icacls, '"' + WorkDir + '" /setowner *S-1-5-32-544 /T /C /Q');
+  RunHidden(Icacls, '"' + WorkDir + '" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /C /Q');
+  RunHidden(Icacls, '"' + WorkDir + '\*" /reset /T /C /Q');
+
+  // Its status (status.json, updater.log, setup.log): users may read it — StreamLight follows
+  // the update there — and nobody but SYSTEM and administrators may write.
+  DropReparsePoint(StatusDir);
+  ForceDirectories(StatusDir);
+  RunHidden(Icacls, '"' + StatusDir + '" /setowner *S-1-5-32-544 /T /C /Q');
+  RunHidden(Icacls, '"' + StatusDir + '" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F' +
+                    ' *S-1-5-32-545:(OI)(CI)RX /C /Q');
+  RunHidden(Icacls, '"' + StatusDir + '\*" /reset /T /C /Q');
+
+  // The task, for the account running this setup: the signed-in user after a consent prompt —
+  // and the same account when the updater runs it. Its principal, rights and action are set by
+  // the updater itself (updater/task.cpp); this setup only names the account.
+  User := GetEnv('USERDOMAIN') + '\' + GetUserNameString;
+  if not Exec(ExpandConstant('{app}\StreamLightUpdater.exe'), '--register "' + User + '"', '',
+              SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    ResultCode := -1;
+  Log('Updater: task for ' + User + ' -> ' + IntToStr(ResultCode));
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   // An update: the running service holds files about to be replaced.
@@ -579,8 +691,10 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
     InstallVCRedist;
-  if CurStep = ssPostInstall then
+  if CurStep = ssPostInstall then begin
     RegisterTvService;
+    RegisterUpdater;
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
