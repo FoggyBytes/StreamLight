@@ -1278,8 +1278,11 @@ FocusScope {
 
     UpdatePromptDialog {
         id: updatePrompt
+        // Yes was the answer: the focus goes to Update now when the popup is gone (onClosed).
+        property bool _toAbout: false
         onAccepted: function(dontRemind) {
             if (dontRemind) AppUpdate.skipLatestVersion()
+            _toAbout = true
             appShell.openSettings()
             if (settingsLoader.item && settingsLoader.item.showAbout)
                 settingsLoader.item.showAbout()
@@ -1288,7 +1291,20 @@ FocusScope {
             if (dontRemind) AppUpdate.skipLatestVersion()
         }
         // The popup took the focus from the page under it; give it back, or the pad drives
-        // nothing until something is clicked. Not after Yes: Settings takes the focus itself.
-        onClosed: if (appShell.currentPage === 0 && homeLoader.item) homeLoader.item.forceActiveFocus()
+        // nothing until something is clicked. ⚠️ After Yes too (8.6.1): Settings was opened and
+        // focused while the popup was still on its way out, and Qt 6.12 hands the focus back at
+        // the END of the exit transition — so the pad found nothing focused in About until B and
+        // back in. The focus is set here, after that, on Update now (showAbout → focusFirstControl).
+        onClosed: {
+            if (_toAbout) {
+                _toAbout = false
+                if (appShell.currentPage === 2 && settingsLoader.item) {
+                    settingsLoader.item.forceActiveFocus()
+                    if (settingsLoader.item.showAbout) settingsLoader.item.showAbout()
+                }
+            } else if (appShell.currentPage === 0 && homeLoader.item) {
+                homeLoader.item.forceActiveFocus()
+            }
+        }
     }
 }

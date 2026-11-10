@@ -523,10 +523,13 @@ static void refitWindowToScreen(QWindow* win)
     if (state == QWindow::Maximized) {
         win->showNormal();
         QTimer::singleShot(0, win, [win]() { win->showMaximized(); });
+        // 8.6.1 (#52): the same pass through the normal state as after a stream; look after it.
+        WindowChrome::get()->settle(state, QStringLiteral("after a screen change"));
     }
     else if (state == QWindow::FullScreen) {
         win->showNormal();
         QTimer::singleShot(0, win, [win]() { win->showFullScreen(); });
+        WindowChrome::get()->settle(state, QStringLiteral("after a screen change"));
     }
     else if (state == QWindow::Windowed) {
         QRect inside(target.topLeft(), geometry.size().boundedTo(target.size()));

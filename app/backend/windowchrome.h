@@ -48,6 +48,11 @@ public:
 
     Q_INVOKABLE void attach(QWindow* window);
 
+    // 8.6.1 (issue #52): after a stream, check for a few seconds that the window is really in
+    // the state it was in before (a QWindow::Visibility: Windowed, Maximized or FullScreen) and
+    // put it back if it is not. See the note in windowchrome.cpp. reason is only for the log.
+    Q_INVOKABLE void settle(int visibility, const QString& reason = QStringLiteral("after the stream"));
+
     int inset() const { return m_Inset; }
     int buttonWidth() const { return m_ButtonWidth; }
     int hovered() const { return m_Hovered; }
@@ -67,6 +72,7 @@ private:
     static constexpr int k_ButtonWidth = 46;
 
     void updateMetrics();
+    void checkSettled(int visibility, int pass, const QString& reason);
     void setHovered(int button);
     void setPressed(int button);
 
@@ -77,4 +83,5 @@ private:
     int m_ButtonWidth = k_ButtonWidth;
     int m_Hovered = None;
     int m_Pressed = None;
+    int m_SettleRun = 0;      // a newer settle() cancels the checks of the one before
 };

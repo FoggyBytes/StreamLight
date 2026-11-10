@@ -149,6 +149,13 @@ ApplicationWindow {
                 window.showFullScreen()
             })
         }
+
+        // 8.6.1 (#52): then look that the window really is back as it was, and put it back if
+        // not. On a handheld the rebuild above leaves a normal-state rect sized for Windows' own
+        // caption, which this app's frameless window turns into a shifted page if the window
+        // ever stays there — see WindowChrome::settle. Every mode, not only full screen: the
+        // report says maximized too.
+        WindowChrome.settle(_preStreamVisibility)
     }
 
     id: window

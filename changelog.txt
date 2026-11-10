@@ -5,6 +5,19 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 -----------------------------------------
+Version 8.6.1 - Straight In (10/11/2026)
+-----------------------------------------
+
+No StreamTweak update required — 8.6.1 is client-side and works with any host. The window no longer comes back shifted after a stream in the Xbox full screen experience, and saying Yes to the update prompt with the controller now lands on Update now.
+
+🐛 FIXES:
+• Shifted window after a stream in the Xbox full screen experience — on a gaming handheld the window could come back from a stream with the page pushed up and a band at the bottom, until Win+F11 went to the desktop and back; after every stream StreamLight now checks for a few seconds that the window is back full screen, maximized or windowed as it was, and puts it back if not
+• The update prompt's Yes — with the controller, Settings → About opened with nothing focused, so Update now could not be reached until you left Settings with B and came back; the focus now goes to Update now as soon as the prompt is gone
+
+🙏 THANKS:
+• Thanks to @Guru11063 for the detailed report and to @av1155 for confirming it (https://github.com/FoggyBytes/StreamLight/issues/52)
+
+-----------------------------------------
 Version 8.6.0 - Hands Free (07/11/2026)
 -----------------------------------------
 
