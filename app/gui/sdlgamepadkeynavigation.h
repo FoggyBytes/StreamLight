@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QTimer>
+#include <QVariantList>
 #include <QEvent>
 #include <QPoint>
 #include <QElapsedTimer>
@@ -40,6 +41,11 @@ class SdlGamepadKeyNavigation : public QObject
     // and the on-screen keyboard reads A from the scan code: with this set it opens on that
     // Return as well (VirtualKeyboard.offer()).
     Q_PROPERTY(bool desktopLayoutEchoes READ desktopLayoutEchoes NOTIFY desktopLayoutEchoesChanged)
+    // 8.7.0: the charge of the pads without a cable, for the top-right corner (StatusCluster.qml).
+    // One map per pad, in the order they were opened: brand ("xbox", "ps", "switch", "steam",
+    // "generic"), level (1 Critical … 4 Full, 0 not known), charging, critical (≤ 10 %). Levels
+    // and not a percentage: a pad on the Xbox Wireless Adapter only knows four.
+    Q_PROPERTY(QVariantList padBatteries READ padBatteries NOTIFY padBatteriesChanged)
 
 public:
     SdlGamepadKeyNavigation(StreamingPreferences* prefs);
@@ -74,6 +80,8 @@ public:
 
     QString controllerType() const;
 
+    QVariantList padBatteries() const { return m_PadBatteries; }
+
     QString inputMode() const { return m_InputMode; }
 
     qreal scrollVelocity() const { return m_ScrollVelocity; }
@@ -91,6 +99,7 @@ signals:
     // (28de:1304), whose Desktop Layout switches to Gamepad on a long press of Menu.
     void steamDesktopLayoutDetected(bool menuHoldSwitches);
     void desktopLayoutEchoesChanged();
+    void padBatteriesChanged();
 
     // 7.0.0 — the right stick scrolls. The view that holds the focus moves by scrollVelocity
     // (PadScroll.qml) and calls noteScrolled(); the next D-pad or left-stick step then only
@@ -113,6 +122,12 @@ private:
     void setScrollVelocityX(qreal pxPerSecond);
 
     void updateControllerType();
+
+    // "xbox", "ps", "switch", "steam" or "generic" — the glyphs' family and the corner's logo.
+    static QString familyOf(SDL_GameController* gc);
+
+    // 8.7.0: rebuilds padBatteries from the open pads; emits only when something moved.
+    void refreshPadBatteries();
 
     void setInputMode(const QString& mode);
 
@@ -141,6 +156,11 @@ private slots:
 private:
     StreamingPreferences* m_Prefs;
     QTimer* m_PollingTimer;
+    // 8.7.0: re-reads the pads' charge every 30 s — the poll stops with the window's focus, and
+    // not every backend sends a battery event.
+    QTimer* m_BatteryTimer;
+    QVariantList m_PadBatteries;
+    int m_PadBatteryRetries = 0;
     QList<SDL_GameController*> m_Gamepads;
     bool m_Enabled;
     bool m_UiNavMode;

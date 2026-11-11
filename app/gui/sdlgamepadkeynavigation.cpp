@@ -10,8 +10,16 @@
 #include <QDateTime>
 #include <QStandardPaths>
 
+#ifdef Q_OS_WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>   // 8.7.0: GetModuleHandleW / GetProcAddress for SDL3's power calls
+#endif
+
 #include "settings/mappingmanager.h"
 #include "backend/uisound.h"
+#include "backend/xboxpadpower.h"
 
 // Append a line to a debug log file next to the executable.
 // Lets us diagnose gamepad-nav issues without redirecting stderr
@@ -47,9 +55,50 @@ static void slDbg(const QString& line)
 // Valve. The Steam Controller, the Steam Deck — and Steam's virtual pad, which is an Xbox 360
 // to everyone and is kept on the Xbox glyphs by its SDL type.
 #define USB_VENDOR_VALVE 0x28de
+// Microsoft: its pads' charge comes from Windows, not from SDL (8.7.0, backend/xboxpadpower.h).
+#define USB_VENDOR_MICROSOFT 0x045e
 // The Steam Controller seen in #24, whose Desktop Layout has "Change Action Set (Gamepad)" on
 // a long press of Menu. Other Valve pads are not known to, so the notice names it only here.
 #define USB_PRODUCT_STEAM_CONTROLLER 0x1304
+
+// 8.7.0: the pads' charge comes from SDL3. The interface talks to SDL through sdl2-compat, whose
+// SDL2 call keeps only four levels and says "unknown" while a pad charges; sdl2-compat hands SDL3
+// the same SDL_Joystick* it was given (sdl2_compat.c, SDL_JoystickCurrentPowerLevel), so SDL3's
+// own calls are looked up in SDL3.dll and fed that pointer. Its enums are written out by value:
+// only SDL2's headers are in scope here.
+namespace {
+enum { SDL3_POWER_UNKNOWN = 0, SDL3_POWER_ON_BATTERY = 1, SDL3_POWER_NO_BATTERY = 2,
+       SDL3_POWER_CHARGING = 3, SDL3_POWER_CHARGED = 4 };
+enum { SDL3_CONNECTION_WIRED = 1, SDL3_CONNECTION_WIRELESS = 2 };
+typedef int (SDLCALL *Sdl3PowerInfoFn)(SDL_Joystick*, int*);
+typedef int (SDLCALL *Sdl3ConnectionFn)(SDL_Joystick*);
+
+struct Sdl3Power {
+    Sdl3PowerInfoFn powerInfo = nullptr;
+    Sdl3ConnectionFn connection = nullptr;
+};
+
+const Sdl3Power& sdl3Power()
+{
+    static const Sdl3Power fns = [] {
+        Sdl3Power f;
+#ifdef Q_OS_WIN32
+        if (HMODULE sdl3 = GetModuleHandleW(L"SDL3.dll")) {
+            f.powerInfo = reinterpret_cast<Sdl3PowerInfoFn>(GetProcAddress(sdl3, "SDL_GetJoystickPowerInfo"));
+            f.connection = reinterpret_cast<Sdl3ConnectionFn>(GetProcAddress(sdl3, "SDL_GetJoystickConnectionState"));
+        }
+#endif
+        return f;
+    }();
+    return fns;
+}
+
+// 4 Full · 3 Medium · 2 Low · 1 Critical. The adapter's Medium arrives as 70 and must land on 3.
+int levelOf(int percent)
+{
+    return percent >= 85 ? 4 : percent >= 50 ? 3 : percent >= 20 ? 2 : 1;
+}
+}
 
 // #24 diagnostics: every controller the interface opens, in the main StreamLight-*.log. A
 // second device here (Steam's virtual pad is VID 28de PID 11ff) is the other way a press can
@@ -83,6 +132,10 @@ SdlGamepadKeyNavigation::SdlGamepadKeyNavigation(StreamingPreferences* prefs)
 {
     m_PollingTimer = new QTimer(this);
     connect(m_PollingTimer, &QTimer::timeout, this, &SdlGamepadKeyNavigation::onPollingTimerFired);
+
+    m_BatteryTimer = new QTimer(this);
+    m_BatteryTimer->setInterval(30000);
+    connect(m_BatteryTimer, &QTimer::timeout, this, &SdlGamepadKeyNavigation::refreshPadBatteries);
 
     m_NavClock.start();
     for (int i = 0; i < NB_COUNT; i++) {
@@ -138,6 +191,117 @@ QString SdlGamepadKeyNavigation::controllerType() const
     }
 }
 
+void SdlGamepadKeyNavigation::refreshPadBatteries()
+{
+    QVariantList list;
+    QStringList summary;
+    auto add = [&](const QString& brand, int percent, bool charging, bool full) {
+        QVariantMap pad;
+        pad[QStringLiteral("brand")] = brand;
+        pad[QStringLiteral("level")] = full ? 4 : percent >= 0 ? levelOf(percent) : 0;
+        pad[QStringLiteral("charging")] = charging;
+        pad[QStringLiteral("critical")] = !charging && percent >= 0 && percent <= 10;
+        list.append(pad);
+        summary.append(QStringLiteral("%1 %2%3").arg(brand, percent >= 0 ? QString::number(percent) + QStringLiteral("%") : QStringLiteral("?"),
+                                                     charging ? QStringLiteral(" charging") : full ? QStringLiteral(" full") : QString()));
+    };
+
+    // Nothing while the interface has no pads open (a stream, or before enable()).
+    if (m_Enabled) {
+        // Microsoft's pads from Windows (backend/xboxpadpower.h says why SDL cannot): when that
+        // works, SDL's own entries for them are left out, so no pad shows twice.
+        QList<XboxPadPower::Reading> microsoft;
+        const bool fromWindows = XboxPadPower::read(&microsoft);
+
+        const Sdl3Power& sdl3 = sdl3Power();
+        int microsoftOpen = 0;
+        for (SDL_GameController* gc : std::as_const(m_Gamepads)) {
+            SDL_Joystick* js = SDL_GameControllerGetJoystick(gc);
+            if (SDL_GameControllerGetVendor(gc) == USB_VENDOR_MICROSOFT) {
+                microsoftOpen++;
+                if (fromWindows) {
+                    continue;
+                }
+            }
+            if (sdl3.powerInfo != nullptr && sdl3.connection != nullptr) {
+                const int connection = sdl3.connection(js);
+                int percent = -1;
+                const int state = sdl3.powerInfo(js, &percent);
+                // A pad on a cable is left out: the corner is for the ones that can run flat.
+                if (connection == SDL3_CONNECTION_WIRED) {
+                    continue;
+                }
+                // Some backends never say how a pad is connected (XInput, for one). Then only a pad
+                // reported on its own battery counts: XInput reports a wired pad as charging.
+                if (connection != SDL3_CONNECTION_WIRELESS && state != SDL3_POWER_ON_BATTERY) {
+                    continue;
+                }
+                if (state != SDL3_POWER_ON_BATTERY && state != SDL3_POWER_CHARGING && state != SDL3_POWER_CHARGED) {
+                    continue;   // nothing known about its battery: better absent than a made-up level
+                }
+                add(familyOf(gc), percent, state == SDL3_POWER_CHARGING, state == SDL3_POWER_CHARGED);
+            }
+            else {
+                // SDL3's calls not found: SDL2's four levels, and no word on charging.
+                switch (SDL_JoystickCurrentPowerLevel(js)) {
+                case SDL_JOYSTICK_POWER_EMPTY:  add(familyOf(gc), 5, false, false);   break;
+                case SDL_JOYSTICK_POWER_LOW:    add(familyOf(gc), 20, false, false);  break;
+                case SDL_JOYSTICK_POWER_MEDIUM: add(familyOf(gc), 70, false, false);  break;
+                case SDL_JOYSTICK_POWER_FULL:   add(familyOf(gc), 100, false, false); break;
+                default: break;   // wired, or unknown
+                }
+            }
+        }
+
+        if (fromWindows) {
+            for (const XboxPadPower::Reading& r : std::as_const(microsoft)) {
+                add(QStringLiteral("xbox"), r.percent, r.charging, r.full);
+            }
+            // Windows.Gaming.Input fills its list a moment after the process first asks: a pad SDL
+            // has open and Windows does not list yet is read again shortly (a few times at most).
+            if (microsoft.isEmpty() && microsoftOpen > 0 && m_PadBatteryRetries < 3) {
+                m_PadBatteryRetries++;
+                QTimer::singleShot(2000, this, &SdlGamepadKeyNavigation::refreshPadBatteries);
+            }
+            else if (!microsoft.isEmpty()) {
+                m_PadBatteryRetries = 0;
+            }
+        }
+    }
+
+    if (list != m_PadBatteries) {
+        m_PadBatteries = list;
+        // One line per change, for reports: what the corner shows and where it came from.
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[padbattery] %s",
+                    summary.isEmpty() ? "none" : qPrintable(summary.join(QStringLiteral(", "))));
+        emit padBatteriesChanged();
+    }
+}
+
+QString SdlGamepadKeyNavigation::familyOf(SDL_GameController* gc)
+{
+    switch (SDL_GameControllerGetType(gc)) {
+    case SDL_CONTROLLER_TYPE_PS3:
+    case SDL_CONTROLLER_TYPE_PS4:
+    case SDL_CONTROLLER_TYPE_PS5:
+        return QStringLiteral("ps");
+    case SDL_CONTROLLER_TYPE_XBOX360:
+    case SDL_CONTROLLER_TYPE_XBOXONE:
+        return QStringLiteral("xbox");
+    case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:
+    case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+    case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+    case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+        return QStringLiteral("switch");
+    default:
+        // SDL has no type for Valve's own pads: the Steam Controller of #24 reports 0
+        // (unknown). Read by vendor, after the Xbox cases, so Steam's virtual pad — Valve
+        // too, but typed as an Xbox 360 — keeps the Xbox glyphs.
+        return SDL_GameControllerGetVendor(gc) == USB_VENDOR_VALVE
+                ? QStringLiteral("steam") : QStringLiteral("generic");
+    }
+}
+
 void SdlGamepadKeyNavigation::updateControllerType()
 {
     QString newType = QStringLiteral("none");
@@ -145,30 +309,7 @@ void SdlGamepadKeyNavigation::updateControllerType()
         SDL_GameController* gc = m_Gamepads.first();
         SDL_GameControllerType t = SDL_GameControllerGetType(gc);
         const char* name = SDL_GameControllerName(gc);
-        switch (t) {
-        case SDL_CONTROLLER_TYPE_PS3:
-        case SDL_CONTROLLER_TYPE_PS4:
-        case SDL_CONTROLLER_TYPE_PS5:
-            newType = QStringLiteral("ps");
-            break;
-        case SDL_CONTROLLER_TYPE_XBOX360:
-        case SDL_CONTROLLER_TYPE_XBOXONE:
-            newType = QStringLiteral("xbox");
-            break;
-        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:
-        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
-        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
-        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
-            newType = QStringLiteral("switch");
-            break;
-        default:
-            // SDL has no type for Valve's own pads: the Steam Controller of #24 reports 0
-            // (unknown). Read by vendor, after the Xbox cases, so Steam's virtual pad — Valve
-            // too, but typed as an Xbox 360 — keeps the Xbox glyphs.
-            newType = SDL_GameControllerGetVendor(gc) == USB_VENDOR_VALVE
-                    ? QStringLiteral("steam") : QStringLiteral("generic");
-            break;
-        }
+        newType = familyOf(gc);
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "Gamepad detected: %s (SDL type=%d, family=%s)",
                     name ? name : "(null)", (int)t, qPrintable(newType));
@@ -177,6 +318,9 @@ void SdlGamepadKeyNavigation::updateControllerType()
         m_ControllerType = newType;
         emit controllerTypeChanged();
     }
+
+    // Every place that changes the list of pads comes through here.
+    refreshPadBatteries();
 }
 
 SdlGamepadKeyNavigation::~SdlGamepadKeyNavigation()
@@ -442,6 +586,7 @@ void SdlGamepadKeyNavigation::enable()
     InputHints::get()->seedFromConnectedPads(!m_Gamepads.isEmpty());
 
     m_Enabled = true;
+    m_BatteryTimer->start();
 
     // Start the polling timer if the window is focused
     updateTimerState();
@@ -461,6 +606,8 @@ void SdlGamepadKeyNavigation::disable()
         SDL_GameControllerClose(m_Gamepads[0]);
         m_Gamepads.removeAt(0);
     }
+    m_BatteryTimer->stop();
+    refreshPadBatteries();   // nothing open: the corner empties
 
     SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
 }
@@ -644,6 +791,10 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
             }
             break;
         }
+        case SDL_JOYBATTERYUPDATED:
+            // 8.7.0: a pad's charge moved.
+            refreshPadBatteries();
+            break;
         case SDL_CONTROLLERDEVICEADDED: {
             SDL_GameController* gc = SDL_GameControllerOpen(event.cdevice.which);
             if (gc != nullptr) {

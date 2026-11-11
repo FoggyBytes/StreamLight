@@ -182,6 +182,7 @@ SOURCES += \
     backend/uianimationdriver.cpp \
     backend/logsandcache.cpp \
     backend/windowslocation.cpp \
+    backend/xboxpadpower.cpp \
     backend/steamartwork.cpp \
     backend/signinlaunch.cpp \
     backend/tvlink.cpp \
@@ -263,6 +264,7 @@ HEADERS += \
     backend/uianimationdriver.h \
     backend/logsandcache.h \
     backend/windowslocation.h \
+    backend/xboxpadpower.h \
     backend/steamartwork.h \
     backend/signinlaunch.h \
     backend/tvlink.h \

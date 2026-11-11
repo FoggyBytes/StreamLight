@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- 8.7.0: Nintendo pads beside their charge — the two halves of the mockup (docs/mockups/pad-batteria),
+       white for tinting: the left one outlined with its dot high, the right one solid with its dot cut out low -->
+  <path d="M6.72 1.44 H10.37 V22.56 H6.72 A5.76 5.76 0 0 1 0.96 16.8 V7.2 A5.76 5.76 0 0 1 6.72 1.44 Z"
+        fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linejoin="round"/>
+  <circle cx="6" cy="7.68" r="1.92" fill="#ffffff"/>
+  <path fill-rule="evenodd" fill="#ffffff"
+        d="M13.63 1.44 H17.28 A5.76 5.76 0 0 1 23.04 7.2 V16.8 A5.76 5.76 0 0 1 17.28 22.56 H13.63 Z
+           M16.08 14.88 A1.92 1.92 0 1 0 19.92 14.88 A1.92 1.92 0 1 0 16.08 14.88 Z"/>
+</svg>

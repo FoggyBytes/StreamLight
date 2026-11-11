@@ -40,6 +40,7 @@ Everything below is in the current release, whichever version first introduced i
 - **Rebindable shortcuts** — every in-stream keyboard hotkey and all four controller combos, in *Settings → Shortcuts*. Defaults are **LB + RB + A** quit (closes the game on the host), **+ Y** pause (leaves it running, to resume), **+ X** performance overlay, **+ B** stream settings, chosen to stay clear of Steam's overlay
 - **On-screen keyboard** *(8.0.0+)* — every field that needs typing (profile and host names, a host's address, the accent colour, a custom frame rate or resolution) opens a keyboard at the bottom of the screen when you reach it with a controller; the right stick moves it out of the way
 - **Navigation sounds** *(7.0.0+)* — soft sounds for move, confirm and back from the controller and the keyboard, and *(7.0.3+)* from mouse clicks, never a hover; volume and switch in *Settings → Interface*
+- **Controller charge** *(8.7.0+)* — the controllers connected without a cable appear in the top-right corner, beside the time, with their maker's logo over a four-step gauge — amber when one is about to run out, green with a bolt while it charges. Xbox (adapter or Bluetooth), DualSense and DualShock 4, Switch Pro and Joy-Con, Valve's newer controllers; the original Steam Controller and the Switch 2 controllers do not report their charge
 - **DualSense haptics** *(7.0.0+)* — the fine vibration games play through the DualSense's actuators reaches the controller in your hands, over USB or Bluetooth, from a Vibeshine or Vibepollo 2.0.1+ host with its *DualSense USB audio and haptics* component
 
 **🏠 Home and the host page**
@@ -114,18 +115,12 @@ All of them are switched on **per host**, in the **Setup** tab of the host's Str
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in the section's *Setup* tab; the host has its own switch
 - **Hue Sync keeps the lights** *(10.1.0+)* — a Hue bridge syncs one area at a time, so the host's Hue Sync starting after a wake used to take the lights from this device's for good. The section's **Hue Sync** tab shows the bridge's areas and who has the lights, and sets the host to wait while they are in use — for any device, or only this one; StreamTweak then starts Hue Sync on the host itself, and only reads the bridge. **Take back** restarts Hue Sync here, by hand or by itself, and works with any host
 
-## ✨ What's New in 8.6.1 — Straight In
+## ✨ What's New in 8.7.0 — Full Charge
 
 Works with any host.
 
-- **No more shifted window after a stream** — in the Xbox full screen experience the window could come back pushed up with a band at the bottom; StreamLight now checks after every stream that the window is back as it was, and puts it back if not
-- **Straight to Update now** — saying Yes to the update prompt with the controller now puts the focus on *Update now* in *Settings → About*, instead of leaving it nowhere until you left Settings and came back
-
-## ✨ What's New in 8.6.0 — Hands Free
-
-Works with any host.
-
-- **Update with the controller alone** — *Install now* no longer opens the setup wizard behind a Windows prompt: a full-screen page in the app's look follows the update to the end, and StreamLight reopens by itself. The release is checked against GitHub again before anything installs. From the next update on: the one to 8.6.0 still opens the usual setup
+- **Controller charge beside the clock** — every controller connected without a cable shows in the top-right corner with its maker's logo and a four-step gauge, green with a bolt while it charges
+- **Time, date and battery on three lines** — one block, centred on the controllers beside it
 
 *Older releases are in [changelog.txt](changelog.txt).*
 
@@ -176,6 +171,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 - [**StreamTweak**](https://github.com/FoggyBytes/StreamTweak) — the host-side companion, designed in lockstep with StreamLight
 - [**Moonlight**](https://github.com/moonlight-stream/moonlight-qt) — the open-source client this fork is built on; full credit to its contributors
 - [**Nonary's VRR work for Moonlight**](https://github.com/Nonary/moonlight-qt) — the VRR pacing in 6.0.0 and PyroWave support in 6.4.0 are Chase Payne's code, imported as it is (tag `v6.1.0-vrr18`) together with its test harness; the PyroWave codec itself is [Hans-Kristian Arntzen's](https://github.com/Themaister/pyrowave). The DualSense haptics and the PyroWave Test's measurements in 7.0.0 are his too, from the `master` branch
+- [**simple-icons**](https://github.com/simple-icons/simple-icons) — the PlayStation logo beside a DualSense's charge *(8.7.0)*, CC0
 - [**SAxense**](https://github.com/egormanga/SAxense) — Sdore's (Egor Vorontsov) research into the DualSense's Bluetooth haptics report, which the Bluetooth path is built on; MPL-2.0, kept with its notices in [`third-party/saxense`](third-party/saxense)
 - [**Sunshine**](https://github.com/LizardByte/Sunshine) — the streaming host that started it all
 - [**Apollo**](https://github.com/ClassicOldSong/Apollo) — community-driven Sunshine fork
