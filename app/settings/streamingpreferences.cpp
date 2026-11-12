@@ -21,6 +21,7 @@
 #define SER_FRACTIONALVSYNC "fractionalvsync"
 #define SER_ENABLEVRR "enablevrr"
 #define SER_FPSBEFOREVRR "fpsbeforevrr"
+#define SER_PROFILELISTHOLDOPENS "profilelistholdopens"
 #define SER_VRRLATENCYMODE "vrrlatencymode"
 #define SER_SMOOTHVRRFRAMETIMING "smoothvrrframetiming"
 #define SER_GAMEOPTS "gameopts"
@@ -219,6 +220,7 @@ void StreamingPreferences::reload()
     fractionalVsync = settings.value(SER_FRACTIONALVSYNC, false).toBool();
     enableVrr = settings.value(SER_ENABLEVRR, false).toBool();
     fpsBeforeVrr = settings.value(SER_FPSBEFOREVRR, 0).toInt();
+    profileListHoldOpens = settings.value(SER_PROFILELISTHOLDOPENS, 0).toInt();
     vrrLatencyMode = VLM_BALANCED;
     if (settings.contains(SER_VRRLATENCYMODE)) {
         bool validMode = false;
@@ -403,6 +405,7 @@ void StreamingPreferences::save()
     settings.setValue(SER_FRACTIONALVSYNC, fractionalVsync);
     settings.setValue(SER_ENABLEVRR, enableVrr);
     settings.setValue(SER_FPSBEFOREVRR, fpsBeforeVrr);
+    settings.setValue(SER_PROFILELISTHOLDOPENS, profileListHoldOpens);
     settings.setValue(SER_VRRLATENCYMODE, vrrLatencyMode);
     settings.setValue(SER_SMOOTHVRRFRAMETIMING, smoothVrrFrameTiming);
     settings.setValue(SER_GAMEOPTS, gameOptimizations);

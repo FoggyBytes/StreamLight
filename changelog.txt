@@ -4,6 +4,19 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+---------------------------------------
+Version 8.7.1 - Quick Pick (12/11/2026)
+---------------------------------------
+
+No StreamTweak update required — 8.7.1 is client-side and works with any host. With many profiles, you can now pick the one you want from a list.
+
+✨ IMPROVEMENTS:
+• Profile list — hold LT or RT (Q or E) on Home or on a host's page and a list drops from the profile badge: Global and every profile, each with what it changes (resolution, frame rate, bitrate, HDR, codec); the D-pad moves, A picks, B closes without changing anything. A short press still steps one profile at a time. On Home, Start (W) and a click on the badge open it too; on a host's page, a click on the profile chip
+• A reminder when it helps — stepping quickly through three profiles or more shows "Hold LT or RT for the profile list" at the bottom of the screen, until you have opened the list by holding twice
+
+🙏 THANKS:
+• Thanks to @kayti for asking for it (https://github.com/FoggyBytes/StreamLight/issues/53)
+
 ----------------------------------------
 Version 8.7.0 - Full Charge (11/11/2026)
 ----------------------------------------

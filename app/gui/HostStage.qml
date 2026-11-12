@@ -68,6 +68,9 @@ Item {
     // this very screen (§40).
     property var streamOverride: ({})
 
+    // 8.7.1 (#53): what the profile list drops from (HomeScreen.openProfileList).
+    readonly property Item profileAnchor: profileBadge
+
     readonly property int  _effW:       (streamOverride && streamOverride.width   !== undefined) ? streamOverride.width   : StreamingPreferences.width
     readonly property int  _effH:       (streamOverride && streamOverride.height  !== undefined) ? streamOverride.height  : StreamingPreferences.height
     readonly property int  _effFps:     (streamOverride && streamOverride.fps     !== undefined) ? streamOverride.fps     : StreamingPreferences.fps
@@ -927,7 +930,10 @@ Item {
                         // The 18/09 problem does not come back: it was accent text on an accent
                         // tint; the words are the card's own light (or dark) now, not the accent.
                         readonly property color _hue: stage._hasPicture ? Theme.accent : Theme.accentFill
-                        color: Qt.rgba(_hue.r, _hue.g, _hue.b, 0.18)
+                        color: Qt.rgba(_hue.r, _hue.g, _hue.b, profileBadge._hovered ? 0.28 : 0.18)
+                        // Hover only with the mouse in hand, as on the action row (_hovered there):
+                        // a pointer parked over the badge must not light it while the pad drives.
+                        readonly property bool _hovered: profileBadgeMouse.containsMouse && stage.pointerMode
                         border.color: Qt.rgba(_hue.r, _hue.g, _hue.b, 0.55)
                         border.width: 1
 
@@ -944,6 +950,26 @@ Item {
                             // the name for the same line.
                             font.pixelSize: stage._px(34)
                             font.weight: Font.DemiBold
+                        }
+
+                        // 8.7.1 (#53): a click drops the profile list. Under the pointer the
+                        // badge brightens and a small ▾ in its right padding says it opens.
+                        Text {
+                            anchors.right: parent.right
+                            anchors.rightMargin: stage._px(5)
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: profileBadge._hovered
+                            text: "▾"
+                            color: stage._onBg
+                            opacity: 0.8
+                            font.pixelSize: stage._px(14)
+                        }
+                        MouseArea {
+                            id: profileBadgeMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: stage.activated("profileList")
                         }
                     }
 

@@ -416,6 +416,9 @@ FocusScope {
         case "theme":
             appShell.toggleTheme()
             break
+        case "profileList":
+            if (homeLoader.item && homeLoader.item.openProfileList) homeLoader.item.openProfileList(false)
+            break
         case "shutdownHost":
             // Open the POWER chooser for the currently-focused host card.
             if (homeLoader.item && homeLoader.item.openPowerForCurrent)
@@ -817,12 +820,20 @@ FocusScope {
         // ActionHint picks; a prompt with no key stays on the glyph.
         // 7.0.0 (13/10/2026): the theme toggle — right stick click / T — naming the theme it
         // leads to, like every other prompt names what it does.
-        readonly property var _hintsHome: [
-            { btn: "X",  key: "P",   act: qsTr("Power"),    kind: "shutdownHost" },
-            { btn: "Y",  key: "S",   act: qsTr("Settings"), kind: "settings" },
-            { btn: "RS", key: "T",   act: Theme.light ? qsTr("Dark theme") : qsTr("Light theme"), kind: "theme" },
-            { btn: "B",  key: "Esc", act: qsTr("Exit"),     kind: "back" }
-        ]
+        // 8.7.1 (#53): Start / W opens the profile list, only on a host that has profiles. Here
+        // and not beside the badge: Start belongs to no single control. The hold of LT/RT, which
+        // also opens it, is taught by a notice instead (noteProfileTap).
+        readonly property var _hintsHome: {
+            var h = [
+                { btn: "X",  key: "P",   act: qsTr("Power"),    kind: "shutdownHost" },
+                { btn: "Y",  key: "S",   act: qsTr("Settings"), kind: "settings" },
+                { btn: "RS", key: "T",   act: Theme.light ? qsTr("Dark theme") : qsTr("Light theme"), kind: "theme" },
+                { btn: "B",  key: "Esc", act: qsTr("Exit"),     kind: "back" }
+            ]
+            if (homeLoader.item && homeLoader.item.focusedHasProfiles === true)
+                h.splice(2, 0, { btn: "START", key: "W", act: qsTr("Profile list"), kind: "profileList" })
+            return h
+        }
         // List mode draws A, X and Select on the spotlight buttons. Grid mode puts those
         // actions in this bar. Left-stick click switches layout in either mode.
         //
@@ -1158,6 +1169,48 @@ FocusScope {
         themeNotice.show(text, ms)
     }
 
+    /*
+     * The profile list's hint (8.7.1, #53): "Hold LT or RT for the profile list", in this notice.
+     *
+     * Shown only when it is needed — after four taps of LT/RT (Q/E) within three seconds, which is
+     * stepping through the profiles one at a time, the very thing the list is for — and kept up for
+     * as long as the taps go on. After the list has been opened by holding twice it is never shown
+     * again (StreamingPreferences.profileListHoldOpens): by then the user knows. Not in the status
+     * bar, where LT/RT are not printed: they sit beside the badge they move.
+     *
+     * Only on a host with three profiles or more (`profileCount`, from the caller): with one or two
+     * the "list" is two or three entries the triggers already go round in a moment, and the hint
+     * would be teaching something with nothing to gain.
+     */
+    readonly property int _profileTapsForHint: 4
+    readonly property int _profileTapWindowMs: 3000
+    readonly property int _profileHoldsLearned: 2
+    readonly property int _profilesForHint: 3
+    property var _profileTaps: []
+    function noteProfileTap(profileCount) {
+        if (StreamingPreferences.profileListHoldOpens >= _profileHoldsLearned) return
+        if (profileCount < _profilesForHint) { _profileTaps = []; return }
+        var now = Date.now()
+        var t = _profileTaps.filter(function(x) { return now - x < appShell._profileTapWindowMs })
+        t.push(now)
+        if (t.length >= _profileTapsForHint) {
+            t = []
+            themeNotice.showParts([qsTr("Hold"), { btn: "LT", key: "Q" }, qsTr("or"),
+                                   { btn: "RT", key: "E" }, qsTr("for the profile list")], 5000)
+        } else if (themeNotice._profileHint && themeNotice.opacity > 0) {
+            themeNotice.extend(5000)
+        }
+        _profileTaps = t
+    }
+    function noteProfileListHeld() {
+        _profileTaps = []
+        if (themeNotice._profileHint) themeNotice.hide()
+        if (StreamingPreferences.profileListHoldOpens < _profileHoldsLearned) {
+            StreamingPreferences.profileListHoldOpens = StreamingPreferences.profileListHoldOpens + 1
+            StreamingPreferences.save()
+        }
+    }
+
     function _hm(minutes) {
         var d = new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60)
         return Qt.formatTime(d, StreamingPreferences.clockFormat === StreamingPreferences.CF_12H
@@ -1195,8 +1248,8 @@ FocusScope {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: statusBar.top
         anchors.bottomMargin: Math.round(14 * Theme.uiScale)
-        width: themeNoticeText.implicitWidth + Math.round(32 * Theme.uiScale)
-        height: themeNoticeText.implicitHeight + Math.round(18 * Theme.uiScale)
+        width: themeNoticeRow.implicitWidth + Math.round(32 * Theme.uiScale)
+        height: themeNoticeRow.implicitHeight + Math.round(18 * Theme.uiScale)
         radius: Math.round(8 * Theme.uiScale)
         color: Theme.card
         border.color: Theme.lineHigh
@@ -1204,11 +1257,36 @@ FocusScope {
         opacity: 0
         visible: opacity > 0
 
+        // 8.7.1: a notice may carry button prompts between its words — `parts` is a list of
+        // strings and { btn, key } (ActionHint's pad button and keyboard key). Plain text is
+        // one part, and looks as it always did.
+        property var _parts: []
+        // The profile list's hint is up (noteProfileTap / noteProfileListHeld in this file).
+        property bool _profileHint: false
+
         function show(text, ms) {
+            _profileHint = false
+            _parts = []
             themeNoticeText.text = text
             themeNoticeTimer.interval = ms ? ms : 2800
             opacity = 1
             themeNoticeTimer.restart()
+        }
+        function showParts(parts, ms) {
+            _profileHint = true
+            themeNoticeText.text = ""
+            _parts = parts
+            themeNoticeTimer.interval = ms ? ms : 2800
+            opacity = 1
+            themeNoticeTimer.restart()
+        }
+        function extend(ms) {
+            themeNoticeTimer.interval = ms
+            themeNoticeTimer.restart()
+        }
+        function hide() {
+            themeNoticeTimer.stop()
+            opacity = 0
         }
 
         Behavior on opacity {
@@ -1222,12 +1300,47 @@ FocusScope {
             onTriggered: themeNotice.opacity = 0
         }
 
-        Text {
-            id: themeNoticeText
+        Row {
+            id: themeNoticeRow
             anchors.centerIn: parent
-            color: Theme.text
-            font.family: Theme.family
-            font.pixelSize: Math.round(Theme.fontBody * Theme.uiScale)
+            spacing: Math.round(7 * Theme.uiScale)
+
+            Text {
+                id: themeNoticeText
+                anchors.verticalCenter: parent.verticalCenter
+                visible: text.length > 0
+                color: Theme.text
+                font.family: Theme.family
+                font.pixelSize: Math.round(Theme.fontBody * Theme.uiScale)
+            }
+            Repeater {
+                model: themeNotice._parts
+                delegate: Item {
+                    readonly property bool _isKey: typeof modelData !== "string"
+                    anchors.verticalCenter: parent.verticalCenter
+                    implicitWidth: _isKey ? partHint.implicitWidth : partText.implicitWidth
+                    implicitHeight: _isKey ? partHint.implicitHeight : partText.implicitHeight
+                    width: implicitWidth
+                    height: implicitHeight
+                    Text {
+                        id: partText
+                        visible: !parent._isKey
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: parent._isKey ? "" : modelData
+                        color: Theme.text
+                        font.family: Theme.family
+                        font.pixelSize: Math.round(Theme.fontBody * Theme.uiScale)
+                    }
+                    ActionHint {
+                        id: partHint
+                        visible: parent._isKey
+                        anchors.verticalCenter: parent.verticalCenter
+                        buttonKey: parent._isKey ? modelData.btn : ""
+                        keyLabel:  parent._isKey ? modelData.key : ""
+                        size: Math.round(22 * Theme.uiScale)
+                    }
+                }
+            }
         }
     }
 

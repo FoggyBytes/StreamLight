@@ -284,6 +284,9 @@ public:
     // 7.0.0: the frame rate in use before VRR switched on and selected its recommended rate,
     // so switching VRR off can put it back. 0 = nothing to restore. Settings owns the logic.
     Q_PROPERTY(int fpsBeforeVrr MEMBER fpsBeforeVrr NOTIFY fpsBeforeVrrChanged)
+    // 8.7.1 (#53): how many times the profile list was opened by HOLDING LT/RT (or Q/E). After two
+    // the "Hold LT or RT for the profile list" notice is never shown again. Not a setting.
+    Q_PROPERTY(int profileListHoldOpens MEMBER profileListHoldOpens NOTIFY profileListHoldOpensChanged)
     Q_PROPERTY(int vrrLatencyMode MEMBER vrrLatencyMode NOTIFY vrrLatencyModeChanged)
     Q_PROPERTY(bool smoothVrrFrameTiming MEMBER smoothVrrFrameTiming NOTIFY smoothVrrFrameTimingChanged)
     Q_PROPERTY(bool gameOptimizations MEMBER gameOptimizations NOTIFY gameOptimizationsChanged)
@@ -347,6 +350,7 @@ public:
 
     bool enableVrr;
     int fpsBeforeVrr;
+    int profileListHoldOpens;
     int vrrLatencyMode;
     // Re-present the last frame inside a host gap longer than the panel's
     // adaptive-refresh floor, so the panel never engages its own
@@ -417,6 +421,7 @@ signals:
     void fractionalVsyncChanged();
     void enableVrrChanged();
     void fpsBeforeVrrChanged();
+    void profileListHoldOpensChanged();
     void vrrLatencyModeChanged();
     void smoothVrrFrameTimingChanged();
     void gameOptimizationsChanged();

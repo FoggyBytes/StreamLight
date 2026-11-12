@@ -169,6 +169,35 @@ FocusScope {
         computerModel.cycleHostProfile(currentHostIndex, dir)
     }
 
+    // ── The profile list (8.7.1, #53) ────────────────────────────────────────
+    // Here the count IS the question, unlike the cycle above: there is no list to open on a host
+    // without profiles. Read by AppShell for the Start prompt.
+    readonly property bool focusedHasProfiles: currentHost ? currentHost.profileCount >= 1 : false
+
+    // Drops the list from the card's profile badge. `byHold`: opened by holding LT/RT (Q/E),
+    // which is what the hint teaches (AppShell.noteProfileListHeld).
+    function openProfileList(byHold) {
+        if (!focusedHasProfiles || currentHostIndex < 0 || profileListPopup.opened) return
+        // A hold that ends after the keys went elsewhere (a dialog opened meanwhile) opens nothing.
+        if (byHold && !navRoot.activeFocus) return
+        profileListPopup.hostUuid   = hostUuidAt(currentHostIndex)
+        profileListPopup.hostName   = currentHost ? currentHost.name : ""
+        profileListPopup.anchorItem = hostStage.profileAnchor
+        profileListPopup.open()
+        if (byHold && appShell) appShell.noteProfileListHeld()
+    }
+
+    ProfileHold {
+        id: profileHold
+        canHold: homeScreen.focusedHasProfiles
+        onTapped: function(dir) {
+            homeScreen.cycleFocusedProfile(dir)
+            if (homeScreen.appShell)
+                homeScreen.appShell.noteProfileTap(homeScreen.currentHost ? homeScreen.currentHost.profileCount : 0)
+        }
+        onHeld: function(dir) { homeScreen.openProfileList(true) }
+    }
+
     // Opens the POWER chooser for the selected host. Used by the status-bar "X Shutdown"
     // shortcut (mouse click + gamepad X). On a host that can't be powered off — offline,
     // unpaired, or the add tab — it still opens the chooser for THIS client, so the user
@@ -1919,21 +1948,21 @@ FocusScope {
         // focused item first, so a host-name field or the add-host dialog swallows the letter
         // and typing "Peppe" cannot shut a machine down. A global Shortcut would fire through
         // any text field, which is the reason single-key shortcuts are usually avoided at all.
+        // 8.7.1 (#53): a tap of LT/RT (Q/E) steps the profile ON RELEASE, a hold opens the list —
+        // see ProfileHold. Q/E mirror LT/RT; PgUp/PgDn mirror LB/RB (host) and are handled in
+        // AppShell so they work wherever the focus is, exactly like the shoulders do.
+        Keys.onReleased: function(event) {
+            if (profileHold.release(event)) event.accepted = true
+        }
         Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_F14) {
-                homeScreen.cycleFocusedProfile(-1)
-                event.accepted = true
-            } else if (event.key === Qt.Key_F15) {
-                homeScreen.cycleFocusedProfile(1)
+            if (profileHold.press(event)) {
                 event.accepted = true
             }
-            // Keyboard equivalents of the controller prompts. Q/E mirror LT/RT (profile);
-            // PgUp/PgDn mirror LB/RB (host) and are handled in AppShell so they work wherever
-            // the focus is, exactly like the shoulders do.
-            else if (event.key === Qt.Key_Q) {
-                homeScreen.cycleFocusedProfile(-1); event.accepted = true
-            } else if (event.key === Qt.Key_E) {
-                homeScreen.cycleFocusedProfile(1);  event.accepted = true
+            // The profile list: Start on the pad (Key_F18, free on Home), W on the keyboard —
+            // between Q and E, as the list sits between the two triggers.
+            else if (event.key === Qt.Key_F18 || event.key === Qt.Key_W) {
+                if (!event.isAutoRepeat) homeScreen.openProfileList(false)
+                event.accepted = true
             } else if (event.key === Qt.Key_P) {
                 homeScreen.openPowerForCurrent(); event.accepted = true
             } else if (event.key === Qt.Key_S) {
@@ -2330,6 +2359,9 @@ FocusScope {
             // can already do from anywhere.
             if (kind === "prevProfile") { homeScreen.cycleFocusedProfile(-1); return }
             if (kind === "nextProfile") { homeScreen.cycleFocusedProfile(1);  return }
+            // 8.7.1: a click on the profile badge drops the list (and, like the shoulders,
+            // leaves the pad's cursor where it was).
+            if (kind === "profileList") { homeScreen.openProfileList(false); return }
 
             homeScreen.focusZone = 1
             navRoot.forceActiveFocus()
@@ -2655,6 +2687,12 @@ FocusScope {
     // ═════════════════════════════════════════════════════════════════════════
     // Dialogs
     // ═════════════════════════════════════════════════════════════════════════
+
+    // The profile list (8.7.1, #53) — dropped from the card's profile badge.
+    ProfileListPopup {
+        id: profileListPopup
+        computerModel: homeScreen.computerModel
+    }
 
     // Options chooser — wide centred tile grid.
     HostOptionsDialog {
