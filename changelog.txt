@@ -4,6 +4,20 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+----------------------------------------
+Version 8.8.1 - Clean Lines (13/11/2026)
+----------------------------------------
+
+No StreamTweak update required — 8.8.1 is client-side and works with any host. A few visual fixes to the redone Host profiles and per-game settings.
+
+🐛 FIXES:
+• Double border in the profile list — with the cursor on the settings, + Add a profile, Sort and the profile in use showed two borders side by side; the list now draws one
+• Selected setting under the scroll bar — the highlighted row ran beneath the scroll bar on the right; the rows now stop before it
+• Footer hints in line — hints made only of text sat higher than the buttons beside them; they are now centred on the same line
+
+🎨 UI:
+• Fewer hints in the footer — ◀ Profiles, ◀ Game and ▶ Settings are gone: the D-pad moves between the two sides as everywhere else in the app
+
 -------------------------------------
 Version 8.8.0 - In Order (13/11/2026)
 -------------------------------------

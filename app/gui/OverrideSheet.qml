@@ -331,13 +331,17 @@ Item {
             enabled: !Theme.reduceAnimations && !body.moving
             NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
         }
-        ScrollBar.vertical: ThemedScrollBar {}
+        ScrollBar.vertical: ThemedScrollBar { id: vbar }
+
+        // The rows stop short of the scroll bar's lane while there is one: the cursor's frame ran
+        // under the bar's stroke.
+        readonly property real rowW: width - sheet._px(8) - (vbar.visible ? vbar.implicitWidth : 0)
 
         // The cursor: one frame that glides, FocusFrame's radius and border.
         Rectangle {
             visible: sheet.active && sheet._rows.length > 0
             readonly property var r: sheet._rows[Math.max(0, Math.min(sheet.idx, sheet._rows.length - 1))]
-            x: sheet._px(4); width: body.width - sheet._px(8)
+            x: sheet._px(4); width: body.rowW
             y: r ? r.y : 0; height: sheet._rowH
             radius: sheet._px(6)
             color: Qt.rgba(Theme.accentFill.r, Theme.accentFill.g, Theme.accentFill.b, sheet.editing ? 0.14 : 0.10)
@@ -352,7 +356,7 @@ Item {
                 id: entry
                 required property var modelData
                 x: sheet._px(4); y: modelData.y
-                width: body.width - sheet._px(8); height: modelData.h
+                width: body.rowW; height: modelData.h
 
                 // A section title: Settings' card titles.
                 Text {

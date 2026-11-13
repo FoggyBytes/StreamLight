@@ -115,6 +115,13 @@ All of them are switched on **per host**, in the **Setup** tab of the host's Str
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in the section's *Setup* tab; the host has its own switch
 - **Hue Sync keeps the lights** *(10.1.0+)* — a Hue bridge syncs one area at a time, so the host's Hue Sync starting after a wake used to take the lights from this device's for good. The section's **Hue Sync** tab shows the bridge's areas and who has the lights, and sets the host to wait while they are in use — for any device, or only this one; StreamTweak then starts Hue Sync on the host itself, and only reads the bridge. **Take back** restarts Hue Sync here, by hand or by itself, and works with any host
 
+## ✨ What's New in 8.8.1 — Clean Lines
+
+Works with any host.
+
+- **Cleaner profile dialogs** — one border on the profile list instead of two, the selected setting no longer runs under the scroll bar, and the footer hints sit on one line
+- **Fewer hints** — ◀ Profiles, ◀ Game and ▶ Settings are gone from the footer: the D-pad moves between the two sides as everywhere else
+
 ## ✨ What's New in 8.8.0 — In Order
 
 Works with any host.
@@ -123,13 +130,6 @@ Works with any host.
 - **One badge per setting** — **A** opens a value into every choice, **◀ ▶** choose, **A** confirms, **B** leaves it as it was; on Bitrate, a slider
 - **Sort your profiles** — Alphabetical, Created or Custom; in Custom **R3** (**M**) picks a profile up, **▲ ▼** carry it, **A** puts it down, or drag it with the mouse. The same order in the **LT / RT** cycle and in Home's profile list (**Start** / **W**)
 - **Per-game settings** in the same layout, with the game on the left
-
-## ✨ What's New in 8.7.0 — Full Charge
-
-Works with any host.
-
-- **Controller charge beside the clock** — every controller connected without a cable shows in the top-right corner with its maker's logo and a four-step gauge, green with a bolt while it charges
-- **Time, date and battery on three lines** — one block, centred on the controllers beside it
 
 *Older releases are in [changelog.txt](changelog.txt).*
 

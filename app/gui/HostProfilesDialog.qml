@@ -361,9 +361,12 @@ Popup {
         property bool clickable: false
         signal clicked()
         implicitWidth: pr.implicitWidth
-        implicitHeight: pr.implicitHeight
+        // As tall as the key chip even when there is none ("▲▼ Move"): the footer Row lines its
+        // items up by the top, so a prompt of text alone sat higher than its neighbours.
+        implicitHeight: Math.max(pr.implicitHeight, dlg._px(26))
         Row {
             id: pr
+            anchors.verticalCenter: parent.verticalCenter
             spacing: dlg._px(9)
             ActionHint {
                 visible: prompt.buttonKey.length > 0 || prompt.keyLabel.length > 0
@@ -496,9 +499,16 @@ Popup {
                     width: sideFlick.width
                     height: sideFlick.contentHeight
 
+                    // With the cursor on the sheet the frame below stays as a quiet mark of where it
+                    // was, but only on an entry that draws nothing of its own: on Sort, + Add a profile
+                    // or the profile in use it sat 4 px outside their frame, two borders side by side.
+                    readonly property bool _sideOwnFrame: dlg.sideIdx === 0 || dlg.sideIdx === dlg._addIdx
+                                                         || (dlg.sideIdx === 1 && dlg.activeSlot < 0)
+                                                         || (dlg._onProfile && dlg.activeSlot >= 0 && dlg._slotAt(dlg.sideIdx) === dlg.activeSlot)
+
                     // The cursor: one frame that glides (FocusFrame's radius and border).
                     Rectangle {
-                        visible: !dlg._moving
+                        visible: !dlg._moving && (here || !sideContent._sideOwnFrame)
                         x: dlg._px(2); width: parent.width - dlg._px(4)
                         y: dlg._sideY(dlg.sideIdx); height: dlg._sideH(dlg.sideIdx)
                         radius: dlg._px(6)
@@ -907,7 +917,6 @@ Popup {
                          clickable: true; onClicked: dlg.renameProfile(dlg._slotAt(dlg.sideIdx)) }
                 Prompt { visible: prompts.idleSide && dlg._onProfile; buttonKey: "Y"; keyLabel: "Y"; action: qsTr("Remove")
                          clickable: true; onClicked: dlg.askRemoveProfile(dlg._slotAt(dlg.sideIdx)) }
-                Prompt { visible: prompts.idleSide; action: "▶  " + qsTr("Settings") }
 
                 Prompt { visible: dlg._moving; action: "▲▼  " + qsTr("Move") }
                 Prompt { visible: dlg._moving; buttonKey: "A"; keyLabel: "Enter"; action: qsTr("Place")
@@ -921,7 +930,6 @@ Popup {
                 Prompt { visible: prompts.idleSheet && dlg.activeSlot >= 0 && sheet.changes > 0
                          buttonKey: "X"; keyLabel: "X"; action: qsTr("Reset all")
                          clickable: true; onClicked: resetConfirm.open() }
-                Prompt { visible: prompts.idleSheet; action: "◀  " + qsTr("Profiles") }
                 Prompt { visible: dlg.zone === "sheet" && SdlGamepadKeyNavigation.scrollAvailable && InputHints.padActive
                          buttonKey: "RSCROLL"; action: qsTr("Scroll") }
 

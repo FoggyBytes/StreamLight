@@ -130,9 +130,12 @@ Popup {
         property bool clickable: false
         signal clicked()
         implicitWidth: pr.implicitWidth
-        implicitHeight: pr.implicitHeight
+        // As tall as the key chip even when there is none ("◀▶ Choose"): the footer Row lines its
+        // items up by the top, so a prompt of text alone sat higher than its neighbours.
+        implicitHeight: Math.max(pr.implicitHeight, dlg._px(26))
         Row {
             id: pr
+            anchors.verticalCenter: parent.verticalCenter
             spacing: dlg._px(9)
             ActionHint {
                 visible: prompt.buttonKey.length > 0 || prompt.keyLabel.length > 0
@@ -348,7 +351,6 @@ Popup {
 
                 Prompt { visible: dlg.zone === "side" && dlg._sideOn; buttonKey: "A"; keyLabel: "Enter"
                          action: dlg.sideIdx === 0 ? qsTr("Reset all") : qsTr("Reset stats") }
-                Prompt { visible: dlg.zone === "side"; action: "▶  " + qsTr("Settings") }
 
                 Prompt { visible: prompts.idleSheet && sheet.currentEnabled; buttonKey: "A"; keyLabel: "Enter"; action: qsTr("Change") }
                 Prompt { visible: prompts.idleSheet && sheet.currentOver; buttonKey: "Y"; keyLabel: "Y"
@@ -356,7 +358,6 @@ Popup {
                          clickable: true; onClicked: dlg.applyChange(sheet.currentKey, undefined) }
                 Prompt { visible: prompts.idleSheet && sheet.changes > 0; buttonKey: "X"; keyLabel: "X"; action: qsTr("Reset all")
                          clickable: true; onClicked: resetConfirm.open() }
-                Prompt { visible: prompts.idleSheet; action: "◀  " + qsTr("Game") }
                 Prompt { visible: dlg.zone === "sheet" && SdlGamepadKeyNavigation.scrollAvailable && InputHints.padActive
                          buttonKey: "RSCROLL"; action: qsTr("Scroll") }
 
