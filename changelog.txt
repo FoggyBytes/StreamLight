@@ -4,6 +4,24 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+---------------------------------------
+Version 8.8.2 - Light Step (13/11/2026)
+---------------------------------------
+
+No StreamTweak update required — 8.8.2 is client-side and works with any host. The host card casts a shadow, and StreamLight does less work when nobody is looking.
+
+🎨 UI:
+• A shadow under the host card — the large card on Home now casts the same shadow as the game covers, in place of the thin line round it; with Reduce animations the shadow is off and the line is back
+
+✨ IMPROVEMENTS:
+• Quiet during a stream — Home asked every StreamTweak host for its link, its network state and its lock state every couple of seconds, and went on asking while a game was streaming or the window was minimized; those questions now stop until Home is back on screen
+• One question instead of two — on a host with StreamTweak 8.1.0 or later the link speed comes with the network state, so it is no longer asked separately
+• Lighter signing — every command to StreamTweak is signed, and each signature read the key from scratch; the key is now read once
+• Smoother timeline cursor — in the StreamTweak section's Sessions, moving the cursor along a session's timeline no longer redraws the whole chart at every step
+
+🐛 FIXES:
+• Even outline on the Accent colour button — one side of the colour square looked thicker than the other; the colour is now shown in a circle
+
 ----------------------------------------
 Version 8.8.1 - Clean Lines (13/11/2026)
 ----------------------------------------

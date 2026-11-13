@@ -128,16 +128,22 @@ Item {
     readonly property int _gameH: _px(26)
     readonly property int _top: _px(30)
 
-    onDetailChanged: cv.requestPaint()
-    onPointsChanged: cv.requestPaint()
-    onPartsChanged: cv.requestPaint()
-    onTrackChanged: cv.requestPaint()
-    onCursorChanged: cv.requestPaint()
-    onZoomChanged: cv.requestPaint()
-    onActiveChanged: cv.requestPaint()
-    onWidthChanged: cv.requestPaint()
-    onHeightChanged: cv.requestPaint()
-    Connections { target: Theme; function onChanged() { cv.requestPaint() } }
+    // 8.8.2: two layers. The plot (cv) is painted when what it shows changes; the cursor, its
+    // dot and the values under it (cur) on their own, over it. The right stick moves the cursor
+    // every 16 ms, and each step used to paint the whole plot again. With a zoom the window
+    // follows the cursor, so there the plot still moves with it: that is _from changing.
+    function _repaint() { cv.requestPaint(); cur.requestPaint() }
+    onDetailChanged: _repaint()
+    onPointsChanged: _repaint()
+    onPartsChanged: _repaint()
+    onTrackChanged: _repaint()
+    onCursorChanged: cur.requestPaint()
+    on_FromChanged: cv.requestPaint()
+    onZoomChanged: _repaint()
+    onActiveChanged: cur.requestPaint()
+    onWidthChanged: _repaint()
+    onHeightChanged: _repaint()
+    Connections { target: Theme; function onChanged() { tl._repaint() } }
 
     Canvas {
         id: cv
@@ -227,7 +233,10 @@ Item {
         }
 
         // Host compute / Host power: a strip per series (variant C).
-        function paintStrips(ctx) {
+        // layer: "base" = everything that stays put, "cursor" = the cursor, its dots and the
+        // values read under it. Both walk the same layout, so the two can never disagree.
+        function paintStrips(ctx, layer) {
+            var base = layer !== "cursor", over = layer !== "base"
             var u = tl._u
             var x0 = tl._labelW, x1 = width - tl._px(8), w = x1 - x0
             var top = tl._top, bot = height - tl._axisH - tl._gameH
@@ -252,11 +261,15 @@ Item {
 
                 // The name, the value under the cursor, and the Power strip's extras.
                 ctx.textAlign = "left"; ctx.textBaseline = "top"
-                swatch(ctx, 0, sy0 + 8 * u, st.na ? Theme.text3 : st.color, st.na ? "dashed" : "line")
-                ctx.font = font(Theme.fontSmall, false); ctx.fillStyle = Theme.text2
-                ctx.fillText(st.name, tl._px(20), sy0)
+                if (base) {
+                    swatch(ctx, 0, sy0 + 8 * u, st.na ? Theme.text3 : st.color, st.na ? "dashed" : "line")
+                    ctx.font = font(Theme.fontSmall, false); ctx.fillStyle = Theme.text2
+                    ctx.fillText(st.name, tl._px(20), sy0)
+                }
                 var bypassHere = st.key === "ENC" ? tl._bypassAt(tl.cursor) : null
+                if (st.na && !base) continue
                 if (st.na) {
+                    ctx.font = font(Theme.fontSmall, false)
                     var naText = qsTr("n/a on %1").arg(tl._bypass.length ? tl._bypass[0].label : "PyroWave")
                     ctx.font = font(Theme.fontSmall, true); ctx.fillStyle = Theme.text3
                     ctx.fillText(naText, tl._px(20) + ctx.measureText(st.name).width + tl._px(16), sy0)
@@ -266,10 +279,12 @@ Item {
                     continue
                 }
                 var v = tl._at(st.key, tl.cursor)
-                ctx.font = font(Theme.fontBody, true)
-                ctx.fillStyle = bypassHere ? Theme.text3 : Theme.text
-                ctx.fillText(bypassHere ? qsTr("n/a · %1").arg(bypassHere.label)
-                                        : v < 0 ? "—" : Fmt.num(v, 0) + " " + st.unit, tl._px(20), sy0 + tl._px(18))
+                if (over) {
+                    ctx.font = font(Theme.fontBody, true)
+                    ctx.fillStyle = bypassHere ? Theme.text3 : Theme.text
+                    ctx.fillText(bypassHere ? qsTr("n/a · %1").arg(bypassHere.label)
+                                            : v < 0 ? "—" : Fmt.num(v, 0) + " " + st.unit, tl._px(20), sy0 + tl._px(18))
+                }
                 var ly = sy0 + tl._px(44)
                 var extras = []
                 if (st.limit) {
@@ -285,12 +300,14 @@ Item {
                 for (var e = 0; e < extras.length; e++) {
                     if (ly + tl._px(16) > sy1) break
                     var ex = extras[e]
-                    swatch(ctx, 0, ly + 8 * u, ex.col, ex.kind)
+                    if (base) swatch(ctx, 0, ly + 8 * u, ex.col, ex.kind)
                     ctx.font = font(Theme.fontCaption, false); ctx.fillStyle = Theme.text2; ctx.textBaseline = "top"
-                    ctx.fillText(ex.name + "  ", tl._px(20), ly)
+                    if (base) ctx.fillText(ex.name + "  ", tl._px(20), ly)
                     var nw = ctx.measureText(ex.name + "  ").width
-                    ctx.font = font(Theme.fontCaption, true); ctx.fillStyle = ex.hot ? Theme.warning : Theme.text
-                    ctx.fillText(ex.text, tl._px(20) + nw, ly)
+                    if (over) {
+                        ctx.font = font(Theme.fontCaption, true); ctx.fillStyle = ex.hot ? Theme.warning : Theme.text
+                        ctx.fillText(ex.text, tl._px(20) + nw, ly)
+                    }
                     ly += tl._px(18)
                 }
 
@@ -298,6 +315,7 @@ Item {
                 var max = st.max ? st.max
                         : tl._round(Math.max(tl._visibleMax(st.key), st.limit ? tl._visibleMax("PLIMIT") * 1.04 : 0))
                 var fy = (function(m, a, b) { return function(val) { return b - Math.min(1, Math.max(0, val / m)) * (b - a) } })(max, sy0 + 4 * u, sy1)
+                if (base) {
                 ctx.lineWidth = 1
                 ctx.strokeStyle = rgba(Theme.text, 0.25)
                 ctx.beginPath(); ctx.moveTo(x0, Math.round(sy1) + 0.5); ctx.lineTo(x1, Math.round(sy1) + 0.5); ctx.stroke()
@@ -324,7 +342,9 @@ Item {
                     ctx.setLineDash([])
                 }
                 ctx.restore()
+                }   // base
 
+                if (!over) continue
                 ctx.strokeStyle = tl.active ? Theme.text : Theme.text3; ctx.lineWidth = 1
                 ctx.beginPath(); ctx.moveTo(cx, sy0); ctx.lineTo(cx, sy1); ctx.stroke()
                 if (v >= 0 && !bypassHere) {
@@ -332,14 +352,36 @@ Item {
                     ctx.beginPath(); ctx.arc(cx, fy(v), 4 * u, 0, Math.PI * 2); ctx.fill()
                 }
             }
-            clockAndGames(ctx, x0, x1, fx, bot)
+            if (base) clockAndGames(ctx, x0, x1, fx, bot)
+        }
+
+        // The single plot's cursor and the dot on the line: the "cursor" layer of onPaint below,
+        // on the same geometry.
+        function paintCursor(ctx) {
+            var u = tl._u
+            var x0 = tl._gutter, x1 = width - tl._px(8)
+            var y0 = tl._top, y1 = height - tl._axisH - tl._gameH
+            var w = x1 - x0, h = y1 - y0
+            if (w <= 0 || h <= 0) return
+            var max = tl._niceMax()
+            var fy = function(v) { return y1 - Math.min(1, Math.max(0, v / max)) * h }
+            var fx = function(f) { return x0 + (f - tl._from) / tl._span * w }
+            var cx = Math.round(fx(tl.cursor)) + 0.5
+            ctx.strokeStyle = tl.active ? Theme.text : Theme.text3
+            ctx.lineWidth = 1
+            ctx.beginPath(); ctx.moveTo(cx, y0 - 4 * u); ctx.lineTo(cx, y1); ctx.stroke()
+            var vv = tl._cursorValue
+            if (vv >= 0) {
+                ctx.fillStyle = Theme.ink
+                ctx.beginPath(); ctx.arc(cx, fy(vv), 4 * u, 0, Math.PI * 2); ctx.fill()
+            }
         }
 
         onPaint: {
             var ctx = getContext("2d")
             ctx.reset()
             if (!tl.detail || !tl.track || tl.points.length === 0) return
-            if (tl._stacked) { paintStrips(ctx); return }
+            if (tl._stacked) { paintStrips(ctx, "base"); return }
             var u = tl._u
             var x0 = tl._gutter, x1 = width - tl._px(8)
             var y0 = tl._top, y1 = height - tl._axisH - tl._gameH
@@ -404,17 +446,20 @@ Item {
 
             // The clock under it, the games along the bottom.
             clockAndGames(ctx, x0, x1, fx, y1)
+        }
+    }
 
-            // The cursor and its value.
-            var cx = Math.round(fx(tl.cursor)) + 0.5
-            ctx.strokeStyle = tl.active ? Theme.text : Theme.text3
-            ctx.lineWidth = 1
-            ctx.beginPath(); ctx.moveTo(cx, y0 - 4 * u); ctx.lineTo(cx, y1); ctx.stroke()
-            var vv = tl._cursorValue
-            if (vv >= 0) {
-                ctx.fillStyle = Theme.ink
-                ctx.beginPath(); ctx.arc(cx, fy(vv), 4 * u, 0, Math.PI * 2); ctx.fill()
-            }
+    // The cursor layer (8.8.2): the only thing painted while the cursor moves.
+    Canvas {
+        id: cur
+        anchors.fill: parent
+        renderTarget: Canvas.Image
+        onPaint: {
+            var ctx = getContext("2d")
+            ctx.reset()
+            if (!tl.detail || !tl.track || tl.points.length === 0) return
+            if (tl._stacked) cv.paintStrips(ctx, "cursor")
+            else cv.paintCursor(ctx)
         }
     }
 

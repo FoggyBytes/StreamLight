@@ -239,6 +239,21 @@ FocusScope {
     property string wakeHostName : ""
     property int    wakeStep : 0        // mirrors WakeDialog's step rows
     property bool   wakeActive : false
+
+    /*
+     * 8.8.2: the per-host probes (STATUS, NETINFO, LOCKSTATE, the access state) stop while
+     * nobody can see what they feed: the window hidden for a stream, or minimized. They used
+     * to go on for the whole stream, a signed TCP request each, because this screen is never
+     * unloaded.
+     *
+     * ⚠️ Never while a flow is listening to their replies: the wake and the unlock before a
+     * launch read LOCKSTATE, and the link-restore watch has no poller of its own, it reads
+     * the probe's NETINFO.
+     */
+    readonly property int  _windowVisibility: Window.window ? Window.window.visibility : Window.Windowed
+    readonly property bool _probesHeld: (_windowVisibility === Window.Hidden
+                                         || _windowVisibility === Window.Minimized)
+                                        && !unlockBusy && !linkRestoreActive
     property string wakeDetail : ""
 
     // The pad is up and doing its own LOCKSTATE polling. Without this we would answer those
@@ -1546,6 +1561,9 @@ FocusScope {
             property bool   stAllowsLink: false
             property bool   stSwitched: false
             property int    stLocalMbps: 0
+            // 8.8.2: this host answers NETINFO, which carries the speed too. STATUS is then
+            // the same question asked twice, and its timer stays off.
+            property bool   stNetInfoOk: false
 
             // The host refuses SETSPEED while it considers a session to be running, and it goes on
             // counting one for its whole inactivity grace after the client disconnects. So this
@@ -1722,6 +1740,7 @@ FocusScope {
                     return
                 }
                 stAuth = ""
+                stNetInfoOk = false
                 stHostSection = false
                 stHostVersion = ""
                 stSpeedRaw = ""
@@ -1758,8 +1777,13 @@ FocusScope {
                 // during a stream too, since HomeScreen is never unloaded. The revocation
                 // path still works: it fires while we believe we ARE authorized, which is
                 // exactly when this timer runs.
+                // 8.8.2: not on a host that answers NETINFO (every one since 8.1.0): that reply
+                // carries the speed and now notices a revocation too. And not while the probes
+                // are held (see _probesHeld).
                 running: probe.stEnabled && model.online && model.paired
-                         && (probe.stAuth === "authorized" || probe.stAuth === "open")
+                         && (probe.stAuth === "open"
+                             || (probe.stAuth === "authorized" && !probe.stNetInfoOk))
+                         && !homeScreen._probesHeld
                 onTriggered: homeScreen.computerModel.requestStreamTweakStatus(index)
             }
 
@@ -1772,7 +1796,10 @@ FocusScope {
                 interval: 2000
                 repeat: true
                 running: probe.stEnabled && model.online && model.paired
-                         && probe.stAuth === "authorized"
+                         && probe.stAuth === "authorized" && !homeScreen._probesHeld
+                // Asked at once when the probes come back from a hold, so the card is not two
+                // seconds behind on the way back from a stream.
+                triggeredOnStart: true
                 onTriggered: homeScreen.computerModel.requestHostNetInfo(index)
             }
 
@@ -1784,7 +1811,7 @@ FocusScope {
                 interval: 2500
                 repeat: true
                 running: probe.stEnabled && model.online && model.paired
-                         && probe.stAuth === "authorized"
+                         && probe.stAuth === "authorized" && !homeScreen._probesHeld
                 triggeredOnStart: true
                 onTriggered: homeScreen.computerModel.requestLockState(index)
             }
@@ -1800,6 +1827,7 @@ FocusScope {
                 // nor "open", so the settling condition was never met.
                 running: probe.stEnabled && model.online && model.paired
                          && probe.stAuth !== "authorized" && probe.stAuth !== "open"
+                         && !homeScreen._probesHeld
                 onTriggered: homeScreen.computerModel.requestStreamTweakAuth(index)
             }
 
@@ -1857,8 +1885,13 @@ FocusScope {
                     }
 
                     probe.stLinkChanging = false
+                    // A settled answer: this host speaks NETINFO, so STATUS can stop (8.8.2).
+                    // With STATUS off, "no speed" has to be said here as STATUS said it.
+                    probe.stNetInfoOk = true
                     if (info.currentMbps !== undefined && info.currentMbps > 0)
                         probe.stSpeedRaw = String(info.currentMbps)
+                    else if (info.currentMbps !== undefined)
+                        probe.stSpeedRaw = "UNKNOWN"
                 }
 
                 function onStreamTweakCapsReceived(idx, hostSection, version) {
@@ -1869,6 +1902,7 @@ FocusScope {
 
                 function onStreamTweakAuthReceived(idx, state, pin) {
                     if (idx !== index) return
+                    if (state !== "authorized") probe.stNetInfoOk = false
                     probe.stAuth = state
                     // Once authorized, learn the host's Tailscale endpoint (if any) and
                     // measure the link we reach it on — the speed the host will be asked to

@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QDeadlineTimer>
+#include <QMutex>
 #include <QStringList>
 #include <QSysInfo>
 #include <QTcpSocket>
@@ -40,14 +41,33 @@ QByteArray StreamTweakBridge::signPayload(const QByteArray& payload)
     if (keyPem.isEmpty())
         return {};
 
-    BIO* bio = BIO_new_mem_buf(keyPem.constData(), keyPem.size());
-    if (!bio)
-        return {};
+    // 8.8.2: the key is parsed once and kept. Every command to the host is signed (several a
+    // second with the Home on screen, one a second during a stream) and each signature used to
+    // parse the PEM again. Kept with the PEM it came from, so a new identity is never signed
+    // with the old key; each signature works on its own reference.
+    static QMutex s_KeyLock;
+    static QByteArray s_KeyPem;
+    static EVP_PKEY* s_Key = nullptr;
 
-    EVP_PKEY* pkey = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
-    BIO_free(bio);
-    if (!pkey)
-        return {};
+    EVP_PKEY* pkey = nullptr;
+    {
+        QMutexLocker locker(&s_KeyLock);
+        if (s_Key == nullptr || s_KeyPem != keyPem) {
+            BIO* bio = BIO_new_mem_buf(keyPem.constData(), keyPem.size());
+            if (!bio)
+                return {};
+            EVP_PKEY* parsed = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
+            BIO_free(bio);
+            if (!parsed)
+                return {};
+            if (s_Key != nullptr)
+                EVP_PKEY_free(s_Key);
+            s_Key = parsed;
+            s_KeyPem = keyPem;
+        }
+        EVP_PKEY_up_ref(s_Key);
+        pkey = s_Key;
+    }
 
     QByteArray sig;
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();

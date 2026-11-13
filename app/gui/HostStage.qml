@@ -494,6 +494,102 @@ Item {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
+    // The card's shadow (8.8.2)
+    // ═════════════════════════════════════════════════════════════════════════
+    /*
+     * The same shadow the game covers cast, by the same means and with the same numbers:
+     * HeroCover's silhouette in a padded item, blurred by a MultiEffect that matches it 1:1
+     * (blurMax 40, blur 0.9, opacity 0.65, the offset the Home cover uses). HeroCover.qml has
+     * the measurements and the reason the room is built into the geometry.
+     *
+     * ⚠️ One step more than the cover needs: the card is translucent (Card opacity 70-100),
+     * so a shadow lying under it would show through and darken it. The card's own area is
+     * cut out of the shadow with an inverted mask, and what is left is only what falls outside.
+     * Checked off screen against the cover's shadow: the same outside, nothing inside.
+     *
+     * ⚠️ The cut is SOFT and sits one pixel inside the card's edge (cardShadowHole). The first
+     * version cut on the silhouette itself with the default threshold, which is a hard step:
+     * the shadow met the card's antialiased border along a staircase, plain to see round the
+     * corners (Marcello, 13/11/2026). With the hole a pixel smaller and its edge blended
+     * (maskSpreadAtMin), the join lies under the border instead of beside it.
+     *
+     * Drawn before the card, as its sibling: the card clips.
+     */
+    readonly property bool _cardShadow: !Theme.reduceAnimations
+    readonly property int  _shadowPad: 40
+    readonly property real _shadowOffset: _px(10)
+
+    Item {
+        id: cardSilhouette
+        x: card.x - stage._shadowPad
+        y: card.y - stage._shadowPad
+        width: card.width + stage._shadowPad * 2
+        height: card.height + stage._shadowPad * 2 + stage._shadowOffset
+        layer.enabled: stage._cardShadow
+        visible: false
+        Rectangle {
+            x: stage._shadowPad
+            y: stage._shadowPad
+            width: card.width
+            height: card.height
+            radius: card.radius
+            color: "black"
+        }
+    }
+
+    Item {
+        id: cardShadowHole
+        x: cardSilhouette.x
+        y: cardSilhouette.y
+        width: cardSilhouette.width
+        height: cardSilhouette.height
+        layer.enabled: stage._cardShadow
+        visible: false
+        Rectangle {
+            x: stage._shadowPad + 1
+            y: stage._shadowPad + 1
+            width: card.width - 2
+            height: card.height - 2
+            radius: Math.max(0, card.radius - 1)
+            color: "black"
+        }
+    }
+
+    MultiEffect {
+        id: cardShadowPass
+        x: cardSilhouette.x
+        y: cardSilhouette.y
+        width: cardSilhouette.width
+        height: cardSilhouette.height
+        source: cardSilhouette
+        shadowEnabled: stage._cardShadow
+        shadowColor: "#000000"
+        shadowBlur: 0.9
+        shadowVerticalOffset: stage._shadowOffset
+        shadowOpacity: 0.65
+        blurMax: stage._shadowPad
+        autoPaddingEnabled: false
+        // Only a texture for the pass below.
+        layer.enabled: stage._cardShadow
+        visible: false
+    }
+
+    MultiEffect {
+        x: cardSilhouette.x
+        y: cardSilhouette.y
+        width: cardSilhouette.width
+        height: cardSilhouette.height
+        visible: stage._cardShadow
+        source: cardShadowPass
+        maskEnabled: true
+        maskSource: cardShadowHole
+        maskInverted: true
+        maskThresholdMin: 0.5
+        maskSpreadAtMin: 1.0
+        autoPaddingEnabled: false
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
     // The card
     // ═════════════════════════════════════════════════════════════════════════
     Rectangle {
@@ -521,7 +617,11 @@ Item {
         // own — the "Add a host" card too, since 7.0.0 the same surface as a host's.
         color: "transparent"
         border.color: Theme.line
-        border.width: 1
+        // 8.8.2: no outline under the shadow. The game covers have none, and a line round the
+        // card beside its shadow read as a frame, not as a card lifted off the floor (Marcello,
+        // 13/11/2026). With the shadow off (Reduce animations) the line is what marks the edge,
+        // as before.
+        border.width: stage._cardShadow ? 0 : 1
         clip: true
 
         // ── Backdrop ─────────────────────────────────────────────────────────

@@ -115,6 +115,14 @@ All of them are switched on **per host**, in the **Setup** tab of the host's Str
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in the section's *Setup* tab; the host has its own switch
 - **Hue Sync keeps the lights** *(10.1.0+)* — a Hue bridge syncs one area at a time, so the host's Hue Sync starting after a wake used to take the lights from this device's for good. The section's **Hue Sync** tab shows the bridge's areas and who has the lights, and sets the host to wait while they are in use — for any device, or only this one; StreamTweak then starts Hue Sync on the host itself, and only reads the bridge. **Take back** restarts Hue Sync here, by hand or by itself, and works with any host
 
+## ✨ What's New in 8.8.2 — Light Step
+
+Works with any host.
+
+- **A shadow under the host card** — the large card on Home casts the same shadow as the game covers, in place of the thin line round it
+- **Quiet during a stream** — Home stops asking the hosts for their state while a game is streaming or the window is minimized, and asks one question where it asked two
+- **Smoother timeline cursor** — moving along a session's timeline no longer redraws the whole chart
+
 ## ✨ What's New in 8.8.1 — Clean Lines
 
 Works with any host.

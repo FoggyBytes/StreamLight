@@ -495,6 +495,14 @@ void ComputerModel::requestHostNetInfo(int computerIndex)
     m_streamTweakBridge.requestNetInfo(address, [this, uuid](const QString& reply) {
         const int computerIndex = indexOfUuid(uuid);
         if (computerIndex < 0) return;
+        if (reply.startsWith(QStringLiteral("ERR_UNAUTHORIZED"))) {
+            // 8.8.2: the same answer requestStreamTweakStatus() gives to a lost authorization.
+            // On a host that answers NETINFO the Home no longer asks STATUS as well, so the
+            // revocation has to be noticed here: hide the NIC line and ask the access state
+            // again, which brings the PIN and approval flow back.
+            emit streamTweakStatusReceived(computerIndex, QString());
+            requestStreamTweakAuth(computerIndex);
+        }
         QVariantMap out;
         if (!reply.isEmpty() && !reply.startsWith(QStringLiteral("ERR"))) {
             QJsonDocument doc = QJsonDocument::fromJson(reply.toUtf8());

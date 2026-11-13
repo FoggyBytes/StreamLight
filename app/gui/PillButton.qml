@@ -79,7 +79,10 @@ FocusScope {
                 visible: btn._hasSwatch
                 anchors.verticalCenter: parent.verticalCenter
                 width: btn._px(20); height: width
-                radius: btn._px(5)
+                // 8.8.2: a circle, not a rounded square. The square's straight sides showed a 1 px
+                // outline thicker on one side than the other at fractional Windows scaling
+                // (Marcello, 13/11/2026); a round edge has no straight side to show it.
+                radius: width / 2
                 color: btn.swatch
                 border.color: Theme.lineHigh
                 border.width: 1

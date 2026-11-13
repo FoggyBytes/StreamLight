@@ -80,6 +80,7 @@ FocusScope {
 
     // 0 = Home, 1 = Apps, 2 = Settings, 3 = the host section (8.0.0)
     property int currentPage: 0
+    property double _settingsAskedAt: 0
 
     // 8.0.0: the host section — StreamTweak's mark on the host card. The host by uuid, its row
     // read back when needed, for the same reason as _appsUuid below.
@@ -369,6 +370,9 @@ FocusScope {
             _settingsHostModel = (homeLoader.item && homeLoader.item.computerModel)
                                  ? homeLoader.item.computerModel : mdl
         }
+        // 8.8.2: measured, not guessed. Settings builds all nine tabs each time it opens; this
+        // line in the log says what that costs on the machine it runs on.
+        _settingsAskedAt = Date.now()
         currentPage = 2
     }
 
@@ -664,6 +668,10 @@ FocusScope {
                 item.hostStreamTweakEnabled = appShell._settingsHostStEnabled
                 item.appShell              = appShell
                 item.forceActiveFocus()
+                if (appShell._settingsAskedAt > 0) {
+                    console.info("[ui] Settings built in " + (Date.now() - appShell._settingsAskedAt) + " ms")
+                    appShell._settingsAskedAt = 0
+                }
             }
         }
 
