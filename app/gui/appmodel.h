@@ -117,9 +117,9 @@ public:
 
     // What a per-game row set to "inherit" will actually run at: the global settings with
     // this host's active profile applied on top — one level down, not the full cascade,
-    // because the level above is the dialog the user is looking at. Values are formatted
-    // for display; see inheritedValueLabels() in settings/appsettings.h.
-    Q_INVOKABLE QVariantMap inheritedLabels() const;
+    // because the level above is the dialog the user is looking at. Keyed like an
+    // override map (8.8.0); see inheritedValues() in settings/appsettings.h.
+    Q_INVOKABLE QVariantMap inheritedValues() const;
 
     // ── Play time (5.7.0) ────────────────────────────────────────────────────────────────
     /**

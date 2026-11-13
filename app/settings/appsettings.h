@@ -102,19 +102,11 @@ void applyAppOverride(StreamingPreferences* p, const AppOverride& ov);
 QVariantMap appOverrideToMap(const AppOverride& ov);
 AppOverride appOverrideFromMap(const QVariantMap& m);
 
-/**
- * What "inherit" actually resolves to, one entry per override row, already formatted
- * for display: {"resolution": "1080p", "fps": "60", "bitrate": "40", "hdr": "Off", …}.
- * Keys are the same ones appOverrideFromMap() reads, so a row and its inherited value
- * are looked up by the same string.
- *
- * ⚠️ Formatted here rather than in QML on purpose. The two override editors — the
- * per-game dialog and the host-profiles dialog — already keep mirrored copies of the
- * label tables, and a third and fourth copy of "how a codec enum is spelled" is exactly
- * how one of them ends up a release behind (it has happened: see the note on
- * AppModel::getAppOverride). The wording lives next to the enums it describes.
- */
-QVariantMap inheritedValueLabels(const StreamingPreferences* p);
+// What "inherit" resolves to, one entry per override row (8.8.0), keyed exactly like an override
+// map (width, height, fps, bitrate, hdr, yuv444, codec, framepacing, audio, matchlink, waitgame,
+// displaymode, vsync, fractionalvsync, vrr): the profile and per-game sheets compare and pick on
+// one shape. (Until 8.7.1 the sheets got these values as display labels, inheritedValueLabels.)
+QVariantMap inheritedValues(const StreamingPreferences* p);
 
 class AppSettingsManager
 {
@@ -170,6 +162,20 @@ public:
 
     int add(const QString& uuid);                   // the new slot
     void remove(const QString& uuid, int slot);
+    /// 8.8.0 (#53): the profile at `from` goes to `to`, the others close up. The slot order is the
+    /// CUSTOM order; the active profile stays active wherever it lands.
+    void move(const QString& uuid, int from, int to);
+
+    /// 8.8.0 (#53): how a host's profiles are listed — in Profiles' sidebar, Home's profile list
+    /// and the LT/RT cycle alike. Custom is the slot order (move() changes it).
+    enum SortMode { SortAlphabetical = 0, SortCreated = 1, SortCustom = 2 };
+    int sortMode(const QString& uuid) const;
+    void setSortMode(const QString& uuid, int mode);
+    /// When the profile was created, as a sequence number that moves and removals keep. Profiles
+    /// made before 8.8.0 have none stored: their slot stands in, which is their creation order.
+    int created(const QString& uuid, int slot) const;
+    /// The slots in the order the sort mode gives.
+    QVector<int> order(const QString& uuid) const;
 
     /// Drops all of a host's profiles. Same reasoning as AppSettingsManager::forgetHost.
     void forgetHost(const QString& uuid);

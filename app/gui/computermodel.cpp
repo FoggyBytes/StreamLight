@@ -1713,9 +1713,9 @@ QVariantMap ComputerModel::hostProfileSettings(int computerIndex, int slot) cons
     return appOverrideToMap(HostProfileManager::get()->settings(m_Computers[computerIndex]->uuid, slot));
 }
 
-QVariantMap ComputerModel::globalLabels() const
+QVariantMap ComputerModel::globalValues() const
 {
-    return inheritedValueLabels(StreamingPreferences::get());
+    return inheritedValues(StreamingPreferences::get());
 }
 
 void ComputerModel::setHostProfileSettings(int computerIndex, int slot, const QVariantMap& ov)
@@ -1748,6 +1748,46 @@ void ComputerModel::removeHostProfile(int computerIndex, int slot)
     HostProfileManager::get()->remove(m_Computers[computerIndex]->uuid, slot);
     QModelIndex idx = index(computerIndex, 0);
     emit dataChanged(idx, idx, { ProfileCountRole, ActiveProfileSlotRole, ActiveProfileNameRole });
+}
+
+void ComputerModel::moveHostProfile(int computerIndex, int from, int to)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+    HostProfileManager::get()->move(m_Computers[computerIndex]->uuid, from, to);
+    // The active slot number changes with a move even though the profile does not: the card's
+    // badge and its settings re-read on these roles.
+    QModelIndex idx = index(computerIndex, 0);
+    emit dataChanged(idx, idx, { ProfileCountRole, ActiveProfileSlotRole, ActiveProfileNameRole });
+}
+
+int ComputerModel::hostProfileSortMode(int computerIndex) const
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return HostProfileManager::SortCreated;
+    return HostProfileManager::get()->sortMode(m_Computers[computerIndex]->uuid);
+}
+
+void ComputerModel::setHostProfileSortMode(int computerIndex, int mode)
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return;
+    HostProfileManager::get()->setSortMode(m_Computers[computerIndex]->uuid, mode);
+    // The cycle and Home's list read the order afresh; the roles are what they re-read on.
+    QModelIndex idx = index(computerIndex, 0);
+    emit dataChanged(idx, idx, { ProfileCountRole, ActiveProfileSlotRole, ActiveProfileNameRole });
+}
+
+QVariantList ComputerModel::hostProfileOrder(int computerIndex) const
+{
+    QVariantList out;
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return out;
+    const QVector<int> order = HostProfileManager::get()->order(m_Computers[computerIndex]->uuid);
+    for (int s : order) out.append(s);
+    return out;
+}
+
+int ComputerModel::hostProfileCreated(int computerIndex, int slot) const
+{
+    if (computerIndex < 0 || computerIndex >= m_Computers.count()) return slot;
+    return HostProfileManager::get()->created(m_Computers[computerIndex]->uuid, slot);
 }
 
 QVariantMap ComputerModel::hostActiveOverride(int computerIndex) const

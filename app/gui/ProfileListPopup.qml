@@ -9,13 +9,14 @@ import SdlGamepadKeyNavigation 1.0
  * The profile list (8.7.1, issue #53) — variant A «Tendina» of docs/mockups/profili.
  *
  * With ten profiles and more, stepping through them one at a time with LT/RT (Q/E) skipped
- * past the one being looked for. This drops from the profile badge — on the Home card and in
- * the host page's header — and lists Global and every profile with what it changes, in the
- * words of the badges under the host's name, which is what tells one dock from another.
+ * past the one being looked for. This drops from the profile badge on the Home card and lists
+ * Global and every profile with what it changes, in the words of the badges under the host's
+ * name, which is what tells one dock from another — in the order set in Profiles (8.8.0).
  *
- * Opened by holding LT/RT (or Q/E) on either screen, by Start / W on Home, and by a click on
- * the badge. The D-pad (↑↓) moves, A chooses, B closes without changing anything; LT/RT do
- * nothing while it is open.
+ * Opened by Start / W and by a click on the badge, on Home only. ⚠️ 8.7.1 also opened it by
+ * holding LT/RT, on Home and on the host page; 8.8.0 dropped both (Marcello, 13/11/2026). The
+ * D-pad (↑↓) moves, A chooses, B closes without changing anything; LT/RT do nothing while it
+ * is open.
  *
  * Built like Options (HostOptionsDialog): a Popup on the overlay with the dialogs' card, line,
  * radius and scrim, the shared spring in and out. Its own file because HomeScreen imports
@@ -103,14 +104,19 @@ Popup {
     function _load() {
         var idx = _index()
         if (idx < 0) { _entries = []; return }
-        var n = computerModel.hostProfileCount(idx)
+        // 8.8.0: in the order chosen with Sort in Profiles (A–Z, Created or Custom).
+        var order = computerModel.hostProfileOrder(idx)
         var e = [{ slot: -1, name: qsTr("Global"), sum: _summary({}) }]
-        for (var s = 0; s < n; s++)
+        for (var i = 0; i < order.length; i++) {
+            var s = order[i]
             e.push({ slot: s, name: computerModel.hostProfileName(idx, s),
                      sum: _summary(computerModel.hostProfileSettings(idx, s)) })
+        }
         _activeSlot = computerModel.hostActiveProfile(idx)
         _entries = e
-        list.currentIndex = Math.max(0, _activeSlot + 1)
+        var at = 0
+        for (var j = 0; j < e.length; j++) if (e[j].slot === _activeSlot) at = j
+        list.currentIndex = at
     }
 
     function _place() {
@@ -200,8 +206,7 @@ Popup {
             Keys.onPressed: function(event) {
                 // The list moves with the D-pad (↑↓) only (12/11/2026, Marcello). LT/RT and Q/E
                 // do nothing while it is open — taken here, or they would reach the page behind
-                // and step the profile under the list; the release that follows the hold that
-                // opened it reaches nobody.
+                // and step the profile under the list.
                 if (event.key === Qt.Key_F14 || event.key === Qt.Key_Q
                         || event.key === Qt.Key_F15 || event.key === Qt.Key_E) {
                     event.accepted = true

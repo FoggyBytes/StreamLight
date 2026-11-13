@@ -4,6 +4,23 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 
 https://github.com/FoggyBytes/StreamLight
 
+-------------------------------------
+Version 8.8.0 - In Order (13/11/2026)
+-------------------------------------
+
+No StreamTweak update required — 8.8.0 is client-side and works with any host. Host profiles and per-game settings have a new look, made for the controller.
+
+✨ IMPROVEMENTS:
+• Host profiles, redone — the dialog fills the window: on the left a list of your profiles and Global, walked up and down with the D-pad; on the right every setting in one list divided into sections, with no tabs. A on a profile makes it the one the host streams with, ▶ and ◀ move between the two sides
+• One badge per setting — each row shows the value it streams with in a single badge; A opens it into every choice, ◀▶ choose, A confirms and B leaves it as it was. On Bitrate, A opens a slider
+• Global from the profiles — Global sits at the top of the list and its settings can be changed right there, the same ones as in Settings
+• Sort your profiles — Alphabetical, Created or Custom from the Sort button above the list; in Custom, R3 (M on the keyboard) picks a profile up, ▲▼ carry it, A puts it down and B puts it back, and the mouse drags it. The same order in the LT/RT cycle and in the profile list on Home
+• Per-game settings, same structure — the game on the left with Reset all and Reset stats, the same list on the right
+• Profile list on Home only — it opens with Start (W) or a click on the profile badge; holding LT or RT no longer opens it, so LT/RT step one profile at a time again
+
+🙏 THANKS:
+• Thanks to @kayti for asking for it (https://github.com/FoggyBytes/StreamLight/issues/53)
+
 ---------------------------------------
 Version 8.7.1 - Quick Pick (12/11/2026)
 ---------------------------------------

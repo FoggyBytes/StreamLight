@@ -352,13 +352,20 @@ public:
     Q_INVOKABLE QString hostProfileName(int computerIndex, int slot) const;
     Q_INVOKABLE void setHostProfileName(int computerIndex, int slot, const QString& name);
     Q_INVOKABLE QVariantMap hostProfileSettings(int computerIndex, int slot) const;
-    // What a profile row set to "Global" will actually run at. A profile sits directly on
-    // top of the global settings, so unlike the per-game dialog there is no middle level
-    // to fold in. Formatted for display; see inheritedValueLabels() in settings/appsettings.h.
-    Q_INVOKABLE QVariantMap globalLabels() const;
+    // What a profile row set to "Global" will actually run at, keyed like an override map (8.8.0).
+    // A profile sits directly on the global settings: no middle level. See inheritedValues().
+    Q_INVOKABLE QVariantMap globalValues() const;
     Q_INVOKABLE void setHostProfileSettings(int computerIndex, int slot, const QVariantMap& ov);
     Q_INVOKABLE int addHostProfile(int computerIndex);                // new slot, or -1
     Q_INVOKABLE void removeHostProfile(int computerIndex, int slot);
+    // 8.8.0 (#53): reorder — the profile at `from` goes to `to` (Profiles, Custom order: R3, then ↑↓).
+    Q_INVOKABLE void moveHostProfile(int computerIndex, int from, int to);
+    // 8.8.0 (#53): the host's sort mode (HostProfileManager::SortMode: 0 A–Z, 1 Created, 2 Custom),
+    // the slots in that order, and each profile's creation number (a stable identity across moves).
+    Q_INVOKABLE int hostProfileSortMode(int computerIndex) const;
+    Q_INVOKABLE void setHostProfileSortMode(int computerIndex, int mode);
+    Q_INVOKABLE QVariantList hostProfileOrder(int computerIndex) const;
+    Q_INVOKABLE int hostProfileCreated(int computerIndex, int slot) const;
 
     // The active profile's override as a QVariantMap (keys: width/height/fps/
     // bitrate/hdr/codec/framepacing/audio/…). Empty when no profile is active.

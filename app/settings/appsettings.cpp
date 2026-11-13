@@ -1,9 +1,6 @@
 #include "appsettings.h"
-#include "videooptions.h"
 
-#include <QCoreApplication>
 #include <QSettings>
-#include <QSize>
 #include <QVector>
 #include <algorithm>
 
@@ -97,76 +94,29 @@ AppOverride appOverrideFromMap(const QVariantMap& m)
     return ov;
 }
 
-QVariantMap inheritedValueLabels(const StreamingPreferences* p)
+QVariantMap inheritedValues(const StreamingPreferences* p)
 {
     QVariantMap m;
     if (p == nullptr) {
         return m;
     }
-
-    // Resolution reads back as the name on the pill next to it — a preset's, or a native
-    // display's "1600p". Anything else is printed as itself rather than rounded to the
-    // nearest label.
-    //
-    // ⚠️ It has to be VideoOptions and not a copy of its table: _dupIndices() in the two
-    // override panels hides the duplicate pill by comparing this string to the pill's own
-    // label, so the day the two spellings differ the duplicate silently comes back.
-    m.insert(QStringLiteral("resolution"),
-             VideoOptions::resolutionLabel(QSize(p->width, p->height)));
-
-    m.insert(QStringLiteral("fps"), QString::number(p->fps));
-
-    // Bare number: the row it sits on is already labelled "Bitrate (Mbps)", and the unit
-    // repeated inside the pill is the widest thing on the widest row for no information.
-    m.insert(QStringLiteral("bitrate"), QString::number(qRound(p->bitrateKbps / 1000.0)));
-
-    const QString on  = QCoreApplication::translate("AppSettings", "On");
-    const QString off = QCoreApplication::translate("AppSettings", "Off");
-
-    m.insert(QStringLiteral("hdr"),          p->enableHdr ? on : off);
-    m.insert(QStringLiteral("yuv444"),       p->enableYUV444 ? on : off);
-    m.insert(QStringLiteral("matchlink"),    p->matchHostLinkSpeed ? on : off);
-    m.insert(QStringLiteral("waitgame"),     p->waitForGameOnScreen ? on : off);
-    m.insert(QStringLiteral("vsync"),        p->enableVsync ? on : off);
-    m.insert(QStringLiteral("framepacing"),
-             p->framePacingMode == StreamingPreferences::FP_ON ? on : off);
-    // ⚠️ The global value as stored, not "what it would do here". Whether the sync interval
-    // actually applies depends on the panel and the stream's frame rate, which this function
-    // knows nothing about — and the Global pill has to say what it inherits, not predict an
-    // outcome. The renderer logs the resolved answer at the start of every stream.
-    m.insert(QStringLiteral("fractionalvsync"), p->fractionalVsync ? on : off);
-    m.insert(QStringLiteral("vrr"), p->enableVrr ? on : off);
-
-    QString codec;
-    switch (p->videoCodecConfig) {
-    case StreamingPreferences::VCC_FORCE_H264: codec = QStringLiteral("H.264"); break;
-    case StreamingPreferences::VCC_FORCE_HEVC: codec = QStringLiteral("HEVC");  break;
-    case StreamingPreferences::VCC_FORCE_AV1:  codec = QStringLiteral("AV1");   break;
-    case StreamingPreferences::VCC_FORCE_PYROWAVE: codec = QStringLiteral("PyroWave"); break;
-    // VCC_AUTO, and the deprecated forced-HEVC-HDR value that old settings can still hold.
-    default: codec = QCoreApplication::translate("AppSettings", "Auto"); break;
-    }
-    m.insert(QStringLiteral("codec"), codec);
-
-    QString audio;
-    switch (p->audioConfig) {
-    case StreamingPreferences::AC_51_SURROUND: audio = QStringLiteral("5.1"); break;
-    case StreamingPreferences::AC_71_SURROUND: audio = QStringLiteral("7.1"); break;
-    default: audio = QCoreApplication::translate("AppSettings", "Stereo"); break;
-    }
-    m.insert(QStringLiteral("audio"), audio);
-
-    QString dm;
-    switch (p->windowMode) {
-    case StreamingPreferences::WM_FULLSCREEN_DESKTOP:
-        dm = QCoreApplication::translate("AppSettings", "Borderless"); break;
-    case StreamingPreferences::WM_WINDOWED:
-        dm = QCoreApplication::translate("AppSettings", "Windowed"); break;
-    default:
-        dm = QCoreApplication::translate("AppSettings", "Fullscreen"); break;
-    }
-    m.insert(QStringLiteral("displaymode"), dm);
-
+    m.insert(QStringLiteral("width"), p->width);
+    m.insert(QStringLiteral("height"), p->height);
+    m.insert(QStringLiteral("fps"), p->fps);
+    m.insert(QStringLiteral("bitrate"), p->bitrateKbps);
+    m.insert(QStringLiteral("hdr"), p->enableHdr);
+    m.insert(QStringLiteral("yuv444"), p->enableYUV444);
+    // The deprecated forced-HEVC-HDR value old settings can still hold runs as Auto.
+    m.insert(QStringLiteral("codec"), p->videoCodecConfig == StreamingPreferences::VCC_FORCE_HEVC_HDR_DEPRECATED
+                                      ? (int)StreamingPreferences::VCC_AUTO : (int)p->videoCodecConfig);
+    m.insert(QStringLiteral("framepacing"), (int)p->framePacingMode);
+    m.insert(QStringLiteral("audio"), (int)p->audioConfig);
+    m.insert(QStringLiteral("matchlink"), p->matchHostLinkSpeed);
+    m.insert(QStringLiteral("waitgame"), p->waitForGameOnScreen);
+    m.insert(QStringLiteral("displaymode"), (int)p->windowMode);
+    m.insert(QStringLiteral("vsync"), p->enableVsync);
+    m.insert(QStringLiteral("fractionalvsync"), p->fractionalVsync);
+    m.insert(QStringLiteral("vrr"), p->enableVrr);
     return m;
 }
 
@@ -380,9 +330,15 @@ void HostProfileManager::cycle(const QString& uuid, int dir)
     if (c <= 0) {
         return;   // nothing configured: Global is the only state there is
     }
-    int pos = active(uuid) + 1;                       // -1 → 0
-    pos = ((pos + dir) % (c + 1) + (c + 1)) % (c + 1);
-    setActive(uuid, pos - 1);
+    // 8.8.0 (#53): in the order the host's sort mode gives, the one Profiles and Home's list show.
+    QVector<int> ring;
+    ring.append(-1);
+    ring.append(order(uuid));
+    const int n = (int)ring.size();
+    int pos = (int)ring.indexOf(active(uuid));
+    if (pos < 0) pos = 0;
+    pos = ((pos + dir) % n + n) % n;
+    setActive(uuid, ring[pos]);
 }
 
 QString HostProfileManager::name(const QString& uuid, int slot) const
@@ -413,14 +369,57 @@ AppOverride HostProfileManager::settings(const QString& uuid, int slot) const
 
 void HostProfileManager::setSettings(const QString& uuid, int slot, const AppOverride& ov)
 {
-    // Preserve the name; rewrite only the override fields.
+    // Preserve the name and the creation number (8.8.0); rewrite only the override fields.
     QString nm = name(uuid, slot);
+    const int cr = created(uuid, slot);
     QSettings s;
     s.remove(pgrp(uuid, slot));
     s.beginGroup(pgrp(uuid, slot));
     s.setValue("name", nm);
+    s.setValue("created", cr);
     writeOverrideGroup(s, ov);
     s.endGroup();
+}
+
+int HostProfileManager::created(const QString& uuid, int slot) const
+{
+    QSettings s;
+    return s.value(pgrp(uuid, slot) + "/created", slot).toInt();
+}
+
+int HostProfileManager::sortMode(const QString& uuid) const
+{
+    QSettings s;
+    const int m = s.value(grp(uuid) + "/sort", SortCreated).toInt();
+    return (m >= SortAlphabetical && m <= SortCustom) ? m : SortCreated;
+}
+
+void HostProfileManager::setSortMode(const QString& uuid, int mode)
+{
+    if (mode < SortAlphabetical || mode > SortCustom) return;
+    QSettings s;
+    s.setValue(grp(uuid) + "/sort", mode);
+}
+
+QVector<int> HostProfileManager::order(const QString& uuid) const
+{
+    const int c = count(uuid);
+    QVector<int> out;
+    for (int i = 0; i < c; i++) out.append(i);
+    const int mode = sortMode(uuid);
+    if (mode == SortAlphabetical) {
+        QVector<QString> names;
+        for (int i = 0; i < c; i++) names.append(name(uuid, i));
+        std::stable_sort(out.begin(), out.end(), [&](int a, int b) {
+            return QString::localeAwareCompare(names[a], names[b]) < 0;
+        });
+    }
+    else if (mode == SortCreated) {
+        QVector<int> cr;
+        for (int i = 0; i < c; i++) cr.append(created(uuid, i));
+        std::stable_sort(out.begin(), out.end(), [&](int a, int b) { return cr[a] < cr[b]; });
+    }
+    return out;
 }
 
 int HostProfileManager::add(const QString& uuid)
@@ -429,10 +428,14 @@ int HostProfileManager::add(const QString& uuid)
     // Internet variants, needed more than the three there used to be.
     int c = count(uuid);
     int slot = c;
+    // 8.8.0: the creation number comes after every existing one (whatever their slots are now).
+    int next = 0;
+    for (int i = 0; i < c; i++) next = std::max(next, created(uuid, i) + 1);
     QSettings settings;
     settings.setValue(grp(uuid) + "/count", c + 1);
     settings.setValue(pgrp(uuid, slot) + "/name",
                       QStringLiteral("Profile ") + QString::number(slot + 1));
+    settings.setValue(pgrp(uuid, slot) + "/created", next);
     if (c == 0) {
         settings.setValue(grp(uuid) + "/active", 0);
     }
@@ -446,13 +449,15 @@ void HostProfileManager::remove(const QString& uuid, int slot)
         return;
     }
 
-    // Snapshot remaining profiles, then renumber from scratch.
-    struct P { QString name; AppOverride ov; };
+    // Snapshot remaining profiles, then renumber from scratch. 8.8.0: with their creation
+    // numbers, and the host's sort mode, which the wipe below would take with it.
+    struct P { QString name; AppOverride ov; int created; };
     QVector<P> remaining;
     for (int i = 0; i < c; i++) {
         if (i == slot) continue;
-        remaining.append({ name(uuid, i), settings(uuid, i) });
+        remaining.append({ name(uuid, i), settings(uuid, i), created(uuid, i) });
     }
+    const int sort = sortMode(uuid);
 
     int oldActive = active(uuid);   // -1 == OFF (preserved below)
     int newActive = oldActive;
@@ -464,6 +469,7 @@ void HostProfileManager::remove(const QString& uuid, int slot)
 
     const int remCount = (int)remaining.size();
     s.setValue(grp(uuid) + "/count", remCount);
+    s.setValue(grp(uuid) + "/sort", sort);
     if (remCount > 0) {
         s.setValue(grp(uuid) + "/active",
                    newActive < 0 ? -1 : std::max(0, std::min(newActive, remCount - 1)));
@@ -471,7 +477,46 @@ void HostProfileManager::remove(const QString& uuid, int slot)
     for (int i = 0; i < remCount; i++) {
         s.beginGroup(pgrp(uuid, i));
         s.setValue("name", remaining[i].name);
+        s.setValue("created", remaining[i].created);
         writeOverrideGroup(s, remaining[i].ov);
+        s.endGroup();
+    }
+}
+
+void HostProfileManager::move(const QString& uuid, int from, int to)
+{
+    const int c = count(uuid);
+    if (from < 0 || from >= c || to < 0 || to >= c || from == to) {
+        return;
+    }
+
+    // Snapshot, reorder, rewrite — the same way remove() renumbers. Nothing outside this group
+    // keeps a slot number (per-game overrides and the PyroWave Test go through active()), so
+    // rewriting the slots is all a move needs.
+    struct P { QString name; AppOverride ov; int created; };
+    QVector<P> all;
+    for (int i = 0; i < c; i++) {
+        all.append({ name(uuid, i), settings(uuid, i), created(uuid, i) });
+    }
+    const int sort = sortMode(uuid);
+
+    // The active profile follows itself, not its old slot number.
+    const int oldActive = active(uuid);   // -1 == Global, kept as is
+    QVector<int> perm;
+    for (int i = 0; i < c; i++) perm.append(i);
+    perm.move(from, to);
+    const int newActive = oldActive < 0 ? -1 : (int)perm.indexOf(oldActive);
+
+    QSettings s;
+    s.remove(grp(uuid));
+    s.setValue(grp(uuid) + "/count", c);
+    s.setValue(grp(uuid) + "/sort", sort);
+    s.setValue(grp(uuid) + "/active", newActive);
+    for (int i = 0; i < c; i++) {
+        s.beginGroup(pgrp(uuid, i));
+        s.setValue("name", all[perm[i]].name);
+        s.setValue("created", all[perm[i]].created);
+        writeOverrideGroup(s, all[perm[i]].ov);
         s.endGroup();
     }
 }

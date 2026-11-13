@@ -78,10 +78,10 @@ Everything below is in the current release, whichever version first introduced i
 
 **⚙️ Settings and profiles**
 - Nine tabs, pill-style selectors instead of dropdowns, inline subtitles instead of tooltips, and a bitrate slider with hold-to-accelerate and a **Default** prompt
-- **Per-host profiles** — as many named profiles per host as you like *(three before 8.0.0)*, each overriding resolution, frame rate, bitrate, HDR, YUV 4:4:4, codec, display mode, V-Sync, frame pacing, fractional V-Sync, VRR, audio, link matching and launch wait. Switchable from Home or the host page — with many, hold **LT / RT** for a list of them *(8.7.1+)*
+- **Per-host profiles** — as many named profiles per host as you like *(three before 8.0.0)*, each overriding resolution, frame rate, bitrate, HDR, YUV 4:4:4, codec, display mode, V-Sync, frame pacing, fractional V-Sync, VRR, audio, link matching and launch wait. Switchable from Home or the host page, in an order you set *(8.8.0+)*; on Home, **Start** (**W**) also opens a list of them *(8.7.1+)*
 - **Per-game overrides** on top of the active profile, for the settings that vary by title
-- **Profiles in tabs** *(6.0.0+)* — the host profile and per-game dialogs are split into Settings' own tabs, one section at a time, switched with **LB / RB** drawn at the ends of the strip, each tab showing how many of its values are changed
-- **Inherited values look inherited** *(6.0.0+)* — the accent marks only what a profile or a game changes, every row says where its value comes from, **Y** gives a row back, and **LT / RT** switch profile anywhere in the dialog. **X** names a profile from eight ready-made names, or your own — with a controller, through the on-screen keyboard *(8.0.0+)*
+- **Profiles in one list** *(8.8.0+)* — the host profile and per-game dialogs fill the window: on the left the profiles (or the game), on the right every setting in sections, each value a single badge that **A** opens into its choices
+- **Inherited values look inherited** *(6.0.0+)* — the accent marks only what a profile or a game changes, every row says where its value comes from, **Y** gives a row back, and **X** names a profile from eight ready-made names, or your own — with a controller, through the on-screen keyboard *(8.0.0+)*
 - A setting that cannot act says so wherever you meet it — greyed, with the reason on the line beneath, in Settings, in the profile and in the per-game dialog alike
 - Every change is written to disk the moment you make it
 - **Logs and cache** *(6.5.0+)* — *Settings → About* shows where logs, crash dumps and covers are kept and how much space they take, opens each folder and clears them after a confirmation. Logs and crash dumps can move to another folder, and the running log follows at once
@@ -115,11 +115,14 @@ All of them are switched on **per host**, in the **Setup** tab of the host's Str
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in the section's *Setup* tab; the host has its own switch
 - **Hue Sync keeps the lights** *(10.1.0+)* — a Hue bridge syncs one area at a time, so the host's Hue Sync starting after a wake used to take the lights from this device's for good. The section's **Hue Sync** tab shows the bridge's areas and who has the lights, and sets the host to wait while they are in use — for any device, or only this one; StreamTweak then starts Hue Sync on the host itself, and only reads the bridge. **Take back** restarts Hue Sync here, by hand or by itself, and works with any host
 
-## ✨ What's New in 8.7.1 — Quick Pick
+## ✨ What's New in 8.8.0 — In Order
 
 Works with any host.
 
-- **Profile list** — hold **LT / RT** (**Q / E**) on Home or on a host's page and a list of the host's profiles drops from the profile badge, each with what it changes; the D-pad moves, **A** picks. A short press still steps one profile. On Home also **Start** (**W**) or a click on the badge
+- **Host profiles, redone** — the dialog fills the window: your profiles and Global in a list on the left, walked with the D-pad, every setting in one list on the right, divided into sections instead of tabs. Global can be changed from here too
+- **One badge per setting** — **A** opens a value into every choice, **◀ ▶** choose, **A** confirms, **B** leaves it as it was; on Bitrate, a slider
+- **Sort your profiles** — Alphabetical, Created or Custom; in Custom **R3** (**M**) picks a profile up, **▲ ▼** carry it, **A** puts it down, or drag it with the mouse. The same order in the **LT / RT** cycle and in Home's profile list (**Start** / **W**)
+- **Per-game settings** in the same layout, with the game on the left
 
 ## ✨ What's New in 8.7.0 — Full Charge
 

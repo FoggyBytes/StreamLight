@@ -58,10 +58,11 @@
         <file>gui/UpdateDialog.qml</file>
         <file>gui/HostOptionsDialog.qml</file>
         <file>gui/ProfileListPopup.qml</file>
-        <file>gui/ProfileHold.qml</file>
         <file>gui/PyroWaveTestDialog.qml</file>
         <file>gui/AppSettingsDialog.qml</file>
         <file>gui/HostProfilesDialog.qml</file>
+        <file>gui/OverrideSheet.qml</file>
+        <file>gui/ValueBadge.qml</file>
         <file>gui/ProfileNameDialog.qml</file>
         <file>gui/AccentPaletteDialog.qml</file>
         <file>gui/NewBadge.qml</file>

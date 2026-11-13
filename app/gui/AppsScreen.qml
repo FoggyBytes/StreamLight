@@ -76,9 +76,6 @@ FocusScope {
     readonly property bool _effHdr:     (hostOverride && hostOverride.hdr     !== undefined) ? hostOverride.hdr     : StreamingPreferences.enableHdr
     readonly property int  _effCodec:   (hostOverride && hostOverride.codec   !== undefined) ? hostOverride.codec   : StreamingPreferences.videoCodecConfig
     readonly property int  _effAudio:   (hostOverride && hostOverride.audio   !== undefined) ? hostOverride.audio   : StreamingPreferences.audioConfig
-    // Frame pacing does nothing without V-Sync, and the per-game dialog offers frame
-    // pacing but not V-Sync — so it has to be told the effective value to grey against.
-    readonly property bool _effVsync:   (hostOverride && hostOverride.vsync   !== undefined) ? hostOverride.vsync === true : StreamingPreferences.enableVsync
 
     function _codecLabel(c) { return c === 1 ? "H.264" : c === 2 ? "HEVC" : c === 4 ? "AV1" : c === 5 ? "PyroWave" : qsTr("Auto codec") }
     function _audioLabel(a) { return a === 1 ? "5.1" : a === 2 ? "7.1" : qsTr("Stereo") }
@@ -768,10 +765,12 @@ FocusScope {
             event.accepted = true
         }
         // The profile: LT/RT on the pad (Key_F14/F15) since 6.1.0 — the shoulders went to the
-        // tabs — and still Q/E on the keyboard. 8.7.1 (#53): a tap steps it on release, a hold
-        // opens the profile list (ProfileHold). The hold is the list's only pad key here: Start,
-        // Select and both stick clicks already have a job on this page.
-        else if (profileHold.press(event)) {
+        // tabs — and still Q/E on the keyboard.
+        else if (event.key === Qt.Key_F14 || event.key === Qt.Key_Q) {
+            cycleProfile(-1)
+            event.accepted = true
+        } else if (event.key === Qt.Key_F15 || event.key === Qt.Key_E) {
+            cycleProfile(1)
             event.accepted = true
         }
         // Search (8.4.0): '/', as in browsers and launchers, and the platform's Find (Ctrl+F).
@@ -826,8 +825,6 @@ FocusScope {
         appSettingsDialog.cover = appsRoot.focusedBoxArt
         // So the per-game "inherit" option shows the active profile's name.
         appSettingsDialog.activeProfileName = appsRoot.hostProfileName
-        appSettingsDialog.effectiveVsync = appsRoot._effVsync
-        appSettingsDialog.inheritedCodec = appsRoot._effCodec
         appSettingsDialog.open()
     }
     function openCustomizeForFocused() {
@@ -920,41 +917,6 @@ FocusScope {
         if (!hostComputerModel || computerIndex < 0 || hostProfileCount < 1) return
         hostComputerModel.cycleHostProfile(computerIndex, dir)
         _refreshProfile()
-    }
-
-    // ── The profile list (8.7.1, #53) ────────────────────────────────────────
-    // Dropped from the header's profile chip, which registers itself here.
-    property Item _profileChip: null
-    function openProfileList(byHold) {
-        if (!_hasProfiles || computerIndex < 0 || profileListPopup.opened) return
-        // A hold that ends after the keys went elsewhere (a dialog opened meanwhile) opens
-        // nothing — the same guard as on Home. The page is a FocusScope, so this is true
-        // while the focus is anywhere inside it and false once a popup has taken it.
-        if (byHold && !appsRoot.activeFocus) return
-        profileListPopup.hostUuid   = hostUuid
-        profileListPopup.hostName   = hostName
-        profileListPopup.anchorItem = _profileChip
-        profileListPopup.open()
-        if (byHold && appShell) appShell.noteProfileListHeld()
-    }
-    Keys.onReleased: function(event) {
-        if (profileHold.release(event)) event.accepted = true
-    }
-    ProfileHold {
-        id: profileHold
-        canHold: appsRoot._hasProfiles
-        onTapped: function(dir) {
-            appsRoot.cycleProfile(dir)
-            if (appsRoot.appShell) appsRoot.appShell.noteProfileTap(appsRoot.hostProfileCount)
-        }
-        onHeld: function(dir) { appsRoot.openProfileList(true) }
-    }
-    ProfileListPopup {
-        id: profileListPopup
-        computerModel: appsRoot.hostComputerModel
-        // The header's chips and the configuration line read the profile through
-        // hostOverride, which is assigned and not bound.
-        onChosen: function(slot) { appsRoot._refreshProfile() }
     }
 
     function _initFromHost() {
@@ -1150,34 +1112,15 @@ FocusScope {
                     }
 
                     Rectangle {
-                        id: statusChip
                         height: appsRoot._px(26)
                         width: chipRow.implicitWidth + appsRoot._px(26)
                         radius: appsRoot._px(6)
                         // As the status chips on Home (HostStage's chipBox): no fill, a hairline
                         // (14/10/2026). It stood on a Plate from 09/10, which made these the
                         // only status chips in the app with a body.
-                        // 8.7.1: the profile chip lights a little under the pointer — a click
-                        // drops the profile list from it.
-                        color: _hovered
-                               ? Qt.rgba(Theme.tintBase.r, Theme.tintBase.g, Theme.tintBase.b, 0.08) : "transparent"
-                        border.color: _hovered ? Theme.lineHigh : Theme.line
+                        color: "transparent"
+                        border.color: Theme.line
                         border.width: 1
-
-                        readonly property bool _isProfile: modelData.kind === "profile"
-                        // Only with the mouse in hand (#24): a parked pointer must not light it.
-                        readonly property bool _hovered: chipMouse.containsMouse
-                                                         && SdlGamepadKeyNavigation.inputMode !== "key"
-                        Component.onCompleted: if (_isProfile) appsRoot._profileChip = statusChip
-                        Component.onDestruction: if (appsRoot._profileChip === statusChip) appsRoot._profileChip = null
-                        MouseArea {
-                            id: chipMouse
-                            anchors.fill: parent
-                            enabled: statusChip._isProfile
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: appsRoot.openProfileList(false)
-                        }
 
                         Row {
                             id: chipRow

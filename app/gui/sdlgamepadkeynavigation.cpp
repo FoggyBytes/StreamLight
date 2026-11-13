@@ -965,29 +965,24 @@ void SdlGamepadKeyNavigation::onPollingTimerFired()
     //
     // Key_F14/F15 are inert like the Key_F13 used for Select: nothing in Qt treats them as
     // activation, so only our explicit handlers consume them.
-    //
-    // ⚠️ 8.7.1 (#53): the press goes out on the pull and the RELEASE when the trigger comes back
-    // below 8000 — they used to go out together on the pull. Home and the host page tell a tap
-    // (one profile on) from a hold (the profile list) by the time between the two. Every other
-    // handler of F14/F15 acts on the press, as before, and nothing answers the release.
     if (!m_LeftTriggerDown && leftTriggerMax > 20000) {
         m_LeftTriggerDown = true;
         InputHints::get()->notePadInput();
         sendKey(QEvent::Type::KeyPress, Qt::Key_F14);
+        sendKey(QEvent::Type::KeyRelease, Qt::Key_F14);
     }
     else if (m_LeftTriggerDown && leftTriggerMax < 8000) {
         m_LeftTriggerDown = false;
-        sendKey(QEvent::Type::KeyRelease, Qt::Key_F14);
     }
 
     if (!m_RightTriggerDown && rightTriggerMax > 20000) {
         m_RightTriggerDown = true;
         InputHints::get()->notePadInput();
         sendKey(QEvent::Type::KeyPress, Qt::Key_F15);
+        sendKey(QEvent::Type::KeyRelease, Qt::Key_F15);
     }
     else if (m_RightTriggerDown && rightTriggerMax < 8000) {
         m_RightTriggerDown = false;
-        sendKey(QEvent::Type::KeyRelease, Qt::Key_F15);
     }
 
     setScrollVelocity(scrollVelocity);
