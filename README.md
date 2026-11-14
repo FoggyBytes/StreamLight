@@ -121,6 +121,7 @@ Works with any host.
 
 - **Longer profile names** — 20 characters, up from 14
 - **Names in full in Home's profile list** — the list (**Start** / **W**) is as wide as its longest row, so a name is no longer cut to make room for the settings beside it
+- **No flood of refused commands** — a host that approved this device but refuses its signed commands is no longer asked again in a loop, and its refusal no longer shows up on the card as the Tailscale address
 
 ## ✨ What's New in 8.8.2 — Light Step
 

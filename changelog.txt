@@ -8,16 +8,20 @@ https://github.com/FoggyBytes/StreamLight
 Version 8.8.3 - Full Name (14/11/2026)
 ---------------------------------------
 
-No StreamTweak update required — 8.8.3 is client-side and works with any host. Profile names can be longer, and Home's profile list shows them in full.
+No StreamTweak update required — 8.8.3 is client-side and works with any host. Profile names can be longer and are shown in full, and a host that refuses this device is no longer flooded with requests.
 
 ✨ IMPROVEMENTS:
 • Longer profile names — a host profile's name can be 20 characters, up from 14
 
 🐛 FIXES:
 • Profile names cut in Home's profile list — the list (Start / W) had a fixed width, and next to a long line of settings, such as an ultrawide resolution, even a short name was cut; the list is now as wide as its longest row and the name is always shown in full
+• No more flood of requests to a host that refuses them — since 8.8.2, a host that approved this device but refused its signed commands was asked again in a loop, about 120 times a second; it is now asked at most twice a minute
+• "ERR_UNAUTHORIZED" as the Tailscale address — a refused request for the host's Tailscale address was saved as the address and shown on the host's card; only a real address is kept now, and a stored refusal is dropped at start
+• Two identical commands in the same millisecond — the host took the second for a replay and refused it; every command now carries its own time
 
 🙏 THANKS:
 • Thanks to @kayti for asking for it (https://github.com/FoggyBytes/StreamLight/issues/54)
+• Thanks to @joostleemereise-gif for the report and the logs (https://github.com/FoggyBytes/StreamTweak/issues/17)
 
 ---------------------------------------
 Version 8.8.2 - Light Step (13/11/2026)

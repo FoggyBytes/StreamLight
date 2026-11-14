@@ -54,7 +54,14 @@ NvComputer::NvComputer(QSettings& settings)
                                   settings.value(SER_IPV6PORT, QVariant(DEFAULT_HTTP_PORT)).toUInt());
     this->manualAddress = NvAddress(settings.value(SER_MANUALADDR).toString(),
                                     settings.value(SER_MANUALPORT, QVariant(DEFAULT_HTTP_PORT)).toUInt());
-    this->tailscaleAddress = NvAddress(settings.value(SER_TAILSCALEADDR).toString(),
+    // ⚠️ 8.8.3 (StreamTweak #17): up to 8.8.2 a refused TAILSCALE request stored the bridge's
+    // "ERR_UNAUTHORIZED" here as if it were an address. Such a value is dropped on load, and the
+    // host is saved without it at its next save. Only "ERR_" is matched: a Tailscale address can
+    // legitimately be a name (a manual MagicDNS entry), and a host name never holds an underscore.
+    QString tailscaleAddr = settings.value(SER_TAILSCALEADDR).toString();
+    if (tailscaleAddr.startsWith(QStringLiteral("ERR_")))
+        tailscaleAddr.clear();
+    this->tailscaleAddress = NvAddress(tailscaleAddr,
                                        settings.value(SER_TAILSCALEPORT, QVariant(DEFAULT_HTTP_PORT)).toUInt());
     this->serverCert = QSslCertificate(settings.value(SER_SRVCERT).toByteArray());
     this->isNvidiaServerSoftware = settings.value(SER_NVIDIASOFTWARE).toBool();

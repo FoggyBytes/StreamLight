@@ -11,6 +11,7 @@
 #include <QTextStream>
 #include <QTimer>
 
+#include <atomic>
 #include <memory>
 
 #include <openssl/evp.h>
@@ -92,7 +93,18 @@ QByteArray StreamTweakBridge::signPayload(const QByteArray& payload)
 QString StreamTweakBridge::buildAuthLine(const QString& command)
 {
     QString uid = IdentityManager::get()->getUniqueId();
+    // ⚠️ 8.8.3 (StreamTweak #17): never the same millisecond twice. RSA PKCS#1 v1.5 signatures are
+    // deterministic, so two identical commands signed in the same millisecond carry the SAME
+    // signature, and the host refuses the second as a replay. The Home can ask the same thing twice
+    // at once (a probe timer and a reply that triggers the same request); each signed line now
+    // gets a timestamp past the previous one. One counter for every bridge in the process.
+    static std::atomic<qint64> s_LastTs { 0 };
     qint64 ts = QDateTime::currentMSecsSinceEpoch();
+    qint64 last = s_LastTs.load();
+    while (true) {
+        const qint64 next = ts > last ? ts : last + 1;
+        if (s_LastTs.compare_exchange_weak(last, next)) { ts = next; break; }
+    }
     QByteArray payload = (uid + "\n" + QString::number(ts) + "\n" + command).toUtf8();
     QByteArray sig = signPayload(payload);
     if (sig.isEmpty())

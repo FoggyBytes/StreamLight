@@ -492,4 +492,10 @@ private:
     // reused across re-polls while the host approval is pending; cleared once the
     // host approves/denies so a fresh attempt gets a new PIN.
     QHash<QString, QString> m_streamTweakPins;
+
+    // 8.8.3 (StreamTweak #17): ERR_UNAUTHORIZED on a signed command asks the access state again, but
+    // at most once per host every kReauthGapMs. See reauthAfterRejection().
+    void reauthAfterRejection(int computerIndex, const QString& uuid);
+    QHash<QString, qint64> m_reauthAt;   // uuid → when the access state was last asked again
+    static constexpr qint64 kReauthGapMs = 30000;
 };

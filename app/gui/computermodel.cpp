@@ -501,7 +501,7 @@ void ComputerModel::requestHostNetInfo(int computerIndex)
             // revocation has to be noticed here: hide the NIC line and ask the access state
             // again, which brings the PIN and approval flow back.
             emit streamTweakStatusReceived(computerIndex, QString());
-            requestStreamTweakAuth(computerIndex);
+            reauthAfterRejection(computerIndex, uuid);
         }
         QVariantMap out;
         if (!reply.isEmpty() && !reply.startsWith(QStringLiteral("ERR"))) {
@@ -526,6 +526,34 @@ void ComputerModel::requestHostNetInfo(int computerIndex)
         }
         emit hostNetInfoReceived(computerIndex, out);
     });
+}
+
+/*
+ * ⚠️ 8.8.3 (StreamTweak #17): the re-request of the access state after an ERR_UNAUTHORIZED is
+ * spaced out, at most once per host every kReauthGapMs.
+ *
+ * Unspaced, it closed a loop with no wait in it. ENROLL is not signed, so a host that has us
+ * approved answers ENROLLED even when it refuses every SIGNED command — a client clock more than
+ * 60 s off the host's is enough. "authorized" makes the Home ask NETINFO at once
+ * (onStreamTweakAuthReceived), NETINFO comes back ERR_UNAUTHORIZED, which asked the access state
+ * again, and so on: ~120 rounds a second on a OneXPlayer, 12,000 "Local link" lines in the client's
+ * log and ~500 refusals a second in StreamTweak's, enough to fill the bridge's connection slots.
+ * The loop came with 8.8.2, which taught requestHostNetInfo() to notice a revocation.
+ *
+ * A real revocation is still noticed at the first refusal: the gap only holds back the SECOND
+ * re-request. The cost is that a host refusing us while approving us is asked again twice a minute
+ * instead of 120 times a second.
+ */
+void ComputerModel::reauthAfterRejection(int computerIndex, const QString& uuid)
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const auto it = m_reauthAt.constFind(uuid);
+    if (it != m_reauthAt.constEnd() && now - it.value() >= 0 && now - it.value() < kReauthGapMs)
+        return;
+    m_reauthAt.insert(uuid, now);
+    qInfo() << "StreamTweak refused a signed command; asking the access state again"
+            << "(the host's log says why)";
+    requestStreamTweakAuth(computerIndex);
 }
 
 void ComputerModel::restoreHostLink(int computerIndex)
@@ -1020,6 +1048,14 @@ void ComputerModel::refreshTailscale(int computerIndex)
             if (tailscaleIp.isEmpty() || tailscaleIp == QStringLiteral("NOT_DETECTED")) {
                 return;
             }
+            // ⚠️ 8.8.3 (StreamTweak #17): only an address is an answer. A refused command comes back
+            // as "ERR_UNAUTHORIZED", and that string used to be stored as the host's Tailscale
+            // address — saved with the host, shown on its card ("Tailscale  ERR_UNAUTHORIZED") and
+            // added to the addresses the poller tries. StreamTweak only ever sends an IP here.
+            if (QHostAddress(tailscaleIp.trimmed()).isNull()) {
+                qInfo() << "Ignoring a TAILSCALE reply that is not an address:" << tailscaleIp.left(40);
+                return;
+            }
             if (m_ComputerManager != nullptr) {
                 m_ComputerManager->setTailscaleAddress(uuid, tailscaleIp);
             }
@@ -1488,7 +1524,7 @@ void ComputerModel::requestStreamTweakStatus(int computerIndex)
                 // badge flips back and the PIN/approval flow resumes automatically —
                 // never surface the raw protocol error to the user.
                 emit streamTweakStatusReceived(computerIndex, QString());
-                requestStreamTweakAuth(computerIndex);
+                reauthAfterRejection(computerIndex, uuid);
                 return;
             }
             emit streamTweakStatusReceived(computerIndex, status);
