@@ -146,7 +146,9 @@ private:
 class HostProfileManager
 {
 public:
-    static const int kMaxNameLen = 14;
+    // 20 since 8.8.3 (#54), was 14. Also in HostProfilesDialog._maxNameLen and
+    // ProfileNameDialog.maxLength.
+    static const int kMaxNameLen = 20;
 
     static HostProfileManager* get();
 

@@ -21,7 +21,7 @@ import QtQuick.Layouts 1.3
  *
  * ⚠️ The presets are situations, not picture qualities: "Docked", "TV", "Handheld". A profile
  * is chosen by where you are, and that is what the name has to say from the host card, where
- * it is the only word on screen. Keep them inside HostProfilesDialog._maxNameLen (14).
+ * it is the only word on screen. Keep them inside HostProfilesDialog._maxNameLen (20).
  *
  * D-pad: the grid is ONE focusable element with a cursor of its own, like the profile chips —
  * eight separate focus stops would take eight D-pad presses to cross and would need their
@@ -37,7 +37,7 @@ Popup {
     signal accepted(string outName)
 
     property string initName: ""
-    property int    maxLength: 14
+    property int    maxLength: 20
 
     readonly property var _presets: ["Docked", "Portable", "Handheld", "TV",
                                      "Living room", "Desk", "4K", "1080p"]

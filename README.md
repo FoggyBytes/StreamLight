@@ -115,6 +115,13 @@ All of them are switched on **per host**, in the **Setup** tab of the host's Str
 - **Shared clipboard** *(8.7.0+)* — text copied on the host pastes on this device and the other way round while you stream, up to 32 KB, encrypted with a key that lasts one stream. Passwords from a password manager are cleared on the other side when the original is, within 60 seconds anyway. Off until you turn it on under *Clipboard* in the section's *Setup* tab; the host has its own switch
 - **Hue Sync keeps the lights** *(10.1.0+)* — a Hue bridge syncs one area at a time, so the host's Hue Sync starting after a wake used to take the lights from this device's for good. The section's **Hue Sync** tab shows the bridge's areas and who has the lights, and sets the host to wait while they are in use — for any device, or only this one; StreamTweak then starts Hue Sync on the host itself, and only reads the bridge. **Take back** restarts Hue Sync here, by hand or by itself, and works with any host
 
+## ✨ What's New in 8.8.3 — Full Name
+
+Works with any host.
+
+- **Longer profile names** — 20 characters, up from 14
+- **Names in full in Home's profile list** — the list (**Start** / **W**) is as wide as its longest row, so a name is no longer cut to make room for the settings beside it
+
 ## ✨ What's New in 8.8.2 — Light Step
 
 Works with any host.

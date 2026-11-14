@@ -39,7 +39,8 @@ Popup {
     property int pcIndex: -1
     property string hostName: ""
 
-    readonly property int _maxNameLen: 14
+    // 20 since 8.8.3 (#54), was 14 — the same figure as HostProfileManager::kMaxNameLen.
+    readonly property int _maxNameLen: 20
 
     // ── What the host holds ──
     property int  profileCount: 0

@@ -61,8 +61,34 @@ Popup {
     readonly property int _listH:   _rows * _rowH + _px(8)
     readonly property int _footH:   _px(54)
 
+    // 8.8.3 (#54): as wide as its longest row. It was 480 fixed, and the name gave way to the
+    // settings beside it — with a resolution that has no short name ("3440×1440" against "4K")
+    // a name well inside the limit was already cut. The name is never cut now: the list grows to
+    // hold name and settings in full, and only at the window's edge do the settings give way.
+    // Measured in _load(), once per opening, in the heavier weight the cursor's row takes.
+    FontMetrics {
+        id: nameMetrics
+        font.family: Theme.family
+        font.pixelSize: pop._px(Theme.fontBody + 1)
+        font.weight: Font.DemiBold
+    }
+    FontMetrics {
+        id: sumMetrics
+        font.family: Theme.family
+        font.pixelSize: pop._px(Theme.fontSmall + 1)
+    }
+    property real _rowTextW: 0
+    readonly property int _nameX:  _px(30)       // the name, after the dot of the profile in use
+    readonly property int _gap:    _px(28)       // between the name and its settings
+    readonly property int _sumPad: _px(16)       // from the settings to the row's edge
+    // Around the two texts: the list's margins (10 + 10), the room kept for the scroll bar (10)
+    // and the row's own inset (3 + 3).
+    readonly property int _chrome: _nameX + _gap + _sumPad + _px(36)
+
     padding: 0
-    width: _px(480)
+    width: Math.max(_px(480),
+                    Math.min(Math.ceil(_rowTextW) + _chrome + _px(4),
+                             parent ? parent.width - 2 * _px(16) : _px(480)))
     height: _headH + _listH + _footH
 
     background: Rectangle {
@@ -113,6 +139,10 @@ Popup {
                      sum: _summary(computerModel.hostProfileSettings(idx, s)) })
         }
         _activeSlot = computerModel.hostActiveProfile(idx)
+        var widest = 0
+        for (var k = 0; k < e.length; k++)
+            widest = Math.max(widest, nameMetrics.advanceWidth(e[k].name) + sumMetrics.advanceWidth(e[k].sum))
+        _rowTextW = widest
         _entries = e
         var at = 0
         for (var j = 0; j < e.length; j++) if (e[j].slot === _activeSlot) at = j
@@ -258,9 +288,10 @@ Popup {
                     }
                     Label {
                         id: nameLabel
-                        x: pop._px(30)
+                        x: pop._nameX
                         anchors.verticalCenter: parent.verticalCenter
-                        width: Math.min(implicitWidth, parent.width - x - sumLabel.implicitWidth - pop._px(32))
+                        // In full (8.8.3): only a window narrower than the name itself cuts it.
+                        width: Math.min(implicitWidth, parent.width - x - pop._sumPad)
                         elide: Text.ElideRight
                         textFormat: Text.PlainText
                         text: modelData.name
@@ -272,8 +303,14 @@ Popup {
                     Label {
                         id: sumLabel
                         anchors.right: parent.right
-                        anchors.rightMargin: pop._px(16)
+                        anchors.rightMargin: pop._sumPad
                         anchors.verticalCenter: parent.verticalCenter
+                        // What gives way when the window is too narrow for both.
+                        width: Math.min(implicitWidth,
+                                        Math.max(0, parent.width - nameLabel.x - nameLabel.width
+                                                    - pop._gap - pop._sumPad))
+                        elide: Text.ElideRight
+                        textFormat: Text.PlainText
                         text: modelData.sum
                         color: Theme.text2
                         font.family: Theme.family

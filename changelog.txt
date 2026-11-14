@@ -5,6 +5,21 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 ---------------------------------------
+Version 8.8.3 - Full Name (14/11/2026)
+---------------------------------------
+
+No StreamTweak update required — 8.8.3 is client-side and works with any host. Profile names can be longer, and Home's profile list shows them in full.
+
+✨ IMPROVEMENTS:
+• Longer profile names — a host profile's name can be 20 characters, up from 14
+
+🐛 FIXES:
+• Profile names cut in Home's profile list — the list (Start / W) had a fixed width, and next to a long line of settings, such as an ultrawide resolution, even a short name was cut; the list is now as wide as its longest row and the name is always shown in full
+
+🙏 THANKS:
+• Thanks to @kayti for asking for it (https://github.com/FoggyBytes/StreamLight/issues/54)
+
+---------------------------------------
 Version 8.8.2 - Light Step (13/11/2026)
 ---------------------------------------
 
