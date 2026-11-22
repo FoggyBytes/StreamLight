@@ -50,9 +50,9 @@ public:
     explicit StreamTweakBridge(QObject* parent = nullptr);
     ~StreamTweakBridge() override;
 
-    // installUpdates: send SHUTDOWN_UPDATE ("Update and shut down") instead of SHUTDOWN.
-    // Kept for hosts older than StreamTweak 8.6.0, which do not know POWER.
-    void sendShutdown(const QString& hostAddress, bool installUpdates = false);
+    // SHUTDOWN, kept for hosts older than StreamTweak 8.6.0, which do not know POWER.
+    // (No SHUTDOWN_UPDATE since 8.8.4: it never installed the updates we report, §120.)
+    void sendShutdown(const QString& hostAddress);
 
     /**
      * Host power modes (StreamTweak 8.6.0+).

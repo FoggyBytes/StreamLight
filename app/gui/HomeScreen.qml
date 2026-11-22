@@ -3001,7 +3001,7 @@ FocusScope {
             if (powerDialog.hostCaps === "legacy") {
                 // StreamTweak older than 8.6.0: the old SHUTDOWN, fire-and-forget, so this
                 // device waits a moment for the bridge socket to finish writing it.
-                homeScreen.computerModel.shutdownHost(powerDialog.pcIndex, hostUpdates)
+                homeScreen.computerModel.shutdownHost(powerDialog.pcIndex)
                 if (clientMode !== "keep")
                     clientPowerTimer.restart()
                 return

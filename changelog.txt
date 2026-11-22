@@ -5,6 +5,15 @@ StreamLight - ChangeLog - Developed by FoggyBytes
 https://github.com/FoggyBytes/StreamLight
 
 ---------------------------------------
+Version 8.8.4 - Straight Answer (22/11/2026)
+---------------------------------------
+
+No StreamTweak update required — 8.8.4 is client-side and works with any host. The Power chooser no longer promises to install updates on a shut down.
+
+🐛 FIXES:
+• Updates not installed on "Shut down" — with Windows updates waiting, the Power chooser offered "Install updates" under Shut down, but those updates were already installed and only a restart finishes them, so the PC shut down and the update stayed; the switch is gone, Restart reads "Update & restart" while updates are waiting, and a shut down says they stay pending — the same on the host's row
+
+---------------------------------------
 Version 8.8.3 - Full Name (14/11/2026)
 ---------------------------------------
 

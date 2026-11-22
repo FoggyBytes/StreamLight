@@ -37,9 +37,6 @@
 #ifndef SHUTDOWN_FORCE_SELF
 #define SHUTDOWN_FORCE_SELF      0x00000002
 #endif
-#ifndef SHUTDOWN_POWEROFF
-#define SHUTDOWN_POWEROFF        0x00000008
-#endif
 #ifndef SHUTDOWN_INSTALL_UPDATES
 #define SHUTDOWN_INSTALL_UPDATES 0x00000040
 #endif
@@ -499,11 +496,10 @@ void SystemProperties::restartApplication()
     QCoreApplication::quit();
 }
 
-void SystemProperties::shutdownClient(bool installUpdates)
+void SystemProperties::shutdownClient()
 {
 #ifdef Q_OS_WIN32
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SystemProperties: powering off client PC%s",
-                installUpdates ? " (installing pending updates first)" : "");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SystemProperties: powering off client PC");
 
     // Enable SeShutdownPrivilege on our process token, then request a full power-off.
     HANDLE token = nullptr;
@@ -517,37 +513,23 @@ void SystemProperties::shutdownClient(bool installUpdates)
         CloseHandle(token);
     }
 
-    // "Update and shut down": InitiateShutdown is the only documented way to install
-    // pending updates before power-off (ExitWindowsEx does not). SHUTDOWN_FORCE_SELF
-    // guarantees our own session logs off; a planned reason avoids the unplanned-state
-    // file delay. Falls through to the plain power-off if it is refused.
-    if (installUpdates) {
-        DWORD rc = InitiateShutdownW(nullptr, nullptr, 0,
-                                     SHUTDOWN_INSTALL_UPDATES | SHUTDOWN_POWEROFF | SHUTDOWN_FORCE_SELF,
-                                     SHTDN_REASON_MAJOR_APPLICATION | SHTDN_REASON_FLAG_PLANNED);
-        if (rc == ERROR_SUCCESS) {
-            return;
-        }
-        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
-                    "SystemProperties: InitiateShutdown(install updates) failed (rc %lu); plain power-off",
-                    rc);
-    }
-
     /*
+     * ⚠️ 8.8.4: no "Update and shut down" here any more. It was InitiateShutdown with
+     * SHUTDOWN_INSTALL_UPDATES, which installs only updates staged for a shut down — never the
+     * ones updatesPending() reports, installed and waiting for a RESTART: the SER9 shut down with it
+     * on 15 and 16/11/2026 and the update stayed until Windows forced a restart on 22/11 (§120).
+     * The Power dialog offers "Update & restart" instead.
+     *
      * ⚠️ 8.5.0: with Fast Startup on, a Fast Startup shut down, as the Start menu's — until then
      * this was always a full one, and the next boot a cold, slower one (05/11/2026). On means
      * "Turn on fast startup" (HiberbootEnabled = 1) and a hibernation file to write the kernel to;
-     * either one missing, or the call refused, and it is the full shut down as before. Never with
-     * updates: the Start menu's "Update and shut down" is a full one too.
+     * either one missing, or the call refused, and it is the full shut down as before.
      */
-    bool fastStartup = false;
-    if (!installUpdates) {   // also when the update path above was refused: still a full one
-        const QSettings power(QStringLiteral("HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power"),
-                              QSettings::NativeFormat);
-        SYSTEM_POWER_CAPABILITIES caps = {};
-        fastStartup = power.value(QStringLiteral("HiberbootEnabled")).toInt() == 1
-                      && GetPwrCapabilities(&caps) && caps.HiberFilePresent;
-    }
+    const QSettings power(QStringLiteral("HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power"),
+                          QSettings::NativeFormat);
+    SYSTEM_POWER_CAPABILITIES caps = {};
+    const bool fastStartup = power.value(QStringLiteral("HiberbootEnabled")).toInt() == 1
+                             && GetPwrCapabilities(&caps) && caps.HiberFilePresent;
     if (fastStartup) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "SystemProperties: a Fast Startup shut down");
         if (ExitWindowsEx(EWX_SHUTDOWN | EWX_POWEROFF | EWX_HYBRID_SHUTDOWN, SHTDN_REASON_MAJOR_OTHER)) {
@@ -572,7 +554,6 @@ void SystemProperties::shutdownClient(bool installUpdates)
                                 + QStringLiteral("\\System32\\shutdown.exe");
     QProcess::startDetached(shutdownExe, { QStringLiteral("/s"), QStringLiteral("/t"), QStringLiteral("0") });
 #else
-    Q_UNUSED(installUpdates);
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "SystemProperties: shutdownClient is only supported on Windows");
 #endif
@@ -678,7 +659,8 @@ QString SystemProperties::clientName()
 void SystemProperties::powerClient(const QString& mode, bool installUpdates)
 {
     if (mode == QLatin1String("shutdown")) {
-        shutdownClient(installUpdates);
+        // installUpdates is never asked for with a shut down (8.8.4, see shutdownClient()).
+        shutdownClient();
         return;
     }
 

@@ -1125,7 +1125,7 @@ void ComputerModel::handleComputerStateChanged(NvComputer* computer)
     }
 }
 
-void ComputerModel::shutdownHost(int computerIndex, bool installUpdates)
+void ComputerModel::shutdownHost(int computerIndex)
 {
     // Powering off the CLIENT is not a StreamTweak feature and is not affected — that lives
     // in SystemProperties. Only the host half goes away.
@@ -1141,7 +1141,7 @@ void ComputerModel::shutdownHost(int computerIndex, bool installUpdates)
     if (address.isEmpty())
         return;
 
-    m_streamTweakBridge.sendShutdown(address, installUpdates);
+    m_streamTweakBridge.sendShutdown(address);
 }
 
 void ComputerModel::requestPowerCaps(int computerIndex)

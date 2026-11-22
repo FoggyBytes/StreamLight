@@ -106,8 +106,7 @@ public:
 
     // Asks the host (via StreamTweak) to power off. Requires the host to have
     // approved this client; fire-and-forget over the authenticated bridge.
-    // installUpdates: install pending Windows updates before powering off.
-    Q_INVOKABLE void shutdownHost(int computerIndex, bool installUpdates = false);
+    Q_INVOKABLE void shutdownHost(int computerIndex);
 
     /**
      * Host power modes (StreamTweak 8.6.0+). requestPowerCaps answers with

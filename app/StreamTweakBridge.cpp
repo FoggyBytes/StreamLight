@@ -124,10 +124,12 @@ QString StreamTweakBridge::buildAuthLine(const QString& command)
 // (sendRestore() is further down and in use: it is how the client puts the host's link back
 //  when the user answers the prompt. This note used to say it had been removed.)
 
-void StreamTweakBridge::sendShutdown(const QString& hostAddress, bool installUpdates)
+// ⚠️ 8.8.4: never SHUTDOWN_UPDATE any more. The update it asks for is one staged for a shut down,
+// while the "pending" the Power dialog shows is installed and waiting for a restart — the host
+// simply shut down and the update stayed (§120). Restart finishes those, with POWER.
+void StreamTweakBridge::sendShutdown(const QString& hostAddress)
 {
-    sendCommand(hostAddress, installUpdates ? QStringLiteral("SHUTDOWN_UPDATE")
-                                            : QStringLiteral("SHUTDOWN"));
+    sendCommand(hostAddress, QStringLiteral("SHUTDOWN"));
 }
 
 void StreamTweakBridge::requestPowerCaps(const QString& hostAddress, ResponseCallback onResult)
